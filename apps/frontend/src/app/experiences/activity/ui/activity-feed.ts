@@ -415,9 +415,6 @@ export class ActivityFeed implements OnInit {
     return '';
   }
 
-  /**
-   * Returns a router link config for the entity, or null if no link applies.
-   */
   protected getEntityLink(act: any): { path: string; params?: Record<string, string>; label?: string } | null {
     const metadata = act.metadata ?? {};
     const id = act.entity_id || metadata.id || metadata.event_id;

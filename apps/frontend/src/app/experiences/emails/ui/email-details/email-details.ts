@@ -1,6 +1,3 @@
-/**
- * @file Container component for email details view.
- */
 import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 

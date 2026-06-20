@@ -19,16 +19,10 @@ export class BillingController {
     }
   }
 
-  /**
-   * Helper to derive the frontend base URL
-   */
   private getFrontendUrl(): string {
     return env.apiUrl.replace(':3000', ':4200'); // standard dev replace, or env.apiUrl in prod
   }
 
-  /**
-   * Fetch current subscription plan, status, and expiry details
-   */
   public async getBillingDetails(auth: { tenant_id: string }) {
     const tenant = (await tenantsRepo.getOneBy('id', {
       tenant_id: auth.tenant_id,
@@ -50,9 +44,6 @@ export class BillingController {
     };
   }
 
-  /**
-   * Generate a Stripe Checkout session or a Mock Checkout redirect url
-   */
   public async createCheckoutSession(
     auth: { tenant_id: string; user_id: string },
     plan: 'grassroots' | 'representative',
@@ -126,9 +117,6 @@ export class BillingController {
     return { url: session.url };
   }
 
-  /**
-   * Generate Stripe Customer Portal session or a mock billing dashboard redirect
-   */
   public async createPortalSession(auth: { tenant_id: string }) {
     const tenant = (await tenantsRepo.getOneBy('id', {
       tenant_id: auth.tenant_id,
@@ -158,10 +146,6 @@ export class BillingController {
     return { url: session.url };
   }
 
-  /**
-   * Process a Stripe Webhook call: immediately verifies signature,
-   * writes the raw JSON payload to the database, and returns.
-   */
   public async handleWebhook(payload: string, signature: string) {
     if (isMockMode || !stripe || !env.stripeWebhookSecret) {
       console.log('💳 [BillingController] Webhook received, but ignored due to mock mode or missing secret');
@@ -194,10 +178,6 @@ export class BillingController {
       .execute();
   }
 
-  /**
-   * Performs the actual business logic updates for a webhook event.
-   * This is processed asynchronously by the background worker.
-   */
   public async processWebhookEvent(event: Stripe.Event) {
     console.log(`💳 Processing webhook event: ${event.id} (${event.type})`);
 
@@ -425,9 +405,6 @@ export class BillingController {
     }
   }
 
-  /**
-   * Helper mutation to simulate a checkout webhook locally (Mock Mode only)
-   */
   public async activateMockPlan(auth: { tenant_id: string }, plan: 'grassroots' | 'representative') {
     if (!isMockMode) {
       throw new Error('This helper is only available in local Mock Mode');
@@ -457,9 +434,6 @@ export class BillingController {
     return { success: true, plan };
   }
 
-  /**
-   * Helper mutation to cancel mock plan locally (Mock Mode only)
-   */
   public async cancelMockPlan(auth: { tenant_id: string }) {
     if (!isMockMode) {
       throw new Error('This helper is only available in local Mock Mode');
@@ -485,9 +459,6 @@ export class BillingController {
     return { success: true };
   }
 
-  /**
-   * Clears limit alert flags and sends confirmation email to the owner.
-   */
   private async handleSubscriptionChange(tenantId: string, planName: string, isMock = false): Promise<void> {
     const tenant = (await tenantsRepo.getOneBy('id', {
       tenant_id: tenantId,

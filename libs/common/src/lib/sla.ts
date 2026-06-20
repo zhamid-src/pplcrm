@@ -1,19 +1,9 @@
-/**
- * Calculates the total working time in milliseconds between two dates,
- * considering the configured working days of the week and working hours start/end.
- *
- * @param startDate Starting date
- * @param endDate Ending date (or current date/time)
- * @param workingDays Array of day indexes (0=Sunday, 1=Monday, ..., 6=Saturday)
- * @param workingHoursStart Start of working hours as "HH:MM"
- * @param workingHoursEnd End of working hours as "HH:MM"
- */
 export function calculateWorkingTimeMs(
   startDate: Date,
   endDate: Date,
   workingDays: number[],
   workingHoursStart: string,
-  workingHoursEnd: string
+  workingHoursEnd: string,
 ): number {
   if (startDate.getTime() >= endDate.getTime()) {
     return 0;
@@ -24,13 +14,7 @@ export function calculateWorkingTimeMs(
   // Parse end hour/minute
   const [endHour, endMin] = workingHoursEnd.split(':').map(Number);
 
-  if (
-    isNaN(startHour) ||
-    isNaN(startMin) ||
-    isNaN(endHour) ||
-    isNaN(endMin) ||
-    workingDays.length === 0
-  ) {
+  if (isNaN(startHour) || isNaN(startMin) || isNaN(endHour) || isNaN(endMin) || workingDays.length === 0) {
     // Return standard elapsed time as fallback if settings are malformed
     return endDate.getTime() - startDate.getTime();
   }

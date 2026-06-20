@@ -1,7 +1,3 @@
-/**
- * @fileoverview E2E tests for persons grid functionality.
- * Tests data grid operations, filtering, editing, and tag management.
- */
 import { expect, test } from '@playwright/test';
 
 test.describe('Persons Grid', () => {

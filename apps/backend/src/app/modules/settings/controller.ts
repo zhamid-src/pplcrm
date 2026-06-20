@@ -8,12 +8,6 @@ import { BaseController } from '../../lib/base.controller';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { SendGridWhitelabelService } from '../../lib/mail/sendgrid-whitelabel.service';
 
-/**
- * Controller for managing settings
- *
- * Extends the base controller to provide default CRUD operations
- * for the `settings` table.
- */
 export class SettingsController extends BaseController<'settings', SettingsRepo> {
   private mailService = new TransactionalEmailService();
 

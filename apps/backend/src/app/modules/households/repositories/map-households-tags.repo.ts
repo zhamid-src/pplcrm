@@ -1,24 +1,12 @@
-/**
- * Repository handling the mapping between households and tags.
- */
 import { BaseRepository } from '../../../lib/base.repo';
 import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { Transaction } from 'kysely';
 
-/**
- * Data access for the `map_households_tags` table.
- */
 export class MapHouseholdsTagsRepo extends BaseRepository<'map_households_tags'> {
-  /**
-   * Creates a repository instance for the `map_households_tags` table.
-   */
   constructor() {
     super('map_households_tags');
   }
 
-  /**
-   * Deletes a tag-to-household mapping record using composite keys.
-   */
   public async deleteMapping(tenant_id: string, household_id: string, tag_id: string, trx?: Transaction<Models>) {
     const res = await this.getDelete(trx)
       .where('tenant_id', '=', tenant_id)

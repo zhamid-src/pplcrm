@@ -22,72 +22,28 @@ export class FormActions implements OnInit {
 
   protected form?: FormGroup;
 
-  /**
-   * The optional Signal-based form state.
-   * If provided, button disabling and reset behavior will use this form state.
-   */
   public signalForm = input<any>();
 
-  /**
-   * Additional custom disabled condition for the save buttons.
-   */
   public disabled = input<boolean>(false);
 
-  /**
-   * Whether to show the Delete button.
-   */
   public showDelete = input<boolean>(false);
 
-  /**
-   * The text to show on the Delete button.
-   */
   public deleteText = input<string>('DELETE');
 
-  /**
-   * Emits when the Delete button is clicked.
-   */
   public readonly deleteClicked = output<void>();
 
-  /**
-   * Emits when the first button (e.g., SAVE or SAVE & ADD MORE) is clicked.
-   * The parent component should decide what to do next based on whether
-   * the stay flag is set.
-   */
   public readonly btn1Clicked = output<() => void>();
 
-  /**
-   * The icon to show on the first button.
-   * Default is 'arrow-down-tray'.
-   */
   public btn1Icon = input<PcIconNameType>('save');
 
-  /**
-   * The text to show on the first button.
-   * Default is 'SAVE'.
-   */
   public btn1Text = input<string>('SAVE');
 
-  /**
-   * The text to show on the second button (optional).
-   * Default is 'SAVE & ADD MORE'.
-   */
   public btn2Text = input<string>('SAVE & ADD MORE');
 
-  /**
-   * Whether to show two or three buttons.
-   * Default is 'three'.
-   */
   public buttonsToShow = input<'two' | 'three'>('three');
 
-  /**
-   * A required flag indicating whether the form is currently loading.
-   * Used to disable buttons and prevent double submissions.
-   */
   public isLoading = input.required<boolean>();
 
-  /**
-   * Returns true if the save actions should be disabled.
-   */
   protected get isSaveDisabled(): boolean {
     if (this.isLoading()) return true;
     if (this.disabled()) return true;
@@ -101,42 +57,24 @@ export class FormActions implements OnInit {
     return false;
   }
 
-  /**
-   * Navigates the user back to the previous route.
-   * Used by the cancel button.
-   */
   public cancel() {
     this.router.navigate(['../'], { relativeTo: this.route });
   }
 
-  /**
-   * Emits the deleteClicked event when the user clicks Delete.
-   */
   public handleDeleteClicked() {
     this.deleteClicked.emit();
   }
 
-  /**
-   * Emits the btn1Clicked event with a callback.
-   * The parent can then decide to call the callback (usually stayOrCancel).
-   */
   public handleBtn1Clicked() {
     this.stay = false;
     this.btn1Clicked.emit(this.stayOrCancel);
   }
 
-  /**
-   * Called when the second button is clicked (SAVE & ADD MORE).
-   * Sets the stay flag and reuses the handler for btn1.
-   */
   public handleBtn2Clicked() {
     this.stay = true;
     this.btn1Clicked.emit(this.stayOrCancel);
   }
 
-  /**
-   * Initializes the component by linking to the parent form group.
-   */
   public ngOnInit() {
     this.form = this.rootFormGroup?.control;
     if (this.form) {
@@ -148,11 +86,6 @@ export class FormActions implements OnInit {
     }
   }
 
-  /**
-   * This callback is passed to the parent via btn1Clicked.
-   * If stay is true, resets the form to allow adding another.
-   * Otherwise, navigates away.
-   */
   public stayOrCancel = () => {
     if (this.stay) {
       const sigF = this.signalForm();

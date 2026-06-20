@@ -49,11 +49,7 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
     return this.api.companies.update.mutate({ id, data });
   }
 
-  public import(
-    rows: any[],
-    skipped: number,
-    file_name?: string,
-  ): Promise<RouterOutputs['companies']['import']> {
+  public import(rows: any[], skipped: number, file_name?: string): Promise<RouterOutputs['companies']['import']> {
     return this.api.companies.import.mutate({ rows, skipped, file_name });
   }
 
@@ -67,13 +63,7 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
     return this.api.companies.getPotentialDuplicates.query(options);
   }
 
-  /**
-   * Merge source company into target company.
-   */
-  public mergeCompanies(
-    targetId: string,
-    sourceId: string,
-  ): Promise<RouterOutputs['companies']['mergeCompanies']> {
+  public mergeCompanies(targetId: string, sourceId: string): Promise<RouterOutputs['companies']['mergeCompanies']> {
     return this.api.companies.mergeCompanies.mutate({ target_id: targetId, source_id: sourceId });
   }
 }

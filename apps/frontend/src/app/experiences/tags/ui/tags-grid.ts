@@ -1,6 +1,3 @@
-/**
- * @file Data grid component for viewing and editing tags.
- */
 import { Component } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';

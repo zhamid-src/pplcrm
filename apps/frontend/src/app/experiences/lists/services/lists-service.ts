@@ -9,24 +9,20 @@ import {
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
-/** Service handling CRUD operations for list entities. */
 @Service()
 export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
   protected override readonly endpointName = 'lists';
 
-  /** Add a new list (opt-out of global error toast to avoid duplicates) */
   public add(row: AddListType) {
     return (this.api.lists.add.mutate as unknown as (input: any, opts: any) => Promise<any>)(row, {
       meta: { skipErrorHandler: true },
     });
   }
 
-  /** No-op batch add implementation */
   public addMany(rows: AddListType[]) {
     return Promise.resolve(rows);
   }
 
-  /** Tags are not supported on lists */
   public attachTag(_id: string, _tag_name: string) {
     return Promise.resolve();
   }
@@ -35,7 +31,6 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
     return this.api.lists.count.query();
   }
 
-  /** Tags are not supported on lists */
   public detachTag(_id: string, _tag_name: string) {
     return Promise.resolve(false);
   }
@@ -57,12 +52,10 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
     return this.api.lists.getById.query(id);
   }
 
-  /** Get household members for a list */
   public getMembersHouseholds(list_id: string) {
     return this.api.lists.getMembersHouseholds.query(list_id);
   }
 
-  /** Get person members for a list */
   public getMembersPersons(list_id: string) {
     return this.api.lists.getMembersPersons.query(list_id);
   }

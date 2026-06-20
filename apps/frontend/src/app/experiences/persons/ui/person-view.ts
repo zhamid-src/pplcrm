@@ -1,6 +1,3 @@
-/**
- * @file Component for viewing individual person records (read-only mode).
- */
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';

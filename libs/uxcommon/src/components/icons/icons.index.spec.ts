@@ -1,7 +1,3 @@
-/**
- * @fileoverview Unit tests for icons index exports.
- * Tests that all icon definitions are properly exported and accessible.
- */
 import * as IconsIndex from './icons.index';
 
 describe('Icons Index', () => {

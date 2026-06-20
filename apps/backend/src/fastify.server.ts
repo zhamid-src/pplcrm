@@ -11,20 +11,9 @@ import { trpcRouter } from './app/modules/trpc';
 import { createContext } from './context';
 import { env } from './env';
 
-/**
- * Wrapper class for a Fastify server instance.
- *
- * Registers core plugins, routes, and tRPC integration.
- */
 export class FastifyServer {
   private readonly server;
 
-  /**
-   * Initializes the Fastify server with sensible defaults, logging,
-   * CORS, and tRPC support.
-   *
-   * @param {object} [opts={}] - Optional configuration for CORS and plugin options.
-   */
   constructor(opts: object = {}) {
     // Create Fastify instance with logging and common config
     this.server = fastify({
@@ -42,9 +31,7 @@ export class FastifyServer {
 
     // Globally serialize BigInt properties as strings in responses
     this.server.setReplySerializer((payload) => {
-      return JSON.stringify(payload, (_, value) =>
-        typeof value === 'bigint' ? value.toString() : value
-      );
+      return JSON.stringify(payload, (_, value) => (typeof value === 'bigint' ? value.toString() : value));
     });
 
     // Register core Fastify plugins
@@ -83,22 +70,10 @@ export class FastifyServer {
     });
   }
 
-  /**
-   * Gracefully shuts down the server.
-   *
-   * @returns {Promise<void>} Resolves when shutdown completes.
-   */
   public async close(): Promise<void> {
     return await this.server.close();
   }
 
-  /**
-   * Starts the Fastify server and listens on the configured host and port.
-   *
-   * Logs success or exits on error.
-   *
-   * @returns {Promise<void>}
-   */
   public async serve(): Promise<void> {
     try {
       const address = await this.server.listen({ port: env.port, host: env.host });

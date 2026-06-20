@@ -17,9 +17,6 @@ import { BaseController } from '../../lib/base.controller';
 import { SettingsController } from '../settings/controller';
 import { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 
-/**
- * Controller for managing household records and their associated tags.
- */
 export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
   private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
   private settingsController = new SettingsController();
@@ -29,14 +26,6 @@ export class HouseholdsController extends BaseController<'households', Household
     super(new HouseholdRepo());
   }
 
-  /**
-   * Delete multiple households by ID, silently skipping any that are marked
-   * `is_placeholder`. Placeholder households are created at tenant setup time
-   * and serve as the permanent catch-all for people with no address.
-   *
-   * @param auth - Auth context
-   * @param idsToDelete - Household IDs requested for deletion
-   */
   public async deleteManyForTenant(auth: IAuthKeyPayload, idsToDelete: string[]) {
     // Filter out any placeholder households — they are permanent and undeletable
     const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, idsToDelete);
@@ -46,13 +35,6 @@ export class HouseholdsController extends BaseController<'households', Household
     return this.deleteMany(auth.tenant_id, safeIds);
   }
 
-  /**
-   * Add a new household entry for the authenticated user's tenant.
-   *
-   * @param payload - Household data to insert
-   * @param auth - Auth context with tenant and user ID
-   * @returns The created household
-   */
   public async addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
     const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
 
@@ -114,11 +96,6 @@ export class HouseholdsController extends BaseController<'households', Household
     } as any;
   }
 
-  /**
-   * Override update to recompute address fingerprints when address fields change.
-   * The fingerprint update is attempted in a separate step so that the main update
-   * always succeeds — even if the address_fp_* columns have not been migrated yet.
-   */
   public override async update(input: {
     tenant_id: string;
     id: string;
@@ -214,14 +191,6 @@ export class HouseholdsController extends BaseController<'households', Household
     return result;
   }
 
-  /**
-   * Attach a tag to a household. Creates the tag if it doesn't exist.
-   *
-   * @param household_id - ID of the household to tag
-   * @param name - Name of the tag to attach
-   * @param auth - Auth context
-   * @returns The result of the map insertion
-   */
   public async attachTag(household_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
     const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, [household_id]);
     if (placeholders.has(household_id)) {
@@ -253,13 +222,6 @@ export class HouseholdsController extends BaseController<'households', Household
     });
   }
 
-  /**
-   * Detach (remove) a tag from a household by name.
-   *
-   * @param tenant_id - Tenant ID
-   * @param household_id - Household ID
-   * @param tag_name - Name of the tag to remove
-   */
   public async detachTag(
     tenant_id: string,
     household_id: string,
@@ -297,12 +259,6 @@ export class HouseholdsController extends BaseController<'households', Household
     }
   }
 
-  /**
-   * Get all households and include the count of people in each household.
-   *
-   * @param auth - Auth context
-   * @returns Array of households with people counts
-   */
   public getAllWithPeopleCount(auth: IAuthKeyPayload, options?: getAllOptionsType) {
     const { tags, ...queryParams } = options || {};
     return this.getRepo().getAllWithPeopleCount({
@@ -312,30 +268,14 @@ export class HouseholdsController extends BaseController<'households', Household
     });
   }
 
-  /**
-   * Retrieve the number of people associated with a household.
-   */
   public getPeopleCount(id: string, auth: IAuthKeyPayload) {
     return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
   }
 
-  /**
-   * Get a list of all distinct tags used across households for a tenant.
-   *
-   * @param auth - Auth context
-   * @returns List of unique tag names
-   */
   public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
     return this.getRepo().getDistinctTags(auth.tenant_id, type);
   }
 
-  /**
-   * Get all tags associated with a specific household.
-   *
-   * @param id - Household ID
-   * @param auth - Auth context
-   * @returns List of tags for the household
-   */
   public getTags(id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
     return this.getRepo().getTags(id, auth.tenant_id, type);
   }
@@ -365,13 +305,6 @@ export class HouseholdsController extends BaseController<'households', Household
     return super.exportCsv(input, auth);
   }
 
-  /**
-   * Internal method to link a tag to a household in the mapping table.
-   *
-   * @param row - Mapping row containing tag ID and household ID
-   * @returns The result of the insert operation
-   * @throws TRPCError if tag_id is missing
-   */
   private async addToMap(row: {
     tag_id: string | undefined;
     household_id: string;
@@ -395,9 +328,6 @@ export class HouseholdsController extends BaseController<'households', Household
     return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
   }
 
-  /**
-   * Merge a duplicate household into a primary household.
-   */
   public async mergeHouseholds(target_id: string, source_id: string, auth: IAuthKeyPayload) {
     return this.getRepo().mergeHouseholds({
       tenant_id: auth.tenant_id,
@@ -407,9 +337,6 @@ export class HouseholdsController extends BaseController<'households', Household
     });
   }
 
-  /**
-   * Queue a background job to recompute address fingerprints for a tenant.
-   */
   public async recomputeAddressFingerprints(tenantId: string): Promise<void> {
     await this.getRepo()
       .db.insertInto('background_jobs' as any)

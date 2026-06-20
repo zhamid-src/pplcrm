@@ -161,7 +161,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly hasEditableColumns = signal(false);
   private readonly headerMinWidths = signal<Record<string, number>>({});
   private readonly dgListsSvc = inject(ListsService, { optional: true });
-  /** Set of cell keys (rowId:field) currently showing the green "saved" flash animation */
   public readonly flashedCells = signal<Set<string>>(new Set());
   protected readonly countRowSelected = computed(() =>
     this.allSelected() ? this.allSelectedCount() : this.selectedIdSet().size,
@@ -210,7 +209,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected readonly isEmptyState = computed(
     () => this.hasInitiatedLoad() && !this.isLoading() && this.totalCountAll() === 0,
   );
-  /** True when the grid has data but active filters reduced the visible count to zero */
   protected readonly isFilteredEmpty = computed(() => {
     if (!this.hasInitiatedLoad() || this.isLoading() || this.totalCountAll() > 0) return false;
     const pf = this.panelFilters();
@@ -241,7 +239,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
     return val !== undefined && val !== null && val !== '';
   }
-  /** Becomes true the moment loading first starts — prevents empty-state flash on init */
   protected readonly hasInitiatedLoad = signal(false);
   protected readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
   protected readonly hasSelection = computed(() =>
@@ -302,7 +299,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Inline edit state
   protected editingCell = signal<{ id: string; field: string } | null>(null);
   protected editingValue = signal<any>('');
-  /** Search text used to filter the tag checkbox panel. Cleared when a new cell opens. */
   protected tagSearch = signal('');
   protected filterValues = this.store?.filterValues ?? signal({});
   protected isLoading = this._loading.visible;
@@ -669,7 +665,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.countRowSelected();
   }
 
-  /** Expose current grid filters/sort to build a definition */
   public getDefinition(): getAllOptionsType {
     return {
       searchStr: this.searchSvc.getFilterText(),
@@ -823,7 +818,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.loadPage(0);
   }
 
-  /** Navigates to add route. */
   protected add() {
     this.navSvc.navigateIfValid(this.router, this.route, this.addRoute());
   }
@@ -888,7 +882,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected readonly sanitizer = inject(DomSanitizer);
 
-  /** Trust cell renderer HTML so [innerHTML] won't strip styles. */
   protected callCellRenderer(row: any, col: ColDef): SafeHtml {
     const fn: any = col.cellRenderer;
     if (typeof fn === 'function') {
@@ -921,7 +914,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.editingCell.set(null);
   }
 
-  /** Clear both grid selection and the select-all cache */
   public clearAllSelection() {
     this.allSelected.set(false);
     this.allSelectedIds.set([]);
@@ -984,7 +976,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     console.log('selectedRows', selectedRows);
   }
 
-  /** Confirm and then delete selected rows */
   protected async confirmDelete(selectedRows?: any[]): Promise<boolean | void> {
     if (this.disableDelete()) {
       this.alertSvc.showError(this.config.messages.noDeletePermission);
@@ -1023,7 +1014,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public doConfirmMerge() {
     void this.confirmMerge();
   }
-  /** Warn about export scope, then export */
   protected async confirmExport(): Promise<void> {
     await this.actionsSvc.doExportCsv({
       dialogs: this.dialogs,
@@ -1047,7 +1037,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.store?.requestPersist();
   }
 
-  /** Triggers the import CSV flow (placeholder only). */
   public doImportCSV() {
     // Emit a simple signal so consumers can open their import UI
     this.importCSV.emit('open');
@@ -1117,10 +1106,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.filtersSvc.getSelectEditorOptions(col);
   }
 
-  /**
-   * Called when the user picks a value from a single-select dropdown editor.
-   * Immediately commits so the backend is updated without requiring Enter/blur.
-   */
   protected async onSelectChange(row: any, col: ColDef, newValue: any) {
     const resolvedValue = Array.isArray(newValue) ? newValue[0] : newValue;
     // Update the editing value first so commitEdit reads the correct value
@@ -1169,26 +1154,22 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
   }
 
-  /** Returns sorted available tag choices for the inline checkbox editor. */
   protected tagEditorChoices(col: ColDef): string[] {
     const opts = this.selectEditorOptions(col);
     return (opts?.choices.map((c) => c.value).filter(Boolean) ?? []).sort();
   }
 
-  /** tagEditorChoices filtered by the current tagSearch text. */
   protected filteredTagChoices(col: ColDef): string[] {
     const q = this.tagSearch().trim().toLowerCase();
     const all = this.tagEditorChoices(col);
     return q ? all.filter((t) => t.toLowerCase().includes(q)) : all;
   }
 
-  /** Whether a tag name is currently checked in the inline editor. */
   protected isTagChecked(tag: string): boolean {
     const v = this.editingValue();
     return Array.isArray(v) && v.includes(tag);
   }
 
-  /** Adds or removes a tag from the inline editor's working selection. */
   protected toggleTagInEditor(tag: string, checked: boolean) {
     const current: string[] = Array.isArray(this.editingValue()) ? [...this.editingValue()] : [];
     if (checked && !current.includes(tag)) {
@@ -1345,7 +1326,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.filtersSvc.getFilterValue(this.filterValues(), field);
   }
 
-  /** Utility: returns selected rows from grid */
   public getSelectedRows(): (Partial<RowOf<T>> & { id: string })[] {
     const currentRows = this.rows();
     const rowById = new Map<string, RowOf<T>>();
@@ -1370,7 +1350,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return Array.from(ids).map((id) => toRow(id)) as unknown as (Partial<RowOf<T>> & { id: string })[];
   }
 
-  /** Bridge for column-level click handlers */
   protected handleCellClick(row: any, col: ColDef) {
     if (col.isCellInteractive && !col.isCellInteractive(row)) return;
     if (typeof col.onCellClicked === 'function') {
@@ -1378,7 +1357,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
   }
 
-  /** Bridge for column-level double-click handlers */
   protected handleCellDblClick(row: any, col: ColDef) {
     if (col.isCellInteractive && !col.isCellInteractive(row)) return;
     if (this.isCellEditable(row, col)) {
@@ -1510,7 +1488,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.getFilterArray(field).includes(option);
   }
 
-  /** Whether the current page (displayed rows) is fully selected */
   // isPageFullySelected is computed
   protected isRowChecked(id: string): boolean {
     return this.allSelected() ? this.allSelectedIdSet().has(id) : this.selectedIdSet().has(id);
@@ -1567,7 +1544,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     });
   }
 
-  /** Called when a row is hovered. Used to track row ID. */
   protected onCellMouseOver(row: any) {
     this.lastRowHovered = row?.id;
   }
@@ -1710,12 +1686,10 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.store?.requestPersist();
   }
 
-  /** Opens edit form for row. */
   protected openEdit(id: string) {
     return this.view(id);
   }
 
-  /** Called when row is double-clicked. */
   public openEditOnDoubleClick(row: any) {
     this.openEdit(row?.id);
   }
@@ -1759,7 +1733,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     await this.loadPage(this.pageIndex() - 1);
   }
 
-  /** Triggers a full grid refresh via backend. */
   public async refresh(): Promise<void> {
     await this.loadPage(this.pageIndex());
   }
@@ -1856,7 +1829,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // reapplySelectionToVisible removed (selection handled via signals)
 
-  /** Cancels the fetch call and hides loader. */
   protected sendAbort() {
     this.gridSvc.abort();
   }
@@ -2043,7 +2015,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return id == null ? '' : String(id);
   }
 
-  /** Toggle archive mode and refresh/filter accordingly */
   protected toggleArchiveMode() {
     this.archiveMode.set(!this.archiveMode());
     // Clear any prior selection context when switching datasets
@@ -2166,7 +2137,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     await this.fetchCtrl.loadPage(index, append);
   }
 
-  /** Queue a full background export and return immediately. */
   private async queueFullExport(): Promise<void> {
     // Pass a very high endRow so the backend fetches all rows without a limit
     const options = this.dataSvc.buildGetAllOptions({
@@ -2262,7 +2232,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     );
   }
 
-  /** Navigates to view route for given ID or last hovered ID. */
   private view(id?: string) {
     const targetId = id || this.lastRowHovered;
     if (!targetId || this.disableView()) return;

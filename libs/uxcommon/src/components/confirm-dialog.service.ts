@@ -1,6 +1,3 @@
-/**
- * @file Reusable dialog service for confirm/alert/prompt using <dialog>.
- */
 import { signal, computed, Service } from '@angular/core';
 import type { PcIconNameType } from '@icons/icons.index';
 
@@ -55,15 +52,12 @@ export interface PromptOptions extends BaseDialogOptions {
 
 @Service()
 export class ConfirmDialogService {
-  /** Internal resolver for the pending promise */
   private _resolve: ((value?: any) => void) | null = null;
 
-  /** Stream of dialog state */
   public readonly stateSignal = signal<DialogState | null>(null);
 
   public readonly isOpenSignal = computed(() => this.stateSignal() !== null);
 
-  /** Open an alert dialog. Resolves when the user clicks OK or backdrop if allowed. */
   public alert(opts: BaseDialogOptions): Promise<void> {
     this.open({
       type: 'alert',
@@ -88,7 +82,6 @@ export class ConfirmDialogService {
     this.close();
   }
 
-  /** Open a confirm dialog. Resolves to true when confirmed, false when cancelled/backdrop. */
   public confirm(opts: BaseDialogOptions): Promise<boolean> {
     const v = opts.variant ?? 'neutral';
     const allowBackdropClose = opts.allowBackdropClose ?? v !== 'danger';
@@ -109,7 +102,6 @@ export class ConfirmDialogService {
     return new Promise<boolean>((resolve) => (this._resolve = resolve));
   }
 
-  /** Open a choose dialog with multiple choice buttons. Resolves with selected value, or null on cancel. */
   public choose<T>(opts: ChooseOptions<T>): Promise<T | null> {
     const v = opts.variant ?? 'neutral';
     this.open({
@@ -127,7 +119,6 @@ export class ConfirmDialogService {
     return new Promise<T | null>((resolve) => (this._resolve = resolve));
   }
 
-  /** For the host to know the default icon for a variant */
   public defaultIconFor(variant: DialogVariant): PcIconNameType {
     switch (variant) {
       case 'danger':
@@ -143,13 +134,11 @@ export class ConfirmDialogService {
     }
   }
 
-  /** Host calls these */
   public ok(payload?: unknown): void {
     this._resolve?.(payload ?? true);
     this.close();
   }
 
-  /** Open a prompt dialog. Resolves to string on OK, null on cancel/backdrop. */
   public prompt(opts: PromptOptions): Promise<string | null> {
     this.open({
       type: 'prompt',

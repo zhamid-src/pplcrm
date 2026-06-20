@@ -36,23 +36,18 @@ export class EmailList {
 
   @ViewChild('scrollContainer') public scrollContainer?: ElementRef<HTMLUListElement>;
 
-  /** Emit to parent so it can set selection in the store */
   public readonly emailSelected = output<EmailType>();
 
-  /** Emit composition actions up to the email client */
   public readonly reply = output<EmailType>();
   public readonly replyAll = output<EmailType>();
   public readonly forward = output<EmailType>();
 
-  /** Context menu state */
   public readonly showContextMenu = signal<boolean>(false);
   public readonly contextMenuPosition = signal<{ x: number; y: number }>({ x: 0, y: 0 });
   public readonly contextMenuEmail = signal<EmailType | null>(null);
 
-  /** Emails in the currently selected folder (reactive) */
   public readonly emails = this.store.emailsInSelectedFolder;
 
-  /** Currently selected folder ID (reactive) */
   public readonly currentFolderId = computed(() => this.store.currentSelectedFolderId());
 
   protected readonly isLoadingMore = this.store.isLoadingMore;
@@ -66,10 +61,8 @@ export class EmailList {
     }
   }
 
-  /** Sort order for the email list */
   public readonly sortOrder = signal<'newest' | 'oldest'>('newest');
 
-  /** Chronologically sorted email list */
   public readonly sortedEmails = computed(() => {
     const list = [...this.emails()];
     const order = this.sortOrder();
@@ -118,17 +111,14 @@ export class EmailList {
     });
   }
 
-  /** Is a given email id selected? */
   public isSelected(id: string): boolean {
     return this.store.currentSelectedEmailId() === id;
   }
 
-  /** Select an email and emit it to the parent component */
   public selectEmail(email: EmailType): void {
     this.emailSelected.emit(email);
   }
 
-  /** Handle right click to open context menu */
   public onContextMenu(event: MouseEvent, email: EmailType): void {
     event.preventDefault();
     this.selectEmail(email);

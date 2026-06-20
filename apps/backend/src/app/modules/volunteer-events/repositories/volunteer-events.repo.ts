@@ -7,9 +7,6 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
     super('volunteer_events');
   }
 
-  /**
-   * Get all volunteer events with the count of signed up volunteers.
-   */
   public async getAllEventsWithCount(
     input: {
       tenant_id: string;
@@ -103,9 +100,6 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
     };
   }
 
-  /**
-   * Get volunteer roster (shifts) for a specific event.
-   */
   public async getShiftsForEvent(input: { tenant_id: string; event_id: string }, trx?: Transaction<Models>) {
     const db = trx || (BaseRepository as any)['_db'];
     return db
@@ -131,9 +125,6 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
       .execute();
   }
 
-  /**
-   * Add a volunteer to an event shift.
-   */
   public async signupVolunteer(
     input: {
       tenant_id: string;
@@ -175,9 +166,6 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
     return db.insertInto('volunteer_shifts').values(row).returningAll().executeTakeFirst();
   }
 
-  /**
-   * Update a volunteer shift (e.g. status, hours, notes).
-   */
   public async updateShift(
     input: {
       tenant_id: string;
@@ -205,9 +193,6 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
       .executeTakeFirst();
   }
 
-  /**
-   * Remove/Delete a shift.
-   */
   public async deleteShift(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
     const db = trx || (BaseRepository as any)['_db'];
     const res = await db
@@ -218,9 +203,6 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
     return Number(res.numDeletedRows || 0) > 0;
   }
 
-  /**
-   * Get shift history for a person.
-   */
   public async getHistoryForPerson(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
     const db = trx || (BaseRepository as any)['_db'];
     return db
@@ -243,9 +225,6 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
       .execute();
   }
 
-  /**
-   * Get aggregated stats for a volunteer (person).
-   */
   public async getVolunteerStats(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
     const db = trx || (BaseRepository as any)['_db'];
 

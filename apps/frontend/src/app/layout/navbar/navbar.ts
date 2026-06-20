@@ -22,9 +22,6 @@ import { NotificationsService } from '../../services/api/notifications-service';
     '(window:keydown)': 'handleKeyDown($event)',
   },
 })
-/**
- * Top-level navigation bar displayed across the application.
- */
 export class Navbar implements OnDestroy {
   protected readonly emailActions = inject(EmailActionsStore);
   private readonly auth = inject(AuthService);
@@ -54,7 +51,6 @@ export class Navbar implements OnDestroy {
   }
   protected readonly searchBarVisible = signal(false);
 
-  /** Two-way bound string input for search bar. */
   protected readonly searchStr = signal('');
   protected readonly themeSvc = inject(ThemeService);
 
@@ -122,7 +118,6 @@ export class Navbar implements OnDestroy {
     }
   }
 
-  /** Triggered by (focusin) on the dropdown container – fires when the panel opens. */
   protected onNotificationOpen() {
     this.isPulsing.set(false);
     if (this.notifications().length === 0) {
@@ -207,20 +202,11 @@ export class Navbar implements OnDestroy {
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
-  /**
-   * Clears the current search input and resets the mobile search bar state.
-   */
   public clearSearch(): void {
     this.searchStr.set('');
     this.searchSvc.clearSearch();
   }
 
-  /**
-   * Listen for Ctrl + K or Cmd + K to open search.
-   * Prevents default browser behavior.
-   *
-   * @param event - Keyboard event triggered from the window.
-   */
   public handleKeyDown(event: KeyboardEvent): void {
     const isCtrlOrCmd = event.ctrlKey || event.metaKey;
     const isK = event?.key?.toLowerCase() === 'k';
@@ -235,9 +221,6 @@ export class Navbar implements OnDestroy {
     }
   }
 
-  /**
-   * Hide the search bar
-   */
   protected hideSearchBar(): void {
     this.searchBarVisible.set(false);
   }
@@ -246,59 +229,34 @@ export class Navbar implements OnDestroy {
     return this.fullscreen.isFullScreenMode();
   }
 
-  /**
-   * Hides the search bar when it loses focus and the input is empty.
-   */
   protected onBlurSearchBar() {
     if (!this.searchStr().length) {
       this.hideSearchBar();
     }
   }
 
-  /**
-   * Handles Enter key in the search input to trigger an immediate search
-   * (bypasses debounce).
-   */
   protected onSearchEnter(): void {
     this.searchSvc.doSearchImmediate(this.searchStr());
   }
 
-  /**
-   * Handles user input from the search field.
-   * Updates the `searchStr` property and triggers the search logic.
-   *
-   * @param event - The input event triggered when the user types in the search box.
-   */
   protected onSearchInput(event: Event) {
     const input = event.target as HTMLInputElement;
     this.searchStr.set(input.value);
     this.search();
   }
 
-  /**
-   * Triggers the search using the current value in the search bar.
-   */
   protected search(): void {
     this.searchSvc.doSearch(this.searchStr());
   }
 
-  /**
-   * Show the search bar
-   */
   protected showSearchBar(): void {
     this.searchBarVisible.set(true);
   }
 
-  /**
-   * Signs the current user out and clears auth tokens.
-   */
   protected signOut(): void {
     this.auth.signOut();
   }
 
-  /**
-   * Closes any open dropdowns by blurring the active element.
-   */
   protected closeDropdown(): void {
     const activeEl = document.activeElement as HTMLElement | null;
     if (activeEl) {
@@ -311,23 +269,14 @@ export class Navbar implements OnDestroy {
     this.fullscreen.toggleFullScreen();
   }
 
-  /**
-   * Toggles the sidebar open/closed in mobile view.
-   */
   protected toggleMobile(): void {
     this.sideBarSvc.toggleMobile();
   }
 
-  /**
-   * Show or hide the search bar
-   */
   protected toggleSearch(): void {
     this.searchBarVisible.set(!this.searchBarVisible());
   }
 
-  /**
-   * Switches the visual theme between light and dark mode.
-   */
   protected toggleTheme(): void {
     this.themeSvc.toggleTheme();
   }

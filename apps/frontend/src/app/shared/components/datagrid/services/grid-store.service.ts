@@ -200,12 +200,10 @@ export class GridStoreService {
     this._getRowId = fn;
   }
 
-  /** Force a persistence attempt, e.g., after pinning/order changes. */
   requestPersist() {
     this._persistTick.update((v) => (v + 1) | 0);
   }
 
-  /** Public: load persisted state immediately (after attach + setPersistKey). */
   loadState() {
     const key = this._persistKey();
     if (!key) return;

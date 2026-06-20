@@ -1,6 +1,3 @@
-/**
- * @file Grid component for listing households with counts and tags.
- */
 import { Component, inject, signal, input, viewChild, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
@@ -141,7 +138,6 @@ export class HouseholdsGrid implements OnInit {
     return map[key] || '';
   };
 
-  /** Column definitions for the households datagrid. */
   protected col: ColDef[] = [
     {
       field: 'persons_count',
@@ -245,10 +241,6 @@ export class HouseholdsGrid implements OnInit {
     this.grid()?.openEditOnDoubleClick(event?.data ?? event);
   }
 
-  /**
-   * Override delete to warn the user when selected households have people attached.
-   * Offers three choices: delete people too, keep people and remove address, or cancel.
-   */
   protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
     const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
       id: string;

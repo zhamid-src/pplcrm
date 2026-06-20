@@ -9,10 +9,6 @@ const verifier = createVerifier({
   ignoreExpiration: false,
 });
 
-/**
- * Validates a JWT string and returns its parsed payload.
- * Throws UnauthorizedError on expiration or invalid signature.
- */
 export async function verifyAuthToken(token: string): Promise<IAuthKeyPayload> {
   try {
     // fast-jwt verify returns the payload or throws

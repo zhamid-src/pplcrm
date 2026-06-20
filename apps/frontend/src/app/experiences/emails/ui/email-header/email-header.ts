@@ -1,6 +1,3 @@
-/**
- * @file Component displaying header information for an email.
- */
 import { DatePipe, UpperCasePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -24,7 +21,6 @@ export class EmailHeader {
   private alertSvc = inject(AlertService);
   private store = inject(EmailsStore);
 
-  /** Get header data from store */
   protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
   protected isClosed = signal(false);
   protected isFavourite = signal(false);
@@ -33,10 +29,8 @@ export class EmailHeader {
   public readonly reply = output<void>();
   public readonly replyAll = output<void>();
 
-  /** Email to display */
   public email = input.required<EmailType>();
 
-  /** Whether the email body is currently expanded to take over the window (except sidebar). */
   public isExpanded = this.store.isBodyExpanded;
 
   constructor() {
@@ -53,7 +47,6 @@ export class EmailHeader {
     return this.isFavourite() ? 'star-filled' : 'star';
   }
 
-  /** Handle delete action */
   protected async deleteEmail() {
     try {
       await this.store.deleteEmail(this.email().id);
@@ -63,30 +56,25 @@ export class EmailHeader {
     }
   }
 
-  /** Get all recipients combined */
   protected getAllRecipients(): any[] {
     return [...this.getToRecipients(), ...this.getCcRecipients(), ...this.getBccRecipients()];
   }
 
-  /** Get BCC recipients from header data */
   protected getBccRecipients(): any[] {
     const header = this.headerData();
     return header?.email?.bcc_list || [];
   }
 
-  /** Get CC recipients from header data */
   protected getCcRecipients(): any[] {
     const header = this.headerData();
     return header?.email?.cc_list || [];
   }
 
-  /** Get formatted date from header data */
   protected getDateSent(): Date | null {
     const header = this.headerData();
     return header?.email?.date_sent ? new Date(header.email.date_sent) : null;
   }
 
-  /** Get additional header information */
   protected getHeaderInfo() {
     const header = this.headerData();
     const email = this.email();
@@ -105,7 +93,6 @@ export class EmailHeader {
     };
   }
 
-  /** Get TO recipients from header data */
   protected getToRecipients(): any[] {
     const header = this.headerData();
     return header?.email?.to_list || [];
@@ -115,9 +102,6 @@ export class EmailHeader {
     return this.isFolderTrash() ? 'Delete Permanently' : 'Move to Trash';
   }
 
-  /**
-   * Handle Escape key to collapse the expanded view when active.
-   */
   protected handleDocumentKeydown(ev: KeyboardEvent): void {
     if (ev.key === 'Escape' && this.isExpanded()) {
       this.store.toggleBodyExpanded();
@@ -126,23 +110,19 @@ export class EmailHeader {
     }
   }
 
-  /** Handle forward action */
   protected handleForward() {
     this.forward.emit();
   }
 
-  /** Handle mark as unread action */
   protected handleMarkAsUnread() {
     void this.store.toggleEmailReadStatus(this.email().id, false);
     this.store.selectEmail(null);
   }
 
-  /** Handle reply action */
   protected handleReply() {
     this.reply.emit();
   }
 
-  /** Handle reply all action */
   protected handleReplyAll() {
     this.replyAll.emit();
   }
@@ -157,7 +137,6 @@ export class EmailHeader {
     return fid === ALL_FOLDERS.SPAM;
   }
 
-  /** Mark the email as Spam */
   protected async markAsSpam() {
     try {
       await this.store.moveToFolder(this.email().id, ALL_FOLDERS.SPAM);
@@ -169,7 +148,6 @@ export class EmailHeader {
     }
   }
 
-  /** Move the email back to Inbox */
   protected async moveToInbox() {
     try {
       await this.store.moveToFolder(this.email().id, ALL_FOLDERS.INBOX);
@@ -189,7 +167,6 @@ export class EmailHeader {
     this.store.restoreFromTrash(this.email().id);
   }
 
-  /** Toggle email closed status */
   protected async toggleClosed() {
     const email = this.email();
     const currentStatus = email.status || 'open';
@@ -207,10 +184,6 @@ export class EmailHeader {
     }
   }
 
-  /**
-   * Toggle the expanded state of the email body.
-   * When expanded, the email body fills the main content area, hiding the list and comments.
-   */
   protected toggleExpand(): void {
     this.store.toggleBodyExpanded();
   }

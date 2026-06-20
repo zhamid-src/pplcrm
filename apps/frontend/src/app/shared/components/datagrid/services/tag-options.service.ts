@@ -7,20 +7,12 @@ export class TagOptionsService {
   private readonly tagsSvc = inject(TagsService);
   private readonly tagPaletteSvc = inject(TagPaletteService);
 
-  /**
-   * Live arrays — mutated in-place so any consumer holding a reference
-   * automatically sees updated values without reassignment.
-   */
   public readonly tagNames: string[] = [];
   public readonly issueNames: string[] = [];
 
   private tagPending: Promise<string[]> | null = null;
   private issuePending: Promise<string[]> | null = null;
 
-  /**
-   * Bust the cache and re-fetch fresh names from the server.
-   * Mutates the live arrays in-place so all references update automatically.
-   */
   async invalidate(type?: 'tag' | 'issue'): Promise<void> {
     if (!type || type === 'tag') {
       this.tagPending = null;
@@ -32,10 +24,6 @@ export class TagOptionsService {
     }
   }
 
-  /**
-   * Returns the cached names, fetching from the server on first call.
-   * Subsequent calls return immediately from the live array.
-   */
   async getTagNames(type: 'tag' | 'issue' = 'tag'): Promise<string[]> {
     const live = type === 'issue' ? this.issueNames : this.tagNames;
     if (live.length > 0) return live;

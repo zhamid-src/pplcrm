@@ -10,44 +10,20 @@ import { ALERTTYPE, AlertService } from './alert-service';
   templateUrl: './alerts.html',
 })
 export class Alerts {
-  /** Injected alert service to handle alert logic */
   protected alertSvc = inject(AlertService);
 
-  /**
-   * The position of the alert container.
-   * Can be 'top', 'bottom', or 'relative' to context.
-   */
   public position = input<'top' | 'bottom' | 'relative'>('bottom');
 
-  /**
-   * Handles click on the OK button of an alert.
-   * Triggers its callback (if defined) and dismisses the alert.
-   *
-   * @param id - The alert iod to identify the alert
-   */
   protected OKBtnClick(id: string): void {
     this.alertSvc.OKBtnCallback(id);
     this.alertSvc.dismiss(id);
   }
 
-  /**
-   * Returns a list of active alerts, reversed if position is 'top'.
-   * Used to control the visual order of alerts.
-   *
-   * @returns Array of active alerts
-   */
-  /** Reactive alerts list — derived from the service signal so template reads are always fresh */
   protected readonly alerts = computed(() => {
     const list = this.alertSvc.alertList();
     return this.position() === 'top' ? list.slice().reverse() : list;
   });
 
-  /**
-   * Handles click on the second button of an alert.
-   * Triggers its callback (if defined) and dismisses the alert.
-   *
-   * @param text - The alert text to identify the alert
-   */
   protected btn2Click(id: string): void {
     this.alertSvc.btn2Callback(id);
     this.alertSvc.dismiss(id);
@@ -61,12 +37,6 @@ export class Alerts {
     return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
   }
 
-  /**
-   * Returns the icon name associated with the given alert type.
-   *
-   * @param type - The type of the alert
-   * @returns The corresponding icon name
-   */
   protected icon(type: ALERTTYPE) {
     return type === 'success'
       ? 'check-circle'

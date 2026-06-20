@@ -2,10 +2,7 @@ import { Component, OnInit, computed, inject, input, resource, signal, viewChild
 import { ActivatedRoute, Router } from '@angular/router';
 
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import {
-  AddListType,
-  UpdateListType,
-} from '../../../../../../../libs/common/src';
+import { AddListType, UpdateListType } from '../../../../../../../libs/common/src';
 import { HouseholdsService } from '@experiences/households/services/households-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
@@ -24,7 +21,6 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { QueryBuilderField, QueryBuilderComponent } from '@frontend/shared/components/query-builder/query-builder';
 import { QueryBuilderNode, QueryBuilderGroupNode, cloneQueryBuilderNode } from '../../../../../../../libs/common/src';
 
-/** Grid component for filtering households when creating lists */
 @Component({
   selector: 'pc-household-filter-grid',
   imports: [DataGrid],
@@ -86,7 +82,6 @@ export class HouseholdFilterGrid {
   }
 }
 
-/** Grid component for filtering people when creating lists */
 @Component({
   selector: 'pc-people-filter-grid',
   imports: [DataGrid],
@@ -151,7 +146,6 @@ export class PeopleFilterGrid {
   }
 }
 
-/** Component for creating new lists. Allows building static or dynamic lists using filters. */
 @Component({
   selector: 'pc-list-detail',
   imports: [ReactiveFormsModule, FormActions, PeopleFilterGrid, HouseholdFilterGrid, Icon, QueryBuilderComponent],
@@ -319,7 +313,6 @@ export class ListDetail implements OnInit {
     }
   });
 
-  /** Full rule evaluation against a row's tags */
   protected externalRowFilter = (row: any) => {
     const tags: string[] = Array.isArray(row?.tags) ? row.tags.filter(Boolean) : [];
     return this.evalGroupWithRow(this.rulesRoot(), new Set(tags), row);
@@ -372,7 +365,6 @@ export class ListDetail implements OnInit {
     if (s > 1) this.step.set((s - 1) as unknown as 1 | 2 | 3 | 4);
   }
 
-  /** Returns only positive (equals) tags from the rule tree for preview */
   protected flattenPositiveTags(group: QueryBuilderGroupNode): string[] {
     const out: string[] = [];
     const walk = (rules: QueryBuilderNode[]) => {
@@ -393,7 +385,6 @@ export class ListDetail implements OnInit {
     this.step.set(step);
   }
 
-  /** Navigation helpers for wizard */
   protected next() {
     const s = this.step();
     if (s < 4) this.step.set((s + 1) as unknown as 1 | 2 | 3 | 4);
@@ -405,7 +396,6 @@ export class ListDetail implements OnInit {
     this.householdGrid()?.triggerFilterChanged();
   }
 
-  /** Save the list using selection for static, or filters for dynamic */
   protected save(done: (() => void) | Event) {
     let doneFn: () => void = () => {};
     if (done instanceof Event) {
@@ -573,7 +563,6 @@ export class ListDetail implements OnInit {
     return item.kind === 'rule';
   }
 
-  /** Validate rules: every rule must have a value unless the operator is valueless */
   private validateRules(): string | null {
     let invalid = false;
     const walk = (rules: QueryBuilderNode[]) => {

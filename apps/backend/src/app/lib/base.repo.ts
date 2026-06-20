@@ -1,9 +1,5 @@
 // tsco:ignore
 
-/**
- * Shared base repository that wraps Kysely and provides common CRUD helpers.
- * Specific repositories for individual tables extend this class.
- */
 import { INow, QueryBuilderGroupNode } from '../../../../../libs/common/src';
 
 import { promises as fs } from 'fs';
@@ -43,21 +39,8 @@ const dialect = new PostgresDialect({
   pool: new Pool(env.db),
 });
 
-/** Helper types for the DRY selectors */
 type ColName<TB extends keyof Models> = keyof Models[TB] & string;
 
-/**
- * The base operator class that implements regular db functions.
- * Other tables should extend this class. There is generally a
- * one to one mapping between dB table and repository class.
- *
- * @example
- * export class PersonsRepo extends BaseRepository<'persons'> {
- *   constructor() {
- *     super('persons');
- *   }
- * }
- */
 export class BaseRepository<T extends keyof Models> {
   private static _db = new Kysely<Models>({ dialect });
   private static _migrationFolder = path.resolve(process.cwd(), 'apps/backend/src/app/_migrations');
@@ -68,9 +51,6 @@ export class BaseRepository<T extends keyof Models> {
 
   protected readonly table: T;
 
-  /**
-   * Static migrator object for running Kysely migrations.
-   */
   public static migrator = new Migrator({
     db: BaseRepository._db,
     provider: new FileMigrationProvider({
@@ -80,11 +60,6 @@ export class BaseRepository<T extends keyof Models> {
     }),
   });
 
-  /**
-   * Creates a repository instance scoped to a specific table.
-   *
-   * @param tableIn - The table this repository should operate on.
-   */
   constructor(tableIn: T) {
     this.table = tableIn;
   }
@@ -97,24 +72,15 @@ export class BaseRepository<T extends keyof Models> {
     return BaseRepository._db;
   }
 
-  /**
-   * Insert a single row.
-   */
   public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
     const results = await this.addMany({ rows: [input.row] }, trx);
     return results[0];
   }
 
-  /**
-   * Insert multiple rows.
-   */
   public async addMany(input: { rows: OperationDataType<T, 'insert'>[] }, trx?: Transaction<Models>) {
     return this.getInsert(trx).values(input.rows).returningAll().execute();
   }
 
-  /**
-   * Insert a row or return an existing one based on conflict column.
-   */
   public async addOrGet<K extends keyof Models[T] & string>(
     input: {
       row: OperationDataType<T, 'insert'>;
@@ -143,9 +109,6 @@ export class BaseRepository<T extends keyof Models> {
       .executeTakeFirst() as unknown as Selectable<Models[T]> | undefined;
   }
 
-  /**
-   * Count number of rows for the given tenant.
-   */
   public async count(tenant_id: TypeTenantId<T>, trx?: Transaction<Models>): Promise<number> {
     let query = this.getSelect(trx).select(({ fn }) => [fn.countAll<number>().as('count')]);
     if (this.table !== 'tenants') {
@@ -155,16 +118,10 @@ export class BaseRepository<T extends keyof Models> {
     return Number(result?.count ?? 0);
   }
 
-  /**
-   * Delete a single row by ID.
-   */
   public async delete(input: { tenant_id: TypeTenantId<T>; id: TypeId<T> }, trx?: Transaction<Models>) {
     return this.deleteMany({ tenant_id: input.tenant_id, ids: [input.id] }, trx);
   }
 
-  /**
-   * Delete multiple rows by ID(s).
-   */
   public async deleteMany(input: { tenant_id: TypeTenantId<T>; ids: TypeId<T>[] }, trx?: Transaction<Models>) {
     // Convert to numbers if needed
     const numericIds = input.ids;
@@ -181,18 +138,12 @@ export class BaseRepository<T extends keyof Models> {
     return Number(result?.numDeletedRows ?? 0) > 0;
   }
 
-  /**
-   * Check whether any row exists that matches the key and column.
-   */
   public async exists(input: { key: string; column: keyof Models[T] }, trx?: Transaction<Models>): Promise<boolean> {
     const columnRef = `${String(this.table)}.${String(input.column)}` as ReferenceExpression<Models, T>;
     const result = await this.getSelect(trx).where(columnRef, '=', input.key).limit(1).execute();
     return result.length > 0;
   }
 
-  /**
-   * Return top 3 rows matching key for autocomplete.
-   */
   public find(
     input: {
       tenant_id: TypeTenantId<T>;
@@ -218,9 +169,6 @@ export class BaseRepository<T extends keyof Models> {
     return query.limit(3).execute();
   }
 
-  /**
-   * Get all rows for a tenant, with optional filtering.
-   */
   public getAll(
     input: {
       tenant_id: TypeTenantId<T>;
@@ -235,16 +183,6 @@ export class BaseRepository<T extends keyof Models> {
     return query.execute();
   }
 
-  /**
-   * This is a generic version of getAllWithCounts that works for any table.
-   * It simply returns all rows along with the total count of rows.
-   * Classes that extend this should override this method to provide
-   * more specific implementations if needed.
-   *
-   * @param input
-   * @param trx
-   * @returns
-   */
   public async getAllWithCounts(
     input: {
       tenant_id: TypeTenantId<T>;
@@ -256,9 +194,6 @@ export class BaseRepository<T extends keyof Models> {
     return { rows, count: rows.length };
   }
 
-  /** ----------------------------------------------------------------
-   * DRY helpers for selecting by column + tenant
-   * ---------------------------------------------------------------- */
   protected selectBy<C extends ColName<T>>(
     column: C,
     input: {
@@ -303,23 +238,14 @@ export class BaseRepository<T extends keyof Models> {
     return this.selectBy(column, input, trx).execute();
   }
 
-  /**
-   * Return the current timestamp from the DB.
-   */
   public async nowTime(): Promise<QueryResult<INow>> {
     return (await sql`select now()::timestamp`.execute(BaseRepository._db)) as QueryResult<INow>;
   }
 
-  /**
-   * Start a transaction.
-   */
   public transaction() {
     return BaseRepository._db.transaction();
   }
 
-  /**
-   * Update row by ID with new data.
-   */
   public async update(
     input: {
       tenant_id: TypeTenantId<T>;
@@ -340,9 +266,6 @@ export class BaseRepository<T extends keyof Models> {
     return query.returningAll().executeTakeFirst();
   }
 
-  /**
-   * Apply filtering, selection, and pagination options to a query.
-   */
   protected applyOptions(query: SelectQueryBuilder<Models, T, unknown>, options?: QueryParams<T>) {
     const opts: any = options ?? {};
     query = options?.columns
@@ -429,9 +352,6 @@ export class BaseRepository<T extends keyof Models> {
     return query;
   }
 
-  /**
-   * Helper to dynamically apply query operators to a where clause based on the filter model.
-   */
   protected applyColumnFilter(query: any, column: string, filter: { op?: string; value?: any }) {
     if (!filter) {
       return query;
@@ -472,9 +392,6 @@ export class BaseRepository<T extends keyof Models> {
     }
   }
 
-  /**
-   * Helper to dynamically apply query operators to a custom SQL expression based on the filter model.
-   */
   protected applyCastColumnFilter(query: any, sqlExpression: any, filter: { op?: string; value?: any }) {
     if (!filter) {
       return query;
@@ -513,60 +430,33 @@ export class BaseRepository<T extends keyof Models> {
     }
   }
 
-  /**
-   * Normalize a raw search string for use in an ILIKE pattern.
-   * Converts user-typed * wildcards to SQL % wildcards and always wraps
-   * the result with % on both ends so it behaves as a "contains" search.
-   * User-supplied * adds positional wildcards within the pattern.
-   *
-   * @example
-   *   normalizeSearch('zee')        → '%zee%'
-   *   normalizeSearch('zee*')       → '%zee%%'   (Postgres collapses to '%zee%')
-   *   normalizeSearch('zee*@gmail') → '%zee%@gmail%'
-   *   normalizeSearch('*zee')       → '%%zee%'   (collapses to '%zee%')
-   */
   protected normalizeSearch(raw: string | null | undefined): string | undefined {
     if (!raw || !raw.trim()) return undefined;
     const lower = raw.trim().toLowerCase().replace(/\*/g, '%');
     return `%${lower}%`;
   }
 
-  /**
-   * Get delete query builder for this table.
-   */
   protected getDelete(trx?: Transaction<Models>): DeleteQueryBuilder<Models, T, DeleteResult> {
     return (trx
       ? trx.deleteFrom(this.table)
       : BaseRepository._db.deleteFrom(this.table)) as unknown as DeleteQueryBuilder<Models, T, DeleteResult>;
   }
 
-  /**
-   * Get insert query builder for this table.
-   */
   protected getInsert(trx?: Transaction<Models>): InsertQueryBuilder<Models, T, InsertResult> {
     return trx ? trx.insertInto(this.table) : BaseRepository._db.insertInto(this.table);
   }
 
-  /**
-   * Get select query builder for this table.
-   */
   protected getSelect(trx?: Transaction<Models>): SelectQueryBuilder<Models, T, Selectable<Models[T]>> {
     const ret = trx ? trx.selectFrom(this.table) : BaseRepository._db.selectFrom(this.table);
 
     return ret as unknown as SelectQueryBuilder<Models, T, Selectable<Models[T]>>;
   }
 
-  /**
-   * Get select query builder with options applied.
-   */
   protected getSelectWithColumns(options?: QueryParams<T>, trx?: Transaction<Models>) {
     const query = this.getSelect(trx);
     return this.applyOptions(query, options);
   }
 
-  /**
-   * Get update query builder for this table.
-   */
   public getUpdate(trx?: Transaction<Models>): UpdateQueryBuilder<Models, T, T, UpdateResult> {
     const ret = trx ? trx.updateTable(this.table) : BaseRepository._db.updateTable(this.table);
     return ret as unknown as UpdateQueryBuilder<Models, T, T, UpdateResult>;
@@ -690,10 +580,6 @@ export class BaseRepository<T extends keyof Models> {
   }
 }
 
-/**
- * Extended version of QueryParams for joined tables with looser typing.
- * TODO: fix it
- */
 export type JoinedQueryParams = {
   searchStr?: string;
   startRow?: number;
@@ -716,10 +602,6 @@ export type JoinedQueryParams = {
       };
 };
 
-/**
- * The options that can be passed to query the database,
- * allowing you to select columns, limit, offset, order, and group the results.
- */
 export type QueryParams<T extends keyof Models> = {
   searchStr?: string;
   startRow?: number;
@@ -736,9 +618,6 @@ export type QueryParams<T extends keyof Models> = {
   orderBy?: OrderByExpression<Models, T, object>[];
 };
 
-/**
- * Helper to create a typed reference expression to a column in a table.
- */
 export function ref<TTable extends keyof Models, TColumn extends keyof Models[TTable]>(
   table: TTable,
   column: TColumn,

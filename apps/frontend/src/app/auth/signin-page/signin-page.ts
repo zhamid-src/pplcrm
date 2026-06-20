@@ -7,27 +7,9 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Icon } from '@icons/icon';
 
-
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
-/**
- * Sign-in page component providing comprehensive user authentication interface.
- *
- * This component handles the complete sign-in flow including:
- * - Signal-based form validation for email and password
- * - Password visibility toggle for better UX
- * - Token persistence options (localStorage vs sessionStorage)
- * - Loading states and error handling
- * - Automatic redirection for already authenticated users
- * - 2FA verification flow with OTP passcode
- *
- * @example
- * ```html
- * <!-- Used in routing -->
- * <pc-login></pc-login>
- * ```
- */
 @Component({
   selector: 'pc-login',
   imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
@@ -40,7 +22,6 @@ export class SignInPage implements OnInit {
   private readonly tokenService = inject(TokenService);
   private readonly route = inject(ActivatedRoute);
 
-  /** Signal indicating whether login loading is in progress */
   private _loading = createLoadingGate();
 
   protected readonly verificationPending = signal<boolean>(false);
@@ -49,22 +30,17 @@ export class SignInPage implements OnInit {
 
   protected isLoading = this._loading.visible;
 
-  /** Reference to token persistence setting (localStorage vs session) */
   protected persistence = this.tokenService.getPersistence();
 
-  /** Signal indicating whether 2FA verification is currently required */
   protected readonly requires2FA = signal<boolean>(false);
 
-  /** Email address for the pending 2FA verification */
   protected readonly emailFor2FA = signal<string>('');
 
-  /** Model capturing credentials */
   protected readonly credentials = signal({
     email: '',
     password: '',
   });
 
-  /** Signal-based form with validations */
   public readonly form = form(this.credentials, (p) => {
     required(p.email);
     email(p.email);
@@ -72,20 +48,15 @@ export class SignInPage implements OnInit {
     minLength(p.password, 8);
   });
 
-  /** Model capturing OTP data */
   protected readonly otpData = signal({
     code: '',
   });
 
-  /** Signal-based OTP form with validations */
   public readonly otpForm = form(this.otpData, (p) => {
     required(p.code);
     pattern(p.code, /^\d{6}$/);
   });
 
-  /**
-   * Redirects to the dashboard if an authenticated user revisits the sign-in page.
-   */
   constructor() {
     effect(() => {
       const user = this.authService.getUserSignal();
@@ -114,10 +85,6 @@ export class SignInPage implements OnInit {
     return this.otpForm.code();
   }
 
-  /**
-   * Submits the form to perform user sign-in.
-   * Shows error if form is invalid or authentication fails.
-   */
   public async signIn(event?: Event) {
     event?.preventDefault();
 
@@ -182,9 +149,6 @@ export class SignInPage implements OnInit {
     });
   }
 
-  /**
-   * Submits the 2FA verification code.
-   */
   public async verify2FA(event?: Event) {
     event?.preventDefault();
 
@@ -219,9 +183,6 @@ export class SignInPage implements OnInit {
     });
   }
 
-  /**
-   * Cancels the 2FA flow and goes back to standard credentials sign-in.
-   */
   public cancel2FA() {
     this.requires2FA.set(false);
     this.emailFor2FA.set('');
@@ -242,10 +203,6 @@ export class SignInPage implements OnInit {
     }
   }
 
-  /**
-   * Toggles whether to persist auth token in localStorage or sessionStorage.
-   * @param target - The checkbox input element
-   */
   public togglePersistence(target: EventTarget | null) {
     if (!target) return;
     this.tokenService.setPersistence((target as HTMLInputElement).checked);

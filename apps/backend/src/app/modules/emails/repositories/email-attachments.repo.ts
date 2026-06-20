@@ -1,14 +1,8 @@
-/**
- * Repository for accessing email attachments.
- */
 import { sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
 import { HasRow } from '../../../../../../../libs/common/src/lib/emails';
 
-/**
- * Data access for the `email_attachments` table.
- */
 export class EmailAttachmentsRepo extends BaseRepository<'email_attachments'> {
   constructor() {
     super('email_attachments');
@@ -22,12 +16,10 @@ export class EmailAttachmentsRepo extends BaseRepository<'email_attachments'> {
     return q.execute();
   }
 
-  /** Get attachments for a given email ordered by position */
   public getByEmailId(tenant_id: string, email_id: string) {
     return this.getManyBy('email_id', { tenant_id, value: email_id });
   }
 
-  /** Subquery: attachment counts grouped by email_id (for joins) */
   public getCountByEmails(tenant_id: string) {
     return this.getSelect()
       .select(['email_id'])
@@ -46,7 +38,6 @@ export class EmailAttachmentsRepo extends BaseRepository<'email_attachments'> {
       .as('ea');
   }
 
-  /** Fast existence check (no count) */
   public async hasAttachment(tenant_id: string, email_id: string): Promise<boolean> {
     const row = await this.getSelect()
       .select(({ val }) => val(1).as('one'))

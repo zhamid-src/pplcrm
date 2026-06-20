@@ -1,4 +1,3 @@
-/** Basic existence test for ListsService exports */
 import * as exported from './lists-service';
 
 describe('lists-service', () => {

@@ -1,6 +1,3 @@
-/**
- * Component allowing a user to set a new password using a reset code.
- */
 import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink, ActivatedRoute, Router } from '@angular/router';
@@ -18,53 +15,37 @@ import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/au
   imports: [DecimalPipe, FormField, RouterLink, AuthLayoutComponent, Icon],
   templateUrl: './new-password-page.html',
 })
-/**
- * Page component presenting a form to choose a new password.
- */
 export class NewPasswordPage implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly authService = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
-  /** loading state to disable UI and show loading indication */
   private _loading = createLoadingGate();
 
-  /** Reset code extracted from query params */
   private code: string | null = null;
 
-  /** Error state to control UI feedback */
   protected readonly error = signal(false);
   protected readonly isLoading = this._loading.visible;
 
-  /** Utilities for password breach checking */
   protected passwordBreachNumber = passwordBreachNumber;
   protected passwordInBreach = passwordInBreach;
 
-  /** Success message to show after successful password reset */
   protected success: string | undefined;
 
-  /** Backing payload signal */
   protected readonly payload = signal({
     password: '',
   });
 
-  /** Signal-based form with validations */
   public readonly form = form(this.payload, (p) => {
     required(p.password);
     minLength(p.password, 8);
   });
 
-  /**
-   * Get the password form control.
-   */
   public get password() {
     return this.form.password();
   }
 
-  /**
-   * Initializes component state by reading the reset code from the URL.
-   */
   public async ngOnInit() {
     const code = this.route.snapshot.queryParamMap.get('code');
     console.log(code);
@@ -77,10 +58,6 @@ export class NewPasswordPage implements OnInit {
     this.code = code;
   }
 
-  /**
-   * Submit the new password to the server.
-   * Validates the input and shows success or error messages accordingly.
-   */
   public async submit(event?: Event) {
     event?.preventDefault();
 

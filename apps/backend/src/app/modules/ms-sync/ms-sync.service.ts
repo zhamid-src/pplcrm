@@ -1,8 +1,3 @@
-/**
- * @file Microsoft Graph email sync service.
- * Fetches emails from the Microsoft Graph API and ingests them into the
- * database using the shared EmailIngesterService.
- */
 import { Client } from '@microsoft/microsoft-graph-client';
 import { Kysely } from 'kysely';
 import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
@@ -12,9 +7,6 @@ import { EmailIngesterService, IngestableEmail } from '../emails/services/email-
 
 const MAX_MESSAGES_PER_SYNC = 50;
 
-/**
- * Helper to call Microsoft Graph API and automatically retry if rate limited (429).
- */
 async function graphCallWithRetry<T>(callFn: () => Promise<T>, maxRetries = 3): Promise<T> {
   let attempt = 0;
   while (true) {
@@ -42,10 +34,6 @@ async function graphCallWithRetry<T>(callFn: () => Promise<T>, maxRetries = 3): 
   }
 }
 
-/**
- * Service that pulls emails from Microsoft Graph API and stores them
- * in the existing pplcrm email tables using EmailIngesterService.
- */
 export class MsSyncService {
   private readonly ingester: EmailIngesterService;
 
@@ -56,12 +44,6 @@ export class MsSyncService {
     this.ingester = new EmailIngesterService(db, 'ms');
   }
 
-  /**
-   * Performs an incremental sync for a user.
-   * Uses the delta link (if available) to only fetch new/changed messages.
-   *
-   * @returns Number of new emails inserted
-   */
   public async syncUser(userId: string, tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
     const accessToken = await this.oauthSvc.getValidToken(userId);
     const client = this.buildGraphClient(accessToken);
@@ -184,16 +166,10 @@ export class MsSyncService {
     return { inserted };
   }
 
-  /**
-   * Deletes all local emails synced from MS Graph for this tenant.
-   */
   public async removeAllLocalEmails(tenantId: string): Promise<void> {
     await this.ingester.removeAllLocalEmails(tenantId);
   }
 
-  /**
-   * Maps a Graph message to the IngestableEmail format and delegates to EmailIngesterService.
-   */
   private async saveMessage(
     client: Client,
     msg: any,
@@ -270,7 +246,6 @@ export class MsSyncService {
     return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
   }
 
-  /** Builds an authenticated Microsoft Graph client */
   private buildGraphClient(accessToken: string): Client {
     return Client.init({
       authProvider: (done) => done(null, accessToken),

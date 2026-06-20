@@ -29,9 +29,6 @@ export interface LinkBrandingData {
 }
 
 export class SendGridWhitelabelService {
-  /**
-   * Check if a real API key is present and appears valid.
-   */
   private isValidApiKey(apiKey?: string): boolean {
     if (!apiKey) return false;
     const trimmed = apiKey.trim();
@@ -39,9 +36,6 @@ export class SendGridWhitelabelService {
     return trimmed.length > 20 && trimmed.startsWith('SG.');
   }
 
-  /**
-   * Make a request to the SendGrid v3 API.
-   */
   private async request<T = any>(
     path: string,
     options: {
@@ -80,9 +74,6 @@ export class SendGridWhitelabelService {
     return response.json();
   }
 
-  /**
-   * Authenticate a domain on SendGrid.
-   */
   public async createDomainAuthentication(domain: string, apiKey?: string, subuser?: string): Promise<DomainAuthData> {
     if (!this.isValidApiKey(apiKey)) {
       // Return simulated/mock domain auth records
@@ -144,9 +135,6 @@ export class SendGridWhitelabelService {
     }
   }
 
-  /**
-   * Set up Link Branding on SendGrid.
-   */
   public async createLinkBranding(domain: string, apiKey?: string, subuser?: string): Promise<LinkBrandingData> {
     if (!this.isValidApiKey(apiKey)) {
       const mockId = Math.floor(100000 + Math.random() * 900000);
@@ -193,9 +181,6 @@ export class SendGridWhitelabelService {
     }
   }
 
-  /**
-   * Validate a domain authentication status on SendGrid.
-   */
   public async validateDomainAuthentication(
     id: number,
     apiKey?: string,
@@ -243,9 +228,6 @@ export class SendGridWhitelabelService {
     }
   }
 
-  /**
-   * Validate link branding status on SendGrid.
-   */
   public async validateLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<boolean> {
     if (!this.isValidApiKey(apiKey)) {
       return true;
@@ -265,9 +247,6 @@ export class SendGridWhitelabelService {
     }
   }
 
-  /**
-   * Delete domain authentication from SendGrid.
-   */
   public async deleteDomainAuthentication(id: number, apiKey?: string, subuser?: string): Promise<void> {
     if (!this.isValidApiKey(apiKey)) return;
 
@@ -282,9 +261,6 @@ export class SendGridWhitelabelService {
     }
   }
 
-  /**
-   * Delete link branding from SendGrid.
-   */
   public async deleteLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<void> {
     if (!this.isValidApiKey(apiKey)) return;
 
@@ -299,9 +275,6 @@ export class SendGridWhitelabelService {
     }
   }
 
-  /**
-   * Perform live Node DNS checks to verify CNAMEs and DMARC TXT record.
-   */
   public async verifyDmarc(domain: string): Promise<boolean> {
     try {
       const records = await dns.resolveTxt(`_dmarc.${domain}`);
@@ -311,9 +284,6 @@ export class SendGridWhitelabelService {
     }
   }
 
-  /**
-   * Check if a specific CNAME record is set up correctly in DNS.
-   */
   public async verifyCname(host: string, expectedData?: string): Promise<boolean> {
     try {
       const records = await dns.resolveCname(host);

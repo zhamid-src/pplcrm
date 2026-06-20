@@ -73,9 +73,7 @@ export class DataGridActionsService {
     alertSvc: AlertService;
     config: DataGridConfig;
     getRowsForExport?: () => Array<Record<string, any>>;
-    /** Synchronous full export (legacy, used only for displayed-count path) */
     requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
-    /** Queue a background export job. When provided, used for the "all rows" path. */
     queueFullExport?: () => Promise<void>;
     displayedCount?: number;
     totalCount?: number;

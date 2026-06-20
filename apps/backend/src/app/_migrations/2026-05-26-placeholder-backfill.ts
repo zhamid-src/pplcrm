@@ -1,9 +1,5 @@
 import { Kysely } from 'kysely';
 
-/**
- * Backfill placeholder_household_id for existing tenants that do not have one set.
- * Finds an existing blank household or creates one, then assigns it.
- */
 export async function up(db: Kysely<any>): Promise<void> {
   const tenants = await db.selectFrom('tenants').select(['id', 'placeholder_household_id']).execute();
 

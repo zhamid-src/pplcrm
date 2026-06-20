@@ -5,34 +5,26 @@ import type { EmailType } from '../../../../../../../../libs/common/src/lib/mode
 
 @Service()
 export class EmailStateStore {
-  /** Active folder ID that this store's selection is bound to */
   public readonly activeFolderId = signal<string | null>(null);
 
-  /** Currently selected email ID, resets when activeFolderId changes */
   public readonly currentSelectedEmailId = linkedSignal<string | null, string | null>({
     source: () => this.activeFolderId(),
     computation: () => null,
   });
 
-  /** Normalized email data storage, keyed by email ID */
   public readonly emailsById = signal<Record<string, EmailType>>({});
 
-  /** Currently selected email (or null) */
   public readonly currentSelectedEmail = computed(() => {
     const id = this.currentSelectedEmailId();
     return id ? (this.emailsById()[id] ?? null) : null;
   });
 
-  /** Email IDs organized by folder ID for efficient lookup */
   public readonly emailIdsByFolderId = signal<Record<string, string[]>>({});
 
-  /** NEW: map of emailId -> hasAttachment (true/false). undefined = unknown/not loaded yet */
   public readonly hasAttachmentByEmailId = signal<Record<string, boolean | undefined>>({});
 
-  /** Global UI flag: whether the email body view is expanded to fill the window */
   public readonly isBodyExpanded = signal<boolean>(false);
 
-  /** Clear flag for an email (e.g., after delete) */
   public clearHasAttachment(emailId: string) {
     this.hasAttachmentByEmailId.update((m) => {
       const next = { ...m };
@@ -41,7 +33,6 @@ export class EmailStateStore {
     });
   }
 
-  /** OPTIONAL: view helper that decorates emails with hasAttachment flag */
   public emailsInFolderWithFlags(folderId: string) {
     return computed(() => {
       const ids = this.emailIdsByFolderId()[folderId] ?? [];
@@ -54,7 +45,6 @@ export class EmailStateStore {
     });
   }
 
-  /** Computed (helper): hasAttachment for a specific emailId */
   public hasAttachment(emailId: string) {
     return computed<boolean | undefined>(() => this.hasAttachmentByEmailId()[emailId]);
   }
@@ -71,7 +61,6 @@ export class EmailStateStore {
     this.setManyHasAttachment(map);
   }
 
-  /** Patch one email and return the previous snapshot for rollback */
   public patchEmail(emailKey: string, patch: Partial<EmailType>): EmailType | undefined {
     const prev = this.readEmail(emailKey);
     if (!prev) return undefined;
@@ -83,7 +72,6 @@ export class EmailStateStore {
     return this.emailsById()[emailKey];
   }
 
-  /** Remove an email from all state collections */
   public removeEmail(emailId: string): void {
     // Remove from normalized map
     this.emailsById.update((m) => {
@@ -109,16 +97,10 @@ export class EmailStateStore {
     this.emailsById.update((m) => ({ ...m, [emailKey]: value }));
   }
 
-  /** Replace selection */
   public selectEmail(email: EmailType | { id: EmailId } | null): void {
     this.currentSelectedEmailId.set(email ? String(email.id) : null);
   }
 
-  /**
-   * Transform and set emails for a folder from server response.
-   * Keeps normalized `emailsById` and the per-folder list in sync.
-   * (Does not change hasAttachment flags — let orchestrator fill them.)
-   */
   public setEmailsForFolder(folderId: string, serverEmails: ServerEmail[], append = false): void {
     const ids: string[] = [];
     const flagsMap: Record<string, boolean> = {}; // collect booleans while we normalize rows
@@ -170,19 +152,14 @@ export class EmailStateStore {
     this.setManyHasAttachment(flagsMap);
   }
 
-  /** ---------- NEW: mutators for hasAttachment flags ---------- */
-
-  /** Set/overwrite a single email's hasAttachment flag */
   public setHasAttachment(emailId: string, hasAttachment: boolean | undefined) {
     this.hasAttachmentByEmailId.update((m) => ({ ...m, [emailId]: hasAttachment }));
   }
 
-  /** Bulk set flags (e.g., from counts API or per-email checks) */
   public setManyHasAttachment(map: Record<string, boolean | undefined>) {
     this.hasAttachmentByEmailId.update((prev) => ({ ...prev, ...map }));
   }
 
-  /** Toggle the body expanded view */
   public toggleBodyExpanded(): void {
     this.isBodyExpanded.update((v) => !v);
   }

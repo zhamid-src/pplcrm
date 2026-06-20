@@ -1,6 +1,3 @@
-/**
- * @file Component for creating or editing households and managing their tags and members.
- */
 import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
 import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
@@ -21,10 +18,6 @@ import { TagOptionsService } from '@frontend/shared/components/datagrid/services
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
 
-/**
- * Component for displaying and managing the details of a household.
- * It supports both creating a new household and editing an existing one.
- */
 @Component({
   selector: 'pc-household-detail',
   imports: [
@@ -47,22 +40,16 @@ export class HouseholdDetail implements OnInit {
   private readonly dialogSvc = inject(ConfirmDialogService);
   private readonly personsSvc = inject(PersonsService);
 
-  /** Whether a background operation is in progress */
   private _loading = createLoadingGate();
 
-  /** Reactive signal for storing the loaded household */
   protected readonly household = signal<Households | null>(null);
 
-  /** Whether the address has been verified via Places API */
   protected addressVerified = false;
 
-  /** List of associated tag strings */
   protected tags: string[] = [];
 
-  /** List of associated issue strings */
   protected issues: string[] = [];
 
-  /** Flat payload backing signal for the form */
   protected readonly payload = signal({
     formatted_address: '',
     type: '',
@@ -80,12 +67,10 @@ export class HouseholdDetail implements OnInit {
     notes: '',
   });
 
-  /** Signal-based form control group */
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, UpdateHouseholdsObj);
   });
 
-  /** Formatted address string computed from the payload */
   protected readonly addressString = computed(() => {
     const raw = this.payload();
 
@@ -110,18 +95,12 @@ export class HouseholdDetail implements OnInit {
     return parts.join(', ').trim();
   });
 
-  /** ID of the household being edited */
   protected id = input<string>();
   protected isLoading = this._loading.visible;
 
-  /** Component mode: 'edit' or 'new' */
   public mode = input<'new' | 'edit'>('edit');
   protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
 
-  /**
-   * Handles address selection and parses Google Places data into form.
-   * @param address - AddressType object from autocomplete component
-   */
   public handleAddressChange(address: AddressType) {
     const end = this._loading.begin();
     try {
@@ -151,9 +130,6 @@ export class HouseholdDetail implements OnInit {
     }
   }
 
-  /**
-   * Lifecycle hook that initializes the component.
-   */
   public async ngOnInit() {
     await this.loadHousehold();
     if (this.isNewMode()) {
@@ -180,10 +156,6 @@ export class HouseholdDetail implements OnInit {
     }
   }
 
-  /**
-   * Applies an inline edit made in a grid-like interface to the household.
-   * @param input - Object containing the changed field and value
-   */
   protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
     if (input.changed) {
       const row = { [input.key]: input.value };
@@ -273,10 +245,6 @@ export class HouseholdDetail implements OnInit {
     return this.update(data, done);
   }
 
-  /**
-   * Called when a tag is added in the UI
-   * @param tag - The tag to attach to the household
-   */
   protected async tagAdded(tag: string) {
     if (!this.id()) return;
     try {
@@ -287,10 +255,6 @@ export class HouseholdDetail implements OnInit {
     }
   }
 
-  /**
-   * Called when a tag is removed in the UI
-   * @param tag - The tag to detach from the household
-   */
   protected async tagRemoved(tag: string) {
     if (!this.id()) return;
     try {
@@ -301,10 +265,6 @@ export class HouseholdDetail implements OnInit {
     }
   }
 
-  /**
-   * Called when an issue is added in the UI
-   * @param issue - The issue to attach to the household
-   */
   protected async issueAdded(issue: string) {
     if (!this.id()) return;
     try {
@@ -315,10 +275,6 @@ export class HouseholdDetail implements OnInit {
     }
   }
 
-  /**
-   * Called when an issue is removed in the UI
-   * @param issue - The issue to detach from the household
-   */
   protected async issueRemoved(issue: string) {
     if (!this.id()) return;
     try {
@@ -329,9 +285,6 @@ export class HouseholdDetail implements OnInit {
     }
   }
 
-  /**
-   * Loads tags and issues associated with the current household
-   */
   private async getTags() {
     if (!this.household() || !this.id()) {
       return;
@@ -340,9 +293,6 @@ export class HouseholdDetail implements OnInit {
     this.issues = await this.householdsSvc.getTags(this.id()!, 'issue');
   }
 
-  /**
-   * Loads the household data from the backend and initializes the form
-   */
   private async loadHousehold() {
     if (!this.id()) return;
 
@@ -357,9 +307,6 @@ export class HouseholdDetail implements OnInit {
     }
   }
 
-  /**
-   * Populates the form with household data
-   */
   private refreshForm() {
     const household = this.household();
     if (!household) return;
@@ -383,10 +330,6 @@ export class HouseholdDetail implements OnInit {
     this.form().reset();
   }
 
-  /**
-   * Updates an existing household using the backend service
-   * @param data - Partial update object for the household
-   */
   private update(data: Partial<UpdateHouseholdsType>, done?: () => void) {
     if (!this.id()) {
       return;

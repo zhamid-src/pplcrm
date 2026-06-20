@@ -1,10 +1,5 @@
 import { Kysely, sql } from 'kysely';
 
-/**
- * Adds a partial unique index on persons(tenant_id, lower(email))
- * so that no two people within the same tenant can share the same email address.
- * The index is partial (WHERE email IS NOT NULL AND email <> '') so blank emails are allowed.
- */
 export async function up(db: Kysely<any>): Promise<void> {
   // Use a raw SQL statement because Kysely's schema builder doesn't support
   // expression indexes (lower(email)) or partial WHERE clauses directly.

@@ -1,14 +1,5 @@
-/**
- * Migration to add email_headers and email_recipients tables for enhanced email data.
- * This migration adds support for storing detailed email headers and recipient information.
- */
 import { Kysely } from 'kysely';
 
-/**
- * Remove email_headers and email_recipients tables.
- *
- * @param db - Database connection instance
- */
 export async function down(db: Kysely<any>): Promise<void> {
   // Drop indexes first
   await db.schema.dropIndex('idx_email_recipients_kind').execute();
@@ -22,11 +13,6 @@ export async function down(db: Kysely<any>): Promise<void> {
   console.log('✅ Removed email_headers and email_recipients tables');
 }
 
-/**
- * Add email_headers and email_recipients tables.
- *
- * @param _db - Database connection instance
- */
 export async function up(_db: Kysely<any>): Promise<void> {
   // Create email_headers table
   /*

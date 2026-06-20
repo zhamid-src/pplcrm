@@ -1,6 +1,3 @@
-/**
- * @file Data grid component for viewing and editing issues (a special tag type).
- */
 import { Component, inject } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
@@ -8,10 +5,6 @@ import type { getAllOptionsType } from '../../../../../../../libs/common/src';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 
-/**
- * A thin wrapper over TagsService that forces `type: 'issue'` on every getAll/getAllWithCounts call.
- * This lets the IssuesGridComponent reuse all the tag infrastructure without any duplication.
- */
 class IssuesService extends TagsService {
   private readonly globalTagsSvc = inject(TagsService, { skipSelf: true, optional: true });
 

@@ -1,8 +1,4 @@
 import { vi } from 'vitest';
-/**
- * @fileoverview Unit tests for EmailsService.
- * Tests the email API service functionality including CRUD operations and email management.
- */
 import { EmailsService } from './emails-service';
 
 describe('EmailsService', () => {

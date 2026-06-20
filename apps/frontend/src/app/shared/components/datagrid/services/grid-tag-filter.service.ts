@@ -33,10 +33,6 @@ export class GridTagFilterService {
 
   // ── Initialisation ────────────────────────────────────────────────────────
 
-  /**
-   * Must be called from `ngOnInit`. Loads available tag/issue names and seeds
-   * the selection from the host component's limitTo inputs.
-   */
   async init(params: {
     limitToTags: string[];
     limitToIssues: string[];

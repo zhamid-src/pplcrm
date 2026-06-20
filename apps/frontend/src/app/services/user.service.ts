@@ -8,23 +8,14 @@ import { TRPCService } from './api/trpc-service';
 export class UserService extends TRPCService<any> {
   private readonly authService = inject(AuthService);
 
-  /**
-   * Retrieve all users for the current tenant.
-   */
   public getUsers() {
     return this.api.users.getUsers.query() as Promise<IAuthUser[]>;
   }
 
-  /**
-   * Retrieves a user profile by ID (including stats and profile fields like last name).
-   */
   public getProfileById(id: string) {
     return this.api.users.getProfileById.query(id);
   }
 
-  /**
-   * Updates an existing user's profile details.
-   */
   public async updateUserProfile(id: string, data: UpdateAuthUserType) {
     const updated = await this.api.users.updateUserProfile.mutate({ id, data });
     // If the updated user is the current user, update our local signal
@@ -39,10 +30,6 @@ export class UserService extends TRPCService<any> {
     return updated;
   }
 
-  /**
-   * Resolves a relative or absolute avatar URL with the backend API URL and
-   * appends the current auth token for authentication.
-   */
   public resolveAvatarUrl(url: string | null | undefined): string | null {
     if (!url) return null;
     let resolved = url;

@@ -1,17 +1,9 @@
-/**
- * tRPC router for email management including folders, individual emails,
- * comments, and assignment of emails to users.
- */
 import { idSchema } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
 import { EmailsController } from './controller';
 
-/**
- * Add a comment to an existing email.
- * @returns The newly created comment record.
- */
 function addComment() {
   return authProcedure
     .input(
@@ -24,10 +16,6 @@ function addComment() {
     .mutation(({ input, ctx }) => emails.addComment(ctx.auth.tenant_id, input.id, input.author_id, input.comment));
 }
 
-/**
- * Assign an email to a specific user for follow-up.
- * @returns Success status of the assignment.
- */
 function assign() {
   return authProcedure
     .input(z.object({ id: idSchema, user_id: idSchema.nullable(), assigned_to_name: z.string().optional() }))
@@ -80,20 +68,12 @@ function getEmailBody() {
   return authProcedure.input(idSchema).query(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input));
 }
 
-/**
- * Retrieve a single email by its ID.
- * @returns The requested email record.
- */
 function getEmailHeader() {
   return authProcedure
     .input(idSchema)
     .query(({ input, ctx }) => emails.getEmailHeader(ctx.auth.tenant_id, input, ctx.auth.user_id));
 }
 
-/**
- * Retrieve email body and headers combined for detailed view.
- * @returns Email body with headers and recipient information.
- */
 function getEmailWithHeaders() {
   return authProcedure.input(idSchema).query(async ({ input, ctx }) => {
     const tenantId = ctx.auth.tenant_id;
@@ -107,10 +87,6 @@ function getEmailWithHeaders() {
   });
 }
 
-/**
- * Retrieve emails within a specified folder for the tenant.
- * @returns A list of email summaries.
- */
 function getEmails() {
   return authProcedure
     .input(
@@ -125,12 +101,10 @@ function getEmails() {
     );
 }
 
-/** Retrieve all email folders for the current tenant. */
 function getFolders() {
   return authProcedure.query(({ ctx }) => emails.getFolders(ctx.auth.tenant_id));
 }
 
-/** Retrieve all email folders with email counts for the current tenant. */
 function getFoldersWithCounts() {
   return authProcedure.query(({ ctx }) => emails.getFoldersWithCounts(ctx.auth.user_id, ctx.auth.tenant_id));
 }
@@ -193,10 +167,6 @@ function setStatus() {
     .mutation(({ input, ctx }) => emails.setStatus(ctx.auth.tenant_id, input.id, input.status, ctx.auth.user_id));
 }
 
-/**
- * Retrieve all activity log entries for a given email.
- * @returns List of activity rows with user names, ordered newest-first.
- */
 function getActivities() {
   return authProcedure
     .input(idSchema)
@@ -213,7 +183,6 @@ function setEmailReadStatus() {
 
 const emails = new EmailsController();
 
-/** Router exposing email-related procedures. */
 export const EmailsRouter = router({
   getFolders: getFolders(),
   getFoldersWithCounts: getFoldersWithCounts(),

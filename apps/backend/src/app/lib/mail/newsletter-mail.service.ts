@@ -15,10 +15,6 @@ export interface SendNewsletterOptions {
 }
 
 export class NewsletterEmailService {
-  /**
-   * Sends bulk newsletter emails using SendGrid's HTTP REST API.
-   * Resolves to the number of successfully accepted deliveries.
-   */
   public async sendNewsletter(options: SendNewsletterOptions): Promise<number> {
     const apiKey = options.sendgridApiKey || env.sendgridApiKey;
 

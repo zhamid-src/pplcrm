@@ -1,6 +1,3 @@
-/**
- * @file Component displaying the body of an email.
- */
 import { Component, computed, effect, inject, input, untracked } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AttachmentIconComponent } from '@uxcommon/components/icons/attachment-icon';
@@ -56,7 +53,6 @@ export class EmailBody {
     return id ? (this.store.getEmailBodyById(id)() ?? '') : '';
   });
 
-  /** Nullable input to avoid early read before Angular sets it */
   public email = input<EmailType | null>(null);
 
   constructor() {

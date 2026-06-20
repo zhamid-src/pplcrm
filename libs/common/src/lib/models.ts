@@ -56,10 +56,6 @@ import type {
   WorkflowEnrollmentObj,
 } from './schema';
 
-
-/**
- * Used to get the current time in string from the database
- */
 export interface INow {
   now: string;
 }
@@ -155,5 +151,3 @@ export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
 export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
 
 export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
-
-

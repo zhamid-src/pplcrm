@@ -1,7 +1,3 @@
-/**
- * @file REST route for the Google OAuth2 callback.
- * Google redirects the user's browser here after they consent.
- */
 import { FastifyPluginCallback } from 'fastify';
 import { GoogleOAuthService } from './google-oauth.service';
 import { env } from '../../../env';
@@ -21,10 +17,6 @@ function getOAuthService() {
   return _oauthSvc;
 }
 
-/**
- * Handles the OAuth authorization code redirect from Google.
- * Exchanges the code for tokens, stores them, then redirects to the settings page.
- */
 const googleSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
   fastify.get('/callback', async (req: any, reply) => {
     const { code, state, error, error_description } = req.query as Record<string, string>;

@@ -1,6 +1,3 @@
-/**
- * @file Component for creating or updating individual person records.
- */
 import { Component, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
 import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
@@ -26,10 +23,6 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
 
-/**
- * Component for displaying and editing a single person's details.
- * Handles both "new" (creation) and "edit" (update) modes.
- */
 @Component({
   selector: 'pc-person-detail',
   imports: [PcInput, PcSelect, PcTextarea, Tags, RouterModule, Icon, PcDetailHeader, SideDrawer, PcEntityOverview],
@@ -78,14 +71,9 @@ export class PersonDetail implements OnInit {
   protected readonly householdSearch = signal('');
   protected readonly householdsLoading = signal(false);
 
-  /**
-   * Tracks the household selected in the drawer when creating a NEW person
-   * (before the record is saved and `this.id` exists).
-   */
   protected readonly pendingHouseholdId = signal<string | null>(null);
   protected readonly isLoading = this._loading.visible;
 
-  /** Inline error shown under the email field when a duplicate is detected */
   protected readonly emailError = linkedSignal({
     source: () => this.form.email().value(),
     computation: () => null as string | null,
@@ -96,7 +84,6 @@ export class PersonDetail implements OnInit {
   protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
   protected readonly volunteerHistory = signal<any[]>([]);
 
-  /** Backing payload signal for person data */
   protected readonly payload = signal({
     first_name: '',
     middle_names: '',
@@ -114,29 +101,24 @@ export class PersonDetail implements OnInit {
     assigned_to: '',
   });
 
-  /** Signal form for person data validation and status tracking */
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, UpdatePersonsObj);
   });
 
-  /** ID of the person being edited (if in edit mode) */
   protected id = input<string>();
   protected tags = signal<string[]>([]);
   protected issues = signal<string[]>([]);
 
   public readonly householdId = computed(() => (this.person()?.household_id ?? null) || this.pendingHouseholdId());
 
-  /** Determines if this component is in 'edit' or 'new' mode */
   public mode = input<'new' | 'edit'>('edit');
   protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
 
-  /** Reactive display name derived from live form values — avoids method calls in template */
   protected readonly formName = computed(() => {
     const v = this.payload();
     return `${v.first_name || ''} ${v.middle_names || ''} ${v.last_name || ''}`.trim();
   });
 
-  /** Two-letter initials derived from formName for the avatar chip */
   protected readonly formInitials = computed(() => {
     const name = this.formName() || '?';
     return name
@@ -147,12 +129,8 @@ export class PersonDetail implements OnInit {
       .toUpperCase();
   });
 
-  /** Whether to show 'two' or 'three' buttons — depends on whether person is already saved */
   protected readonly buttonsToShow = computed<'two' | 'three'>(() => (this.person()?.id ? 'two' : 'three'));
 
-  /**
-   * Initializes the component and determines edit mode via route params.
-   */
   constructor() {
     // Load users once for display names
     this.userService
@@ -226,10 +204,6 @@ export class PersonDetail implements OnInit {
     }
   }
 
-  /**
-   * Save the person details to backend.
-   * If in edit mode, it updates the person; otherwise, it creates a new entry.
-   */
   public save(done?: () => void) {
     this.form().markAsTouched();
     if (this.form().invalid()) return;
@@ -242,12 +216,6 @@ export class PersonDetail implements OnInit {
     return this.id() ? this.update(data, done) : this.add(data, done);
   }
 
-  /**
-   * Apply the edits the user did on the grid. This is done by calling the
-   * backend service to update the row in the database.
-   *
-   * @param input - Key-value pair representing the changed field and its new value
-   */
   protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
     if (input.changed) {
       const row = { [input.key]: input.value };
@@ -255,7 +223,6 @@ export class PersonDetail implements OnInit {
     }
   }
 
-  /** Assign current person to the selected household */
   protected async assignToHousehold(household_id: string) {
     // NEW PERSON: just store the pending selection; it will be sent on save
     if (!this.id()) {
@@ -298,12 +265,10 @@ export class PersonDetail implements OnInit {
     }
   }
 
-  /** Close the assign household drawer */
   protected closeAssignDrawer() {
     this.assignDrawerOpen.set(false);
   }
 
-  /** Format a household row to a single line address */
   protected formatHouseholdRow(row: any) {
     const address = {
       apt: row.apt ?? null,
@@ -325,13 +290,11 @@ export class PersonDetail implements OnInit {
     return id as unknown as string;
   }
 
-  /** Get the display name for a user id */
   protected getUserName(id: string | null | undefined = null): string {
     if (!id) return '?';
     return this.usersById.get(String(id))?.first_name ?? '?';
   }
 
-  /** Navigates to the household detail page if the person belongs to a household */
   protected navigateToHousehold() {
     const household_id = this.householdId();
     if (household_id) {
@@ -339,7 +302,6 @@ export class PersonDetail implements OnInit {
     }
   }
 
-  /** Handle search input for households */
   protected onHouseholdSearch(ev: Event) {
     const target = ev.target as HTMLInputElement | null;
     const val = target?.value ?? '';
@@ -347,18 +309,12 @@ export class PersonDetail implements OnInit {
     void this.fetchHouseholds();
   }
 
-  /** Open the right-side drawer for assigning household */
   protected openAssignDrawer() {
     this.assignDrawerOpen.set(true);
     // Initial fetch
     void this.fetchHouseholds();
   }
 
-  /**
-   * Remove the current address.
-   * - New person (unsaved): just clears the pending household selection.
-   * - Existing person: calls the backend to move the person to a blank household.
-   */
   protected async removeAddress() {
     // New person: just clear the pending household — no API call needed yet
     if (!this.id()) {
@@ -389,7 +345,6 @@ export class PersonDetail implements OnInit {
     }
   }
 
-  /** Attaches a tag to the person */
   protected async tagAdded(tag: string) {
     if (!this.id()) return;
     try {
@@ -400,7 +355,6 @@ export class PersonDetail implements OnInit {
     }
   }
 
-  /** Detaches a tag from the person */
   protected async tagRemoved(tag: string) {
     if (!this.id()) return;
 
@@ -455,7 +409,6 @@ export class PersonDetail implements OnInit {
     }
   }
 
-  /** Attaches an issue to the person */
   protected async issueAdded(issue: string) {
     if (!this.id()) return;
     try {
@@ -466,7 +419,6 @@ export class PersonDetail implements OnInit {
     }
   }
 
-  /** Detaches an issue from the person */
   protected async issueRemoved(issue: string) {
     if (!this.id()) return;
 
@@ -482,10 +434,6 @@ export class PersonDetail implements OnInit {
     }
   }
 
-  /**
-   * Adds a new person to the backend
-   * @param data - Person data to be added
-   */
   private add(data: UpdatePersonsType, done?: () => void) {
     // Include any household selected via the drawer before saving
     const pendingHousehold = this.pendingHouseholdId();
@@ -518,7 +466,6 @@ export class PersonDetail implements OnInit {
       .finally(() => end());
   }
 
-  /** Returns true when the error is a backend CONFLICT (duplicate email) */
   private isDuplicateEmailError(err: unknown): boolean {
     if (!err || typeof err !== 'object') return false;
     const e = err as Record<string, any>;
@@ -531,7 +478,6 @@ export class PersonDetail implements OnInit {
     );
   }
 
-  /** Fetch households matching the current search */
   private async fetchHouseholds() {
     try {
       this.householdsLoading.set(true);
@@ -550,11 +496,6 @@ export class PersonDetail implements OnInit {
     }
   }
 
-  /**
-   * Format an address object into a single readable string.
-   * @param address Address components to format
-   * @returns Human-readable address string
-   */
   private getFormattedAddress(address: AddressType): string {
     const parts: string[] = [];
 
@@ -574,9 +515,6 @@ export class PersonDetail implements OnInit {
     return formatted || 'No Address Assigned';
   }
 
-  /**
-   * Loads the person data from the backend if ID is available
-   */
   private async loadPerson() {
     if (!this.id()) return;
 
@@ -593,9 +531,6 @@ export class PersonDetail implements OnInit {
     }
   }
 
-  /**
-   * Refreshes the reactive form with the loaded person's data
-   */
   private refreshForm() {
     const person = this.person();
     if (!person) return;
@@ -618,10 +553,6 @@ export class PersonDetail implements OnInit {
     });
   }
 
-  /**
-   * Updates the person in the backend
-   * @param data - Partial person data to update
-   */
   private update(data: Partial<UpdatePersonsType>, done?: () => void) {
     if (!this.id()) return;
 
@@ -647,9 +578,6 @@ export class PersonDetail implements OnInit {
       .finally(() => end());
   }
 
-  /**
-   * Fetches tags and issues associated with this person
-   */
   private async updateTags() {
     if (!this.person()) return;
 

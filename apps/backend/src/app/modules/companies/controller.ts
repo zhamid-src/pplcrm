@@ -75,9 +75,6 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
     return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
   }
 
-  /**
-   * Merge a duplicate company into a primary company.
-   */
   public async mergeCompanies(target_id: string, source_id: string, auth: IAuthKeyPayload) {
     return this.getRepo().mergeCompanies({
       tenant_id: auth.tenant_id,

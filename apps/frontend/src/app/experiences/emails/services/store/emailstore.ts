@@ -48,22 +48,17 @@ export class EmailsStore {
   private readonly folders = inject(EmailFoldersStore);
   private readonly state = inject(EmailStateStore);
 
-  /** All folders */
   public readonly allFolders = this.folders.allFolders;
 
-  /** Selected email */
   public readonly currentSelectedEmail = this.state.currentSelectedEmail;
 
-  /** Selected email id */
   public readonly currentSelectedEmailId = this.state.currentSelectedEmailId;
 
-  /** Selected folder id */
   public readonly currentSelectedFolderId = this.folders.currentSelectedFolderId;
 
   public readonly hasMore = this.folders.hasMore;
   public readonly isLoadingMore = this.folders.isLoadingMore;
 
-  /** Emails in currently selected folder */
   public readonly emailsInSelectedFolder = computed(() => {
     const fid = this.folders.currentSelectedFolderId();
     if (!fid) return [] as EmailType[];
@@ -76,7 +71,6 @@ export class EmailsStore {
   public readonly getEmailHeaderById = this.cache.getEmailHeaderById;
   public readonly getEmailActivitiesById = this.cache.getEmailActivitiesById;
 
-  /** Whether the email body is expanded to fill the window */
   public readonly isBodyExpanded = this.state.isBodyExpanded;
 
   private debouncedSelectedEmailId = debounced(this.state.currentSelectedEmailId, 1000);
@@ -138,7 +132,6 @@ export class EmailsStore {
     return this.cache.loadEmailActivities(emailId);
   }
 
-  /** Load emails for a folder, then set hasAttachment flags (bulk). */
   public async loadEmailsForFolder(folderId: EmailId) {
     const rows = await this.folders.loadEmailsForFolder(String(folderId));
 

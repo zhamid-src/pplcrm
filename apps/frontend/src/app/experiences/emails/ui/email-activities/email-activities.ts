@@ -1,8 +1,3 @@
-/**
- * @file Component that shows the activity log for an email.
- * Displays events like assignments, status changes, and reopens.
- * Collapsed by default; loads data lazily when first expanded.
- */
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
@@ -19,14 +14,12 @@ import type { EmailType } from '../../../../../../../../libs/common/src/lib/mode
 export class EmailActivities {
   private readonly store = inject(EmailsStore);
 
-  /** Email whose activity log to display */
   public email = input<EmailType | null>(null);
 
   protected readonly expanded = signal(false);
   protected readonly isLoading = signal(false);
   private loaded = false;
 
-  /** Activities come from the reactive cache */
   protected readonly activities = computed<any[]>(() => {
     const em = this.email();
     if (!em) return [];
@@ -35,7 +28,6 @@ export class EmailActivities {
 
   protected readonly activityCount = computed(() => this.activities().length);
 
-  /** Toggle expanded state; lazy-load on first open */
   public toggle(): void {
     const wasExpanded = this.expanded();
     this.expanded.set(!wasExpanded);

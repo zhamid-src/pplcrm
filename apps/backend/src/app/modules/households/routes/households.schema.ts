@@ -1,7 +1,3 @@
-/**
- * JSON schema definitions for household-related routes.
- * This generally matches the database schema found in `kysely.models`, but it can differ.
- */
 const HouseholdsType = {
   id: { type: 'string' },
   tenant_id: { type: 'string' },
@@ -22,36 +18,30 @@ const HouseholdsType = {
   created_at: { type: 'string' },
   updated_at: { type: 'string' },
 };
-/** Schema for a single household object. */
 const household = {
   type: 'object',
   properties: HouseholdsType,
 };
-/** Schema for an array of household objects. */
 const households = {
   type: 'array',
   items: HouseholdsType,
 };
 
-/** Schema for route parameters containing a household ID. */
 export const IdParam = {
   type: 'object',
   properties: { id: { type: 'string' } },
 };
-/** Schema for the response when counting households. */
 export const count = {
   schema: {
     response: { 200: { type: 'number' } },
   },
 };
-/** Schema for retrieving a household by ID. */
 export const findFromId = {
   schema: {
     params: IdParam,
     response: { 200: household },
   },
 };
-/** Schema for retrieving all households. */
 export const getAll = {
   schema: {
     response: {
@@ -59,7 +49,6 @@ export const getAll = {
     },
   },
 };
-/** Schema for updating a household. */
 export const update = {
   schema: {
     body: {

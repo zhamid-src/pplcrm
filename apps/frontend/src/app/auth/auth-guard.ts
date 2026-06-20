@@ -1,7 +1,3 @@
-/**
- * @fileoverview Authentication guard for protecting routes that require user authentication.
- * Implements Angular's functional guard pattern to control access to protected routes.
- */
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 

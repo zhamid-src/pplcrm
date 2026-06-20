@@ -206,7 +206,6 @@ export class ProfilePage implements OnInit {
     }
   }
 
-  /** Triggered when user picks a file via the hidden input. */
   protected onAvatarFileChange(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -261,7 +260,6 @@ export class ProfilePage implements OnInit {
     return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
   }
 
-  /** Render the cropped image on canvas and upload as WebP */
   protected async cropAndUpload() {
     const imgUrl = this.cropImageSrc();
     if (!imgUrl) return;

@@ -1,11 +1,5 @@
-/**
- * Defines the structure and default list of items displayed in the sidebar navigation.
- */
 import { PcIconNameType } from '@icons/icons.index';
 
-/**
- * The sidebar items are defined here. They go in the order they're added
- */
 export interface ISidebarItem {
   adminOnly?: boolean;
   indicator?: boolean;
@@ -14,10 +8,6 @@ export interface ISidebarItem {
   favourite?: boolean;
   hidden?: boolean;
 
-  /**
-   * Used internally to hide items when they are moved to the bookmarks section,
-   * without destroying their native 'hidden' state.
-   */
   hiddenByFavourite?: boolean;
 
   icon?: PcIconNameType;
@@ -29,9 +19,6 @@ export interface ISidebarItem {
   type?: 'item' | 'subheading' | 'bookmark';
 }
 
-/**
- * Default list of sidebar items used throughout the application.
- */
 export const SidebarItems: ISidebarItem[] = [
   {
     name: 'App',

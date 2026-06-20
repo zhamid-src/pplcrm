@@ -1,6 +1,3 @@
-/**
- * Repository utilities for household records and related queries.
- */
 import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
@@ -8,15 +5,7 @@ import { Models, OperationDataType } from '../../../../../../../libs/common/src/
 import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
 import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
 
-/**
- * Repository for the `households` table.
- *
- * Provides table-specific queries such as joining households with people and tags.
- */
 export class HouseholdRepo extends BaseRepository<'households'> {
-  /**
-   * Creates a repository instance for the `households` table.
-   */
   constructor() {
     super('households');
   }
@@ -123,11 +112,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .executeTakeFirst();
   }
 
-  /**
-   * Find a "blank" household for a tenant/campaign. A blank household is one with
-   * no address-related fields or home_phone set (all null) and no file/notes/json.
-   * Returns the first match or undefined.
-   */
   public async getBlankHousehold(input: { tenant_id: string; campaign_id: string }, trx?: Transaction<Models>) {
     return this.getSelect(trx)
       .where('tenant_id', '=', input.tenant_id)
@@ -149,10 +133,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .executeTakeFirst();
   }
 
-  /**
-   * Find a household by address fingerprints. Prefers full fingerprint when provided,
-   * otherwise matches on street-level fingerprint.
-   */
   public async findByFingerprint(
     input: { tenant_id: string; campaign_id: string; fp_street: string | null; fp_full?: string | null },
     trx?: Transaction<Models>,
@@ -177,15 +157,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     return undefined;
   }
 
-  /**
-   * Get all households with person count and associated tags, supporting filter/search/pagination.
-   *
-   * @param input.tenant_id - The tenant ID to scope the query
-   * @param input.options - Optional select/filter/pagination options
-   * @param input.tags - If provided, filters households by tag name(s)
-   * @param trx - Optional Kysely transaction
-   * @returns Paginated list of households with person count and tags, and the total count
-   */
   public async getAllWithPeopleCount(
     input: {
       tenant_id: string;
@@ -402,10 +373,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     };
   }
 
-  /**
-   * Returns a Set of IDs from `candidates` that are placeholder households
-   * for this tenant. Typically returns a set with 0 or 1 element.
-   */
   public async getPlaceholderIds(tenant_id: string, candidates: string[]): Promise<Set<string>> {
     if (!candidates.length) return new Set();
     const result = await this.getSelect()
@@ -418,9 +385,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     return new Set(result.map((r) => String(r.id)));
   }
 
-  /**
-   * Count the number of persons linked to a specific household for a tenant.
-   */
   public async getPeopleCount(input: { tenant_id: string; id: string }) {
     const result = await this.getSelect()
       .leftJoin('persons', 'persons.household_id', 'households.id')
@@ -432,12 +396,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     return Number((result as { count?: number } | undefined)?.count ?? 0);
   }
 
-  /**
-   * Get a list of all distinct tag names used in the household map table for a tenant.
-   *
-   * @param tenant_id - The tenant ID
-   * @returns List of distinct tag names
-   */
   public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
     return this.getSelect()
       .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
@@ -449,14 +407,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .execute();
   }
 
-  /**
-   * Get all tags associated with a given household.
-   *
-   * @param id - Household ID
-   * @param tenant_id - The tenant ID
-   * @param type - Optional tag/issue type
-   * @returns List of tag names
-   */
   public getTags(id: string, tenant_id: string, type?: 'tag' | 'issue') {
     let q = this.getSelect()
       .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
@@ -487,9 +437,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     return Number((countResult as any)?.total || 0);
   }
 
-  /**
-   * Find potential duplicates within the tenant (sharing identical full address fingerprint).
-   */
   public async getPotentialDuplicates(
     tenant_id: string,
     options?: { page?: number; pageSize?: number },
@@ -602,9 +549,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     return { groups: sortedGroups, total };
   }
 
-  /**
-   * Merges a source household record into a target household record in a transaction.
-   */
   public async mergeHouseholds(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
     return this.transaction().execute(async (trx) => {
       const target = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.target_id }, trx)) as any;

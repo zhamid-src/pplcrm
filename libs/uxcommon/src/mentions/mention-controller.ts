@@ -82,12 +82,10 @@ export class MentionController {
     return { text: newText, caret: newCaret };
   }
 
-  /** Expose current start index of the mention trigger (or -1) */
   public getStartIndex(): number {
     return this.start;
   }
 
-  /** Expose current caret index in the composer text */
   public getCaretIndex(): number {
     return this.caretPos;
   }

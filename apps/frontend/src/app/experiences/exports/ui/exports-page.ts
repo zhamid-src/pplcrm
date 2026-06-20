@@ -25,7 +25,6 @@ export class ExportsPage extends TRPCService<any> {
     this.load();
   }
 
-  /** Manually refresh the list from the backend. */
   protected refresh() {
     void this.load();
   }

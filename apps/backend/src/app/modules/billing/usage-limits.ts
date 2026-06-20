@@ -14,9 +14,6 @@ export interface PlanLimits {
 const settingsRepo = new SettingsRepo();
 const mailService = new TransactionalEmailService();
 
-/**
- * Returns the limits configuration for a given plan name.
- */
 export function getPlanLimits(planName: string | null | undefined): PlanLimits {
   switch (planName?.toLowerCase()) {
     case 'grassroots':
@@ -29,11 +26,6 @@ export function getPlanLimits(planName: string | null | undefined): PlanLimits {
   }
 }
 
-/**
- * Checks a specific tenant's resource usage against plan limits.
- * Sends email warnings if usage hits 90% or 100% thresholds,
- * and resets flags if usage falls back down.
- */
 export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promise<void> {
   const tenant = await db
     .selectFrom('tenants')
@@ -195,9 +187,6 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
   }
 }
 
-/**
- * Sends a limit alert email to all active admins.
- */
 async function sendLimitEmail(
   tenantId: string,
   tenantName: string,
@@ -274,9 +263,6 @@ The CampaignRaven Team`;
   }
 }
 
-/**
- * Checks usage limits for all tenants.
- */
 export async function checkAllUsageLimits(db: Kysely<any>): Promise<void> {
   const tenants = await db.selectFrom('tenants').select('id').execute();
   for (const tenant of tenants) {
@@ -288,9 +274,6 @@ export async function checkAllUsageLimits(db: Kysely<any>): Promise<void> {
   }
 }
 
-/**
- * Queues a background job to check usage limits for a specific tenant.
- */
 export async function queueUsageLimitCheck(tenantId: string, db: any): Promise<void> {
   // Check if there is already a pending limits check job for this tenant
   const existing = await db

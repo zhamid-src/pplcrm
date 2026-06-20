@@ -1,9 +1,5 @@
 import { Kysely } from 'kysely';
 
-/**
- * Migration to create the ms_oauth_tokens table.
- * Stores per-user Microsoft OAuth2 tokens for Office 365 email sync.
- */
 export async function up(db: Kysely<any>): Promise<void> {
   await db.schema
     .createTable('ms_oauth_tokens')

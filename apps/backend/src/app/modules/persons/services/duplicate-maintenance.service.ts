@@ -4,10 +4,6 @@ import { PersonsRepo } from '../repositories/persons.repo';
 export class DuplicateMaintenanceService {
   private readonly personsRepo = new PersonsRepo();
 
-  /**
-   * Recompute all duplicates for a tenant from scratch.
-   * This is run as a nightly job to ensure consistency.
-   */
   public async recomputeAllDuplicates(tenantId: string): Promise<void> {
     const db = this.personsRepo.db;
 

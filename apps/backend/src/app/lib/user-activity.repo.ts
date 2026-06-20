@@ -63,10 +63,6 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
     await this.add({ row }, trx);
   }
 
-  /**
-   * Get all activity entries for a specific entity record (e.g. all events on email #123).
-   * Returns rows joined with the acting user's name, ordered newest-first.
-   */
   public async getForEntity(
     tenant_id: string,
     entity: string,

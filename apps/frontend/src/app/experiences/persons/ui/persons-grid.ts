@@ -1,8 +1,3 @@
-/**
- * @fileoverview Advanced data grid component for managing person records.
- * Provides comprehensive person management with inline editing, tag management,
- * and address confirmation workflows.
- */
 import { Component, inject, signal, input, viewChild, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -18,7 +13,11 @@ import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/g
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { DATA_TYPE, PersonsService } from '../services/persons-service';
-import { provideDataGridConfig, DATA_GRID_CONFIG, DEFAULT_DATA_GRID_CONFIG } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import {
+  provideDataGridConfig,
+  DATA_GRID_CONFIG,
+  DEFAULT_DATA_GRID_CONFIG,
+} from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -52,10 +51,6 @@ export class PersonsGrid implements OnInit {
 
   public inline = input<boolean>(false);
 
-  /**
-   * Stores the household ID when a user tries to change an address,
-   * so it can be used in the confirmation dialog logic.
-   */
   private addressChangeModalId: string | null = null;
   private importProgressTimer: any;
   private tagOptionValues: string[] = [];
@@ -80,10 +75,6 @@ export class PersonsGrid implements OnInit {
     'notes',
   ];
 
-  /**
-   * Column definitions for the grid.
-   * Includes editable fields, tag rendering, and double-click address confirmation.
-   */
   protected col: ColDef[] = [
     { field: 'first_name', headerName: 'First Name', editable: true },
     { field: 'last_name', headerName: 'Last Name', editable: true },
@@ -223,7 +214,6 @@ export class PersonsGrid implements OnInit {
 
   public listId = input<string | null>(null);
 
-  /** Tags used to limit grid results via DataGrid input. */
   protected limitTags: string[] = [];
   protected tagsInput = '';
 
@@ -248,9 +238,6 @@ export class PersonsGrid implements OnInit {
     }
   }
 
-  /**
-   * Initializes the grid and retrieves tag filter data from the route.
-   */
   constructor() {
     const route = inject(ActivatedRoute);
     this.limitTags = route.snapshot.data['tags'] ?? [];
@@ -262,21 +249,11 @@ export class PersonsGrid implements OnInit {
 
   // paging/preview managed by CsvImportComponent
 
-  /**
-   * Handles double-click events on address-related cells.
-   * Triggers a modal confirmation dialog before navigating to household edit view.
-   * @param event - The cell event carrying row data
-   */
   protected confirmOpenEditOnDoubleClick(event: any) {
     this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
     this.confirmAddressChange();
   }
 
-  /**
-   * Handles click events on the Address cell.
-   * Navigates directly to the households detail page for the selected address.
-   * @param event - The cell event carrying row data
-   */
   protected onAddressCellClicked(event: any) {
     const householdId = event?.data?.household_id ?? event?.household_id;
     if (householdId) {
@@ -293,10 +270,6 @@ export class PersonsGrid implements OnInit {
     this.importerOpen.set(true);
   }
 
-  /**
-   * Navigates to the households detail page for the selected address.
-   * Closes the modal dialog before navigating.
-   */
   protected routeToHouseholds() {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
     dialog.close();
@@ -323,12 +296,7 @@ export class PersonsGrid implements OnInit {
     const tags = Array.from(combined);
 
     try {
-      const res = await this.personsService.import(
-        rows,
-        tags,
-        skippedReported,
-        fileName || undefined,
-      );
+      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
 
       const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
       const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
@@ -412,17 +380,11 @@ export class PersonsGrid implements OnInit {
     return map[key] || '';
   }
 
-  /**
-   * Opens a modal dialog asking the user to confirm address redirection.
-   */
   private confirmAddressChange(): void {
     const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
     dialog.showModal();
   }
 
-  /**
-   * Overridden delete handler to detect and confirm team captain deletions cascadingly.
-   */
   protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
     const selected = selectedRows || this.grid()?.getSelectedRows() || [];
     if (!selected.length) {

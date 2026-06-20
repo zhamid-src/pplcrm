@@ -10,26 +10,6 @@ import {
   input,
 } from '@angular/core';
 
-/**
- * Structural directive to animate insertion and removal of an element based on a reactive condition.
- *
- * ### Usage:
- * ```html
- * <div
- *   *pcAnimateIf="mySignal; enter: 'animate-left'; exit: 'animate-exit-right'"
- * >
- *   I appear and disappear with animation!
- * </div>
- * ```
- *
- * ### Inputs:
- * - `*pcAnimateIf="mySignal"`: A `Signal<boolean>` controlling visibility.
- * - `pcAnimateIfEnter`: CSS class for entry animation (default: `'animate-left'`).
- * - `pcAnimateIfExit`: CSS class for exit animation (default: `'animate-exit-right'`).
- * - `duration`: Duration in milliseconds before the element is removed after exit animation (default: `300`).
- *
- * This directive assumes the animated element is the root node of the template.
- */
 @Directive({
   selector: '[pcAnimateIf]',
 })
@@ -38,28 +18,12 @@ export class AnimateIfDirective {
   private readonly vcr = inject(ViewContainerRef);
   private readonly destroyRef = inject(DestroyRef);
 
-  /**
-   * Duration in milliseconds to wait before destroying the element after the exit animation.
-   * Default: `300`.
-   */
   public readonly duration = input(300, { alias: 'pcAnimateIfDuration' });
 
-  /**
-   * CSS class applied on element entry (insertion).
-   * Default: `'animate-left'`.
-   */
   public readonly pcAnimateIfEnter = input('animate-left');
 
-  /**
-   * CSS class applied on element exit (removal).
-   * Default: `'animate-exit-right'`.
-   */
   public readonly pcAnimateIfExit = input('animate-exit-right');
 
-  /**
-   * Main reactive condition controlling visibility.
-   * Must be a `Signal<boolean>`.
-   */
   public readonly pcAnimateIf = input.required<Signal<boolean>>();
 
   private condition = false;
@@ -84,9 +48,6 @@ export class AnimateIfDirective {
     });
   }
 
-  /**
-   * Renders the template and applies the entry animation.
-   */
   private animatedEntry() {
     this.vcr.clear();
     this.view = this.vcr.createEmbeddedView(this.template);
@@ -95,9 +56,6 @@ export class AnimateIfDirective {
     requestAnimationFrame(() => el?.classList.add(enterClass));
   }
 
-  /**
-   * Performs the exit animation, then removes the view after a delay.
-   */
   private animatedExit() {
     if (!this.view?.rootNodes[0]) return;
 
@@ -126,10 +84,6 @@ export class AnimateIfDirective {
     }, this.duration());
   }
 
-  /**
-   * Show or hide the template with appropriate animations.
-   * @param condition - Whether the element should be shown.
-   */
   private toggle(condition: boolean) {
     if (condition === this.condition) return;
 

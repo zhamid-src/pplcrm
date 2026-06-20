@@ -10,9 +10,6 @@ const households = new HouseholdsController();
 
 const crud = createCrudRouter(households, UpdateHouseholdsObj, UpdateHouseholdsObj);
 
-/**
- * HouseholdsRouter: All endpoints for managing household data
- */
 export const HouseholdsRouter = router({
   ...crud,
 

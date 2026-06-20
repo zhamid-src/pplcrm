@@ -12,9 +12,6 @@ import { MapPersonsTagRepo } from './repositories/map-persons-tags.repo';
 import { PersonsRepo } from './repositories/persons.repo';
 import { MapTeamsPersonsRepo } from '../teams/repositories/map-teams-persons.repo';
 
-/**
- * Controller for managing persons and their associated tags.
- */
 export class PersonsController extends BaseController<'persons', PersonsRepo> {
   private mapPersonsTagRepo = new MapPersonsTagRepo();
   private mapListsPersonsRepo = new MapListsPersonsRepo();
@@ -24,9 +21,6 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     super(new PersonsRepo());
   }
 
-  /**
-   * Get all people with their address and any assigned tags.
-   */
   public getAllWithAddress(
     auth: IAuthKeyPayload,
     options?: getAllOptionsType,
@@ -39,9 +33,6 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     });
   }
 
-  /**
-   * Get all persons that belong to a given household.
-   */
   public getByHouseholdId(household_id: string, auth: IAuthKeyPayload, options?: getAllOptionsType) {
     return this.getRepo().getByHouseholdId({
       id: household_id,
@@ -50,9 +41,6 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     });
   }
 
-  /**
-   * Get all persons that belong to a given company.
-   */
   public getByCompanyId(company_id: string, auth: IAuthKeyPayload, options?: getAllOptionsType) {
     return this.getRepo().getByCompanyId({
       id: company_id,
@@ -61,31 +49,18 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     });
   }
 
-  /**
-   * Return a scalar count of persons belonging to a given company.
-   */
   public countByCompanyId(company_id: string, auth: IAuthKeyPayload) {
     return this.getRepo().countByCompanyId({ id: company_id, tenant_id: auth.tenant_id });
   }
 
-  /**
-   * Get all distinct tags assigned to any person in the tenant.
-   */
   public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
     return this.getRepo().getDistinctTags(auth.tenant_id, type);
   }
 
-  /**
-   * Get all tags associated with a specific person.
-   */
   public getTags(person_id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
     return this.getRepo().getTags({ id: person_id, tenant_id: auth.tenant_id, type });
   }
 
-  /**
-   * TODO: test
-   * Move entire household to another household.
-   */
   public async moveEntireHousehold(oldHouseholdId: string, newHouseholdId: string, tenantId: string) {
     return this.getRepo()
       .transaction()
@@ -100,7 +75,6 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
       });
   }
 
-  /** Override deleteMany to clear dependent mappings before deleting persons */
   public override async deleteMany(tenant_id: string, idsToDelete: string[], force?: boolean): Promise<boolean> {
     if (!idsToDelete?.length) return false;
     return await this.getRepo()
@@ -152,7 +126,6 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
       });
   }
 
-  /** Override delete to reuse deleteMany path */
   public override async delete(
     tenant_id: string,
     idToDelete: string,

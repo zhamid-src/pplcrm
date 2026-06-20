@@ -1,6 +1,3 @@
-/**
- * @file Component for viewing individual household records (read-only mode).
- */
 import { Component, ElementRef, ViewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';

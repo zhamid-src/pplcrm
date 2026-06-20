@@ -8,11 +8,6 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 
-/**
- * A component for adding new tags to the system.
- * It includes a form with name and optional description,
- * and handles validation, submission, and error feedback.
- */
 @Component({
   selector: 'pc-add-tag',
   imports: [PcInput, FormField, FormActions],
@@ -41,24 +36,14 @@ export class AddTag {
   private readonly tagSvc = inject(TagsService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
 
-  /**
-   * Signal to track form submission (used to show _loadings or disable form).
-   */
   private _loading = createLoadingGate();
 
-  /**
-   * Backing payload signal for tag creation.
-   * Properties are typed as concrete strings to prevent compiler errors from nullable schema types.
-   */
   protected readonly payload = signal({
     name: '',
     description: '',
     color: '#0ea5e9',
   });
 
-  /**
-   * Signal-based form with validations.
-   */
   public readonly form = form(this.payload, (p) => {
     required(p.name);
     pattern(p.color, /^#([0-9a-fA-F]{6})$/);
@@ -66,17 +51,8 @@ export class AddTag {
 
   protected isLoading = this._loading.visible;
 
-  /**
-   * Reference to the `FormActions` component used for handling UI state like "stay or cancel".
-   * Populated after view initialization.
-   */
   public readonly formActions = viewChild(FormActions);
 
-  /**
-   * Submits the form to create a new tag.
-   * Shows success or error messages based on result.
-   * If successful, resets the `FormActions` component's state.
-   */
   protected async add(event?: any) {
     if (event instanceof Event) {
       event.preventDefault();

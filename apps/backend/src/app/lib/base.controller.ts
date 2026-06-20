@@ -14,27 +14,6 @@ import { rowsToCsv } from './csv';
 import { UserActivityRepo } from './user-activity.repo';
 import { TransactionalEmailService } from './mail/transactional-mail.service';
 
-/**
- * Abstract base controller for all domain entities (e.g. persons, households, tags).
- *
- * Provides generic, reusable CRUD operations by delegating to the appropriate
- * `BaseRepository<T>`. Each subclass is tied to a single database table (or set of tables).
- *
- * Controllers should be used for validating input/output and providing a stable
- * interface to route handlers or tRPC procedures.
- *
- * @typeParam T - The table name, as a key of `Models`
- * @typeParam R - The repository type, extending `BaseRepository<T>`
- *
- * @example
- * ```ts
- * export class HouseholdsController extends BaseController<'households', HouseholdRepository> {
- *   constructor() {
- *     super(new HouseholdRepository());
- *   }
- * }
- * ```
- */
 export class BaseController<T extends keyof Models, R extends BaseRepository<T>> {
   protected readonly userActivity = new UserActivityRepo();
 
@@ -64,13 +43,6 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     return String(rowObj['name'] || rowObj['subject'] || rowObj['title'] || '');
   }
 
-  /**
-   * Inserts a single row into the table.
-   *
-   * @param row - The data to insert
-   * @param trx - Optional Kysely transaction context
-   * @returns A Promise resolving to the inserted row
-   */
   public async add(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
     const result = await this.repo.add({ row }, trx);
     try {
@@ -107,13 +79,6 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     return result;
   }
 
-  /**
-   * Inserts multiple rows into the table.
-   *
-   * @param rows - The data array to insert
-   * @param trx - Optional Kysely transaction context
-   * @returns A Promise resolving to the inserted rows
-   */
   public async addMany(rows: OperationDataType<T, 'insert'>[], trx?: Transaction<Models>) {
     const result = await this.repo.addMany({ rows }, trx);
     try {
@@ -142,13 +107,6 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     return result;
   }
 
-  /**
-   * Deletes a single row by ID for a given tenant.
-   *
-   * @param tenant_id - The tenant's ID
-   * @param idToDelete - The row's ID
-   * @returns A Promise resolving to the deleted row (if any)
-   */
   public async delete(tenant_id: TypeTenantId<T>, idToDelete: string, userId?: string) {
     const result = await this.repo.delete({
       tenant_id,
@@ -172,13 +130,6 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     return result;
   }
 
-  /**
-   * Deletes multiple rows by ID for a given tenant.
-   *
-   * @param tenant_id - The tenant's ID
-   * @param idsToDelete - Array of row IDs to delete
-   * @returns A Promise resolving to the deleted rows (if any)
-   */
   public deleteMany(tenant_id: TypeTenantId<T>, idsToDelete: string[]) {
     return this.repo.deleteMany({
       ids: idsToDelete,
@@ -186,15 +137,6 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     });
   }
 
-  /**
-   * Returns the top 3 rows matching the key in the specified column.
-   * Typically used for autocomplete / search-as-you-type.
-   *
-   * @param input.tenant_id - Tenant ID to filter within
-   * @param input.key - Partial match key
-   * @param input.column - Column to match against (e.g. 'name')
-   * @returns A Promise resolving to up to 3 best-matching rows
-   */
   public find(input: { tenant_id: string; key: string; column: ReferenceExpression<Models, T> }) {
     return this.repo.find({
       tenant_id: input.tenant_id,
@@ -203,13 +145,6 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     });
   }
 
-  /**
-   * Returns all rows for a tenant, optionally filtered by query options.
-   *
-   * @param tenant - Tenant ID to filter by
-   * @param options - Optional filters, sorting, pagination
-   * @returns A Promise resolving to all matching rows
-   */
   public getAll(tenant: string, options?: getAllOptionsType) {
     return this.repo.getAll({
       tenant_id: tenant,
@@ -224,35 +159,14 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     });
   }
 
-  /**
-   * Counts the number of rows for a given tenant.
-   *
-   * @param tenant_id - Tenant ID to filter by
-   * @returns A Promise resolving to the total row count
-   */
   public getCount(tenant_id: string) {
     return this.repo.count(tenant_id);
   }
 
-  /**
-   * Finds a single row by ID for a given tenant.
-   *
-   * @param input.tenant_id - Tenant ID
-   * @param input.id - Row ID
-   * @returns A Promise resolving to the found row or `undefined`
-   */
   public getOneById(input: { tenant_id: string; id: string }) {
     return this.repo.getOneBy('id' as any, { value: input.id as any, tenant_id: input.tenant_id });
   }
 
-  /**
-   * Updates a row by ID for a given tenant.
-   *
-   * @param input.tenant_id - Tenant ID
-   * @param input.id - Row ID
-   * @param input.row - Partial data to update
-   * @returns A Promise resolving to the updated row
-   */
   public async update(input: { tenant_id: string; id: string; row: OperationDataType<T, 'update'> }) {
     let original: any = null;
     try {
@@ -337,12 +251,6 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     return result;
   }
 
-  /**
-   * Protected access to the underlying repository.
-   * Useful for controller extensions and internal operations.
-   *
-   * @returns The repository instance
-   */
   protected getRepo() {
     return this.repo;
   }

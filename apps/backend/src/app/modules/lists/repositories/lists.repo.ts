@@ -3,21 +3,11 @@ import { SelectQueryBuilder, Transaction, sql } from 'kysely';
 import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
-/**
- * Repository for interacting with the `lists` table and membership mappings.
- */
 export class ListsRepo extends BaseRepository<'lists'> {
   constructor() {
     super('lists');
   }
 
-  /**
-   * Retrieve all lists with computed member counts and creator information.
-   *
-   * @param input.tenant_id - Tenant scope
-   * @param input.options - Optional filtering/pagination options
-   * @param trx - Optional transaction
-   */
   public override async getAllWithCounts(
     input: {
       tenant_id: string;
@@ -165,9 +155,6 @@ export class ListsRepo extends BaseRepository<'lists'> {
     return { rows, count };
   }
 
-  /**
-   * Return households on a list with a minimal set of fields.
-   */
   public async getHouseholdsByListId(
     input: { tenant_id: string; list_id: string },
     trx?: Transaction<Models>,
@@ -202,9 +189,6 @@ export class ListsRepo extends BaseRepository<'lists'> {
     return { rows, count: Number(total || 0) };
   }
 
-  /**
-   * Return persons on a list with a minimal set of fields and household address.
-   */
   public async getPersonsByListId(
     input: { tenant_id: string; list_id: string },
     trx?: Transaction<Models>,

@@ -6,14 +6,8 @@ import { throwError } from 'rxjs';
 
 import { ErrorService } from './error.service';
 
-/**
- * HttpContext flag to opt-out of global error handling for a request.
- */
 export const SKIP_ERROR_HANDLER = new HttpContextToken<boolean>(() => false);
 
-/**
- * Interceptor that unwraps JSend responses and normalises errors.
- */
 export const jsendInterceptor: HttpInterceptorFn = (req, next) => {
   const errorSvc = inject(ErrorService);
   const skip = req.context.get(SKIP_ERROR_HANDLER);

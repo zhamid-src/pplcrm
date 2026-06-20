@@ -1,7 +1,3 @@
-/**
- * @fileoverview E2E tests for email client functionality.
- * Tests the complete email workflow including folder navigation, email selection, actions, and responsiveness.
- */
 import { expect, test } from '@playwright/test';
 
 test.describe('Email Client', () => {

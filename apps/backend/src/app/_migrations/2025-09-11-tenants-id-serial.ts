@@ -1,9 +1,5 @@
 import { Kysely, sql } from 'kysely';
 
-/**
- * Alter tenants table id column to have auto-incrementing default value (using sequence),
- * fixing the bug where table creation defined id as bigint without auto-increment.
- */
 export async function up(db: Kysely<any>): Promise<void> {
   await sql`CREATE SEQUENCE IF NOT EXISTS tenants_id_seq`.execute(db);
   await sql`ALTER TABLE tenants ALTER COLUMN id SET DEFAULT nextval('tenants_id_seq')`.execute(db);

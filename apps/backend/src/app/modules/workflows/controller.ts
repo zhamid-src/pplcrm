@@ -18,9 +18,6 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     return this.resolveCreatorAndUpdater(input.tenant_id, workflow);
   }
 
-  /**
-   * Retrieves all steps for a specific workflow, ordered by step_number.
-   */
   public async getSteps(tenantId: string, workflowId: string, trx?: Transaction<Models>) {
     const db = trx || this.getRepo().db;
     const steps = await db
@@ -37,9 +34,6 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     }));
   }
 
-  /**
-   * Bulk updates/saves the steps for a workflow.
-   */
   public async saveSteps(tenantId: string, workflowId: string, steps: any[], userId: string) {
     await this.getRepo()
       .transaction()
@@ -104,9 +98,6 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     return { success: true };
   }
 
-  /**
-   * Retrieves active enrollments with person details for a workflow.
-   */
   public async getEnrollments(tenantId: string, workflowId: string, options?: any) {
     return this.enrollmentsRepo.getEnrollmentsWithPersonDetails({
       tenant_id: tenantId,
@@ -115,9 +106,6 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     });
   }
 
-  /**
-   * Enrolls a person in a workflow manually.
-   */
   public async enrollPerson(
     tenantId: string,
     personId: string,
@@ -248,9 +236,6 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     }
   }
 
-  /**
-   * Cancels a person's enrollment.
-   */
   public async cancelEnrollment(tenantId: string, enrollmentId: string, userId: string) {
     return this.getRepo()
       .transaction()
@@ -317,9 +302,6 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
       });
   }
 
-  /**
-   * General trigger hook: Enrolls a constituent into active workflows of the specified trigger type.
-   */
   public async triggerWorkflow(
     tenantId: string,
     personId: string,
@@ -368,9 +350,6 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     }
   }
 
-  /**
-   * Automatic trigger hook: Enrolls a constituent into active workflows triggered by volunteer signups.
-   */
   public async triggerVolunteerSignup(
     tenantId: string,
     personId: string,
@@ -380,10 +359,6 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     return this.triggerWorkflow(tenantId, personId, 'volunteer_signup', eventId, trx);
   }
 
-  /**
-   * Helper to trigger workflows when a tag is added to a person.
-   * Handles both general 'tag_added' and specialized 'new_subscriber' / 'new_unsubscriber'.
-   */
   public async triggerTagAdded(
     tenantId: string,
     personId: string,

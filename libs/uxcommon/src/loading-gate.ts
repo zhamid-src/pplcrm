@@ -2,17 +2,11 @@
 import { signal } from '@angular/core';
 
 export type loadingGate = {
-  /** Signal you bind to the UI (e.g., @if (visible()) { … } to show _loading). */
   visible: ReturnType<typeof signal<boolean>>;
 
-  /** Call when an async op starts; returns a disposer you MUST call when it finishes. */
   begin(): () => void;
 };
 
-/**
- * Create a "gate" that only shows a _loading if work lasts beyond `delay`.
- * Once shown, it stays at least `minDuration` to avoid flicker.
- */
 export function createLoadingGate(options?: { delay?: number; minDuration?: number }): loadingGate {
   const delay = options?.delay ?? 300; // ms before showing
   const minDuration = options?.minDuration ?? 300; // ms the _loading stays once visible

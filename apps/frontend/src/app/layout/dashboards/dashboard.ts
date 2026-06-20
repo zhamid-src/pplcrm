@@ -1,7 +1,3 @@
-/**
- * Root dashboard component that composes the main layout by combining the
- * navbar, sidebar, and routed content area.
- */
 import { Component, computed, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { Alerts } from '@uxcommon/components/alerts/alerts';
@@ -18,9 +14,6 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
   imports: [Navbar, Sidebar, RouterModule, Breadcrumb, Alerts, Icon],
   templateUrl: './dashboard.html',
 })
-/**
- * Container component used as the shell for dashboard pages.
- */
 export class Dashboard {
   private readonly sidebarSvc = inject(SidebarService);
   private readonly auth = inject(AuthService);

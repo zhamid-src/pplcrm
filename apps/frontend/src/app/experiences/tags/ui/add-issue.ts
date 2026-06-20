@@ -9,10 +9,6 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 
-/**
- * A component for adding new issues to the system.
- * Identical to AddTag but hardcodes `type: 'issue'` on submission.
- */
 @Component({
   selector: 'pc-add-issue',
   imports: [PcInput, FormField, FormActions],

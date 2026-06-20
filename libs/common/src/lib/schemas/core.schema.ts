@@ -64,10 +64,6 @@ export const oldAdvancedFilterModelSchema = z.object({
   ),
 });
 
-/**
- * The list of options that are used to filter the list of rows
- * when getting rows from the database.
- */
 export const getAllOptions = z
   .object({
     searchStr: z.string().optional(),
@@ -107,7 +103,6 @@ export const exportCsvResponse = z.object({
   rowCount: z.number(),
 });
 
-/** Input for queueing a full background export */
 export const queueExportInput = z.object({
   entity: z.enum([
     'persons',
@@ -129,7 +124,6 @@ export const queueExportInput = z.object({
   fileName: z.string().optional(),
 });
 
-/** Shape of a data_exports record returned to the frontend */
 export const dataExportRecord = z.object({
   id: z.string(),
   entity: z.string(),

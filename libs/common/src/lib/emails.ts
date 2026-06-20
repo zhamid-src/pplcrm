@@ -1,11 +1,3 @@
-/**
- * Strongly-typed email folders with:
- * - SPECIAL_FOLDERS: virtual-only map (exact keys/ids)
- * - REGULAR_FOLDERS: real-only map (exact keys/ids, keys are UPPERCASE names)
- * - ALL_FOLDERS: merged map of both
- * - FOLDER_BY_ID and ALL_FOLDER_IDS helpers
- */
-
 // ---------- Public compatibility interface (loose) ----------
 // ---------- Strict types for compile-time guarantees ----------
 interface EmailFolderBase {
@@ -88,10 +80,6 @@ export type SpecialFolderKey = OnlyVirtual['code'];
 
 export type StrictEmailFolderConfig = VirtualEmailFolder | RealEmailFolder;
 
-/**
- * Helper to construct a mapped record of regular (real) folders.
- * Maps UPPERCASE folder names to their respective folder IDs.
- */
 function createRegularFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
   type RegularFolder = Extract<F[number], { is_virtual: false }>;
   type FolderKey = Uppercase<RegularFolder['name'] & string>;
@@ -104,18 +92,12 @@ function createRegularFolders<const F extends readonly StrictEmailFolderConfig[]
   return Object.freeze(Object.fromEntries(entries)) as { readonly [K in FolderKey]: FolderId<K> };
 }
 
-/**
- * Helper to construct a mapped record of special (virtual) folders.
- * Maps virtual folder codes (e.g. 'ALL_OPEN') to their respective folder IDs.
- */
 function createSpecialFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
   type VirtualFolder = Extract<F[number], { is_virtual: true }>;
   type FolderCode = VirtualFolder extends { code: infer C extends string } ? C : never;
   type FolderId<Code extends string> = Extract<VirtualFolder, { code: Code }>['id'];
 
-  const entries = folders
-    .filter((f): f is VirtualFolder => f.is_virtual)
-    .map((f) => [f.code, f.id] as const);
+  const entries = folders.filter((f): f is VirtualFolder => f.is_virtual).map((f) => [f.code, f.id] as const);
 
   return Object.freeze(Object.fromEntries(entries)) as { readonly [P in FolderCode]: FolderId<P> };
 }

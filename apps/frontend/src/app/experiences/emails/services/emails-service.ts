@@ -1,6 +1,3 @@
-/**
- * @file Service for interacting with the email backend via tRPC.
- */
 import { Service } from '@angular/core';
 import { EmailStatus, JSend, jsend } from '../../../../../../../libs/common/src';
 
@@ -10,40 +7,20 @@ import { HasRow } from '../../../../../../../libs/common/src/lib/emails';
 import { EmailDraftType, EmailType } from '../../../../../../../libs/common/src/lib/models';
 import { environment } from '../../../../environments/environment';
 
-/** Service for interacting with email backend via tRPC */
 @Service()
 export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'email_list'> {
-  /**
-   * Add a comment to an email.
-   * @param id Email identifier
-   * @param author_id ID of the user adding the comment
-   * @param comment Comment text
-   * @returns Promise for the mutation
-   */
   public addComment(id: string, author_id: string, comment: string) {
     return this.api.emails.addComment.mutate({ id, author_id, comment });
   }
 
-  /**
-   * Assign an email to a user.
-   * @param id Email identifier
-   * @param user_id User ID to assign to (null to unassign)
-   * @param assigned_to_name Display name of the assignee (for activity log)
-   * @returns Promise for the mutation
-   */
   public assign(id: string, user_id: string | null, assigned_to_name?: string | null) {
     return this.api.emails.assign.mutate({ id, user_id, assigned_to_name: assigned_to_name ?? undefined });
   }
 
-  /** Delete a single email by ID */
   public delete(id: string) {
     return this.api.emails.delete.mutate(id);
   }
 
-  /**
-   * Delete a comment from an email.
-   * Adjust the endpoint/shape to your backend if different.
-   */
   public deleteComment(email_id: string, comment_id: string) {
     return this.api.emails.deleteComment.mutate({ email_id, comment_id });
   }
@@ -52,7 +29,6 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.deleteDraft.mutate({ id });
   }
 
-  /** Delete multiple emails by their IDs */
   public deleteMany(ids: string[]) {
     return this.api.emails.deleteMany.mutate(ids);
   }
@@ -73,55 +49,27 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.getEmailBody.query(id);
   }
 
-  /**
-   * Get a single email by its ID.
-   * @param id Email identifier
-   * @returns Promise resolving to the email details
-   */
   public getEmailHeader(id: string) {
     return this.api.emails.getEmailHeader.query(id);
   }
 
-  /**
-   * Get email with headers and body combined for detailed view.
-   * @param id Email identifier
-   * @returns Promise resolving to email body and header data
-   */
   public getEmailWithHeaders(id: string) {
     return this.api.emails.getEmailWithHeaders.query(id);
   }
 
-  /**
-   * Fetch all activity log entries for a given email.
-   * @param emailId Email identifier
-   * @returns Promise resolving to array of activity rows
-   */
   public getActivities(emailId: string) {
     return this.api.emails.getActivities.query(emailId);
   }
 
-  /**
-   * Fetch all emails for a given folder.
-   * @param folderId Identifier of the folder to query
-   * @returns Promise resolving to the emails in the folder
-   */
   // TODO: paging and infinite scrolling
   public getEmails(folderId: string, limit?: number, offset?: number) {
     return this.api.emails.getEmails.query({ folderId, limit, offset });
   }
 
-  /**
-   * Retrieve the list of available email folders.
-   * @returns Promise resolving to an array of folders
-   */
   public getFolders() {
     return this.api.emails.getFolders.query();
   }
 
-  /**
-   * Retrieve the list of available email folders with email counts.
-   * @returns Promise resolving to an array of folders with email_count property
-   */
   public getFoldersWithCounts() {
     return this.api.emails.getFoldersWithCounts.query();
   }
@@ -179,7 +127,6 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return this.api.emails.setEmailReadStatus.mutate({ id, isRead });
   }
 
-  /** Trigger email sync for connected accounts (Microsoft and/or Google) */
   public async syncEmails(): Promise<{ inserted: number }> {
     let msResult = { inserted: 0 };
     let googleResult = { inserted: 0 };
@@ -219,12 +166,10 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     return { inserted: msResult.inserted + googleResult.inserted };
   }
 
-  /** Get connection status for Microsoft sync */
   public getConnectionStatus() {
     return this.api.msSync.getConnectionStatus.query();
   }
 
-  /** Check if either Google or Microsoft sync is currently running in background */
   public async isAnySyncing(): Promise<boolean> {
     let isSyncing = false;
     try {

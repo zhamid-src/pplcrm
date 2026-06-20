@@ -26,8 +26,7 @@ const trpc = initTRPC.context<Context>().create({
 
     // Zod/input → BAD_REQUEST in tRPC v10; zodError is also surfaced on shape.data
     const isZod =
-      error.cause instanceof ZodError ||
-      Boolean((shape.data as Record<string, unknown> | undefined)?.['zodError']);
+      error.cause instanceof ZodError || Boolean((shape.data as Record<string, unknown> | undefined)?.['zodError']);
 
     const isZodOrBadRequest = isZod || error.code === 'BAD_REQUEST';
 
@@ -67,24 +66,10 @@ const errorMappingMiddleware = middleware(async (opts) => {
   }
 });
 
-/**
- * Public procedure: does not require authentication.
- * Extend this with `.use(...)` to add middlewares as needed.
- */
 export const publicProcedure = trpc.procedure.use(errorMappingMiddleware);
 
-/**
- * Main tRPC router constructor.
- * Use this to define routers composed of procedures.
- */
 export const router = trpc.router;
 
-/**
- * Middleware to ensure the user is authenticated.
- *
- * Checks for required fields (`user_id`, `tenant_id`, `session_id`) in the auth context.
- * Throws a `TRPCError` with `UNAUTHORIZED` code if missing.
- */
 import { BaseRepository } from './app/lib/base.repo';
 
 const isAuthed = middleware(async (opts) => {
@@ -138,15 +123,8 @@ const isAuthed = middleware(async (opts) => {
   return opts.next({ ctx: { ...ctx, auth: authWithRole } });
 });
 
-/**
- * Procedure requiring authentication.
- * Use this for all endpoints that must be protected.
- */
 export const authProcedure = publicProcedure.use(isAuthed);
 
-/**
- * Procedure requiring admin or owner privileges.
- */
 export const adminOrOwnerProcedure = authProcedure.use(async (opts) => {
   const { ctx } = opts;
   if (ctx.auth.role !== 'admin' && ctx.auth.role !== 'owner') {

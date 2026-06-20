@@ -57,53 +57,22 @@ export class Tags implements OnInit {
   private readonly paletteSvc = inject(TagPaletteService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
 
-  /**
-   * If the user adds a new tag then this event is emitted with the new tag.
-   */
   public readonly tagAdded = output<string>();
 
-  /**
-   * If the user clicks on a tag then this event is emitted with the tag name.
-   * This component does not do anything else with this event.
-   */
   public readonly tagClicked = output<string>();
 
-  /**
-   * If the user removes a tag then this event is emitted with the tag that was removed.
-   */
   public readonly tagRemoved = output<string>();
 
-  /**
-   * If the list of tags changes then this event is emitted with the new list of tags.
-   * This can be used by the parent to update its list of tags or simply as a notification
-   * if the parent uses tags as a two-way binding.
-   */
   public readonly tagsChange = output<string[]>();
 
   public animateRemoval = input<boolean>(true);
 
-  /**
-   * If the list of tags can be deleted. It adds or remove the x button.
-   * The default is true.
-   */
   public canDelete = input<boolean>(true);
 
-  /**
-   * If this is set then an autocomplete list based on available tags will be shown.
-   * The default is false.
-   */
   public enableAutoComplete = input<boolean>(true);
 
-  /**
-   * The placeholder text for the input field.
-   * The default is 'Enter tags, separated by comma'.
-   */
   public placeholder = input<string>('Enter tags, separated by comma');
 
-  /**
-   * If this is set to true then we don't see the text input field that
-   * allows users to add more tags. The default is false.
-   */
   public readonly = input<boolean>(false);
   public readonly type = input<'tag' | 'issue'>('tag');
   public compact = input<boolean>(false);
@@ -132,12 +101,6 @@ export class Tags implements OnInit {
 
   constructor() {}
 
-  /**
-   * Fetch tag suggestions based on user input using the backend TagsService.
-   *
-   * @param key - The input string to filter suggestions with.
-   * @returns A promise that resolves to a list of tag name strings.
-   */
   public async filter(key: string) {
     if (!key || key.length === 0) {
       return [];
@@ -152,12 +115,6 @@ export class Tags implements OnInit {
     }
   }
 
-  /**
-   * Add a new tag to the list after cleaning input. If tag already exists, it is ignored.
-   * Triggers `tagsChange` and `tagAdded` if a tag is added.
-   *
-   * @param tag - The raw tag string to be added.
-   */
   protected add(tagName: string) {
     if (!tagName || typeof tagName !== 'string') return;
 
@@ -181,32 +138,14 @@ export class Tags implements OnInit {
     this.tagsChange.emit(this.tags());
   }
 
-  /**
-   * Emit the tagClicked event with the tag that was clicked.
-   * This component does not do anything else with this event.
-   * It is up to the parent component to decide what to do with it.
-   *
-   * @param tag - the tag that was clicked
-   */
   protected clicked(tag: string) {
     this.tagClicked.emit(tag);
   }
 
-  /**
-   * Remove the tag that was closed after a delay.
-   * We add the delay because we want to give the animation time to complete.
-   *
-   * @param tag - the tag that was closed
-   */
   protected closed(tag: string) {
     this.remove(tag);
   }
 
-  /**
-   * Remove a tag from the internal list and emit `tagsChange` and `tagRemoved`.
-   *
-   * @param tag - The tag to be removed.
-   */
   protected remove(tagName: string) {
     const index = this.tags().findIndex((tag) => tag === tagName);
     if (index > -1) {

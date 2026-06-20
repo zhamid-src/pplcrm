@@ -1,23 +1,6 @@
 import { Component, Signal, computed, input, output, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
 
-/**
- * The `tagitem` component displays a single tag UI element with optional delete functionality and animation.
- *
- * ## Inputs
- * - `name`: The label or name of the tag (required).
- * - `canDelete`: Whether to show a delete icon (defaults to `true`).
- *
- * ## Outputs
- * - `click`: Emits the tag name when the tag is clicked.
- * - `close`: Emits the tag name when the tag is deleted. This should be handled by the parent to remove the tag from the array **after** a short delay to allow the CSS animation to complete.
- *
- * ## Template Notes
- * - The `destroy` flag should be bound to a CSS class to trigger the exit animation (`.destroy`).
- *
- * ## Usage
- * Used in tag lists or input interfaces to represent individual tags with interaction capabilities.
- */
 @Component({
   selector: 'pc-tagitem',
   imports: [Icon],
