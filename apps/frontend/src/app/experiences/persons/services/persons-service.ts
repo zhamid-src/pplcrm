@@ -128,10 +128,10 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   ): Promise<RouterOutputs['persons']['import']> {
     // Opt-out of global error toast; importer UI shows a scoped summary instead
     return this.api.persons.import.mutate(
-      { rows, tags, skipped, file_name: fileName },
+      { rows, tags, skipped, file_name: fileName ?? undefined },
       {
         meta: { skipErrorHandler: true },
-      },
+      } as any,
     );
   }
 

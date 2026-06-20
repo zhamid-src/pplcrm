@@ -99,12 +99,12 @@ export class PersonView {
     },
   });
   protected readonly addressString = computed(() => {
-    const hh = this.householdResource.value();
+    const hh = this.householdResource.value() as any;
     if (!hh || hh.is_placeholder) return 'No Address Assigned';
     return this.getFormattedAddress(hh);
   });
   protected readonly isPlaceholderHousehold = computed(() => {
-    return this.householdResource.value()?.is_placeholder ?? false;
+    return (this.householdResource.value() as any)?.is_placeholder ?? false;
   });
 
   // Contact initials and full name computation

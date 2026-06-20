@@ -285,8 +285,8 @@ export class NewsletterAddComponent implements OnInit {
     try {
       const created = await this.newslettersSvc.add(payload);
 
-      if (rest.timingMode === 'now' && created?.id) {
-        await this.newslettersSvc.send(created.id);
+      if (rest.timingMode === 'now' && created?.['id']) {
+        await this.newslettersSvc.send(created['id']);
         this.alertSvc.showSuccess('Newsletter sent successfully!');
       } else {
         this.alertSvc.showSuccess(
