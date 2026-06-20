@@ -971,9 +971,99 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.editingCell.set(null);
   }
 
+  private getRowDisplayName(row: any): string {
+    if (!row) return 'Unnamed Record';
+    if (row.first_name !== undefined || row.last_name !== undefined) {
+      const parts = [row.first_name, row.last_name].filter(Boolean);
+      return parts.length ? parts.join(' ') : 'Unnamed Person';
+    }
+    if (row.street1 !== undefined || row.street_num !== undefined) {
+      const parts = [row.street_num, row.street1, row.apt, row.city].filter(Boolean);
+      return parts.length ? parts.join(' ') : 'Unnamed Household';
+    }
+    if (row.name) return String(row.name);
+    if (row.display_name) return String(row.display_name);
+    if (row.id) return `Record #${row.id}`;
+    return 'Unnamed Record';
+  }
+
   protected async confirmMerge() {
+    const mergeFn =
+      (this.gridSvc as any).merge ||
+      (this.gridSvc as any).mergePersons ||
+      (this.gridSvc as any).mergeCompanies ||
+      (this.gridSvc as any).mergeHouseholds;
+
+    if (!mergeFn) {
+      this.alertSvc.showError('Merging is not supported for this data grid.');
+      return;
+    }
+
     const selectedRows = this.getSelectedRows();
-    console.log('selectedRows', selectedRows);
+    if (selectedRows.length !== 2) {
+      this.alertSvc.showError('Please select exactly 2 rows to merge.');
+      return;
+    }
+
+    const row1 = selectedRows[0];
+    const row2 = selectedRows[1];
+    const name1 = this.getRowDisplayName(row1);
+    const name2 = this.getRowDisplayName(row2);
+
+    const primaryChoice = await this.dialogs.choose<{ target: any; source: any }>({
+      title: 'Select Primary Record',
+      message: 'Choose which record you want to keep as the primary record. The other record will be merged into this one and permanently deleted.',
+      variant: 'info',
+      choices: [
+        {
+          label: `${name1} (Keep this, merge the other into this)`,
+          value: { target: row1, source: row2 }
+        },
+        {
+          label: `${name2} (Keep this, merge the other into this)`,
+          value: { target: row2, source: row1 }
+        }
+      ]
+    });
+
+    if (!primaryChoice) return;
+
+    const targetName = this.getRowDisplayName(primaryChoice.target);
+    const sourceName = this.getRowDisplayName(primaryChoice.source);
+
+    const confirmed = await this.dialogs.confirm({
+      title: 'Confirm Merge',
+      message: `Are you sure you want to merge "${sourceName}" into "${targetName}"? This action will permanently delete "${sourceName}" and cannot be undone.`,
+      variant: 'warning',
+      confirmText: 'Merge',
+      cancelText: 'Cancel'
+    });
+
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      if (typeof (this.gridSvc as any).merge === 'function') {
+        await (this.gridSvc as any).merge(primaryChoice.target.id, primaryChoice.source.id);
+      } else if (typeof (this.gridSvc as any).mergePersons === 'function') {
+        await (this.gridSvc as any).mergePersons(primaryChoice.target.id, primaryChoice.source.id);
+      } else if (typeof (this.gridSvc as any).mergeCompanies === 'function') {
+        await (this.gridSvc as any).mergeCompanies(primaryChoice.target.id, primaryChoice.source.id);
+      } else if (typeof (this.gridSvc as any).mergeHouseholds === 'function') {
+        await (this.gridSvc as any).mergeHouseholds(primaryChoice.target.id, primaryChoice.source.id);
+      } else {
+        throw new Error('No merge service method available');
+      }
+
+      this.alertSvc.showSuccess(`Successfully merged into "${targetName}"`);
+      this.clearAllSelection();
+      await this.refresh();
+    } catch (err: any) {
+      console.error(err);
+      this.alertSvc.showError(err?.message || 'Merge failed');
+    } finally {
+      end();
+    }
   }
 
   protected async confirmDelete(selectedRows?: any[]): Promise<boolean | void> {
