@@ -11,11 +11,10 @@ describe('Alerts Component', () => {
   beforeEach(async () => {
     mockAlertSvc = {
       alertList: vi.fn().mockReturnValue([
-        { id: '1', type: 'success', text: 'Success!', btn1Text: 'OK', btn2Text: 'Cancel' },
+        { id: '1', type: 'success', text: 'Success!', btn1Text: 'OK' },
         { id: '2', type: 'error', text: 'Error!' },
       ]),
       OKBtnCallback: vi.fn(),
-      btn2Callback: vi.fn(),
       dismiss: vi.fn(),
     };
 
@@ -55,11 +54,6 @@ describe('Alerts Component', () => {
     expect(mockAlertSvc.dismiss).toHaveBeenCalledWith('1');
   });
 
-  it('should call alert service on Btn2 click', () => {
-    component['btn2Click']('2');
-    expect(mockAlertSvc.btn2Callback).toHaveBeenCalledWith('2');
-    expect(mockAlertSvc.dismiss).toHaveBeenCalledWith('2');
-  });
 
   it('should return correct enter animation based on position', () => {
     fixture.componentRef.setInput('position', 'bottom');

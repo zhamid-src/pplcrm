@@ -1,5 +1,6 @@
 import { inject, signal, computed, Directive } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
 
 export interface DuplicateGroup<T> {
   reason: string;
@@ -11,6 +12,7 @@ export interface DuplicateGroup<T> {
 @Directive() // Needed for abstract classes using dependency injection in Angular
 export abstract class BaseDuplicateManager<T extends { id: string; created_at: string | Date }> {
   protected readonly alertSvc = inject(AlertService);
+  protected readonly dialogs = inject(ConfirmDialogService);
 
   public readonly isLoading = signal(false);
   public readonly groups = signal<DuplicateGroup<T>[]>([]);
@@ -101,41 +103,42 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
     const primaryName = this.getItemDisplayName(targetItem);
     const dupName = this.getItemDisplayName(sourceItem);
 
-    this.alertSvc.show({
+    const confirmed = await this.dialogs.confirm({
       title: 'Confirm Merge',
-      text: `Are you sure you want to merge "${dupName}" into "${primaryName}"? This action will permanently delete this duplicate ${this.getEntityName()} and cannot be undone.`,
-      type: 'warning',
-      btn2: 'Cancel',
-      duration: 0,
-      OKBtnCallback: async () => {
-        try {
-          await this.mergeInService(targetId, sourceId);
-          this.alertSvc.showSuccess(`Successfully merged into "${primaryName}"`);
-
-          let updatedGroups = this.groups().filter((_, idx) => idx !== groupIndex);
-          updatedGroups = updatedGroups.map((g) => ({
-            ...g,
-            items: g.items.filter((i) => i.id !== sourceId),
-          }));
-
-          const initialLength = updatedGroups.length;
-          updatedGroups = updatedGroups.filter((g) => g.items.length > 1);
-          const groupsRemovedCount = 1 + (initialLength - updatedGroups.length);
-
-          this.groups.set(updatedGroups);
-          this.totalGroups.update((t) => Math.max(0, t - groupsRemovedCount));
-
-          if (updatedGroups.length === 0 && this.currentPage() > 1) {
-            this.currentPage.update((p) => p - 1);
-            this.loadDuplicates();
-          } else if (updatedGroups.length === 0 && this.totalGroups() > 0) {
-            this.loadDuplicates();
-          }
-        } catch (err: any) {
-          this.alertSvc.showError(err?.message || 'Merge failed');
-        }
-      },
+      message: `Are you sure you want to merge "${dupName}" into "${primaryName}"? This action will permanently delete this duplicate ${this.getEntityName()} and cannot be undone.`,
+      variant: 'warning',
+      confirmText: 'Merge',
+      cancelText: 'Cancel'
     });
+
+    if (!confirmed) return;
+
+    try {
+      await this.mergeInService(targetId, sourceId);
+      this.alertSvc.showSuccess(`Successfully merged into "${primaryName}"`);
+
+      let updatedGroups = this.groups().filter((_, idx) => idx !== groupIndex);
+      updatedGroups = updatedGroups.map((g) => ({
+        ...g,
+        items: g.items.filter((i) => i.id !== sourceId),
+      }));
+
+      const initialLength = updatedGroups.length;
+      updatedGroups = updatedGroups.filter((g) => g.items.length > 1);
+      const groupsRemovedCount = 1 + (initialLength - updatedGroups.length);
+
+      this.groups.set(updatedGroups);
+      this.totalGroups.update((t) => Math.max(0, t - groupsRemovedCount));
+
+      if (updatedGroups.length === 0 && this.currentPage() > 1) {
+        this.currentPage.update((p) => p - 1);
+        this.loadDuplicates();
+      } else if (updatedGroups.length === 0 && this.totalGroups() > 0) {
+        this.loadDuplicates();
+      }
+    } catch (err: any) {
+      this.alertSvc.showError(err?.message || 'Merge failed');
+    }
   }
 
   public nextPage() {

@@ -38,17 +38,7 @@
     >
       {{ alert.OKBtn }}
     </button>
-    <button
-      class="btn btn-sm"
-      [class.btn-info]="alert.type === 'info'"
-      [class.btn-warning]="alert.type === 'warning'"
-      [class.btn-success]="alert.type === 'success'"
-      [class.btn-error]="alert.type === 'error'"
-      [class.hidden]="!alert.btn2"
-      (click)="btn2Click(alert.id)"
-    >
-      {{ alert.btn2 }}
-    </button>
+
   </div>
   }
 </div>

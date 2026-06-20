@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 import { FilesService } from '../services/files.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { TokenService } from '../../../services/api/token-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { environment } from '../../../../environments/environment';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
@@ -24,6 +25,7 @@ export class FilesGrid implements OnInit {
   private readonly filesSvc = inject(FilesService);
   private readonly alertSvc = inject(AlertService);
   private readonly tokenSvc = inject(TokenService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   protected readonly files = signal<any[]>([]);
   protected readonly filteredFiles = signal<any[]>([]);
@@ -111,22 +113,23 @@ export class FilesGrid implements OnInit {
     window.open(url, '_blank');
   }
 
-  protected deleteFile(file: any) {
-    this.alertSvc.show({
+  protected async deleteFile(file: any) {
+    const confirmed = await this.dialogs.confirm({
       title: 'Confirm Delete',
-      text: `Are you sure you want to permanently delete "${file.filename}"? This will clean up the database record and delete the file from cloud storage.`,
-      type: 'warning',
-      OKBtn: 'Delete',
-      btn2: 'Cancel',
-      OKBtnCallback: async () => {
-        try {
-          await this.filesSvc.delete(file.id);
-          this.alertSvc.showSuccess('File deleted successfully');
-          await this.loadFiles();
-        } catch (err) {
-          this.alertSvc.showError('Failed to delete file');
-        }
-      },
+      message: `Are you sure you want to permanently delete "${file.filename}"? This will clean up the database record and delete the file from cloud storage.`,
+      variant: 'danger',
+      confirmText: 'Delete',
+      cancelText: 'Cancel'
     });
+
+    if (!confirmed) return;
+
+    try {
+      await this.filesSvc.delete(file.id);
+      this.alertSvc.showSuccess('File deleted successfully');
+      await this.loadFiles();
+    } catch (err) {
+      this.alertSvc.showError('Failed to delete file');
+    }
   }
 }

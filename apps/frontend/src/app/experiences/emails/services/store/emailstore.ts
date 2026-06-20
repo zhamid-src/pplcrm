@@ -1,6 +1,7 @@
 import { computed, inject, signal, Service, debounced, effect, untracked } from '@angular/core';
 import { Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
 import { EmailStatus } from '../../../../../../../../libs/common/src';
 
 import { EmailsService } from '../emails-service';
@@ -16,6 +17,7 @@ export class EmailsStore {
   //  private readonly _checked = new Set<string>();
   private readonly router = inject(Router);
   private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
   private readonly actions = inject(EmailActionsStore);
   private readonly cache = inject(EmailCacheStore);
   private readonly emailSvc = inject(EmailsService);
@@ -236,16 +238,16 @@ export class EmailsStore {
         msg.includes('No Google account connected') ||
         msg.includes('Token refresh failed')
       ) {
-        this.alerts.show({
-          text: 'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
-          type: 'warning',
-          OKBtn: 'Go to Settings',
-          btn2: 'Cancel',
-          OKBtnCallback: () => {
-            void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });
-          },
-          duration: 0,
+        const confirmed = await this.dialogs.confirm({
+          title: 'Email Account Connection Required',
+          message: 'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
+          variant: 'warning',
+          confirmText: 'Go to Settings',
+          cancelText: 'Cancel'
         });
+        if (confirmed) {
+          void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });
+        }
       } else {
         this.alerts.showError(`Sync failed: ${msg}`);
       }

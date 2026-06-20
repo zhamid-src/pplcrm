@@ -24,10 +24,6 @@ export class Alerts {
     return this.position() === 'top' ? list.slice().reverse() : list;
   });
 
-  protected btn2Click(id: string): void {
-    this.alertSvc.btn2Callback(id);
-    this.alertSvc.dismiss(id);
-  }
 
   protected getEnterAnim(): string {
     return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
