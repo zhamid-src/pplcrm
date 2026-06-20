@@ -1,5 +1,5 @@
-import { Component, OnInit, effect, inject, signal, WritableSignal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { Component, OnInit, effect, inject, signal, WritableSignal, input } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { form, email, pattern, FormField, validate } from '@angular/forms/signals';
 import { Icon } from '@icons/icon';
 import { SettingsEntryType, UpdateAuthUserType, IAuthUserDetail } from '../../../../../../libs/common/src';
@@ -35,11 +35,14 @@ interface SectionState {
 export class SettingsPage implements OnInit {
   protected readonly settingsSvc = inject(SettingsService);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly alerts = inject(AlertService);
   private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
   protected readonly householdsSvc = inject(HouseholdsService);
   private readonly auth = inject(AuthService);
   private readonly userService = inject(UserService);
+
+  public readonly section = input<string>();
 
   protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
 
@@ -53,16 +56,23 @@ export class SettingsPage implements OnInit {
   protected readonly recomputingFingerprints = signal(false);
 
   constructor() {
-    this.currentMode = (this.route.snapshot.routeConfig?.path as any) || 'settings';
+    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'configuration' | 'billing') || 'settings';
     this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
 
-    if (this.currentMode === 'settings') {
-      this.selectedSectionId.set('notifications');
-    } else if (this.currentMode === 'configuration') {
-      this.selectedSectionId.set('organization');
-    } else if (this.currentMode === 'billing') {
-      this.selectedSectionId.set('billing');
-    }
+    effect(() => {
+      const s = this.section();
+      if (s) {
+        this.selectedSectionId.set(s);
+      } else {
+        if (this.currentMode === 'settings') {
+          this.selectedSectionId.set('notifications');
+        } else if (this.currentMode === 'configuration') {
+          this.selectedSectionId.set('organization');
+        } else if (this.currentMode === 'billing') {
+          this.selectedSectionId.set('billing');
+        }
+      }
+    });
 
     effect(() => {
       const snapshot = this.snapshotSignal();
@@ -85,18 +95,13 @@ export class SettingsPage implements OnInit {
     this.hasLoaded.set(true);
     this.applySnapshot(this.settingsSvc.snapshot(), true);
     await this.loadUserPrefs();
-
-    const tab = this.route.snapshot.queryParamMap.get('tab');
-    if (tab) {
-      this.selectedSectionId.set(tab);
-    }
   }
 
   protected trackSection = (_: number, section: SectionState) => section.config.id;
   protected trackField = (_: number, field: SectionFieldState) => field.controlName;
 
   protected selectSection(sectionId: string) {
-    this.selectedSectionId.set(sectionId);
+    this.router.navigate(['/', this.currentMode, sectionId]);
   }
 
   protected isSelected(sectionId: string) {

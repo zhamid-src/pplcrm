@@ -1,6 +1,6 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { vi, describe, beforeEach, it, expect } from 'vitest';
 import { SettingsService } from './services/settings-service';
 import { SettingsPage } from './settings-page';
@@ -86,8 +86,8 @@ describe('SettingsPage', () => {
     const mockActivatedRoute = {
       queryParams: of({}),
       snapshot: {
-        routeConfig: {
-          path: 'configuration',
+        data: {
+          mode: 'configuration',
         },
         queryParamMap: {
           get: vi.fn().mockReturnValue(null),
@@ -95,11 +95,16 @@ describe('SettingsPage', () => {
       },
     };
 
+    const mockRouter = {
+      navigate: vi.fn().mockResolvedValue(true),
+    };
+
     await TestBed.configureTestingModule({
       imports: [SettingsPage],
       providers: [
         { provide: SettingsService, useValue: mockSettingsSvc },
         { provide: ActivatedRoute, useValue: mockActivatedRoute },
+        { provide: Router, useValue: mockRouter },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: AuthService, useValue: mockAuthSvc },
         { provide: UserService, useValue: mockUserService },
@@ -128,7 +133,13 @@ describe('SettingsPage', () => {
   it('should allow switching between sections', () => {
     expect(component['selectedSectionId']()).toBe('organization');
 
+    const router = TestBed.inject(Router);
     component['selectSection']('notifications');
+    expect(router.navigate).toHaveBeenCalledWith(['/', 'configuration', 'notifications']);
+
+    fixture.componentRef.setInput('section', 'notifications');
+    fixture.detectChanges();
+
     expect(component['selectedSectionId']()).toBe('notifications');
     expect(component['isSelected']('notifications')).toBe(true);
     expect(component['isSelected']('organization')).toBe(false);
@@ -219,7 +230,7 @@ describe('SettingsPage', () => {
 
   it('should initialize correctly under settings mode', async () => {
     const mockRoute = TestBed.inject(ActivatedRoute);
-    mockRoute.snapshot.routeConfig = { path: 'settings' };
+    mockRoute.snapshot.data = { mode: 'settings' };
 
     const newFixture = TestBed.createComponent(SettingsPage);
     const newComponent = newFixture.componentInstance;
@@ -236,7 +247,7 @@ describe('SettingsPage', () => {
 
   it('should initialize correctly under billing mode', async () => {
     const mockRoute = TestBed.inject(ActivatedRoute);
-    mockRoute.snapshot.routeConfig = { path: 'billing' };
+    mockRoute.snapshot.data = { mode: 'billing' };
 
     const newFixture = TestBed.createComponent(SettingsPage);
     const newComponent = newFixture.componentInstance;
