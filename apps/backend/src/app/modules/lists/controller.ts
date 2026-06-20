@@ -306,7 +306,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     // Filter newsletters in JS where their target_lists matches this list
     const targetedNewsletters = newsletters.filter((n) => {
       if (!n.target_lists) return false;
-      // After migration 2026-07-01, target_lists is a jsonb column returned as a parsed object.
+      // After migration 2026-07-01-a-schema-improvements, target_lists is a jsonb column returned as a parsed object.
       // Support legacy string values too (pre-migration rows or test data).
       let parsed: unknown = n.target_lists;
       if (typeof parsed === 'string') {

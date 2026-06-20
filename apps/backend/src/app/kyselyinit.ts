@@ -6,14 +6,14 @@ async function ensureMigrationTableUpdated(): Promise<void> {
   try {
     await sql`
       UPDATE kysely_migration
-      SET name = '2026-07-01-schema-improvements'
-      WHERE name = '2026-06-31-schema-improvements'
+      SET name = '2026-07-01-a-schema-improvements'
+      WHERE name IN ('2026-06-31-schema-improvements', '2026-07-01-schema-improvements')
     `.execute(BaseRepository.dbInstance);
 
     await sql`
       UPDATE kysely_migration
-      SET name = '2026-07-01-security-ops-improvements'
-      WHERE name = '2026-06-31-security-ops-improvements'
+      SET name = '2026-07-01-b-security-ops-improvements'
+      WHERE name IN ('2026-06-31-security-ops-improvements', '2026-07-01-security-ops-improvements')
     `.execute(BaseRepository.dbInstance);
   } catch (err) {
     // Ignore if table doesn't exist or update fails
