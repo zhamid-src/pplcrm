@@ -14,6 +14,7 @@ import { NotificationsRepo } from '../notifications/repositories/notifications.r
 import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { processMentions } from '../../lib/mail/mentions-util';
 import { sanitizeHtml } from '../../lib/mail/sanitize-util';
+import { sql } from 'kysely';
 
 export class EmailsController extends BaseController<'emails', EmailRepo> {
   private attachmentsRepo = new EmailAttachmentsRepo();
@@ -221,7 +222,46 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
         this.commentsRepo.getForEmail(tenant_id, id),
         this.attachmentsRepo.getByEmailId(tenant_id, id),
       ]);
-      if (emailWithHeaders) return { email: emailWithHeaders, comments, attachments };
+      if (emailWithHeaders) {
+        let person: any = null;
+        if (emailWithHeaders.from_email) {
+          const fromEmail = emailWithHeaders.from_email.trim().toLowerCase();
+          const matchedPerson = await this.getRepo()
+            .db.selectFrom('persons')
+            .leftJoin('companies', 'companies.id', 'persons.company_id')
+            .select([
+              'persons.id',
+              'persons.first_name',
+              'persons.last_name',
+              'persons.email',
+              'persons.mobile',
+              'persons.notes',
+              'companies.name as company_name',
+            ])
+            .where('persons.tenant_id', '=', tenant_id)
+            .where((eb) =>
+              eb.or([eb(sql`lower(persons.email)`, '=', fromEmail), eb(sql`lower(persons.email2)`, '=', fromEmail)]),
+            )
+            .executeTakeFirst();
+
+          if (matchedPerson) {
+            const tagsAndIssues = await this.getRepo()
+              .db.selectFrom('map_peoples_tags')
+              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+              .select(['tags.name', 'tags.color', 'tags.type'])
+              .where('map_peoples_tags.tenant_id', '=', tenant_id)
+              .where('map_peoples_tags.person_id', '=', matchedPerson.id)
+              .execute();
+
+            person = {
+              ...matchedPerson,
+              tags: tagsAndIssues.filter((t) => t.type === 'tag').map((t) => ({ name: t.name, color: t.color })),
+              issues: tagsAndIssues.filter((t) => t.type === 'issue').map((t) => ({ name: t.name, color: t.color })),
+            };
+          }
+        }
+        return { email: emailWithHeaders, comments, attachments, person };
+      }
 
       // Fallback to draft if regular email not found
       const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, value: id })) as EmailDraftType | undefined;

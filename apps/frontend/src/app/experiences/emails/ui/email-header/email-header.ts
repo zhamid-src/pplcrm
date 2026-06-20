@@ -1,7 +1,11 @@
 import { DatePipe, UpperCasePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { Tags } from '@experiences/tags/ui/tags';
+import { PersonsService } from '@experiences/persons/services/persons-service';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailAssign } from '../email-assign/email-assign';
@@ -11,7 +15,7 @@ import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 @Component({
   selector: 'pc-email-header',
   // include swap for expand/collapse control
-  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon],
+  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon, RouterLink, TagItem, Tags],
   host: {
     '(document:keydown)': 'handleDocumentKeydown($event)',
   },
@@ -20,10 +24,73 @@ import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 export class EmailHeader {
   private alertSvc = inject(AlertService);
   private store = inject(EmailsStore);
+  private personsSvc = inject(PersonsService);
 
   protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
   protected isClosed = signal(false);
   protected isFavourite = signal(false);
+
+  protected personTags = computed(() => {
+    const person = this.headerData()?.person;
+    return person?.tags?.map((t: any) => t.name) ?? [];
+  });
+
+  protected personIssues = computed(() => {
+    const person = this.headerData()?.person;
+    return person?.issues?.map((t: any) => t.name) ?? [];
+  });
+
+  protected async onTagAdded(tagName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.attachTag(person.id, tagName, 'tag');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Tag "${tagName}" added`);
+    } catch (e) {
+      console.error('Failed to attach tag:', e);
+      this.alertSvc.showError('Failed to add tag');
+    }
+  }
+
+  protected async onTagRemoved(tagName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.detachTag(person.id, tagName, 'tag');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Tag "${tagName}" removed`);
+    } catch (e) {
+      console.error('Failed to detach tag:', e);
+      this.alertSvc.showError('Failed to remove tag');
+    }
+  }
+
+  protected async onIssueAdded(issueName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.attachTag(person.id, issueName, 'issue');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Issue "${issueName}" added`);
+    } catch (e) {
+      console.error('Failed to attach issue:', e);
+      this.alertSvc.showError('Failed to add issue');
+    }
+  }
+
+  protected async onIssueRemoved(issueName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.detachTag(person.id, issueName, 'issue');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Issue "${issueName}" removed`);
+    } catch (e) {
+      console.error('Failed to detach issue:', e);
+      this.alertSvc.showError('Failed to remove issue');
+    }
+  }
 
   public readonly forward = output<void>();
   public readonly reply = output<void>();

@@ -128,6 +128,10 @@ export class EmailsStore {
     return this.cache.loadEmailWithHeaders(emailId);
   }
 
+  public refreshEmailHeader(emailId: EmailId) {
+    return this.cache.refreshEmailHeader(emailId);
+  }
+
   public loadEmailActivities(emailId: EmailId) {
     return this.cache.loadEmailActivities(emailId);
   }
