@@ -74,17 +74,13 @@ export class NewPasswordPage implements OnInit {
         const end = this._loading.begin();
         try {
           const passwordVal = this.payload().password;
-          const error = await this.authService.resetPassword({
+          await this.authService.resetPassword({
             code: this.code || '',
             password: passwordVal,
           });
 
-          if (error) {
-            this.error.set(true);
-          } else {
-            this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
-            this.router.navigateByUrl('signin');
-          }
+          this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
+          this.router.navigateByUrl('signin');
         } catch (err: any) {
           // Catch backend/network rejections properly
           this.alertSvc.showError(err?.message || 'Failed to reset password. Please try again.');

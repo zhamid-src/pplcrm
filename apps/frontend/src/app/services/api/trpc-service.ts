@@ -2,7 +2,7 @@ import { inject, Service } from '@angular/core';
 import { Router } from '@angular/router';
 import { getAllOptionsType } from '../../../../../../libs/common/src';
 import { ErrorService } from '../error.service';
-import { TRPCClientError, TRPCLink, createTRPCClient, httpLink as trpcHttpLink, loggerLink } from '@trpc/client';
+import { TRPCClient, TRPCClientError, TRPCLink, createTRPCClient, httpLink as trpcHttpLink, loggerLink } from '@trpc/client';
 import { observable } from '@trpc/server/observable';
 import superjson from 'superjson';
 
@@ -24,7 +24,7 @@ export class TRPCService<T> {
 
   protected ac = new AbortController();
 
-  protected api: any;
+  public readonly api: TRPCClient<TRPCRouter>;
 
   constructor() {
     this.api = createTRPCClient<TRPCRouter>({

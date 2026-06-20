@@ -209,7 +209,7 @@ export class ListDetail implements OnInit {
     if (!id) return;
     const end = this._loading.begin();
     try {
-      const list = await this.listsSvc.getById(id);
+      const list = (await this.listsSvc.getById(id)) as any;
       if (list) {
         this.form.patchValue({
           name: list.name ?? '',

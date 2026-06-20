@@ -395,7 +395,7 @@ export class WorkflowDetailComponent implements OnInit {
           if (this.isNew()) {
             // 1. Create Workflow Settings
             const result = await this.workflowsSvc.add(data);
-            const newId = String(result.id);
+            const newId = String(result['id']);
             this.workflowId.set(newId);
             this.isNew.set(false);
 

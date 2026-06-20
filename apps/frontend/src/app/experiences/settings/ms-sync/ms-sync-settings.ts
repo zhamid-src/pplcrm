@@ -18,7 +18,7 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit, OnDe
   protected readonly status = signal<{
     connected: boolean;
     msEmail: string | null;
-    syncedAt: string | null;
+    syncedAt: Date | string | null;
     syncing?: boolean;
   } | null>(null);
   protected readonly isLoading = signal(true);
@@ -94,7 +94,7 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit, OnDe
     }
   }
 
-  protected formatDate(date: string | null) {
+  protected formatDate(date: Date | string | null) {
     if (!date) return 'Never';
     return new Date(date).toLocaleString();
   }

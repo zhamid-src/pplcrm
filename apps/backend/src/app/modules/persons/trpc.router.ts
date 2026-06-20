@@ -208,6 +208,19 @@ function mergePersons() {
     .mutation(({ input, ctx }) => personsService.mergePersons(input, ctx.auth));
 }
 
+function moveEntireHousehold() {
+  return authProcedure
+    .input(
+      z.object({
+        fromHouseholdId: idSchema,
+        toHouseholdId: idSchema,
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      persons.moveEntireHousehold(input.fromHouseholdId, input.toHouseholdId, ctx.auth.tenant_id),
+    );
+}
+
 export const PersonsRouter = router({
   add: add(),
   count: count(),
@@ -231,4 +244,5 @@ export const PersonsRouter = router({
   getPotentialDuplicates: getPotentialDuplicates(),
   getDuplicateCounts: getDuplicateCounts(),
   mergePersons: mergePersons(),
+  moveEntireHousehold: moveEntireHousehold(),
 });
