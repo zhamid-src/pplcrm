@@ -452,18 +452,18 @@ export class SettingsPage implements OnInit {
         if (notifState) {
           notifState.payload.update((p) => ({
             ...p,
-            mention_in_comment: prefs.mention_in_comment ?? true,
-            mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
-            task_assigned: prefs.task_assigned ?? true,
-            task_assigned_in_app: prefs.task_assigned_in_app ?? true,
-            task_due: prefs.task_due ?? true,
-            task_due_in_app: prefs.task_due_in_app ?? true,
-            person_assigned: prefs.person_assigned ?? true,
-            person_assigned_in_app: prefs.person_assigned_in_app ?? true,
-            export_ready: prefs.export_ready ?? true,
-            export_ready_in_app: prefs.export_ready_in_app ?? true,
-            import_summary: prefs.import_summary ?? true,
-            import_summary_in_app: prefs.import_summary_in_app ?? true,
+            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
+            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
+            notifications_task_assigned: prefs.task_assigned ?? true,
+            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
+            notifications_task_due: prefs.task_due ?? true,
+            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
+            notifications_person_assigned: prefs.person_assigned ?? true,
+            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
+            notifications_export_ready: prefs.export_ready ?? true,
+            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
+            notifications_import_summary: prefs.import_summary ?? true,
+            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
           }));
           notifState.form().reset();
         }
