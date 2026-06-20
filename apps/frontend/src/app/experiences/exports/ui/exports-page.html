@@ -86,13 +86,20 @@
             }
           </td>
           <td class="text-right">
-            @if (j.status === 'completed') { @if (isExpired(j)) {
-            <span class="text-xs text-base-content/40 italic">Expired (30d)</span>
-            } @else {
-            <button class="btn btn-sm btn-circle btn-ghost text-primary" title="Download CSV" (click)="downloadJob(j)">
-              <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-            </button>
-            } }
+            <div class="flex justify-end gap-1">
+              @if (j.status === 'completed') {
+                @if (isExpired(j)) {
+                  <span class="text-xs text-base-content/40 italic flex items-center mr-2">Expired (30d)</span>
+                } @else {
+                  <button class="btn btn-sm btn-circle btn-ghost text-primary" title="Download CSV" (click)="downloadJob(j)">
+                    <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+                  </button>
+                }
+              }
+              <button class="btn btn-sm btn-circle btn-ghost text-error" title="Delete Export" (click)="deleteJob(j)">
+                <pc-icon name="trash" [size]="4"></pc-icon>
+              </button>
+            </div>
           </td>
         </tr>
         } @empty {
