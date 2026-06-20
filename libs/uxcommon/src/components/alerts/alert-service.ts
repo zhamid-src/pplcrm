@@ -10,10 +10,6 @@ export class AlertMessage {
 
   public OKBtnCallback?: () => void;
 
-  public btn2?: string;
-
-  public btn2Callback?: () => void;
-
   public duration = 3000;
 
   public id: string;
@@ -29,7 +25,7 @@ export class AlertMessage {
     Object.assign(this, init);
     this.id = init?.id ?? crypto.randomUUID();
     this.OKBtn = init?.OKBtn ?? 'OK';
-    this.duration = init?.duration ?? 3000;
+    this.duration = init?.duration || 3000;
     this.text = init?.text ?? 'Alert';
   }
 }
@@ -46,11 +42,6 @@ export class AlertService {
   public OKBtnCallback(id: string): void {
     const alert = this.findById(id);
     alert?.OKBtnCallback?.();
-  }
-
-  public btn2Callback(id: string): void {
-    const alert = this.findById(id);
-    alert?.btn2Callback?.();
   }
 
   public dismiss(id: string): void {
@@ -88,14 +79,13 @@ export class AlertService {
 
       // Extend dismissal timeout by 1 second
       clearTimeout(existing.timeoutId);
-      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration + 1000);
+      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), (existing.duration || 3000) + 1000);
     } else {
       const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
       this.alertsSignal.update((list) => [messageWithMeta, ...list]);
 
-      if (messageWithMeta.duration) {
-        messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), messageWithMeta.duration);
-      }
+      const duration = messageWithMeta.duration || 3000;
+      messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), duration);
     }
   }
 
