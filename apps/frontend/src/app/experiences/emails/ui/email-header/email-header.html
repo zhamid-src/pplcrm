@@ -212,20 +212,136 @@
 
   <div class="mt-3 flex items-center gap-3">
     <div class="avatar">
+      @if (headerData()?.person; as person) {
+      <a
+        [routerLink]="['/people', person.id]"
+        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
+      >
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </a>
+      } @else {
       <div class="w-10 rounded-full bg-base-200">
         <span class="flex h-full w-full items-center justify-center font-medium">
           {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
         </span>
       </div>
+      }
     </div>
 
     <div class="min-w-0 flex-1">
-      <div class="flex items-baseline gap-2 min-w-0">
+      <div class="flex items-center gap-1.5 min-w-0">
+        @if (headerData()?.person; as person) {
+        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
+          {{ email()!.from_name || email()!.from_email }}
+        </a>
+        <div class="dropdown dropdown-bottom inline-block">
+          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
+            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
+          </button>
+          <div
+            tabindex="0"
+            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
+          >
+            <div class="space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
+                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
+                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <h3 class="font-bold text-sm">{{ person.first_name }} {{ person.last_name }}</h3>
+                  @if (person.company_name) {
+                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
+                  }
+                </div>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-2 text-xs">
+                <div class="flex items-center gap-2">
+                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span class="truncate">{{ person.email }}</span>
+                </div>
+                @if (person.mobile) {
+                <div class="flex items-center gap-2">
+                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span>{{ person.mobile }}</span>
+                </div>
+                } @if (person.notes) {
+                <div class="flex flex-col gap-1 mt-1">
+                  <span class="font-semibold text-base-content/60">Notes:</span>
+                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
+                    {{ person.notes }}
+                  </p>
+                </div>
+                }
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-3">
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Tags:</span
+                  >
+                  <pc-tags
+                    [tags]="personTags()"
+                    [type]="'tag'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add tag...'"
+                    (tagAdded)="onTagAdded($event)"
+                    (tagRemoved)="onTagRemoved($event)"
+                  ></pc-tags>
+                  @if (!personTags().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No tags</span>
+                  }
+                </div>
+
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Issues:</span
+                  >
+                  <pc-tags
+                    [tags]="personIssues()"
+                    [type]="'issue'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add issue...'"
+                    (tagAdded)="onIssueAdded($event)"
+                    (tagRemoved)="onIssueRemoved($event)"
+                  ></pc-tags>
+                  @if (!personIssues().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No issues</span>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        } @else {
         <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
+        }
         <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
       </div>
 
-      <div class="text-xs text-base-content/60">
+      @if (headerData()?.person; as person) { @if (person.tags?.length || person.issues?.length) {
+      <div class="flex flex-wrap gap-1.5 mt-1 items-center">
+        @for (tag of person.tags; track tag.name) {
+        <pc-tagitem [name]="tag.name" [color]="tag.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+        } @for (issue of person.issues; track issue.name) {
+        <pc-tagitem [name]="issue.name" [color]="issue.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+        }
+      </div>
+      } }
+
+      <div class="text-xs text-base-content/60 mt-1">
         to
         <div class="dropdown inline-block">
           <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">

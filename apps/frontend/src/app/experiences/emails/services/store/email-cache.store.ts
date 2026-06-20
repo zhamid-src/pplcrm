@@ -153,6 +153,11 @@ export class EmailCacheStore {
     });
   }
 
+  public refreshEmailHeader(emailId: EmailId): void {
+    const key = String(emailId);
+    void this.queryClient.invalidateQueries({ queryKey: ['email', key] });
+  }
+
   public replaceHeader(emailId: EmailId, header: any): void {
     const key = String(emailId);
     this.queryClient.setQueryData<{ body: string; header: any }>(['email', key], (old) => {
@@ -161,3 +166,4 @@ export class EmailCacheStore {
     });
   }
 }
+
