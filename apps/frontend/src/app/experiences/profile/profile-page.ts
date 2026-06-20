@@ -307,7 +307,7 @@ export class ProfilePage implements OnInit {
       const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
 
       const data = await this.auth.uploadAvatar(webpFile);
-      this.avatarUrl.set(data.avatar_url ?? null);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
       this.alerts.showSuccess('Profile picture updated successfully');
     } catch (err: any) {
       this.alerts.showError(err?.message || 'Failed to crop/upload avatar');
@@ -342,7 +342,7 @@ export class ProfilePage implements OnInit {
       const user = await this.userService.getProfileById(currentUser.id);
       this.detail.set(user);
       this.stats.set(user.stats as any);
-      this.avatarUrl.set((user as any).avatar_url ?? null);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
       this.setForm(user);
       this.form().reset();
     } catch (err: any) {
