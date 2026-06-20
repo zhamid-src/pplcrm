@@ -228,6 +228,41 @@ describe('SettingsPage', () => {
     expect(groups[0].inAppField).toBeTruthy();
   });
 
+  it('should load user notification preferences and populate fields correctly', async () => {
+    const updatedUser = {
+      id: '123',
+      email: 'john@example.com',
+      first_name: 'John',
+      last_name: 'Doe',
+      notification_preferences: {
+        mention_in_comment: false,
+        mention_in_comment_in_app: true,
+        task_assigned: false,
+        task_assigned_in_app: false,
+        task_due: true,
+        task_due_in_app: false,
+        person_assigned: true,
+        person_assigned_in_app: true,
+        export_ready: false,
+        export_ready_in_app: true,
+        import_summary: false,
+        import_summary_in_app: false,
+      },
+    };
+    mockUserService.getProfileById.mockResolvedValueOnce(updatedUser);
+
+    await component['loadUserPrefs']();
+
+    const notifSection = component['sectionStates'].find((s) => s.config.id === 'notifications');
+    expect(notifSection).toBeTruthy();
+    const payload = notifSection?.payload();
+
+    expect(payload?.['notifications_mention_in_comment']).toBe(false);
+    expect(payload?.['notifications_mention_in_comment_in_app']).toBe(true);
+    expect(payload?.['notifications_task_assigned']).toBe(false);
+    expect(payload?.['notifications_task_assigned_in_app']).toBe(false);
+  });
+
   it('should initialize correctly under settings mode', async () => {
     const mockRoute = TestBed.inject(ActivatedRoute);
     mockRoute.snapshot.data = { mode: 'settings' };
