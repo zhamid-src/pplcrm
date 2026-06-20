@@ -18,7 +18,7 @@ import { HouseholdsService } from '../../households/services/households-service'
 import { PersonsService } from '../services/persons-service';
 import { TeamsService } from '../../teams/services/teams-service';
 import { CompaniesService } from '../../companies/services/companies-service';
-import { AddressType, Persons } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { AddressType, Persons, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
@@ -56,13 +56,13 @@ export class PersonDetail implements OnInit {
   });
 
   protected readonly addressString = computed(() => {
-    const hh = this.householdResource.value() as any;
+    const hh = this.householdResource.value() as Households | null | undefined;
     if (!hh || hh.is_placeholder) return null;
     return this.getFormattedAddress(hh);
   });
 
   protected readonly isPlaceholderHousehold = computed(() => {
-    return (this.householdResource.value() as any)?.is_placeholder ?? false;
+    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
   });
 
   // Drawer state for assigning household
@@ -212,7 +212,7 @@ export class PersonDetail implements OnInit {
       ...raw,
       company_id: raw.company_id || null,
       assigned_to: raw.assigned_to || null,
-    } as any;
+    } as UpdatePersonsType;
     return this.id() ? this.update(data, done) : this.add(data, done);
   }
 
@@ -336,7 +336,7 @@ export class PersonDetail implements OnInit {
     const end = this._loading.begin();
     try {
       await this.personsSvc.removeHousehold(this.id()!);
-      this.person.update((p) => (p ? { ...p, household_id: null as any } : p));
+      this.person.update((p) => (p ? { ...p, household_id: null } : p));
       this.alertSvc.showInfo('The person has been removed from the household. You may select a different household');
     } catch (err) {
       this.alertSvc.showError(String(err));
@@ -545,10 +545,10 @@ export class PersonDetail implements OnInit {
       mobile: person.mobile ?? '',
       notes: person.notes ?? '',
       company_id: person.company_id ?? '',
-      linkedin: (person as any).linkedin ?? '',
-      twitter: (person as any).twitter ?? '',
-      facebook: (person as any).facebook ?? '',
-      instagram: (person as any).instagram ?? '',
+      linkedin: person.linkedin ?? '',
+      twitter: person.twitter ?? '',
+      facebook: person.facebook ?? '',
+      instagram: person.instagram ?? '',
       assigned_to: person.assigned_to ? String(person.assigned_to) : '',
     });
   }

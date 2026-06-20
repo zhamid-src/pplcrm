@@ -23,8 +23,8 @@ export class UserService extends TRPCService<any> {
     if (current && current.id === id) {
       this.authService.getUserSignal().set({
         ...current,
+        ...updated,
         first_name: updated.first_name ?? current.first_name,
-        ...(updated as any),
       });
     }
     return updated;

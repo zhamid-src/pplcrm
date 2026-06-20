@@ -51,19 +51,20 @@ export class DataGridFiltersService {
   getSelectEditorOptions(col: ColDef): SelectEditorOptions | null {
     const cfg = this.resolveEditorConfig(col);
     if (!cfg) return null;
-    const rawValues = Array.isArray(cfg.values) ? (cfg.values as any[]) : [];
+    const rawValues = Array.isArray(cfg.values) ? (cfg.values as unknown[]) : [];
     const labels = Array.isArray(cfg.labels) ? cfg.labels : null;
     const choices: SelectOption[] = [];
     for (let i = 0; i < rawValues.length; i++) {
       const entry = rawValues[i];
       const fallbackLabel = labels && labels.length > i ? labels[i] : undefined;
       if (entry && typeof entry === 'object') {
-        const value = 'value' in entry ? entry.value : entry;
+        const obj = entry as Record<string, unknown>;
+        const value = 'value' in obj ? obj['value'] : entry;
         const labelCandidate =
-          'label' in entry
-            ? (entry as { label: unknown }).label
-            : 'name' in entry
-              ? (entry as { name: unknown }).name
+          'label' in obj
+            ? obj['label']
+            : 'name' in obj
+              ? obj['name']
               : fallbackLabel;
         const valueStr = value != null ? String(value) : '';
         const labelStr = labelCandidate != null ? String(labelCandidate) : valueStr;
