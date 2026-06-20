@@ -145,7 +145,11 @@ export class ActivityFeed implements OnInit {
         fileName: `activity-feed-${new Date().toISOString().slice(0, 10)}.csv`,
       });
 
-      if (res && res.csv) {
+      if (res && res.status === 'processing') {
+        this.alertSvc.showSuccess(
+          'Activity feed export has been queued. You will receive an email once it is complete.',
+        );
+      } else if (res && res.csv) {
         const blob = new Blob([res.csv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');

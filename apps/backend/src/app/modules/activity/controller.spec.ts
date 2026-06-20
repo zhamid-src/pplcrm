@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ActivityController } from './controller';
+import { ExportsRepo } from '../exports/repositories/exports.repo';
 
 vi.mock('../../lib/mail/transactional-mail.service', () => {
   return {
@@ -21,10 +22,8 @@ describe('ActivityController', () => {
     const auth = { tenant_id: 'tenant-1', user_id: 'user-1' } as any;
     const options = { startRow: 0, endRow: 25 };
     const mockFeedResult = {
-      rows: [
-        { id: '1', activity: 'create', entity: 'person', first_name: 'Zee', last_name: '' }
-      ],
-      count: 1
+      rows: [{ id: '1', activity: 'create', entity: 'person', first_name: 'Zee', last_name: '' }],
+      count: 1,
     };
 
     const spy = vi.spyOn((controller as any).repo, 'getAllWithUser').mockResolvedValue(mockFeedResult as any);
@@ -61,48 +60,42 @@ describe('ActivityController', () => {
     expect(deleteMock.where).toHaveBeenCalledTimes(4); // 2 where conditions (tenant_id, created_at) * 2 tenants
   });
 
-  it('should export user activities correctly formatted as CSV', async () => {
+  it('should queue activity export as a background job and return processing status', async () => {
     const auth = { tenant_id: 'tenant-1', user_id: 'user-1', name: 'Zee' } as any;
     const input = {
       tenant_id: 'tenant-1',
-      options: { startRow: 0, endRow: 25 },
+      options: { userId: 'user-1' },
     };
 
-    const mockFeedResult = {
-      rows: [
-        {
-          id: '1',
-          created_at: new Date('2026-06-01T12:00:00Z'),
-          first_name: 'Zee',
-          last_name: 'H',
-          email: 'zee@example.com',
-          activity: 'create',
-          entity: 'person',
-          entity_id: 'person-1',
-          quantity: 1,
-          metadata: { id: 'person-1' },
-        },
-      ],
-      count: 1,
-    };
+    const mockExportRecord = { id: 'export-123', created_at: new Date(), updated_at: new Date() };
+    const spyCreate = vi.spyOn(ExportsRepo.prototype, 'create').mockResolvedValue(mockExportRecord as any);
 
-    const spyGetAll = vi.spyOn((controller as any).repo, 'getAllWithUser').mockResolvedValue(mockFeedResult as any);
-    const spyLog = vi.spyOn((controller as any).userActivity, 'log').mockResolvedValue(undefined);
-
-    const userSelectMock = {
-      select: vi.fn().mockReturnThis(),
-      where: vi.fn().mockReturnThis(),
-      executeTakeFirst: vi.fn().mockResolvedValue({ email: 'zee@example.com' }),
-    };
-    vi.spyOn((controller as any).repo.db, 'selectFrom').mockReturnValue(userSelectMock as any);
+    const mockExecute = vi.fn().mockResolvedValue(undefined);
+    const mockValues = vi.fn().mockReturnValue({ execute: mockExecute });
+    const spyInsertInto = vi.spyOn((controller as any).repo.db, 'insertInto').mockReturnValue({
+      values: mockValues,
+    } as any);
 
     const result = await controller.exportCsv(input, auth);
 
-    expect(spyGetAll).toHaveBeenCalled();
-    expect(spyLog).toHaveBeenCalled();
-    expect(result.rowCount).toBe(1);
-    expect(result.csv).toContain('Zee H');
-    expect(result.csv).toContain('zee@example.com');
-    expect(result.csv).toContain('create');
+    expect(spyCreate).toHaveBeenCalledWith({
+      tenant_id: 'tenant-1',
+      user_id: 'user-1',
+      entity: 'user_activity',
+      file_name: expect.any(String),
+      columns: expect.any(Array),
+    });
+
+    expect(spyInsertInto).toHaveBeenCalledWith('background_jobs');
+    expect(mockValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenant_id: 'tenant-1',
+        queue: 'default',
+        status: 'pending',
+        payload: expect.any(String),
+      }),
+    );
+
+    expect(result).toEqual({ status: 'processing' });
   });
 });

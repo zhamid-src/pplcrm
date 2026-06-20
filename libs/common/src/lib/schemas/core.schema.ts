@@ -96,12 +96,18 @@ export const exportCsvInput = z
   })
   .optional();
 
-export const exportCsvResponse = z.object({
-  csv: z.string(),
-  fileName: z.string(),
-  columns: z.array(z.string()),
-  rowCount: z.number(),
-});
+export const exportCsvResponse = z.union([
+  z.object({
+    status: z.literal('processing'),
+  }),
+  z.object({
+    csv: z.string(),
+    fileName: z.string(),
+    columns: z.array(z.string()),
+    rowCount: z.number(),
+    status: z.literal('completed').optional(),
+  }),
+]);
 
 export const queueExportInput = z.object({
   entity: z.enum([
