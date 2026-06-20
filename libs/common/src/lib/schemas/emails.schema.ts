@@ -44,4 +44,6 @@ export const EmailObj = z.object({
   has_attachment: z.boolean(),
   status: z.enum(['open', 'closed']).nullable().default('open'),
   is_read: z.boolean().optional(),
+  sender_first_name: z.string().nullish(),
+  sender_last_name: z.string().nullish(),
 });

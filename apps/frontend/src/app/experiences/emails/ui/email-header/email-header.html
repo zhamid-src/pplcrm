@@ -234,7 +234,8 @@
       <div class="flex items-center gap-1.5 min-w-0">
         @if (headerData()?.person; as person) {
         <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
-          {{ email()!.from_name || email()!.from_email }}
+          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
+          (email()!.from_name || email()!.from_email) }}
         </a>
         <div class="dropdown dropdown-bottom inline-block">
           <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
