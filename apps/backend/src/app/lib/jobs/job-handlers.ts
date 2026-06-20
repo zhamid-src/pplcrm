@@ -1120,6 +1120,64 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       });
 
       console.log(`Export job ${exportId} completed: ${count} rows exported.`);
+
+      // Notify the user who requested the export
+      if (payload.user_id) {
+        try {
+          const user = await db
+            .selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .where('authusers.id', '=', Number(payload.user_id) as any)
+            .executeTakeFirst();
+
+          if (user) {
+            let emailOptedIn = true;
+            let inAppOptedIn = true;
+            const profileJson = user.profile_json;
+            if (profileJson) {
+              try {
+                const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+                if (json?.notifications?.export_ready === false) {
+                  emailOptedIn = false;
+                }
+                if (json?.notifications?.export_ready_in_app === false) {
+                  inAppOptedIn = false;
+                }
+              } catch (e) {
+                console.error('Failed to parse profile json for export notifications', e);
+              }
+            }
+
+            const entityLabel = table === 'user_activity' ? 'Activity Feed' : table;
+            const displayLabel = entityLabel.charAt(0).toUpperCase() + entityLabel.slice(1);
+
+            if (inAppOptedIn) {
+              const { NotificationsRepo } = await import('../../modules/notifications/repositories/notifications.repo');
+              const notificationsRepo = new NotificationsRepo();
+              await notificationsRepo.pushNotification({
+                tenant_id: tenantId,
+                user_id: String(payload.user_id),
+                title: 'Export Ready',
+                message: `Your export of ${count} records from ${displayLabel} is complete.`,
+                type: 'export',
+                link: '/exports',
+              });
+            }
+
+            if (emailOptedIn && user.email) {
+              await mailService.sendMail({
+                to: user.email,
+                subject: `Your Export is Ready: ${payload.file_name || 'export.csv'}`,
+                text: `Hi ${user.first_name || 'there'},\n\nYour export of ${count} records from the ${displayLabel} table is ready.\n\nFile Name: ${payload.file_name || 'export.csv'}\nDownload from the Exports page: ${env.appUrl}/exports`,
+                html: `<p>Hi ${user.first_name || 'there'},</p><p>Your export of <strong>${count}</strong> records from the <strong>${displayLabel}</strong> table is ready.</p><p><strong>File Name:</strong> ${payload.file_name || 'export.csv'}<br><strong>Download Link:</strong> <a href="${env.appUrl}/exports">Go to Exports Page</a></p>`,
+              });
+            }
+          }
+        } catch (notifErr) {
+          console.error(`Failed to send notifications for export job ${exportId}:`, notifErr);
+        }
+      }
     } catch (err: any) {
       console.error(`Export job ${exportId} failed:`, err);
       await exportsRepo.updateStatus(exportId, tenantId, 'failed', {
