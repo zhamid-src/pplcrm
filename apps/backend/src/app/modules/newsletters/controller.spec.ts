@@ -229,9 +229,10 @@ describe('NewslettersController Asynchronous Sending', () => {
 
     expect(job).toBeDefined();
     const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
-    expect(payload.type).toBe('send-newsletter-batch');
+    expect(payload.type).toBe('send-newsletter');
     expect(payload.newsletterId).toBe(id);
-    expect(payload.recipients).toEqual(['alice@example.com']);
+    expect(payload.offset).toBe(0);
+    expect(payload.deliveredCount).toBe(0);
   });
 
   it('should process newsletter sending, support batching, and update status/activity', async () => {
@@ -261,15 +262,12 @@ describe('NewslettersController Asynchronous Sending', () => {
         queue: 'default',
         status: 'processing',
         payload: JSON.stringify({
-          type: 'send-newsletter-batch',
+          type: 'send-newsletter',
           newsletterId: id,
           tenantId: tenantId,
           userId: userId,
-          recipients: ['alice@example.com', 'bob@example.com'],
-          fromName: 'Test Team',
-          fromEmail: 'test@example.com',
-          subject: 'Hello',
-          html: '<p>Hi</p>',
+          offset: 0,
+          deliveredCount: 0,
         }),
         attempts: 1,
         max_attempts: 3,
@@ -277,7 +275,7 @@ describe('NewslettersController Asynchronous Sending', () => {
       })
       .execute();
 
-    const spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(2);
+    const spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(1);
 
     const job = await db.selectFrom('background_jobs').selectAll().where('id', '=', jobId).executeTakeFirst();
     const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
@@ -289,7 +287,7 @@ describe('NewslettersController Asynchronous Sending', () => {
     // Verify newsletter is updated to 'sent'
     const newsletter = await db.selectFrom('newsletters').selectAll().where('id', '=', id).executeTakeFirst();
     expect(newsletter.status).toBe('sent');
-    expect(Number(newsletter.delivered_count)).toBe(2);
+    expect(Number(newsletter.delivered_count)).toBe(1);
     expect(newsletter.send_date).not.toBeNull();
 
     // Verify user activity is logged
@@ -301,17 +299,46 @@ describe('NewslettersController Asynchronous Sending', () => {
       .executeTakeFirst();
     expect(activity).toBeDefined();
     expect(activity.activity).toBe('send');
-    expect(Number(activity.quantity)).toBe(2);
+    expect(Number(activity.quantity)).toBe(1);
   });
 
-  it('should support multiple batches and transition newsletter status to sent only when the last batch completes', async () => {
+  it('should process all recipients and set status to sent', async () => {
+    // Add another person to make it 2 recipients
+    const personId2 = String(Math.floor(Math.random() * 100000000) + 10000000);
+    await db
+      .insertInto('persons')
+      .values({
+        id: personId2,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: householdId,
+        first_name: 'Bob',
+        last_name: 'Jones',
+        email: 'bob@example.com',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // Map second person to Tag
+    await db
+      .insertInto('map_peoples_tags')
+      .values({
+        tenant_id: tenantId,
+        person_id: personId2,
+        tag_id: tagId,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
     const id = String(Math.floor(Math.random() * 100000000) + 10000000);
     await db
       .insertInto('newsletters')
       .values({
         id,
         tenant_id: tenantId,
-        name: 'Multiple Batches Newsletter',
+        name: 'Multiple Recipients Newsletter',
         status: 'queuing',
         segments: JSON.stringify(['NewsletterTag']),
         subject: 'Hello',
@@ -323,81 +350,36 @@ describe('NewslettersController Asynchronous Sending', () => {
       })
       .execute();
 
-    const jobId1 = String(Math.floor(Math.random() * 100000000) + 10000000);
-    const jobId2 = String(Math.floor(Math.random() * 100000000) + 10000000);
-
-    // Insert two background jobs representing the two batches
+    const jobId = String(Math.floor(Math.random() * 100000000) + 10000000);
     await db
       .insertInto('background_jobs')
-      .values([
-        {
-          id: jobId1,
-          tenant_id: tenantId,
-          queue: 'default',
-          status: 'processing',
-          payload: JSON.stringify({
-            type: 'send-newsletter-batch',
-            newsletterId: id,
-            tenantId: tenantId,
-            userId: userId,
-            recipients: ['alice@example.com'],
-            fromName: 'Test Team',
-            fromEmail: 'test@example.com',
-            subject: 'Hello',
-            html: '<p>Hi</p>',
-          }),
-          attempts: 1,
-          max_attempts: 3,
-          run_at: new Date(),
-        },
-        {
-          id: jobId2,
-          tenant_id: tenantId,
-          queue: 'default',
-          status: 'processing',
-          payload: JSON.stringify({
-            type: 'send-newsletter-batch',
-            newsletterId: id,
-            tenantId: tenantId,
-            userId: userId,
-            recipients: ['bob@example.com'],
-            fromName: 'Test Team',
-            fromEmail: 'test@example.com',
-            subject: 'Hello',
-            html: '<p>Hi</p>',
-          }),
-          attempts: 1,
-          max_attempts: 3,
-          run_at: new Date(),
-        },
-      ])
+      .values({
+        id: jobId,
+        tenant_id: tenantId,
+        queue: 'default',
+        status: 'processing',
+        payload: JSON.stringify({
+          type: 'send-newsletter',
+          newsletterId: id,
+          tenantId: tenantId,
+          userId: userId,
+          offset: 0,
+          deliveredCount: 0,
+        }),
+        attempts: 1,
+        max_attempts: 3,
+        run_at: new Date(),
+      })
       .execute();
 
-    const spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(1);
+    const spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(2);
 
-    // Process first job
-    const job1 = await db.selectFrom('background_jobs').selectAll().where('id', '=', jobId1).executeTakeFirst();
-    const payload1 = typeof job1.payload === 'string' ? JSON.parse(job1.payload) : job1.payload;
-    await executeJob(payload1, db, jobId1);
-
-    // Mark job1 as completed so it's not counted as pending/processing
-    await db.updateTable('background_jobs').set({ status: 'completed' }).where('id', '=', jobId1).execute();
-
-    // Verify newsletter status is 'sending' and NOT 'sent'
-    let newsletter = await db.selectFrom('newsletters').selectAll().where('id', '=', id).executeTakeFirst();
-    expect(newsletter.status).toBe('sending');
-    expect(Number(newsletter.delivered_count)).toBe(1);
-
-    // Process second (final) job
-    const job2 = await db.selectFrom('background_jobs').selectAll().where('id', '=', jobId2).executeTakeFirst();
-    const payload2 = typeof job2.payload === 'string' ? JSON.parse(job2.payload) : job2.payload;
-    await executeJob(payload2, db, jobId2);
-
-    // Mark job2 as completed
-    await db.updateTable('background_jobs').set({ status: 'completed' }).where('id', '=', jobId2).execute();
+    const job = await db.selectFrom('background_jobs').selectAll().where('id', '=', jobId).executeTakeFirst();
+    const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
+    await executeJob(payload, db, jobId);
 
     // Verify newsletter is now fully 'sent'
-    newsletter = await db.selectFrom('newsletters').selectAll().where('id', '=', id).executeTakeFirst();
+    const newsletter = await db.selectFrom('newsletters').selectAll().where('id', '=', id).executeTakeFirst();
     expect(newsletter.status).toBe('sent');
     expect(Number(newsletter.delivered_count)).toBe(2);
   });

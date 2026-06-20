@@ -35,15 +35,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     return super.exportCsv(input, auth);
   }
 
-  public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
-    const newsletter = (await this.getOneById({ tenant_id, id })) as any;
-    if (!newsletter) {
-      throw new NotFoundError('Newsletter not found');
-    }
-    if (newsletter.status === 'sent' || newsletter.status === 'queuing' || newsletter.status === 'sending') {
-      throw new BadRequestError('Newsletter has already been sent or is currently sending');
-    }
-
+  public buildRecipientQuery(tenant_id: string, newsletter: any): any {
     let includeListIds: string[] = [];
     let excludeListIds: string[] = [];
     let includeTags: string[] = [];
@@ -93,7 +85,6 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     const db = this.getRepo().db;
     let query = db
       .selectFrom('persons')
-      .select(['persons.email'])
       .where('persons.tenant_id', '=', tenant_id as any)
       .where('persons.email', 'is not', null)
       .where('persons.email', '!=', '');
@@ -163,78 +154,59 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       );
     }
 
-    const persons = await query.execute();
-    const recipients = Array.from(new Set(persons.map((p) => p.email?.trim()).filter(Boolean))) as string[];
+    return query;
+  }
 
-    if (recipients.length === 0) {
+  public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
+    const newsletter = (await this.getOneById({ tenant_id, id })) as any;
+    if (!newsletter) {
+      throw new NotFoundError('Newsletter not found');
+    }
+    if (newsletter.status === 'sent' || newsletter.status === 'queuing' || newsletter.status === 'sending') {
+      throw new BadRequestError('Newsletter has already been sent or is currently sending');
+    }
+
+    const db = this.getRepo().db;
+    const baseQuery = this.buildRecipientQuery(tenant_id, newsletter);
+
+    // Get total count of unique recipients using a distinct count query
+    const countResult = await baseQuery
+      .select(({ fn }: any) => fn.count(sql`DISTINCT persons.email`).as('count'))
+      .executeTakeFirst();
+    const totalRecipients = Number((countResult as any)?.count || 0);
+
+    if (totalRecipients === 0) {
       throw new BadRequestError('No recipients found for the selected lists or tags');
     }
-
-    const settingsRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', tenant_id as any)
-      .where('key', 'in', [
-        'communications.sendgrid_api_key',
-        'communications.sendgrid_subuser_username',
-        'communications.default_from_name',
-        'communications.default_from_email',
-      ])
-      .execute();
-
-    const settingsMap: Record<string, string> = {};
-    for (const row of settingsRows) {
-      if (typeof row.value === 'string') {
-        settingsMap[row.key] = row.value;
-      }
-    }
-
-    const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
-    const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
-    const fromName = settingsMap['communications.default_from_name'] || 'PeopleCRM Team';
-    const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
 
     const updated = await this.update({
       tenant_id,
       id,
       row: {
         status: 'queuing',
-        total_recipients: recipients.length,
+        total_recipients: totalRecipients,
         delivered_count: 0,
         updatedby_id: userId,
         updated_at: new Date(),
       },
     });
 
-    const batchSize = 500;
-    const jobs: any[] = [];
-    for (let i = 0; i < recipients.length; i += batchSize) {
-      const chunk = recipients.slice(i, i + batchSize);
-      jobs.push({
+    await db
+      .insertInto('background_jobs' as any)
+      .values({
         tenant_id,
         queue: 'default',
         status: 'pending',
         payload: JSON.stringify({
-          type: 'send-newsletter-batch',
+          type: 'send-newsletter',
           newsletterId: id,
           tenantId: tenant_id,
           userId: userId,
-          recipients: chunk,
-          fromName,
-          fromEmail,
-          subject: newsletter.subject || 'Newsletter',
-          html: newsletter.html_content || '',
-          text: newsletter.plain_text_content || undefined,
-          sendgridApiKey,
-          subuserUsername,
+          offset: 0,
+          deliveredCount: 0,
         }),
         run_at: new Date(),
-      });
-    }
-
-    await db
-      .insertInto('background_jobs' as any)
-      .values(jobs)
+      })
       .execute();
 
     return updated;

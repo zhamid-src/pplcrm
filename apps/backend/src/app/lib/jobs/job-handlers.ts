@@ -500,12 +500,36 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       .execute();
   } else if (payload.type === 'send-newsletter') {
     const newsletterMailSvc = new NewsletterEmailService();
-    const recipients = payload.recipients || [];
-    const totalRecipients = recipients.length;
-    const batchSize = 500;
+    const tenantId = String(payload.tenantId);
+    const newsletterId = String(payload.newsletterId);
+    const userId = String(payload.userId);
 
+    // 1. Fetch newsletter to get settings, targets, segments, and content
+    const newsletter = await db
+      .selectFrom('newsletters')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', newsletterId)
+      .executeTakeFirst();
+
+    if (!newsletter) {
+      console.warn(`Newsletter ${newsletterId} not found.`);
+      return;
+    }
+
+    // 2. Build the recipient query using NewslettersController
+    const { NewslettersController } = await import('../../modules/newsletters/controller');
+    const controller = new NewslettersController();
+    const baseQuery = controller.buildRecipientQuery(tenantId, newsletter);
+
+    // 3. Count total recipients
     let offset = payload.offset || 0;
     let deliveredCount = payload.deliveredCount || 0;
+
+    const countResult = await baseQuery
+      .select(({ fn }: any) => fn.count(sql`DISTINCT persons.email`).as('count'))
+      .executeTakeFirst();
+    const totalRecipients = Number((countResult as any)?.count || 0);
 
     if (offset === 0) {
       await db
@@ -515,37 +539,81 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
           total_recipients: totalRecipients,
           updated_at: new Date(),
         })
-        .where('tenant_id', '=', payload.tenantId)
-        .where('id', '=', payload.newsletterId)
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', newsletterId)
         .execute();
     }
 
+    // Load communications/settings from database
+    const settingsRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', tenantId as any)
+      .where('key', 'in', [
+        'communications.sendgrid_api_key',
+        'communications.sendgrid_subuser_username',
+        'communications.default_from_name',
+        'communications.default_from_email',
+      ])
+      .execute();
+
+    const settingsMap: Record<string, string> = {};
+    for (const row of settingsRows) {
+      if (typeof row.value === 'string') {
+        settingsMap[row.key] = row.value;
+      }
+    }
+
+    const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
+    const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
+    const fromName = settingsMap['communications.default_from_name'] || 'PeopleCRM Team';
+    const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
+
+    const batchSize = 500;
+
     while (offset < totalRecipients) {
-      const chunk = recipients.slice(offset, offset + batchSize);
+      // Query a chunk of recipients dynamically using LIMIT and OFFSET
+      // We order by persons.email asc to ensure consistent pagination ordering
+      const chunkRows = await baseQuery
+        .select(['persons.email'])
+        .distinct()
+        .orderBy('persons.email', 'asc')
+        .limit(batchSize)
+        .offset(offset)
+        .execute();
+
+      const chunk = Array.from(new Set(chunkRows.map((r: any) => r.email?.trim()).filter(Boolean))) as string[];
+
+      if (chunk.length === 0) {
+        break;
+      }
 
       const batchDelivered = await newsletterMailSvc.sendNewsletter({
-        fromName: payload.fromName,
-        fromEmail: payload.fromEmail,
+        fromName,
+        fromEmail,
         recipients: chunk,
-        subject: payload.subject,
-        html: payload.html,
-        text: payload.text,
-        sendgridApiKey: payload.sendgridApiKey,
-        subuserUsername: payload.subuserUsername,
-        newsletterId: payload.newsletterId,
-        tenantId: payload.tenantId,
+        subject: newsletter.subject || 'Newsletter',
+        html: newsletter.html_content || '',
+        text: newsletter.plain_text_content || undefined,
+        sendgridApiKey,
+        subuserUsername,
+        newsletterId,
+        tenantId,
       });
 
       deliveredCount += batchDelivered;
-      offset += chunk.length;
+      offset += chunkRows.length;
 
-      // Update progress in the background job payload
+      // Update progress in the background job payload (no recipients array!)
       if (jobId) {
         await db
           .updateTable('background_jobs')
           .set({
             payload: JSON.stringify({
-              ...payload,
+              type: 'send-newsletter',
+              newsletterId,
+              tenantId,
+              userId,
               offset,
               deliveredCount,
             }),
@@ -568,121 +636,27 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         status: 'sent',
         delivered_count: deliveredCount,
         send_date: new Date(),
-        updatedby_id: payload.userId,
+        updatedby_id: userId,
         updated_at: new Date(),
       })
-      .where('tenant_id', '=', payload.tenantId)
-      .where('id', '=', payload.newsletterId)
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', newsletterId)
       .execute();
 
     // Log user activity
     const userActivity = new UserActivityRepo();
     await userActivity.log({
-      tenant_id: payload.tenantId,
-      user_id: payload.userId,
+      tenant_id: tenantId,
+      user_id: userId,
       activity: 'send',
       entity: 'newsletters',
-      entity_id: payload.newsletterId,
+      entity_id: newsletterId,
       quantity: totalRecipients,
       metadata: { recipientsCount: totalRecipients, deliveredCount },
     });
 
     const { queueUsageLimitCheck } = await import('../../modules/billing/usage-limits');
-    await queueUsageLimitCheck(payload.tenantId, db);
-  } else if (payload.type === 'send-newsletter-batch') {
-    const newsletterMailSvc = new NewsletterEmailService();
-    const recipients = payload.recipients || [];
-
-    const deliveredCount = await newsletterMailSvc.sendNewsletter({
-      fromName: payload.fromName,
-      fromEmail: payload.fromEmail,
-      recipients,
-      subject: payload.subject,
-      html: payload.html,
-      text: payload.text,
-      sendgridApiKey: payload.sendgridApiKey,
-      subuserUsername: payload.subuserUsername,
-      newsletterId: payload.newsletterId,
-      tenantId: payload.tenantId,
-    });
-
-    const newsletterId = String(payload.newsletterId);
-    const tenantId = String(payload.tenantId);
-    const userId = String(payload.userId);
-
-    await db.transaction().execute(async (trx: any) => {
-      const newsletter = await trx
-        .selectFrom('newsletters')
-        .selectAll()
-        .where('tenant_id', '=', tenantId)
-        .where('id', '=', newsletterId)
-        .forUpdate()
-        .executeTakeFirst();
-
-      if (!newsletter) {
-        console.warn(`Newsletter ${newsletterId} not found during batch completion.`);
-        return;
-      }
-
-      const newDelivered = Number(newsletter.delivered_count || 0) + deliveredCount;
-      const nextStatus = newsletter.status === 'queuing' ? 'sending' : newsletter.status;
-
-      const remainingJobs = await trx
-        .selectFrom('background_jobs' as any)
-        .select('id')
-        .where('status', 'in', ['pending', 'processing'])
-        .where(sql`payload->>'type'`, '=', 'send-newsletter-batch')
-        .where(sql`payload->>'newsletterId'`, '=', newsletterId)
-        .where('id', '!=', jobId as any)
-        .execute();
-
-      if (remainingJobs.length === 0) {
-        await trx
-          .updateTable('newsletters')
-          .set({
-            status: 'sent',
-            delivered_count: newDelivered,
-            send_date: new Date(),
-            updatedby_id: userId,
-            updated_at: new Date(),
-          })
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', newsletterId)
-          .execute();
-
-        await trx
-          .insertInto('user_activity')
-          .values({
-            tenant_id: tenantId,
-            user_id: userId,
-            activity: 'send',
-            entity: 'newsletters',
-            entity_id: newsletterId,
-            quantity: newsletter.total_recipients || newDelivered,
-            metadata: JSON.stringify({
-              recipientsCount: newsletter.total_recipients || newDelivered,
-              deliveredCount: newDelivered,
-            }),
-            createdby_id: userId,
-            updatedby_id: userId,
-          })
-          .execute();
-
-        const { queueUsageLimitCheck } = await import('../../modules/billing/usage-limits');
-        await queueUsageLimitCheck(tenantId, trx);
-      } else {
-        await trx
-          .updateTable('newsletters')
-          .set({
-            status: nextStatus,
-            delivered_count: newDelivered,
-            updated_at: new Date(),
-          })
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', newsletterId)
-          .execute();
-      }
-    });
+    await queueUsageLimitCheck(tenantId, db);
   } else if (payload.type === 'recompute_address_fingerprints') {
     const tenantIds: string[] = [];
     if (payload.tenant_id) {
