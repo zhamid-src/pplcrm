@@ -60,17 +60,85 @@ export class FormDetailComponent implements OnInit {
     status: 'active' as 'active' | 'archived',
     send_confirmation: true,
     send_alert: true,
+    form_type: 'standard' as 'standard' | 'donation',
   });
 
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, AddWebFormObj);
   });
 
+  protected readonly isDonationForm = computed(() => this.payload().form_type === 'donation');
+
   protected readonly embedSnippet = computed(() => {
     const id = this.formId();
     if (!id) return '';
     const apiOrigin = window.location.origin.replace(':4200', ':5000'); // Auto-detect backend port
     const fields = this.selectedFields();
+
+    if (this.isDonationForm()) {
+      return `<!-- PeopleCRM Embeddable Donation Form -->
+<form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+  <!-- Visually hidden honeypot field to prevent spam bots -->
+  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($ CAD) *</label>
+    <input type="number" name="amount" min="1" step="any" placeholder="E.g. 50.00" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name</label>
+    <input type="text" name="first_name" placeholder="John" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name</label>
+    <input type="text" name="last_name" placeholder="Doe" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
+    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country of Residence *</label>
+    <select name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+      <option value="CA">Canada</option>
+      <option value="US">United States</option>
+      <option value="GB">United Kingdom</option>
+      <option value="AU">Australia</option>
+    </select>
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province of Residence *</label>
+    <input type="text" name="state" placeholder="E.g. ON or NY" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>${
+    fields.includes('mobile')
+      ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
+    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    fields.includes('notes')
+      ? `
+
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
+    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
+  </div>`
+      : ''
+  }
+
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">Donate Now</button>
+  <p style="font-size: 11px; color: #666; margin-top: 8px; text-align: center;">Submitting will validate eligibility and redirect you to Stripe for secure payment.</p>
+</form>`;
+    }
+
     return `<!-- PeopleCRM Embeddable Form -->
 <form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
   <!-- Visually hidden honeypot field to prevent spam bots -->
@@ -231,6 +299,7 @@ ${
           fields: this.selectedFields(),
           send_confirmation: !!values.send_confirmation,
           send_alert: !!values.send_alert,
+          form_type: values.form_type,
         };
 
         try {
@@ -300,6 +369,7 @@ ${
           status: (form.status as 'active' | 'archived') ?? 'active',
           send_confirmation: form.send_confirmation !== false,
           send_alert: form.send_alert !== false,
+          form_type: (form.form_type as 'standard' | 'donation') ?? 'standard',
         });
         this.form().reset();
         this.selectedTags.set(Array.isArray(form.target_tags) ? form.target_tags : []);

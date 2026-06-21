@@ -38,4 +38,30 @@ export class DonationsRepo extends BaseRepository<'donations'> {
       .orderBy('created_at', 'desc')
       .execute();
   }
+
+  /**
+   * Retrieve all donations for a tenant, joined with donor person details, ordered by date descending.
+   */
+  public async getTenantDonationsList(tenantId: string) {
+    return this.getSelect()
+      .innerJoin('persons', 'persons.id', 'donations.person_id')
+      .select([
+        'donations.id',
+        'donations.tenant_id',
+        'donations.person_id',
+        'donations.amount',
+        'donations.status',
+        'donations.stripe_session_id',
+        'donations.tax_credit_amount',
+        'donations.residency_province',
+        'donations.residency_country',
+        'donations.created_at',
+        'persons.first_name as person_first_name',
+        'persons.last_name as person_last_name',
+        'persons.email as person_email',
+      ])
+      .where('donations.tenant_id', '=', tenantId as any)
+      .orderBy('donations.created_at', 'desc')
+      .execute();
+  }
 }

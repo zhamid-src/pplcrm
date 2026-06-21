@@ -440,7 +440,7 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
         : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
       
       reply.type('text/html');
-      return reply.send(renderFormHtml(formId, formName, formDescription, fields));
+      return reply.send(renderFormHtml(formId, formName, formDescription, fields, form.form_type));
     } catch (err: any) {
       reply.status(500).type('text/html');
       return reply.send(errorHtml(err.message || 'Failed to load form.'));
@@ -485,7 +485,7 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 
 export default webFormsPublicRoute;
 
-const renderFormHtml = (formId: string, formName: string, formDescription: string, fields: string[]) => `
+const renderFormHtml = (formId: string, formName: string, formDescription: string, fields: string[], formType: string) => `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -734,6 +734,12 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
       <!-- Honeypot Bot Field (leave empty!) -->
       <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
 
+      ${formType === 'donation' ? `
+      <div class="form-group">
+        <label for="amount">Donation Amount ($ CAD) *</label>
+        <input type="number" id="amount" name="amount" min="1" step="any" placeholder="E.g. 50.00" required />
+      </div>` : ''}
+
       ${fields.includes('first_name') ? `
       <div class="form-group">
         <label for="first_name">First Name</label>
@@ -751,6 +757,21 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
         <input type="email" id="email" name="email" placeholder="john@example.com" required />
       </div>
 
+      ${formType === 'donation' ? `
+      <div class="form-group">
+        <label for="country">Country of Residence *</label>
+        <select id="country" name="country" required style="width: 100%; padding: 12px 16px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 12px; color: var(--text-primary);">
+          <option value="CA">Canada</option>
+          <option value="US">United States</option>
+          <option value="GB">United Kingdom</option>
+          <option value="AU">Australia</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="state">State / Province of Residence *</label>
+        <input type="text" id="state" name="state" placeholder="E.g. ON or NY" required />
+      </div>` : ''}
+
       ${fields.includes('mobile') ? `
       <div class="form-group">
         <label for="mobile">Mobile / Phone</label>
@@ -763,7 +784,7 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
         <textarea id="notes" name="notes" placeholder="How can we help you?"></textarea>
       </div>` : ''}
 
-      <button type="submit">Submit</button>
+      <button type="submit">${formType === 'donation' ? 'Donate Now' : 'Submit'}</button>
     </form>
 
     <div class="footer-note">

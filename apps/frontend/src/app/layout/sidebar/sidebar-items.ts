@@ -67,6 +67,11 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/forms',
         icon: 'clipboard-document-list',
       },
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+      },
     ],
   },
   {
@@ -107,6 +112,11 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Volunteers',
         route: '/volunteers',
+        icon: 'volunteer',
+      },
+      {
+        name: 'Donors',
+        route: '/donors',
         icon: 'volunteer',
       },
       {

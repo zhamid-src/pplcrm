@@ -30,6 +30,13 @@ export class DonationsController extends BaseController<'donations', DonationsRe
   }
 
   /**
+   * Public proxy to get tenant donations list (joined with donor details)
+   */
+  public async getTenantDonationsList(tenantId: string) {
+    return this.getRepo().getTenantDonationsList(tenantId);
+  }
+
+  /**
    * Helper to retrieve settings
    */
   private async getSettingVal(tenantId: string, key: string): Promise<any> {
@@ -134,6 +141,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     personId: string,
     amountCents: number,
     address: { country?: string; state?: string },
+    customUrls?: { successUrl?: string; cancelUrl?: string },
   ) {
     // 1. Validate eligibility
     const eligibility = await this.checkEligibility(auth.tenant_id, personId, amountCents, address);
@@ -151,8 +159,12 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     if (isMock) {
       // Return simulated local success redirect
       const mockSessionId = 'cs_mock_' + Math.random().toString(36).substring(7);
+      const redirectBase = customUrls?.successUrl 
+        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
+        : `${env.appUrl}/people/${personId}?mock_donation_success=true&amount=${amountCents / 100}&session_id=${mockSessionId}&province=${address.state || ''}&country=${address.country || ''}`;
+      
       return {
-        url: `${env.appUrl}/people/${personId}?mock_donation_success=true&amount=${amountCents / 100}&session_id=${mockSessionId}&province=${address.state || ''}&country=${address.country || ''}`,
+        url: redirectBase,
       };
     }
 
@@ -174,8 +186,8 @@ export class DonationsController extends BaseController<'donations', DonationsRe
         },
       ],
       mode: 'payment',
-      success_url: `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${env.appUrl}/people/${personId}?checkout_cancel=true`,
+      success_url: customUrls?.successUrl || `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
       metadata: {
         tenantId: auth.tenant_id,
         personId,
@@ -327,40 +339,100 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     // 3. Calculate credit
     const taxCreditCents = this.calculateTaxCredit(amountCents, cumulativeBefore, tiers);
 
-    // 4. Record to DB
-    const results = await this.getRepo().add({
-      row: {
-        tenant_id: tenantId,
-        person_id: personId,
-        amount: amountCents,
-        status: 'succeeded',
-        stripe_session_id: sessionId,
-        tax_credit_amount: taxCreditCents,
-        residency_province: province || null,
-        residency_country: country || null,
-        createdby_id: userId,
-        updatedby_id: userId,
-      } as any,
-    });
+    let record: Selectable<Models['donations']>;
 
-    // 5. Audit Log (User Activity)
-    try {
-      await this.getRepo()
-        .db.insertInto('user_activity' as any)
+    // 4. Execute all writes transactionally
+    await this.getRepo().db.transaction().execute(async (trx) => {
+      record = (await trx
+        .insertInto('donations' as any)
         .values({
           tenant_id: tenantId,
-          user_id: userId,
-          activity: `Collected a donation of $${amountCents / 100} (calculated tax credit: $${taxCreditCents / 100})`,
-          entity: 'persons',
-          entity_id: personId,
-          quantity: 1,
+          person_id: personId,
+          amount: amountCents,
+          status: 'succeeded',
+          stripe_session_id: sessionId,
+          tax_credit_amount: taxCreditCents,
+          residency_province: province || null,
+          residency_country: country || null,
           createdby_id: userId,
           updatedby_id: userId,
         } as any)
-        .execute();
-    } catch (err) {
-      console.error('Failed to write audit activity log for donation:', err);
-    }
+        .returningAll()
+        .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;
+
+      // Ensure 'Donor' tag is resolved/created and applied to the donor
+      const tagName = 'Donor';
+      let tag = await trx
+        .selectFrom('tags')
+        .select('id')
+        .where('tenant_id', '=', tenantId as any)
+        .where('name', '=', tagName)
+        .where('type', '=', 'tag')
+        .executeTakeFirst();
+
+      if (!tag) {
+        const insertTagRes = await trx
+          .insertInto('tags')
+          .values({
+            tenant_id: tenantId as any,
+            name: tagName,
+            type: 'tag',
+            deletable: true,
+            createdby_id: userId as any,
+            updatedby_id: userId as any,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        tag = { id: insertTagRes.id };
+      }
+
+      const mapExists = await trx
+        .selectFrom('map_peoples_tags')
+        .select('person_id')
+        .where('tenant_id', '=', tenantId as any)
+        .where('person_id', '=', personId as any)
+        .where('tag_id', '=', tag.id as any)
+        .executeTakeFirst();
+
+      if (!mapExists) {
+        await trx
+          .insertInto('map_peoples_tags')
+          .values({
+            tenant_id: tenantId as any,
+            person_id: personId as any,
+            tag_id: tag.id as any,
+            createdby_id: userId as any,
+            updatedby_id: userId as any,
+          })
+          .execute();
+
+        try {
+          const workflowsController = new WorkflowsController();
+          await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
+        } catch (err) {
+          console.error('Failed to trigger tag_added workflow in DonationsController:', err);
+        }
+      }
+
+      // 5. Audit Log (User Activity)
+      try {
+        await trx
+          .insertInto('user_activity' as any)
+          .values({
+            tenant_id: tenantId,
+            user_id: userId,
+            activity: `Collected a donation of $${amountCents / 100} (calculated tax credit: $${taxCreditCents / 100})`,
+            entity: 'persons',
+            entity_id: personId,
+            quantity: 1,
+            createdby_id: userId,
+            updatedby_id: userId,
+          } as any)
+          .execute();
+      } catch (err) {
+        console.error('Failed to write audit activity log for donation:', err);
+      }
+    });
 
     // 6. Trigger donation workflow (if matches)
     try {
@@ -370,6 +442,6 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       console.error('Failed to trigger workflow on donation_received:', workflowErr);
     }
 
-    return results;
+    return record!;
   }
 }

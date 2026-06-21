@@ -214,6 +214,28 @@ export const dashboardRoutes: Routes = [
   },
 
   {
+    path: 'donors',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
+        data: { shouldReuse: true, key: 'donorsgridroot', tags: ['Donor'] },
+      },
+    ],
+  },
+
+  {
+    path: 'donations',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
+        data: { shouldReuse: true, key: 'donationsgridroot' },
+      },
+    ],
+  },
+
+  {
     path: 'inbox',
     loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
   },

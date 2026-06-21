@@ -17,6 +17,7 @@ export const AddWebFormObj = z.object({
   status: z.enum(['active', 'archived']).default('active').optional(),
   send_confirmation: z.boolean().default(true).optional(),
   send_alert: z.boolean().default(true).optional(),
+  form_type: z.enum(['standard', 'donation']).default('standard').optional(),
 });
 
 export const UpdateWebFormObj = z.object({
@@ -35,6 +36,7 @@ export const UpdateWebFormObj = z.object({
   status: z.enum(['active', 'archived']).optional(),
   send_confirmation: z.boolean().optional(),
   send_alert: z.boolean().optional(),
+  form_type: z.enum(['standard', 'donation']).optional(),
 });
 
 export const WebFormsObj = z.object({
@@ -49,6 +51,7 @@ export const WebFormsObj = z.object({
   status: z.enum(['active', 'archived']),
   send_confirmation: z.boolean().default(true),
   send_alert: z.boolean().default(true),
+  form_type: z.string(),
   createdby_id: z.string(),
   updatedby_id: z.string(),
   created_at: z.union([z.date(), z.string()]),

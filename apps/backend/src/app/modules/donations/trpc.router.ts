@@ -6,6 +6,10 @@ import { BaseRepository } from '../../lib/base.repo';
 const controller = new DonationsController();
 
 export const DonationsRouter = router({
+  listDonations: authProcedure.query(({ ctx }) => {
+    return controller.getTenantDonationsList(ctx.auth.tenant_id);
+  }),
+
   getPersonDonationHistory: authProcedure.input(z.string()).query(({ ctx, input }) => {
     return controller.getPersonDonationsList(ctx.auth.tenant_id, input);
   }),
