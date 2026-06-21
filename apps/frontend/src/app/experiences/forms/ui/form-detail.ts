@@ -13,6 +13,7 @@ import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { SettingsService } from '@experiences/settings/services/settings-service';
+import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'pc-form-detail',
@@ -135,7 +136,7 @@ export class FormDetailComponent implements OnInit {
   protected readonly embedSnippet = computed(() => {
     const id = this.formId();
     if (!id) return '';
-    const apiOrigin = window.location.origin.replace(':4200', ':3000'); // Auto-detect backend port
+    const apiOrigin = environment.apiUrl.replace(/\/$/, ''); // Use configured backend URL
     const fields = this.selectedFields();
 
     const isEnabled = (name: string): boolean => {
@@ -336,7 +337,7 @@ ${
   protected readonly formUrl = computed(() => {
     const id = this.formId();
     if (!id) return '';
-    return window.location.origin.replace(':4200', ':3000') + `/api/forms/view/${id}`;
+    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${id}`;
   });
 
   public ngOnInit(): void {
