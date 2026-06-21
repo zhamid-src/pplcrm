@@ -340,7 +340,16 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     // 3. Calculate credit
     const taxCreditCents = this.calculateTaxCredit(amountCents, cumulativeBefore, tiers);
 
-    // 4. Execute all writes transactionally — record is returned from within the callback
+    // 4. Fetch donor identity for the immutable snapshot on the donation row
+    // (used for tax receipts regardless of whether the person is later deleted)
+    const person = await this.getRepo().db
+      .selectFrom('persons')
+      .select(['first_name', 'last_name', 'email'])
+      .where('id', '=', personId as any)
+      .where('tenant_id', '=', tenantId as any)
+      .executeTakeFirst();
+
+    // 5. Execute all writes transactionally — record is returned from within the callback
     // to avoid an uninitialized variable reference after the transaction.
     const record = await this.getRepo().db.transaction().execute(async (trx) => {
       const inserted = (await trx
@@ -348,6 +357,11 @@ export class DonationsController extends BaseController<'donations', DonationsRe
         .values({
           tenant_id: tenantId,
           person_id: personId,
+          // Immutable snapshot of donor identity at time of donation.
+          // These survive contact deletion and are used for tax receipt issuance.
+          donor_first_name: person?.first_name ?? null,
+          donor_last_name: person?.last_name ?? null,
+          donor_email: person?.email ?? null,
           amount: amountCents,
           status: 'succeeded',
           stripe_session_id: sessionId,
