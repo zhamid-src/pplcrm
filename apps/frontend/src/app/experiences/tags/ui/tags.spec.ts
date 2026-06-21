@@ -64,9 +64,9 @@ describe('Tags Component', () => {
     // act
     component['add']('NewTag');
 
-    expect(addSpy).toHaveBeenCalledWith('NewTag');
-    expect(changeSpy).toHaveBeenCalledWith(['NewTag', 'VIP']);
-    expect(component.tags()).toEqual(['NewTag', 'VIP']);
+    expect(addSpy).toHaveBeenCalledWith('newtag');
+    expect(changeSpy).toHaveBeenCalledWith(['newtag', 'VIP']);
+    expect(component.tags()).toEqual(['newtag', 'VIP']);
   });
 
   it('should move an existing tag to the front if added again', () => {

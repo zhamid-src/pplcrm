@@ -16,21 +16,21 @@ describe('NewPasswordPage', () => {
 
   beforeEach(async () => {
     mockAuthSvc = {
-      resetPassword: vi.fn().mockResolvedValue(null) // returns null on success
+      resetPassword: vi.fn().mockResolvedValue(null), // returns null on success
     };
 
     mockAlertSvc = {
       showError: vi.fn(),
       showSuccess: vi.fn(),
-      alertList: vi.fn().mockReturnValue([])
+      alertList: vi.fn().mockReturnValue([]),
     };
 
     mockRoute = {
       snapshot: {
         queryParamMap: {
-          get: vi.fn().mockReturnValue('mock-reset-code')
-        }
-      }
+          get: vi.fn().mockReturnValue('mock-reset-code'),
+        },
+      },
     };
 
     await TestBed.configureTestingModule({
@@ -39,8 +39,8 @@ describe('NewPasswordPage', () => {
         provideRouter([]),
         { provide: AuthService, useValue: mockAuthSvc },
         { provide: AlertService, useValue: mockAlertSvc },
-        { provide: ActivatedRoute, useValue: mockRoute }
-      ]
+        { provide: ActivatedRoute, useValue: mockRoute },
+      ],
     }).compileComponents();
 
     mockRouter = TestBed.inject(Router);
@@ -76,12 +76,12 @@ describe('NewPasswordPage', () => {
   it('should submit new password, show success, and navigate', async () => {
     await component.ngOnInit(); // to set the code
     component.password.value.set('validPassword123');
-    
+
     await component.submit();
 
     expect(mockAuthSvc.resetPassword).toHaveBeenCalledWith({
       code: 'mock-reset-code',
-      password: 'validPassword123'
+      password: 'validPassword123',
     });
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Password reset successfully. Please sign in again');
     expect(mockRouter.navigateByUrl).toHaveBeenCalledWith('signin');
@@ -89,7 +89,7 @@ describe('NewPasswordPage', () => {
 
   it('should set error state if auth service returns an error object', async () => {
     await component.ngOnInit();
-    mockAuthSvc.resetPassword.mockResolvedValue(new Error('Invalid token'));
+    mockAuthSvc.resetPassword.mockRejectedValue(new Error('Invalid token'));
 
     component.password.value.set('validPassword123');
     await component.submit();
