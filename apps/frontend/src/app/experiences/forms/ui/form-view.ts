@@ -16,6 +16,7 @@ import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'pc-form-view',
@@ -91,7 +92,7 @@ export class FormViewComponent {
   protected readonly embedSnippet = computed(() => {
     const record = this.formRecord();
     if (!record || !this.id()) return '';
-    const apiOrigin = window.location.origin.replace(':4200', ':3000');
+    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
     const fields = this.selectedFields();
     return `<!-- PeopleCRM Embeddable Form -->
 <form action="${apiOrigin}/api/forms/submit/${this.id()}" method="POST" style="max-width: 400px; font-family: sans-serif;">
@@ -135,7 +136,7 @@ ${
 
   protected readonly formUrl = computed(() => {
     if (!this.id()) return '';
-    return window.location.origin.replace(':4200', ':3000') + `/api/forms/view/${this.id()}`;
+    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${this.id()}`;
   });
 
   constructor() {
