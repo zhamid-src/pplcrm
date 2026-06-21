@@ -24,8 +24,6 @@ describe('SettingsPage', () => {
       'organization.contact_email': 'hello@acme.com',
       'organization.phone': '(555) 019-2834',
       'organization.address': '456 Oak Ave, Metropolis',
-      'campaign.reporting_period': 'monthly',
-      'campaign.primary_goal': 'Knock doors',
     });
 
     mockSettingsSvc = {

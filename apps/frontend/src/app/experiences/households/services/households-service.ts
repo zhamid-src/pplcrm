@@ -79,6 +79,10 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return this.api.households.mergeHouseholds.mutate({ target_id: targetId, source_id: sourceId });
   }
 
+  public getLastFingerprintRecomputation(): Promise<{ lastRunAt: string | null }> {
+    return this.api.households.getLastFingerprintRecomputation.query();
+  }
+
   public recomputeAddressFingerprints(): Promise<void> {
     return this.api.households.recomputeAddressFingerprints.mutate();
   }

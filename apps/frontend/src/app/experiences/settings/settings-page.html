@@ -212,80 +212,78 @@
 
           <!-- Custom extensions for specific sections -->
           @if (section.config.id === 'communications') {
-          <div class="border-t border-base-200 pt-6 mt-6 space-y-4">
+          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
             <div class="space-y-1">
-              <h3 class="text-base font-semibold text-base-content/90">Sender Email Verification</h3>
+              <h3 class="text-base font-semibold text-base-content/90">Verified Sender Email Addresses</h3>
               <p class="text-xs text-base-content/50">
-                Verify your sender email addresses to enable newsletter delivery.
+                Add and verify email addresses to select them as campaign defaults.
               </p>
             </div>
 
-            <div class="grid gap-4 md:grid-cols-2">
-              <!-- Default From Email Card -->
-              <div class="border border-base-200/80 p-4 rounded-xl bg-base-50/20 flex items-center justify-between">
-                <div class="space-y-1 min-w-0">
-                  <div class="text-[11px] font-bold uppercase tracking-wider text-base-content/55">
-                    Default From Email
-                  </div>
-                  <div class="text-sm font-semibold truncate text-base-content/90">
-                    {{ section.form['communications_default_from_email']()?.value() || 'Not configured' }}
-                  </div>
-                  <div class="flex items-center gap-1.5 mt-1">
-                    @if (isEmailVerified(section.form['communications_default_from_email']()?.value())) {
-                    <span class="badge badge-success text-[10px] gap-1 font-semibold py-1">
-                      <pc-icon name="check-circle"></pc-icon> Verified
-                    </span>
-                    } @else {
-                    <span class="badge badge-warning text-[10px] gap-1 font-semibold py-1"> Pending Verification </span>
-                    }
-                  </div>
-                </div>
-                @if (section.form['communications_default_from_email']()?.value() &&
-                !isEmailVerified(section.form['communications_default_from_email']()?.value())) {
-                <button
-                  type="button"
-                  class="btn btn-xs btn-outline btn-primary ml-2 shrink-0"
-                  (click)="verifySenderEmail(section.form['communications_default_from_email']()?.value())"
-                  [disabled]="verifyingEmail() !== null"
-                >
-                  @if (verifyingEmail() === section.form['communications_default_from_email']()?.value()) {
-                  <span class="loading loading-spinner loading-xs scale-75"></span>
-                  } @else { Verify }
-                </button>
-                }
+            <!-- Add new sender email form -->
+            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+              <div class="flex-1">
+                <input
+                  type="email"
+                  placeholder="sender@example.com"
+                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm"
+                  [value]="senderEmailInput()"
+                  (input)="senderEmailInput.set($any($event.target).value)"
+                />
               </div>
+              <button
+                type="button"
+                class="btn btn-primary"
+                (click)="verifySenderEmail(senderEmailInput()); senderEmailInput.set('')"
+                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
+              >
+                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
+                <span class="loading loading-spinner loading-xs"></span>
+                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
+                <span class="countdown font-mono text-xs"
+                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
+                >s } @else { Request Verification }
+              </button>
+            </div>
 
-              <!-- Reply-to Email Card -->
-              <div class="border border-base-200/80 p-4 rounded-xl bg-base-50/20 flex items-center justify-between">
-                <div class="space-y-1 min-w-0">
-                  <div class="text-[11px] font-bold uppercase tracking-wider text-base-content/55">Reply-to Email</div>
-                  <div class="text-sm font-semibold truncate text-base-content/90">
-                    {{ section.form['communications_reply_to']()?.value() || 'Not configured' }}
-                  </div>
-                  <div class="flex items-center gap-1.5 mt-1">
-                    @if (isEmailVerified(section.form['communications_reply_to']()?.value())) {
-                    <span class="badge badge-success text-[10px] gap-1 font-semibold py-1">
-                      <pc-icon name="check-circle"></pc-icon> Verified
-                    </span>
-                    } @else {
-                    <span class="badge badge-warning text-[10px] gap-1 font-semibold py-1"> Pending Verification </span>
-                    }
-                  </div>
-                </div>
-                @if (section.form['communications_reply_to']()?.value() &&
-                !isEmailVerified(section.form['communications_reply_to']()?.value())) {
-                <button
-                  type="button"
-                  class="btn btn-xs btn-outline btn-primary ml-2 shrink-0"
-                  (click)="verifySenderEmail(section.form['communications_reply_to']()?.value())"
-                  [disabled]="verifyingEmail() !== null"
-                >
-                  @if (verifyingEmail() === section.form['communications_reply_to']()?.value()) {
-                  <span class="loading loading-spinner loading-xs scale-75"></span>
-                  } @else { Verify }
-                </button>
+            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
+            <div
+              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
+            >
+              <span class="font-semibold text-base-content flex items-center gap-1.5">
+                <pc-icon name="envelope" [size]="14" class="text-primary"></pc-icon>
+                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
+              </span>
+              <span>
+                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
+              </span>
+              <span class="text-base-content/50 flex items-center gap-1">
+                You can request verification again in
+                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
+                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
+                </span>
+                seconds.
+              </span>
+            </div>
+            }
+
+            <!-- List of verified emails -->
+            <div class="space-y-2">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified Sender Emails</h4>
+              @if (verifiedEmailsList().length === 0) {
+              <p class="text-sm text-base-content/50 italic">
+                No verified sender emails yet. Add one above to request verification.
+              </p>
+              } @else {
+              <div class="flex flex-wrap gap-2">
+                @for (email of verifiedEmailsList(); track email) {
+                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-sm">
+                  <pc-icon name="check-circle" [size]="14"></pc-icon>
+                  {{ email }}
+                </span>
                 }
               </div>
+              }
             </div>
           </div>
           } @if (section.config.id === 'data') {
@@ -299,12 +297,17 @@
                   Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
                   changed.
                 </p>
+                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
+                <p class="text-xs text-warning mt-1 font-medium">
+                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
+                </p>
+                }
               </div>
               <button
                 type="button"
                 class="btn btn-sm btn-outline btn-primary shrink-0"
                 (click)="recomputeAddressFingerprints()"
-                [disabled]="recomputingFingerprints()"
+                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
               >
                 @if (recomputingFingerprints()) {
                 <span class="loading loading-spinner loading-xs mr-2"></span>

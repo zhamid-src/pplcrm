@@ -70,24 +70,6 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         placeholder: '123 Main St, Springfield, USA',
         defaultValue: '',
       },
-      {
-        key: 'campaign.reporting_period',
-        label: 'Reporting Period',
-        type: 'select',
-        defaultValue: 'monthly',
-        options: [
-          { label: 'Weekly', value: 'weekly' },
-          { label: 'Monthly', value: 'monthly' },
-          { label: 'Quarterly', value: 'quarterly' },
-        ],
-      },
-      {
-        key: 'campaign.primary_goal',
-        label: 'Primary Goal Metric',
-        type: 'text',
-        placeholder: 'Doors knocked, donations, etc.',
-        defaultValue: '',
-      },
     ],
   },
   {
@@ -106,16 +88,16 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
       {
         key: 'communications.default_from_email',
         label: 'Default From Email',
-        type: 'email',
-        placeholder: 'sender@example.com',
+        type: 'select',
         defaultValue: '',
+        options: [],
       },
       {
         key: 'communications.reply_to',
         label: 'Reply-to Email',
-        type: 'email',
-        placeholder: 'reply@example.com',
+        type: 'select',
         defaultValue: '',
+        options: [],
       },
       {
         key: 'communications.footer_disclaimer',

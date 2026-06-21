@@ -4,6 +4,8 @@ import { BaseRepository } from '../../lib/base.repo';
 import { TRPCError } from '@trpc/server';
 import { createSigner } from 'fast-jwt';
 import { env } from '../../../env';
+import { HouseholdsController } from '../households/controller';
+import { sql } from 'kysely';
 
 async function createTestSeed(db: any) {
   const rand = () => String(Math.floor(Math.random() * 100000000) + 1000000);
@@ -135,6 +137,29 @@ describe('SettingsController Integration', () => {
     expect(payload.subject).toContain('Verify sender email');
   });
 
+  it('should enforce requestEmailVerification rate limit', async () => {
+    const auth = { tenant_id: tenantId, user_id: userId } as any;
+
+    // First request should pass
+    await controller.requestEmailVerification(auth, 'ratelimit@example.com');
+
+    // Second request within a minute should fail with TOO_MANY_REQUESTS
+    await expect(controller.requestEmailVerification(auth, 'ratelimit@example.com')).rejects.toThrow(/Please wait/);
+  });
+
+  it('should enforce verifyVerifiedDomain rate limit', async () => {
+    const auth = { tenant_id: tenantId, user_id: userId } as any;
+
+    // Add the domain first
+    await controller.addVerifiedDomain(auth, 'ratelimit.com');
+
+    // First check should pass
+    await controller.verifyVerifiedDomain(auth, 'ratelimit.com');
+
+    // Second check within a minute should fail with TOO_MANY_REQUESTS
+    await expect(controller.verifyVerifiedDomain(auth, 'ratelimit.com')).rejects.toThrow(/Please wait/);
+  });
+
   it('should add the email to verified_emails upon verifySenderEmail', async () => {
     const key = process.env['SHARED_SECRET'] || env.sharedSecret;
     const signer = createSigner({
@@ -217,5 +242,27 @@ describe('SettingsController Integration', () => {
     const snapshot = await controller.getSnapshot(auth);
     const verifiedDomains = snapshot['communications.verified_domains'] as any[];
     expect(verifiedDomains.length).toBe(0);
+  });
+
+  it('should enforce recomputeAddressFingerprints rate limit of once a month', async () => {
+    const householdsController = new HouseholdsController();
+
+    // First recompute request should successfully queue a job
+    await householdsController.recomputeAddressFingerprints(tenantId);
+
+    // Verify a background job was created
+    const job = await db
+      .selectFrom('background_jobs')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+      .executeTakeFirst();
+
+    expect(job).toBeDefined();
+
+    // Second request should fail since one exists in the 30-day window
+    await expect(householdsController.recomputeAddressFingerprints(tenantId)).rejects.toThrow(
+      /Address fingerprints can only be recomputed once a month/,
+    );
   });
 });

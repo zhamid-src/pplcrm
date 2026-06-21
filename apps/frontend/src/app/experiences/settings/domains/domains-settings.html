@@ -274,11 +274,14 @@
               type="button"
               class="btn btn-primary"
               (click)="verifyDomain(item.domain)"
-              [disabled]="verifyingDomain() !== null"
+              [disabled]="verifyingDomain() !== null || isDomainVerifyCooldown(item.domain)"
             >
               @if (verifyingDomain() === item.domain) {
               <span class="loading loading-spinner loading-xs mr-2"></span>
-              Checking records... } @else {
+              Checking records... } @else if (domainCooldownSeconds()[item.domain]) { Wait
+              <span class="countdown font-mono text-sm"
+                ><span [style.--value]="domainCooldownSeconds()[item.domain]"></span></span
+              >s } @else {
               <pc-icon name="arrow-path" class="mr-2"></pc-icon>
               Verify DNS Records }
             </button>

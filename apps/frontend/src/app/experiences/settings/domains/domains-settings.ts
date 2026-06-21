@@ -44,6 +44,8 @@ export class DomainSettingsComponent implements OnInit {
   protected readonly newDomain = signal('');
   protected readonly addingDomain = signal(false);
   protected readonly verifyingDomain = signal<string | null>(null);
+  protected readonly lastDomainVerificationTimes = signal<Record<string, number>>({});
+  protected readonly domainCooldownSeconds = signal<Record<string, number>>({});
   protected readonly expandedDomain = linkedSignal<VerifiedDomain[], string | null>({
     source: () => this.domainsList(),
     computation: (list, prev) => {
@@ -104,11 +106,44 @@ export class DomainSettingsComponent implements OnInit {
     }
   }
 
+  protected isDomainVerifyCooldown(domainName: string): boolean {
+    const lastTime = this.lastDomainVerificationTimes()[domainName];
+    if (!lastTime) return false;
+    return Date.now() - lastTime < 60000;
+  }
+
+  private startDomainCooldown(domainName: string) {
+    this.domainCooldownSeconds.update((prev) => ({ ...prev, [domainName]: 60 }));
+    const interval = setInterval(() => {
+      const current = this.domainCooldownSeconds()[domainName] || 0;
+      if (current <= 1) {
+        clearInterval(interval);
+        this.domainCooldownSeconds.update((prev) => {
+          const next = { ...prev };
+          delete next[domainName];
+          return next;
+        });
+      } else {
+        this.domainCooldownSeconds.update((prev) => ({ ...prev, [domainName]: current - 1 }));
+      }
+    }, 1000);
+  }
+
   protected async verifyDomain(domainName: string) {
+    if (this.isDomainVerifyCooldown(domainName)) {
+      this.alerts.showError('Please wait at least one minute before verifying this domain again.');
+      return;
+    }
+
     this.verifyingDomain.set(domainName);
 
     try {
       const updatedList = (await this.settingsSvc.verifyVerifiedDomain(domainName)) as VerifiedDomain[];
+      this.lastDomainVerificationTimes.update((prev) => ({
+        ...prev,
+        [domainName]: Date.now(),
+      }));
+      this.startDomainCooldown(domainName);
       const updatedDomain = updatedList.find((d: VerifiedDomain) => d.domain === domainName);
 
       if (updatedDomain && updatedDomain.status === 'verified') {
