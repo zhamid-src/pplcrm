@@ -67,11 +67,6 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/forms',
         icon: 'clipboard-document-list',
       },
-      {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
-      },
     ],
   },
   {
@@ -84,15 +79,21 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'envelope',
       },
       {
-        name: 'Lists',
-        route: '/lists',
-        icon: 'queue-list',
-      },
-      {
         name: 'Newsletters',
         route: '/newsletters',
         icon: 'megaphone',
       },
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+      },
+      {
+        name: 'Lists',
+        route: '/lists',
+        icon: 'queue-list',
+      },
+
       {
         name: 'Workflows',
         route: '/workflows',
@@ -105,9 +106,9 @@ export const SidebarItems: ISidebarItem[] = [
     type: 'subheading',
     children: [
       {
-        name: 'Teams',
-        route: '/teams',
-        icon: 'user-group',
+        name: 'Donors',
+        route: '/donors',
+        icon: 'volunteer',
       },
       {
         name: 'Volunteers',
@@ -115,9 +116,9 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'volunteer',
       },
       {
-        name: 'Donors',
-        route: '/donors',
-        icon: 'volunteer',
+        name: 'Teams',
+        route: '/teams',
+        icon: 'user-group',
       },
       {
         name: 'Events',
@@ -157,7 +158,7 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'document',
       },
       {
-        name: 'Activity Feed',
+        name: 'Activity',
         route: '/activities',
         icon: 'clipboard-document-list',
       },
