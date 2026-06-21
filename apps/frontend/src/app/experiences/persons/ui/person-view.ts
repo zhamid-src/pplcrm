@@ -1,6 +1,7 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, resource, signal, untracked, OnInit } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 import { type AddressType, type Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -10,6 +11,7 @@ import { UserService } from '../../../services/user.service';
 import { HouseholdsService } from '../../households/services/households-service';
 import { PersonsService } from '../services/persons-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
+import { DonationsService } from '../../../services/api/donations-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Card as PcCard } from '@uxcommon/components/card/card';
@@ -35,6 +37,7 @@ interface SocialLinkDef {
   imports: [
     DatePipe,
     RouterModule,
+    FormsModule,
     PeopleInHousehold,
     Icon,
     RecordActivities,
@@ -51,13 +54,14 @@ interface SocialLinkDef {
   ],
   templateUrl: './person-view.html',
 })
-export class PersonView {
+export class PersonView implements OnInit {
   readonly id = input.required<string>();
 
   private readonly alertSvc = inject(AlertService);
   private readonly userService = inject(UserService);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly personsSvc = inject(PersonsService);
+  protected readonly donationsSvc = inject(DonationsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
@@ -77,6 +81,12 @@ export class PersonView {
   // Analytics & Lists
   protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
   protected readonly volunteerHistory = signal<any[]>([]);
+  protected readonly donationStats = signal<{
+    cumulativeAmount: number;
+    limitAmount: number;
+    remainingAmount: number;
+  } | null>(null);
+  protected readonly donationHistory = signal<any[]>([]);
   protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
   protected readonly openedNewslettersCount = computed(() => {
     return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
@@ -84,6 +94,12 @@ export class PersonView {
   });
   protected readonly tags = signal<string[]>([]);
   protected readonly issues = signal<string[]>([]);
+
+  // Donation Dialog State
+  protected readonly isCheckingEligibility = signal(false);
+  protected readonly donationAmount = signal<number | null>(null);
+  protected readonly showDonationModal = signal(false);
+  protected readonly eligibilityError = signal<string | null>(null);
 
   // Address
   protected readonly householdId = computed(() => this.person()?.household_id ?? null);
@@ -161,6 +177,7 @@ export class PersonView {
     { id: 'emails', label: 'Conversations', icon: 'envelope', badge: this.activityData()?.emails?.length },
     { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
     { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
+    { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
     { id: 'household', label: 'Household', icon: 'home' },
   ]);
 
@@ -196,6 +213,10 @@ export class PersonView {
     });
   }
 
+  public ngOnInit() {
+    // Standard Angular Init
+  }
+
   protected async loadAllData(id: string) {
     const end = this._loading.begin();
     try {
@@ -219,7 +240,54 @@ export class PersonView {
         console.error('Failed to load volunteer details', err);
       }
 
-      // 4. Load interactions (emails + newsletters)
+      // 4. Load donations stats and history
+      try {
+        const stats = await this.donationsSvc.getStats(id);
+        this.donationStats.set(stats);
+        const history = await this.donationsSvc.getHistory(id);
+        this.donationHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load donations history', err);
+      }
+
+      // Check query params for Stripe Checkout success redirects
+      const params = this.route.snapshot.queryParams;
+      if (params['checkout_success'] === 'true' && params['session_id']) {
+        try {
+          await this.donationsSvc.confirmDonation(params['session_id']);
+          this.alertSvc.showSuccess('Donation processed successfully! Thank you for your support.');
+          // Reload donation stats/history after confirmation
+          const stats = await this.donationsSvc.getStats(id);
+          this.donationStats.set(stats);
+          const history = await this.donationsSvc.getHistory(id);
+          this.donationHistory.set(history || []);
+          this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        } catch (err) {
+          console.error('Failed to confirm stripe checkout session:', err);
+          this.alertSvc.showError('Finalizing payment verification...');
+        }
+      } else if (params['mock_donation_success'] === 'true' && params['session_id']) {
+        try {
+          const amt = Number(params['amount'] || 0);
+          await this.donationsSvc.confirmMockDonation({
+            personId: id,
+            amountCents: amt * 100,
+            sessionId: params['session_id'],
+            province: params['province'] || '',
+            country: params['country'] || '',
+          });
+          this.alertSvc.showSuccess('[MOCK] Donation recorded successfully!');
+          const stats = await this.donationsSvc.getStats(id);
+          this.donationStats.set(stats);
+          const history = await this.donationsSvc.getHistory(id);
+          this.donationHistory.set(history || []);
+          this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        } catch (err) {
+          console.error('Failed to record mock donation:', err);
+        }
+      }
+
+      // 5. Load interactions (emails + newsletters)
       try {
         const activity = await this.personsSvc.getActivity(id);
         this.activityData.set(activity || { emails: [], newsletters: [] });
@@ -231,6 +299,67 @@ export class PersonView {
     } finally {
       end();
       this.initialized.set(true);
+    }
+  }
+
+  protected openCollectDonation() {
+    this.donationAmount.set(null);
+    this.eligibilityError.set(null);
+    this.showDonationModal.set(true);
+  }
+
+  protected closeDonationModal() {
+    this.showDonationModal.set(false);
+  }
+
+  protected async submitDonation() {
+    const amt = this.donationAmount();
+    if (amt === null || amt <= 0) {
+      this.alertSvc.showError('Please specify a valid donation amount.');
+      return;
+    }
+
+    this.isCheckingEligibility.set(true);
+    this.eligibilityError.set(null);
+
+    const hh = this.householdResource.value() as Households | null | undefined;
+    const address = {
+      country: hh?.country || 'CA',
+      state: hh?.state || 'ON',
+    };
+
+    try {
+      const eligibility = await this.donationsSvc.checkEligibility({
+        personId: this.id(),
+        amountCents: amt * 100,
+        address,
+      });
+
+      if (!eligibility.eligible) {
+        this.eligibilityError.set(eligibility.reason || 'Donor is ineligible to donate.');
+        this.isCheckingEligibility.set(false);
+        return;
+      }
+
+      this.closeDonationModal();
+      this.alertSvc.showSuccess('Redirecting to Stripe Checkout...');
+
+      // Redirect
+      const session = await this.donationsSvc.createCheckout({
+        personId: this.id(),
+        amountCents: amt * 100,
+        address,
+      });
+
+      if (session && session.url) {
+        window.location.href = session.url;
+      } else {
+        this.alertSvc.showError('Failed to initialize payment gateway.');
+      }
+    } catch (err: any) {
+      this.alertSvc.showError(err.message || 'Verification check failed.');
+    } finally {
+      this.isCheckingEligibility.set(false);
     }
   }
 

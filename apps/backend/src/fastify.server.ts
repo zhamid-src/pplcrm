@@ -46,7 +46,7 @@ export class FastifyServer {
 
     // Register a content type parser for application/json that keeps raw body if path is webhook
     this.server.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
-      if (req.url.includes('/billing/webhook')) {
+      if (req.url.includes('/billing/webhook') || req.url.includes('/donations/webhook')) {
         done(null, body);
       } else {
         try {

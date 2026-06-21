@@ -1,5 +1,6 @@
 import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
 import { BillingController } from '../../modules/billing/controller';
+import { DonationsController } from '../../modules/donations/controller';
 import { Client } from 'pg';
 import { env } from '../../../env';
 
@@ -178,8 +179,32 @@ export class WebhookEventWorker {
     const payload = typeof eventRecord.payload === 'string' ? JSON.parse(eventRecord.payload) : eventRecord.payload;
 
     try {
-      const billingController = new BillingController();
-      await billingController.processWebhookEvent(payload);
+      const stripeObj = payload.data?.object;
+      const isDonation = payload.type === 'checkout.session.completed' && stripeObj?.metadata?.personId;
+
+      if (isDonation) {
+        const donationsController = new DonationsController();
+        const tenantId = String(stripeObj.metadata.tenantId);
+        const personId = String(stripeObj.metadata.personId);
+        const amountCents = Number(stripeObj.metadata.amount);
+        const province = String(stripeObj.metadata.residencyProvince || '');
+        const country = String(stripeObj.metadata.residencyCountry || '');
+        const sessionId = String(stripeObj.id);
+        const createdBy = String(stripeObj.metadata.createdBy || '1');
+
+        await donationsController.recordSuccessfulDonation(
+          tenantId,
+          personId,
+          amountCents,
+          sessionId,
+          province,
+          country,
+          createdBy,
+        );
+      } else {
+        const billingController = new BillingController();
+        await billingController.processWebhookEvent(payload);
+      }
 
       // Mark event as processed/completed
       await this.db

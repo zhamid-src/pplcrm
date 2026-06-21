@@ -12,6 +12,7 @@ import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.rou
 import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
 import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
 import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
+import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
 import { verifyAuthToken } from './lib/auth-util';
 
 export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
@@ -25,6 +26,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Register Stripe billing webhook route
   fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
+
+  // Register Stripe donations webhook route
+  fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
 
   // Register SendGrid newsletters event webhook route
   fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });

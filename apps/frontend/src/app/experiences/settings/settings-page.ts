@@ -14,6 +14,7 @@ import { MsSyncSettings } from './ms-sync/ms-sync-settings';
 import { GoogleSyncSettings } from './google-sync/google-sync-settings';
 import { BillingSettingsComponent } from './billing/billing-settings';
 import { DomainSettingsComponent } from './domains/domains-settings';
+import { DonationsSettingsComponent } from './donations/donations-settings';
 import { HouseholdsService } from '../households/services/households-service';
 
 interface SectionFieldState {
@@ -37,6 +38,7 @@ interface SectionState {
     GoogleSyncSettings,
     BillingSettingsComponent,
     DomainSettingsComponent,
+    DonationsSettingsComponent,
     DatePipe,
   ],
   templateUrl: './settings-page.html',

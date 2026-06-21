@@ -208,7 +208,7 @@
         <!-- Stats: Donations -->
         <pc-stat-card
           [title]="'Donations'"
-          [value]="'$0'"
+          [value]="donationStats() ? '$' + donationStats()!.cumulativeAmount.toLocaleString() : '$0'"
           [description]="'Financial support'"
           [icon]="'currency-dollar'"
           [valueColorClass]="'text-emerald-500'"
@@ -366,6 +366,92 @@
           </div>
         </pc-tab-panel>
 
+        <pc-tab-panel id="donations" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <!-- Summary card for limits progress -->
+            @if (donationStats()) {
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"
+            >
+              <div class="flex-1 w-full space-y-1">
+                <div class="flex justify-between text-xs font-bold text-base-content/75">
+                  <span>Annual Limit Progress</span>
+                  <span
+                    >${{ donationStats()!.cumulativeAmount.toLocaleString() }} / ${{
+                    donationStats()!.limitAmount.toLocaleString() }}</span
+                  >
+                </div>
+                <progress
+                  class="progress progress-success w-full h-2.5 bg-base-300"
+                  [value]="donationStats()!.cumulativeAmount"
+                  [max]="donationStats()!.limitAmount"
+                ></progress>
+                <p class="text-[10px] text-base-content/50">
+                  Remaining allowable donation this calendar year:
+                  <strong>${{ donationStats()!.remainingAmount.toLocaleString() }}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-primary shrink-0 w-full md:w-auto font-semibold flex items-center justify-center gap-1.5"
+                (click)="openCollectDonation()"
+                [disabled]="donationStats()!.remainingAmount <= 0"
+              >
+                <pc-icon name="plus" [size]="4"></pc-icon>
+                Collect Donation
+              </button>
+            </div>
+            } @if (donationHistory().length === 0) {
+            <div
+              class="text-center py-10 text-base-content/40 italic bg-base-100 rounded-xl border border-dashed border-base-200"
+            >
+              No donations recorded yet for this person.
+            </div>
+            } @else {
+            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl shadow-sm">
+              <table class="table w-full text-xs">
+                <thead>
+                  <tr class="bg-base-50 border-b border-base-200">
+                    <th class="font-bold text-base-content/70">Date</th>
+                    <th class="font-bold text-base-content/70">Amount</th>
+                    <th class="font-bold text-base-content/70">Tax Credit</th>
+                    <th class="font-bold text-base-content/70">Residency Info</th>
+                    <th class="font-bold text-base-content/70">Status</th>
+                    <th class="font-bold text-base-content/70">Transaction ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (donation of donationHistory(); track donation.id) {
+                  <tr class="hover:bg-base-200/20 border-b border-base-200">
+                    <td class="font-medium text-base-content/75">{{ donation.created_at | date:'mediumDate' }}</td>
+                    <td class="font-bold text-base-content">${{ (donation.amount / 100).toFixed(2) }}</td>
+                    <td>
+                      <span class="badge badge-success gap-1 font-semibold py-2 px-2.5">
+                        ${{ ((donation.tax_credit_amount || 0) / 100).toFixed(2) }}
+                      </span>
+                    </td>
+                    <td class="text-base-content/65">
+                      {{ donation.residency_province || '--' }} {{ donation.residency_country || '' }}
+                    </td>
+                    <td>
+                      <pc-status-badge
+                        [type]="donation.status === 'succeeded' ? 'success' : donation.status === 'pending' ? 'warning' : 'error'"
+                      >
+                        {{ donation.status }}
+                      </pc-status-badge>
+                    </td>
+                    <td class="font-mono text-[10px] text-base-content/50">
+                      {{ donation.stripe_session_id || 'Manual' }}
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
         <pc-tab-panel id="household" [activeTab]="activeTab()">
           <div class="flex flex-col gap-4">
             @if (householdId() && !isPlaceholderHousehold()) { @defer {
@@ -379,6 +465,84 @@
         </pc-tab-panel>
       </pc-tabs>
     </div>
+  </div>
+  }
+  <!-- Collect Donation Modal -->
+  @if (showDonationModal()) {
+  <div class="modal modal-open z-50">
+    <div class="modal-box rounded-2xl border border-base-200 max-w-md p-6 bg-base-100 shadow-2xl">
+      <div class="flex justify-between items-center border-b border-base-200 pb-3 mb-4">
+        <h3 class="text-lg font-bold flex items-center gap-2">
+          <pc-icon name="currency-dollar" class="text-primary" [size]="5"></pc-icon>
+          Collect Donation
+        </h3>
+        <button type="button" class="btn btn-sm btn-circle btn-ghost" (click)="closeDonationModal()">✕</button>
+      </div>
+
+      <div class="space-y-4">
+        <p class="text-xs text-base-content/60">
+          Enter the donation amount in dollars. Residency validation and limit verification will be performed
+          automatically before redirecting to the payment gateway.
+        </p>
+
+        <!-- Donor Residency Profile -->
+        <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
+          <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
+            >Donor Residency Profile</span
+          >
+          <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
+            <pc-icon name="map-pin" [size]="4"></pc-icon>
+            {{ addressString() }}
+          </div>
+        </div>
+
+        <!-- Donation Amount input -->
+        <div class="flex flex-col gap-1.5">
+          <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
+          <div class="relative">
+            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
+            <input
+              id="donation_input"
+              type="number"
+              min="1"
+              placeholder="250"
+              class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
+              [(ngModel)]="donationAmount"
+            />
+          </div>
+        </div>
+
+        <!-- Error alert -->
+        @if (eligibilityError()) {
+        <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
+          <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
+          <span>{{ eligibilityError() }}</span>
+        </div>
+        }
+      </div>
+
+      <div class="modal-action border-t border-base-200 pt-4 mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          class="btn btn-ghost text-sm font-semibold"
+          (click)="closeDonationModal()"
+          [disabled]="isCheckingEligibility()"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary min-w-[140px] text-sm font-semibold"
+          (click)="submitDonation()"
+          [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
+        >
+          @if (isCheckingEligibility()) {
+          <span class="loading loading-spinner loading-xs mr-1.5"></span>
+          Verifying... } @else { Verify & Proceed }
+        </button>
+      </div>
+    </div>
+    <div class="modal-backdrop bg-black/40 backdrop-blur-sm" (click)="closeDonationModal()"></div>
   </div>
   }
 </pc-detail-layout>
