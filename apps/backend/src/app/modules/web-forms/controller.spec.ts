@@ -12,49 +12,62 @@ async function createTestSeed(db: any) {
   const householdId = rand();
 
   // 1. Tenant
-  await db.insertInto('tenants').values({
-    id: tenantId,
-    name: 'Test Tenant',
-  }).execute();
+  await db
+    .insertInto('tenants')
+    .values({
+      id: tenantId,
+      name: 'Test Tenant',
+    })
+    .execute();
 
   // 2. User
-  await db.insertInto('authusers').values({
-    id: userId,
-    tenant_id: tenantId,
-    email: `test-${userId}@example.com`,
-    password: 'password',
-    first_name: 'Test',
-    last_name: 'User',
-    verified: true,
-    createdby_id: userId,
-    updatedby_id: userId,
-  }).execute();
+  await db
+    .insertInto('authusers')
+    .values({
+      id: userId,
+      tenant_id: tenantId,
+      email: `test-${userId}@example.com`,
+      password: 'password',
+      first_name: 'Test',
+      last_name: 'User',
+      verified: true,
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .execute();
 
   // 3. Campaign
-  await db.insertInto('campaigns').values({
-    id: campaignId,
-    tenant_id: tenantId,
-    admin_id: userId,
-    name: 'Test Campaign',
-    createdby_id: userId,
-    updatedby_id: userId,
-  }).execute();
+  await db
+    .insertInto('campaigns')
+    .values({
+      id: campaignId,
+      tenant_id: tenantId,
+      admin_id: userId,
+      name: 'Test Campaign',
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .execute();
 
   // 4. Household
-  await db.insertInto('households').values({
-    id: householdId,
-    tenant_id: tenantId,
-    campaign_id: campaignId,
-    createdby_id: userId,
-    updatedby_id: userId,
-  }).execute();
+  await db
+    .insertInto('households')
+    .values({
+      id: householdId,
+      tenant_id: tenantId,
+      campaign_id: campaignId,
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .execute();
 
   // Update tenant admin, creator, and placeholder household
-  await db.updateTable('tenants')
-    .set({ 
-      admin_id: userId, 
+  await db
+    .updateTable('tenants')
+    .set({
+      admin_id: userId,
       createdby_id: userId,
-      placeholder_household_id: householdId
+      placeholder_household_id: householdId,
     })
     .where('id', '=', tenantId)
     .execute();
@@ -63,7 +76,11 @@ async function createTestSeed(db: any) {
 }
 
 async function cleanTenant(db: any, tenantId: string) {
-  await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('id', '=', tenantId).execute();
+  await db
+    .updateTable('tenants')
+    .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+    .where('id', '=', tenantId)
+    .execute();
   await db.deleteFrom('map_peoples_tags').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('map_lists_persons').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('persons').where('tenant_id', '=', tenantId).execute();
@@ -101,30 +118,36 @@ describe('WebFormsController Integration', () => {
   it('should successfully submit form and create a new contact with tags and lists', async () => {
     // 1. Create a List
     const listId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db.insertInto('lists').values({
-      id: listId,
-      tenant_id: tenantId,
-      name: 'Newsletter Subscribers',
-      object: 'people',
-      is_dynamic: false,
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('lists')
+      .values({
+        id: listId,
+        tenant_id: tenantId,
+        name: 'Newsletter Subscribers',
+        object: 'people',
+        is_dynamic: false,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // 2. Create a Web Form definition
     const formId = randomUUID();
-    await db.insertInto('web_forms').values({
-      id: formId,
-      tenant_id: tenantId,
-      name: 'Newsletter Form',
-      description: 'Public newsletter signup form',
-      redirect_url: 'https://example.com/thankyou',
-      target_tags: JSON.stringify(['newsletter', 'public-form']),
-      target_lists: JSON.stringify([listId]),
-      status: 'active',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('web_forms')
+      .values({
+        id: formId,
+        tenant_id: tenantId,
+        name: 'Newsletter Form',
+        description: 'Public newsletter signup form',
+        redirect_url: 'https://example.com/thankyou',
+        target_tags: JSON.stringify(['newsletter', 'public-form']),
+        target_lists: JSON.stringify([listId]),
+        status: 'active',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // 3. Submit the form
     const payload = {
@@ -139,7 +162,8 @@ describe('WebFormsController Integration', () => {
     expect(res.redirect_url).toBe('https://example.com/thankyou');
 
     // Verify background job was queued
-    const job = await db.selectFrom('background_jobs')
+    const job = await db
+      .selectFrom('background_jobs')
       .selectAll()
       .where('tenant_id', '=', tenantId)
       .where(sql`payload->>'type'`, '=', 'send-webform-notifications')
@@ -149,7 +173,8 @@ describe('WebFormsController Integration', () => {
     expect(['pending', 'completed', 'processed']).toContain(job.status);
 
     // 4. Verify Contact Creation
-    const person = await db.selectFrom('persons')
+    const person = await db
+      .selectFrom('persons')
       .selectAll()
       .where('tenant_id', '=', tenantId)
       .where('email', '=', 'visitor@example.com')
@@ -163,7 +188,8 @@ describe('WebFormsController Integration', () => {
     expect(person.household_id).toBe(householdId);
 
     // 5. Verify Tag Mapping
-    const personTags = await db.selectFrom('map_peoples_tags')
+    const personTags = await db
+      .selectFrom('map_peoples_tags')
       .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
       .select('tags.name')
       .where('map_peoples_tags.tenant_id', '=', tenantId)
@@ -176,7 +202,8 @@ describe('WebFormsController Integration', () => {
     expect(tagNames).toContain('Source: Newsletter Form');
 
     // 6. Verify List Mapping
-    const personLists = await db.selectFrom('map_lists_persons')
+    const personLists = await db
+      .selectFrom('map_lists_persons')
       .select('list_id')
       .where('tenant_id', '=', tenantId)
       .where('person_id', '=', person.id)
@@ -189,28 +216,34 @@ describe('WebFormsController Integration', () => {
   it('should non-destructively merge details when email already exists', async () => {
     // 1. Pre-insert an existing person with minimal details
     const existingPersonId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db.insertInto('persons').values({
-      id: existingPersonId,
-      tenant_id: tenantId,
-      campaign_id: campaignId,
-      household_id: householdId,
-      email: 'dup@example.com',
-      first_name: 'Existing',
-      notes: 'Original notes',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('persons')
+      .values({
+        id: existingPersonId,
+        tenant_id: tenantId,
+        campaign_id: campaignId,
+        household_id: householdId,
+        email: 'dup@example.com',
+        first_name: 'Existing',
+        notes: 'Original notes',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // 2. Create Web Form definition
     const formId = randomUUID();
-    await db.insertInto('web_forms').values({
-      id: formId,
-      tenant_id: tenantId,
-      name: 'Newsletter Form',
-      status: 'active',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('web_forms')
+      .values({
+        id: formId,
+        tenant_id: tenantId,
+        name: 'Newsletter Form',
+        status: 'active',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // 3. Submit form with new details
     const payload = {
@@ -223,7 +256,8 @@ describe('WebFormsController Integration', () => {
     await controller.submitFormPublic(formId, payload, '127.0.0.1');
 
     // 4. Verify Person fields are merged non-destructively
-    const person = await db.selectFrom('persons')
+    const person = await db
+      .selectFrom('persons')
       .selectAll()
       .where('tenant_id', '=', tenantId)
       .where('id', '=', existingPersonId)
@@ -231,7 +265,7 @@ describe('WebFormsController Integration', () => {
 
     expect(person.first_name).toBe('Existing'); // Unchanged
     expect(person.last_name).toBe('Submitter'); // Filled in
-    expect(person.mobile).toBe('12345678');     // Filled in
+    expect(person.mobile).toBe('12345678'); // Filled in
     expect(person.notes).toContain('Original notes'); // Appended
     expect(person.notes).toContain('New form signup.');
   });
@@ -239,14 +273,17 @@ describe('WebFormsController Integration', () => {
   it('should block submissions if honeypot field is filled', async () => {
     // Create Web Form
     const formId = randomUUID();
-    await db.insertInto('web_forms').values({
-      id: formId,
-      tenant_id: tenantId,
-      name: 'Newsletter Form',
-      status: 'active',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('web_forms')
+      .values({
+        id: formId,
+        tenant_id: tenantId,
+        name: 'Newsletter Form',
+        status: 'active',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // Submit with honeypot field _hp filled
     const payload = {
@@ -258,7 +295,8 @@ describe('WebFormsController Integration', () => {
     expect(res.redirect_url).toBeNull();
 
     // Verify no person was created
-    const person = await db.selectFrom('persons')
+    const person = await db
+      .selectFrom('persons')
       .selectAll()
       .where('tenant_id', '=', tenantId)
       .where('email', '=', 'bot@example.com')
@@ -270,15 +308,18 @@ describe('WebFormsController Integration', () => {
   it('should automatically apply Donor tag when submitting a donation web form', async () => {
     // 1. Create a Web Form definition of type donation
     const formId = randomUUID();
-    await db.insertInto('web_forms').values({
-      id: formId,
-      tenant_id: tenantId,
-      name: 'Donation Form Test',
-      status: 'active',
-      form_type: 'donation',
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('web_forms')
+      .values({
+        id: formId,
+        tenant_id: tenantId,
+        name: 'Donation Form Test',
+        status: 'active',
+        form_type: 'donation',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // 2. Submit the donation form
     const payload = {
@@ -288,6 +329,9 @@ describe('WebFormsController Integration', () => {
       amount: '50.00',
       country: 'CA',
       state: 'ON',
+      street1: '123 Main St',
+      city: 'Toronto',
+      zip: 'M5V 2T6',
     };
 
     try {
@@ -296,24 +340,88 @@ describe('WebFormsController Integration', () => {
       // Mock Stripe key redirect or exception is fine
     }
 
-    // 3. Verify Contact Creation and Tag Mapping
-    const person = await db.selectFrom('persons')
+    // 3. Verify Contact Creation, Household Address, and Tag Mapping
+    const person = await db
+      .selectFrom('persons')
       .selectAll()
       .where('tenant_id', '=', tenantId)
       .where('email', '=', 'donor@example.com')
       .executeTakeFirst();
 
     expect(person).toBeDefined();
+    expect(person!.household_id).not.toBeNull();
 
-    const personTags = await db.selectFrom('map_peoples_tags')
+    const hh = await db
+      .selectFrom('households')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', person!.household_id as any)
+      .executeTakeFirst();
+
+    expect(hh).toBeDefined();
+    expect(hh!.street1).toBe('123 Main St');
+    expect(hh!.city).toBe('Toronto');
+    expect(hh!.zip).toBe('M5V 2T6');
+
+    const personTags = await db
+      .selectFrom('map_peoples_tags')
       .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
       .select('tags.name')
       .where('map_peoples_tags.tenant_id', '=', tenantId)
-      .where('map_peoples_tags.person_id', '=', person.id)
+      .where('map_peoples_tags.person_id', '=', person!.id)
       .execute();
 
     const tagNames = personTags.map((t: any) => t.name);
     expect(tagNames).toContain('Donor');
     expect(tagNames).toContain('Source: Donation Form Test');
+  });
+
+  it('should validate user-configured required fields on standard form submission', async () => {
+    // 1. Create a web form with a required field 'mobile:required'
+    const formId = crypto.randomUUID();
+    await db
+      .insertInto('web_forms')
+      .values({
+        id: formId,
+        tenant_id: tenantId,
+        form_type: 'standard',
+        name: 'Required Fields Test',
+        fields: JSON.stringify(['first_name', 'mobile:required']),
+        status: 'active',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 2. Submit the form without the required mobile field
+    const payloadWithoutMobile = {
+      email: 'missing-mobile@example.com',
+      first_name: 'Jane',
+    };
+
+    await expect(controller.submitFormPublic(formId, payloadWithoutMobile, '127.0.0.2')).rejects.toThrow(
+      'Mobile / Phone is required.',
+    );
+
+    // 3. Submit the form with the required mobile field
+    const payloadWithMobile = {
+      email: 'has-mobile@example.com',
+      first_name: 'Jane',
+      mobile: '555-0000',
+    };
+
+    const res = await controller.submitFormPublic(formId, payloadWithMobile, '127.0.0.3');
+    expect(res).toBeDefined();
+
+    // 4. Verify Contact Creation
+    const person = await db
+      .selectFrom('persons')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('email', '=', 'has-mobile@example.com')
+      .executeTakeFirst();
+
+    expect(person).toBeDefined();
+    expect(person!.mobile).toBe('555-0000');
   });
 });
