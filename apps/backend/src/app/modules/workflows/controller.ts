@@ -334,7 +334,11 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
       .select('admin_id')
       .where('id', '=', tenantId as any)
       .executeTakeFirst();
-    const creatorId = tenantRow?.admin_id || '1';
+    if (!tenantRow?.admin_id) {
+      console.warn(`triggerWorkflow: skipping automation for tenant ${tenantId} — admin_id not configured.`);
+      return;
+    }
+    const creatorId = String(tenantRow.admin_id);
 
     for (const wf of activeWorkflows) {
       try {

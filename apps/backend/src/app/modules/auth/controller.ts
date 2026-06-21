@@ -11,7 +11,7 @@ import {
   signUpInputType,
 } from '../../../../../../libs/common/src';
 
-import { randomBytes, randomUUID, createHash } from 'crypto';
+import { randomBytes, randomUUID, createHash, timingSafeEqual } from 'crypto';
 import { createSigner, createVerifier } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
 import { env } from '../../../env';
@@ -354,9 +354,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       };
 
       if (user.previous_email) {
+        // Email change confirmation: restore role and clear pending state.
+        // Invalidate all existing sessions — an old-email session token
+        // should not remain valid after the address has been changed.
         updateData['role'] = user.previous_role;
         updateData['previous_email'] = null;
         updateData['previous_role'] = null;
+        await trx.deleteFrom('sessions').where('user_id', '=', user.id).execute();
       }
 
       await trx.updateTable('authusers').set(updateData).where('id', '=', user.id).execute();
@@ -496,7 +500,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   public async verify2FA(email: string, code: string, ipAddress?: string, userAgent?: string) {
     const user = await this.getUserByEmail(email.toLowerCase());
 
-    if (!user.two_factor_code || user.two_factor_code !== code) {
+    // Use timing-safe comparison to eliminate OTP brute-force side-channel
+    const storedCode = user.two_factor_code ?? '';
+    const inputCode = String(code ?? '');
+    const codeMatch =
+      storedCode.length > 0 &&
+      storedCode.length === inputCode.length &&
+      timingSafeEqual(Buffer.from(storedCode), Buffer.from(inputCode));
+    if (!codeMatch) {
       throw new BadRequestError('Invalid verification code.');
     }
 

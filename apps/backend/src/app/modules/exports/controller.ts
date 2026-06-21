@@ -46,7 +46,7 @@ export class ExportsController {
     const exportId = String((exportRecord as any).id);
 
     await this.repo.db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: auth.tenant_id,
         queue: 'default',

@@ -102,7 +102,12 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       });
     }
     timestamps.push(now);
-    ipSubmissionTimestamps.set(clientIp, timestamps);
+    // Prune empty keys to prevent unbounded Map growth
+    if (timestamps.length > 0) {
+      ipSubmissionTimestamps.set(clientIp, timestamps);
+    } else {
+      ipSubmissionTimestamps.delete(clientIp);
+    }
 
     // 2. Fetch Form by ID
     const form = await this.getRepo().getByIdPublic(formId);
@@ -256,12 +261,15 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       .execute(async (trx: Transaction<Models>) => {
         const tenantRow = await trx
           .selectFrom('tenants')
-          .select(['placeholder_household_id', 'admin_id'])
+          .select(['placeholder_household_id'])
           .where('id', '=', tenantId as any)
           .executeTakeFirst();
 
         const householdId = tenantRow?.placeholder_household_id;
-        const creatorId = tenantRow?.admin_id || '1';
+        // Use the form's creator as the actor — they are the person who
+        // configured this form, which is the most correct attribution for
+        // contacts and data created via public submissions.
+        const creatorId = String(form.createdby_id);
 
         resolvedCreatorId = creatorId;
 
@@ -530,7 +538,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 
         // Queue email notification job in background
         await trx
-          .insertInto('background_jobs' as any)
+          .insertInto('background_jobs')
           .values({
             tenant_id: tenantId as any,
             queue: 'default',

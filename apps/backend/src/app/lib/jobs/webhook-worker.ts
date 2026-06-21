@@ -190,7 +190,23 @@ export class WebhookEventWorker {
         const province = String(stripeObj.metadata.residencyProvince || '');
         const country = String(stripeObj.metadata.residencyCountry || '');
         const sessionId = String(stripeObj.id);
-        const createdBy = String(stripeObj.metadata.createdBy || '1');
+
+        // Prefer the userId stamped in Stripe metadata; fall back to the tenant's
+        // admin account so the donation is never attributed to a phantom user.
+        let createdBy = stripeObj.metadata.createdBy ? String(stripeObj.metadata.createdBy) : null;
+        if (!createdBy) {
+          const tenantRow = await this.db
+            .selectFrom('tenants')
+            .select('admin_id')
+            .where('id', '=', tenantId as any)
+            .executeTakeFirst();
+          if (!tenantRow?.admin_id) {
+            throw new Error(
+              `Cannot record donation: tenant ${tenantId} has no admin_id and Stripe metadata contains no createdBy.`,
+            );
+          }
+          createdBy = String(tenantRow.admin_id);
+        }
 
         await donationsController.recordSuccessfulDonation(
           tenantId,
