@@ -189,11 +189,20 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       q = this.applyColumnFilter(q, 'households.street1', filterModel['street1']);
       q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num']);
       q = this.applyColumnFilter(q, 'households.zip', filterModel['zip']);
-      if (filterModel['tags']?.value) {
+      if (filterModel['tags']?.value && filterModel['issues']?.value) {
+        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
+        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
+        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
+        q = q.where((eb) =>
+          eb.or([
+            eb.and([eb('tags.type', '=', 'tag' as any), eb('tags.name', 'ilike', tagVal)]),
+            eb.and([eb('tags.type', '=', 'issue' as any), eb('tags.name', 'ilike', issueVal)]),
+          ])
+        );
+      } else if (filterModel['tags']?.value) {
         q = q.where('tags.type', '=', 'tag');
         q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
-      }
-      if (filterModel['issues']?.value) {
+      } else if (filterModel['issues']?.value) {
         q = q.where('tags.type', '=', 'issue');
         q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
       }
@@ -674,6 +683,17 @@ export class PersonsRepo extends BaseRepository<'persons'> {
           .where('household_id', '=', sourceHhId)
           .execute();
         if (remainingHhMembers.length === 0) {
+          // Clean up orphaned household associations before deletion
+          await trx
+            .deleteFrom('map_households_tags')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('household_id', '=', sourceHhId)
+            .execute();
+          await trx
+            .deleteFrom('map_lists_households')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('household_id', '=', sourceHhId)
+            .execute();
           await trx
             .deleteFrom('households')
             .where('tenant_id', '=', input.tenant_id)

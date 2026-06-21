@@ -12,6 +12,10 @@ const ipSignupTimestamps = new Map<string, number[]>();
 const SIGNUP_RATE_LIMIT_MAX = 5;
 const SIGNUP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 
+// Cache for tenant slug lookups to avoid fetching all tenants on every public request
+const TENANT_SLUG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let tenantSlugCache: { tenants: { id: string; name: string }[]; expiresAt: number } | null = null;
+
 export class VolunteerEventsController extends BaseController<'volunteer_events', VolunteerEventsRepo> {
   constructor() {
     super(new VolunteerEventsRepo());
@@ -529,8 +533,15 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
   }
 
   public async getTenantFromSlug(slug: string) {
-    const tenants = await this.getRepo().db.selectFrom('tenants').select(['id', 'name']).execute();
-    return tenants.find((t) => this.getTenantSlug(String(t.id)) === slug);
+    const now = Date.now();
+    if (!tenantSlugCache || now > tenantSlugCache.expiresAt) {
+      const tenants = await this.getRepo().db.selectFrom('tenants').select(['id', 'name']).execute();
+      tenantSlugCache = {
+        tenants: tenants.map((t) => ({ id: String(t.id), name: String(t.name) })),
+        expiresAt: now + TENANT_SLUG_CACHE_TTL_MS,
+      };
+    }
+    return tenantSlugCache.tenants.find((t) => this.getTenantSlug(t.id) === slug);
   }
 
   public async signupVolunteerPublic(eventId: string, payload: Record<string, string>, clientIp: string) {
@@ -545,7 +556,12 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       });
     }
     timestamps.push(now);
-    ipSignupTimestamps.set(clientIp, timestamps);
+    // Prune the key if empty to prevent unbounded Map growth across long-lived processes
+    if (timestamps.length > 0) {
+      ipSignupTimestamps.set(clientIp, timestamps);
+    } else {
+      ipSignupTimestamps.delete(clientIp);
+    }
 
     // 2. Fetch Event by ID
     const event = await this.getEventPublic(eventId);
@@ -598,10 +614,13 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           .executeTakeFirst();
 
         const householdId = tenantRow?.placeholder_household_id;
-        const creatorId = tenantRow?.admin_id || '1';
+        const creatorId = tenantRow?.admin_id;
 
         if (!householdId) {
           throw new Error('Tenant placeholder household is not configured.');
+        }
+        if (!creatorId) {
+          throw new Error('Tenant admin_id is not configured.');
         }
 
         const campaignId = await this.getCampaignId(tenantId, trx);

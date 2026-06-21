@@ -66,8 +66,8 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 
     if (jobs.length > 0) {
       await db
-        .insertInto('background_jobs' as any)
-        .values(jobs)
+        .insertInto('background_jobs')
+        .values(jobs as any)
         .execute();
     }
 
@@ -218,11 +218,20 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num']);
       q = this.applyColumnFilter(q, 'households.zip', filterModel['zip']);
       q = this.applyColumnFilter(q, 'households.home_phone', filterModel['home_phone']);
-      if (filterModel['tags']?.value) {
+      if (filterModel['tags']?.value && filterModel['issues']?.value) {
+        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
+        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
+        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
+        q = q.where((eb) =>
+          eb.or([
+            eb.and([eb('tags.type', '=', 'tag' as any), eb('tags.name', 'ilike', tagVal)]),
+            eb.and([eb('tags.type', '=', 'issue' as any), eb('tags.name', 'ilike', issueVal)]),
+          ])
+        );
+      } else if (filterModel['tags']?.value) {
         q = q.where('tags.type', '=', 'tag');
         q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
-      }
-      if (filterModel['issues']?.value) {
+      } else if (filterModel['issues']?.value) {
         q = q.where('tags.type', '=', 'issue');
         q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
       }
@@ -510,7 +519,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       return { groups: [], total };
     }
 
-    const persons = await (BaseRepository as any)['_db']
+    const persons = await this.db
       .selectFrom('persons')
       .select(['id', 'first_name', 'last_name', 'email', 'household_id'])
       .where('tenant_id', '=', tenant_id)
