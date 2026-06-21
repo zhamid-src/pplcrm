@@ -211,6 +211,9 @@ test.describe('Web Forms', () => {
     await page.goto('/forms/add');
     await page.waitForLoadState('networkidle');
 
+    // Select standard form type first to advance to step 2
+    await page.getByText('Configure Standard Form').click();
+
     // Fill the configuration form
     await page.locator('input[placeholder*="Newsletter Signup"]').fill('Newsletter Form');
     await page.locator('textarea[placeholder*="Internal note"]').fill('Used on home page');
@@ -220,7 +223,7 @@ test.describe('Web Forms', () => {
     await page.locator('select:has-text("Select a list to target")').selectOption('list-1');
 
     // Submit
-    await page.locator('button[type="submit"]:has-text("Save Web Form")').click();
+    await page.locator('button:has-text("Create Web Form")').click();
 
     // Verify it saved and navigated to edit URL with details
     await expect(page).toHaveURL(/\/forms\/form-1111-2222-3333-444444444444/);

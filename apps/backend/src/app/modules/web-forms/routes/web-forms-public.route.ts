@@ -417,7 +417,25 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   // Register form URL-encoded parser
   fastify.register(formBody);
 
-  fastify.get('/success', async (_req, reply) => {
+  fastify.get('/success', async (req: any, reply) => {
+    const { checkout_session_id, is_mock, person_id, amount_cents, province, country, tenant_id, user_id } = req.query;
+    if (is_mock === 'true' && checkout_session_id && person_id && tenant_id) {
+      try {
+        const { DonationsController } = await import('../../donations/controller');
+        const donationsController = new DonationsController();
+        await donationsController.confirmMockDonation(
+          tenant_id,
+          user_id || '1',
+          person_id,
+          Number(amount_cents),
+          checkout_session_id,
+          province || '',
+          country || '',
+        );
+      } catch (err) {
+        fastify.log.error(err as Error, 'Failed to confirm mock donation on public success page:');
+      }
+    }
     reply.type('text/html');
     return reply.send(SUCCESS_HTML);
   });

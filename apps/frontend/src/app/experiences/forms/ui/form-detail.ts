@@ -12,6 +12,7 @@ import { Icon } from '@icons/icon';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
+import { SettingsService } from '@experiences/settings/services/settings-service';
 
 @Component({
   selector: 'pc-form-detail',
@@ -25,6 +26,7 @@ export class FormDetailComponent implements OnInit {
   private readonly listsSvc = inject(ListsService);
   private readonly alertSvc = inject(AlertService);
   private readonly dialogs = inject(ConfirmDialogService);
+  private readonly settingsSvc = inject(SettingsService);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -33,6 +35,21 @@ export class FormDetailComponent implements OnInit {
   protected readonly error = signal<string | null>(null);
   protected readonly isNew = signal(true);
   protected readonly formId = signal<string | null>(null);
+  protected readonly step = signal<1 | 2>(1);
+
+  protected selectType(type: 'standard' | 'donation') {
+    this.payload.update((p) => ({ ...p, form_type: type }));
+    this.step.set(2);
+  }
+
+  protected back() {
+    this.step.set(1);
+  }
+
+  protected readonly hasStripeKey = computed(() => {
+    const key = this.settingsSvc.getValue<string>('donations.stripe_secret_key', '');
+    return !!key.trim();
+  });
 
   protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
   protected readonly selectedLists = signal<string[]>([]);
@@ -200,8 +217,12 @@ ${
     if (id && id !== 'add') {
       this.isNew.set(false);
       this.formId.set(id);
+      this.step.set(2);
+    } else {
+      this.step.set(1);
     }
     void this.loadLists();
+    void this.settingsSvc.load();
   }
 
   protected listName(id: string): string {
@@ -289,30 +310,37 @@ ${
     await submit(this.form, {
       action: async () => {
         const values = this.payload();
-        const payload = {
-          name: values.name?.trim() ?? '',
-          description: values.description?.trim() || null,
-          redirect_url: values.redirect_url?.trim() || null,
-          target_tags: this.selectedTags().length ? this.selectedTags() : null,
-          target_lists: this.selectedLists().length ? this.selectedLists() : null,
-          status: values.status,
-          fields: this.selectedFields(),
-          send_confirmation: !!values.send_confirmation,
-          send_alert: !!values.send_alert,
-          form_type: values.form_type,
-        };
 
         try {
           if (this.isNew()) {
+            const payload = {
+              name: values.name?.trim() ?? '',
+              description: values.description?.trim() || null,
+              redirect_url: values.redirect_url?.trim() || null,
+              target_tags: this.selectedTags().length ? this.selectedTags() : null,
+              target_lists: this.selectedLists().length ? this.selectedLists() : null,
+              status: values.status,
+              fields: this.selectedFields(),
+              send_confirmation: !!values.send_confirmation,
+              send_alert: !!values.send_alert,
+              form_type: values.form_type,
+            };
             const result = (await this.formsSvc.add(payload)) as { id: string };
             this.alertSvc.showSuccess('Form created successfully!');
-            if (typeof done === 'function') {
-              done();
-            } else {
-              void this.router.navigate(['../', result.id], { relativeTo: this.route });
-            }
+            void this.router.navigate(['/forms', result.id]);
           } else {
             const id = this.formId()!;
+            const payload = {
+              name: values.name?.trim() ?? '',
+              description: values.description?.trim() || null,
+              redirect_url: values.redirect_url?.trim() || null,
+              target_tags: this.selectedTags().length ? this.selectedTags() : null,
+              target_lists: this.selectedLists().length ? this.selectedLists() : null,
+              status: values.status,
+              fields: this.selectedFields(),
+              send_confirmation: !!values.send_confirmation,
+              send_alert: !!values.send_alert,
+            };
             await this.formsSvc.update(id, payload);
             this.alertSvc.showSuccess('Form updated successfully!');
             if (typeof done === 'function') {
