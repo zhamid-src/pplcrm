@@ -1,4 +1,4 @@
-import { Selectable } from 'kysely';
+import { Selectable, sql } from 'kysely';
 import { BaseRepository } from '../../../lib/base.repo';
 import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
@@ -41,10 +41,14 @@ export class DonationsRepo extends BaseRepository<'donations'> {
 
   /**
    * Retrieve all donations for a tenant, joined with donor person details, ordered by date descending.
+   * Uses a LEFT JOIN so donations whose contact was later deleted (person_id = NULL) are still returned.
+   * The donor snapshot columns (donor_first_name / donor_last_name / donor_email) captured at the time
+   * of donation are used as the fallback for display and tax receipt issuance.
    */
   public async getTenantDonationsList(tenantId: string) {
-    return this.getSelect()
-      .innerJoin('persons', 'persons.id', 'donations.person_id')
+    return this.db
+      .selectFrom('donations')
+      .leftJoin('persons', 'persons.id', 'donations.person_id')
       .select([
         'donations.id',
         'donations.tenant_id',
@@ -56,9 +60,13 @@ export class DonationsRepo extends BaseRepository<'donations'> {
         'donations.residency_province',
         'donations.residency_country',
         'donations.created_at',
-        'persons.first_name as person_first_name',
-        'persons.last_name as person_last_name',
-        'persons.email as person_email',
+        // Live contact details when the person still exists; fall back to the
+        // immutable snapshot recorded at donation time when they have been deleted.
+        // sql<> raw refs are used because the new columns are added via a migration
+        // and may not yet be reflected in the generated Kysely Models type.
+        this.db.fn.coalesce('persons.first_name', sql<string>`donations.donor_first_name`).as('person_first_name'),
+        this.db.fn.coalesce('persons.last_name',  sql<string>`donations.donor_last_name`).as('person_last_name'),
+        this.db.fn.coalesce('persons.email',       sql<string>`donations.donor_email`).as('person_email'),
       ])
       .where('donations.tenant_id', '=', tenantId as any)
       .orderBy('donations.created_at', 'desc')
