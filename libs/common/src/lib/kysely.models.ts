@@ -50,6 +50,7 @@ export interface Models {
   tags: Tags;
   tenants: Tenants;
   settings: Settings;
+  donations: Donations;
   emails: Emails;
   newsletters: Newsletters;
   newsletter_events: NewsletterEvents;
@@ -288,6 +289,16 @@ interface Profiles extends RecordType, AddressType {
 interface Settings extends RecordType {
   key: string;
   value: JsonValue;
+}
+
+export interface Donations extends RecordType {
+  person_id: string;
+  amount: number;
+  status: string;
+  stripe_session_id: string | null;
+  tax_credit_amount: number | null;
+  residency_province: string | null;
+  residency_country: string | null;
 }
 
 interface Roles extends RecordType {

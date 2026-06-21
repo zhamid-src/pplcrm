@@ -24,6 +24,8 @@ export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
     }
   }
 
+  public getValue<T = unknown>(key: string, fallback: T): T;
+  public getValue<T = unknown>(key: string): T | undefined;
   public getValue<T = unknown>(key: string, fallback?: T) {
     const value = this.snapshotSignal()[key];
     return (value === undefined ? fallback : (value as T)) ?? fallback;

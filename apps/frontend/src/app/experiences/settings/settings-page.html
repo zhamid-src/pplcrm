@@ -65,6 +65,24 @@
           />
           Domain Verification
         </button>
+
+        <!-- Donations custom section -->
+        <button
+          id="settings-nav-donations"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('donations')"
+          [class.opacity-70]="!isSelected('donations')"
+          (click)="selectSection('donations')"
+        >
+          <pc-icon
+            name="currency-dollar"
+            class="mr-2 opacity-80"
+            [class.text-primary]="isSelected('donations')"
+            [size]="5"
+          />
+          Donations
+        </button>
         } @if (currentMode === 'billing') {
         <!-- Billing custom section -->
         <button
@@ -470,6 +488,20 @@
           </p>
         </header>
         <pc-domains-settings></pc-domains-settings>
+      </section>
+      }
+
+      <!-- Donations custom section -->
+      @if (currentMode === 'configuration' && isSelected('donations')) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">Donations</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe
+            account.
+          </p>
+        </header>
+        <pc-donations-settings></pc-donations-settings>
       </section>
       }
 
