@@ -11,7 +11,7 @@ export async function up(db: Kysely<any>): Promise<void> {
   await sql.raw(schemaSql).execute(db);
 }
 
-export async function down(db: Kysely<any>): Promise<void> {
+export async function down(_db: Kysely<any>): Promise<void> {
   // A squashed baseline migration generally shouldn't be rolled back,
   // as dropping the entire public schema is highly destructive.
   // We throw an error here to prevent accidental database wiping.
