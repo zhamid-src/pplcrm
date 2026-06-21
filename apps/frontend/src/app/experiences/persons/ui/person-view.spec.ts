@@ -8,6 +8,9 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ActivityService } from '@experiences/activity/services/activity.service';
+import { DonationsService } from '../../../services/api/donations-service';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { signal } from '@angular/core';
 
 describe('PersonView', () => {
   let component: PersonView;
@@ -21,6 +24,8 @@ describe('PersonView', () => {
   let mockRoute: any;
   let mockRouter: any;
   let mockActivitySvc: any;
+  let mockDonationsSvc: any;
+  let mockTagsSvc: any;
 
   beforeEach(async () => {
     mockAlertSvc = {
@@ -39,6 +44,16 @@ describe('PersonView', () => {
 
     mockActivitySvc = {
       getActivities: vi.fn().mockResolvedValue({ rows: [], totalCount: 0 }),
+    };
+
+    mockDonationsSvc = {
+      getStats: vi.fn().mockResolvedValue({ cumulativeAmount: 100, limitAmount: 500, remainingAmount: 400 }),
+      getHistory: vi.fn().mockResolvedValue([{ id: 'd1', amount: 50 }]),
+    };
+
+    mockTagsSvc = {
+      getAll: vi.fn().mockResolvedValue({ rows: [], count: 0 }),
+      refreshCount: signal(0),
     };
 
     mockPersonsSvc = {
@@ -70,6 +85,7 @@ describe('PersonView', () => {
         paramMap: {
           get: vi.fn((key: string) => (key === 'id' ? 'p1' : null)),
         },
+        queryParams: {},
       },
     };
 
@@ -91,6 +107,8 @@ describe('PersonView', () => {
         { provide: VolunteerService, useValue: mockVolunteerSvc },
         { provide: ActivatedRoute, useValue: mockRoute },
         { provide: ActivityService, useValue: mockActivitySvc },
+        { provide: DonationsService, useValue: mockDonationsSvc },
+        { provide: TagsService, useValue: mockTagsSvc },
       ],
     }).compileComponents();
 

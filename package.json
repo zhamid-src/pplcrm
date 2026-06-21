@@ -84,6 +84,7 @@
     "@nx/vitest": "23.0.0",
     "@nx/web": "23.0.0",
     "@nx/workspace": "23.0.0",
+    "@oxc-project/runtime": "^0.137.0",
     "@playwright/test": "^1.59.1",
     "@schematics/angular": "22.0.3",
     "@swc-node/register": "1.11.1",
