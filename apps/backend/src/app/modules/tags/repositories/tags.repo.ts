@@ -14,6 +14,24 @@ export class TagsRepo extends BaseRepository<'tags'> {
     super('tags');
   }
 
+  private lowercaseRow<R extends OperationDataType<'tags', 'insert' | 'update'>>(row: R): R {
+    if (row && typeof row.name === 'string') {
+      return {
+        ...row,
+        name: row.name.toLowerCase().trim(),
+      };
+    }
+    return row;
+  }
+
+  public override async add(input: { row: OperationDataType<'tags', 'insert'> }, trx?: Transaction<Models>) {
+    return super.add({ row: this.lowercaseRow(input.row) }, trx);
+  }
+
+  public override async addMany(input: { rows: OperationDataType<'tags', 'insert'>[] }, trx?: Transaction<Models>) {
+    return super.addMany({ rows: input.rows.map((row) => this.lowercaseRow(row)) }, trx);
+  }
+
   public override async addOrGet<K extends keyof Models['tags'] & string>(
     input: {
       row: OperationDataType<'tags', 'insert'>;
@@ -21,9 +39,10 @@ export class TagsRepo extends BaseRepository<'tags'> {
     },
     trx?: Transaction<Models>,
   ): Promise<Selectable<Models['tags']> | undefined> {
-    const type = input.row.type ?? 'tag';
+    const row = this.lowercaseRow(input.row);
+    const type = row.type ?? 'tag';
     const insertResult = await this.getInsert(trx)
-      .values(input.row)
+      .values(row)
       .onConflict((oc) => oc.columns(['tenant_id', 'name', 'type']).doNothing())
       .returningAll()
       .executeTakeFirst();
@@ -32,10 +51,28 @@ export class TagsRepo extends BaseRepository<'tags'> {
 
     return this.getSelect(trx)
       .selectAll()
-      .where('tenant_id', '=', input.row.tenant_id)
-      .where('name', '=', input.row.name)
+      .where('tenant_id', '=', row.tenant_id)
+      .where('name', '=', row.name)
       .where('type', '=', type)
       .executeTakeFirst() as any;
+  }
+
+  public override async update(
+    input: {
+      tenant_id: TypeTenantId<'tags'>;
+      id: TypeId<'tags'>;
+      row: OperationDataType<'tags', 'update'>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    return super.update(
+      {
+        tenant_id: input.tenant_id,
+        id: input.id,
+        row: this.lowercaseRow(input.row),
+      },
+      trx,
+    );
   }
 
   public override getAll(
@@ -232,7 +269,10 @@ export class TagsRepo extends BaseRepository<'tags'> {
   }
 
   public getIdByName(input: { tenant_id: string; name: string; type?: 'tag' | 'issue' }, trx?: Transaction<Models>) {
-    let q = this.getSelect(trx).select('id').where('name', '=', input.name).where('tenant_id', '=', input.tenant_id);
+    let q = this.getSelect(trx)
+      .select('id')
+      .where('name', '=', input.name.toLowerCase().trim())
+      .where('tenant_id', '=', input.tenant_id);
     if (input.type) {
       q = q.where('type', '=', input.type);
     }

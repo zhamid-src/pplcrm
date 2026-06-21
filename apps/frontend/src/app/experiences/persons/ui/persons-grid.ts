@@ -261,6 +261,20 @@ export class PersonsGrid implements OnInit {
     }
   }
 
+  protected getTitle() {
+    return this.limitTags.includes('volunteer') ? 'Volunteers' : this.limitTags.includes('donor') ? 'Donors' : 'People';
+  }
+
+  protected getDescription() {
+    if (this.limitTags.includes('volunteer')) {
+      return 'Manage volunteer records, track signups, and coordinate volunteer tags.';
+    }
+    if (this.limitTags.includes('donor')) {
+      return 'Manage donor records, track donations, and coordinate donor tags.';
+    }
+    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
+  }
+
   // --- Import CSV Flow ---
   protected openImportDialog() {
     // Clear any prior summary to avoid stale dialogs
