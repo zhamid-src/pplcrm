@@ -431,6 +431,7 @@ interface WebForms extends RecordType {
   fields: Json | null;
   send_confirmation: boolean;
   send_alert: boolean;
+  form_type: string;
 }
 
 interface EmailComments extends RecordType {

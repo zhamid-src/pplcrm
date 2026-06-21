@@ -1,0 +1,127 @@
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon name="currency-dollar" class="text-primary" [size]="7"></pc-icon>
+        Donations Ledger
+      </h1>
+      <p class="text-sm text-base-content/60 mt-1">
+        Track campaign contributions, donor residency checks, and issued tax credits.
+      </p>
+    </div>
+    <div class="flex gap-2 items-center">
+      <button
+        id="donations-refresh-btn"
+        class="btn btn-outline btn-sm gap-2"
+        title="Refresh donations log"
+        pcSpinOnClick
+        [disabled]="_loading.visible()"
+        (click)="refresh()"
+      >
+        <pc-icon name="arrow-path" [size]="4"></pc-icon>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  @if (_loading.visible()) {
+  <progress class="progress w-full text-primary mb-6"></progress>
+  }
+
+  <!-- Stats Grid -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          Total Funds Collected
+        </div>
+        <div class="stat-value text-xl font-extrabold text-success sm:text-2xl mt-1">
+          {{ totalDonated() | currency:'USD':'symbol':'1.2-2' }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">Succeeded donations to date</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          Tax Credits Claimed
+        </div>
+        <div class="stat-value text-xl font-extrabold text-primary sm:text-2xl mt-1">
+          {{ totalTaxCredits() | currency:'USD':'symbol':'1.2-2' }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">Calculated cumulative tax receipts</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          Total Transactions
+        </div>
+        <div class="stat-value text-xl font-extrabold text-info sm:text-2xl mt-1">{{ successCount() }}</div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">Successful checkout counts</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Grid / Table View -->
+  <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
+    <table class="table w-full">
+      <thead>
+        <tr class="bg-base-200/50">
+          <th>Donor</th>
+          <th>Amount</th>
+          <th>Tax Credit</th>
+          <th>Status</th>
+          <th>Residency</th>
+          <th class="text-right">Donated Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (d of donations(); track d.id) {
+        <tr class="hover:bg-base-200/30 transition-all duration-200">
+          <td>
+            <div class="flex flex-col">
+              <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline text-sm">
+                {{ d.person_first_name }} {{ d.person_last_name }}
+              </a>
+              <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
+            </div>
+          </td>
+          <td class="font-bold text-base-content text-sm">{{ formatCurrency(d.amount) }}</td>
+          <td class="text-sm text-base-content/85">{{ formatCurrency(d.tax_credit_amount) }}</td>
+          <td>
+            @if (d.status === 'succeeded') {
+            <span class="badge badge-success text-xs font-semibold px-2.5 py-1">Succeeded</span>
+            } @else if (d.status === 'failed') {
+            <span class="badge badge-error text-xs font-semibold px-2.5 py-1">Failed</span>
+            } @else if (d.status === 'pending') {
+            <span class="badge badge-warning text-xs font-semibold px-2.5 py-1">Pending</span>
+            } @else {
+            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">{{ d.status || 'unknown' }}</span>
+            }
+          </td>
+          <td>
+            <span class="text-xs font-mono uppercase bg-base-200 px-2 py-0.5 rounded font-bold">
+              {{ d.residency_country }} @if (d.residency_province) { - {{ d.residency_province }} }
+            </span>
+          </td>
+          <td class="text-right text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
+        </tr>
+        } @empty {
+        <tr>
+          <td colspan="6" class="text-center py-16 text-base-content/50">
+            <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
+            <h3 class="font-semibold text-base-content/70">No donations found</h3>
+            <p class="text-xs text-base-content/50 mt-1">
+              Configure your Stripe integration and set up a donation form to get started.
+            </p>
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>

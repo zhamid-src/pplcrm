@@ -3,6 +3,10 @@ import { TRPCService } from './trpc-service';
 
 @Service()
 export class DonationsService extends TRPCService<'donations'> {
+  public listDonations() {
+    return this.api.donations.listDonations.query();
+  }
+
   public getHistory(personId: string) {
     return this.api.donations.getPersonDonationHistory.query(personId);
   }

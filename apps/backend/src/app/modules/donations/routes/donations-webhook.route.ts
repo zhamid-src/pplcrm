@@ -5,17 +5,34 @@ import { env } from '../../../../env';
 
 const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
   fastify.post('/webhook', async (req, reply) => {
-    const query = req.query as { tenant_id?: string };
-    const tenantId = query.tenant_id;
-    if (!tenantId) {
-      console.error('❌ Webhook error: Missing tenant_id query parameter');
-      return reply.code(400).send({ error: 'Missing tenant_id parameter' });
+    const query = req.query as { token?: string };
+    const token = query.token;
+    if (!token) {
+      console.error('❌ Webhook error: Missing token query parameter');
+      return reply.code(400).send({ error: 'Missing token parameter' });
     }
 
-    const signature = (req.headers['stripe-signature'] as string) || '';
-    const payload = req.body as string; // Raw string thanks to ContentTypeParser setup
-
+    let tenantId = 'unknown';
     try {
+      // Look up tenant setting donations.webhook_token with matching value
+      // eslint-disable-next-line local/no-unscoped-db-query
+      const tokenRow = await BaseRepository.dbInstance
+        .selectFrom('settings')
+        .select('tenant_id')
+        .where('key', '=', 'donations.webhook_token')
+        .where('value', '=', JSON.stringify(token) as any)
+        .executeTakeFirst();
+
+      if (!tokenRow) {
+        console.error(`❌ Webhook error: Invalid webhook token: ${token}`);
+        return reply.code(400).send({ error: 'Invalid webhook token' });
+      }
+
+      tenantId = String(tokenRow.tenant_id);
+
+      const signature = (req.headers['stripe-signature'] as string) || '';
+      const payload = req.body as string; // Raw string thanks to ContentTypeParser setup
+
       // 1. Look up settings for this tenant ID in Kysely
       const secretRow = await BaseRepository.dbInstance
         .selectFrom('settings')

@@ -4,8 +4,10 @@ import { WebFormsRepo } from './repositories/web-forms.repo';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { type Transaction, sql } from 'kysely';
 import { TRPCError } from '@trpc/server';
+import { env } from '../../../env';
 
 import { WorkflowsController } from '../workflows/controller';
+import { DonationsController } from '../donations/controller';
 
 // Sliding window memory for rate-limiting
 const ipSubmissionTimestamps = new Map<string, number[]>();
@@ -39,6 +41,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       status: payload.status ?? 'active',
       send_confirmation: payload.send_confirmation ?? true,
       send_alert: payload.send_alert ?? true,
+      form_type: payload.form_type ?? 'standard',
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
     };
@@ -61,6 +64,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     if (payload.status !== undefined) row.status = payload.status;
     if (payload.send_confirmation !== undefined) row.send_confirmation = payload.send_confirmation;
     if (payload.send_alert !== undefined) row.send_alert = payload.send_alert;
+    if (payload.form_type !== undefined) row.form_type = payload.form_type;
 
     return this.update({
       tenant_id: auth.tenant_id,
@@ -109,11 +113,55 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       });
     }
 
+    // Parse and validate donation fields if form is a donation form
+    let amountCents = 0;
+    let country = '';
+    let state = '';
+    if (form.form_type === 'donation') {
+      const amountStr = payload['amount'] || payload['donation_amount'] || '';
+      const amountDollars = parseFloat(amountStr);
+      if (isNaN(amountDollars) || amountDollars <= 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'A valid donation amount is required.',
+        });
+      }
+      amountCents = Math.round(amountDollars * 100);
+      country = (payload['country'] || payload['residency_country'] || '').trim();
+      state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
+
+      // Check if email already exists to run eligibility checks
+      const existing = await this.getRepo().db
+        .selectFrom('persons')
+        .select('id')
+        .where('tenant_id', '=', tenantId as any)
+        .where(sql`lower(email)`, '=', email.toLowerCase())
+        .executeTakeFirst();
+
+      const donationsController = new DonationsController();
+      const check = await donationsController.checkEligibility(
+        tenantId,
+        existing ? String(existing.id) : '0',
+        amountCents,
+        { country, state }
+      );
+
+      if (!check.eligible) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: check.reason,
+        });
+      }
+    }
+
     // 5. Gather submission fields
     const firstName = payload['first_name'] || payload['firstName'] || null;
     const lastName = payload['last_name'] || payload['lastName'] || null;
     const mobile = payload['mobile'] || payload['phone'] || null;
     const notes = payload['notes'] || payload['message'] || null;
+
+    let resolvedPersonId = '';
+    let resolvedCreatorId = '1';
 
     // 6. Find or Create person & apply merges/tags
     await this.getRepo()
@@ -127,6 +175,8 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 
         const householdId = tenantRow?.placeholder_household_id;
         const creatorId = tenantRow?.admin_id || '1';
+
+        resolvedCreatorId = creatorId;
 
         if (!householdId) {
           throw new Error('Tenant placeholder household is not configured.');
@@ -191,6 +241,8 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
             console.error('Failed to trigger contact_created workflow in WebFormsController:', err);
           }
         }
+
+        resolvedPersonId = personId;
 
         const workflowsController = new WorkflowsController();
 
@@ -345,6 +397,23 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           })
           .execute();
       });
+
+    // 7. If donation form, initialize checkout session after transactional writes commit
+    if (form.form_type === 'donation') {
+      const donationsController = new DonationsController();
+      const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/view/${formId}?checkout_cancel=true`;
+
+      const checkoutSession = await donationsController.createCheckoutSession(
+        { tenant_id: tenantId, user_id: resolvedCreatorId },
+        resolvedPersonId,
+        amountCents,
+        { country, state },
+        { successUrl, cancelUrl }
+      );
+
+      return { redirect_url: checkoutSession.url };
+    }
 
     return { redirect_url: form.redirect_url || null };
   }
