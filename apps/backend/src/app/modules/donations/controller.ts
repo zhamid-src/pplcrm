@@ -227,7 +227,6 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     }
 
     let amountCents = 0;
-    let province = '';
     let country = '';
     let personId = '';
 
@@ -258,7 +257,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
 
     personId = String(session.metadata?.['personId']);
     amountCents = Number(session.metadata?.['amount']);
-    province = String(session.metadata?.['residencyProvince'] || '');
+    const province = String(session.metadata?.['residencyProvince'] || '');
     country = String(session.metadata?.['residencyCountry'] || '');
 
     const record = await this.recordSuccessfulDonation(
@@ -320,27 +319,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     country: string,
     userId: string,
   ): Promise<Selectable<Models['donations']>> {
-    // 1. Get tax credit tiers
-    const tiersRaw = await this.getSettingVal(tenantId, 'donations.tax_credit_tiers');
-    let tiers: Array<{ limit: number; rate: number }> = [];
-    if (typeof tiersRaw === 'string') {
-      try {
-        tiers = JSON.parse(tiersRaw);
-      } catch (err) {
-        console.error('Failed to parse tax credit tiers setting:', err);
-      }
-    } else if (Array.isArray(tiersRaw)) {
-      tiers = tiersRaw;
-    }
-
-    // 2. Get cumulative amount before
-    const currentYear = new Date().getFullYear();
-    const cumulativeBefore = await this.getRepo().getPersonCumulativeDonations(tenantId, personId, currentYear);
-
-    // 3. Calculate credit
-    const taxCreditCents = this.calculateTaxCredit(amountCents, cumulativeBefore, tiers);
-
-    // 4. Fetch donor identity for the immutable snapshot on the donation row
+    // 1. Fetch donor identity for the immutable snapshot on the donation row
     // (used for tax receipts regardless of whether the person is later deleted)
     const person = await this.getRepo().db
       .selectFrom('persons')
@@ -349,7 +328,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       .where('tenant_id', '=', tenantId as any)
       .executeTakeFirst();
 
-    // 5. Execute all writes transactionally — record is returned from within the callback
+    // 2. Execute all writes transactionally — record is returned from within the callback
     // to avoid an uninitialized variable reference after the transaction.
     const record = await this.getRepo().db.transaction().execute(async (trx) => {
       const inserted = (await trx
@@ -357,19 +336,14 @@ export class DonationsController extends BaseController<'donations', DonationsRe
         .values({
           tenant_id: tenantId,
           person_id: personId,
-          // Immutable snapshot of donor identity at time of donation.
-          // These survive contact deletion and are used for tax receipt issuance.
-          donor_first_name: person?.first_name ?? null,
-          donor_last_name: person?.last_name ?? null,
-          donor_email: person?.email ?? null,
+          first_name: person?.first_name ?? null,
+          last_name: person?.last_name ?? null,
+          email: person?.email ?? null,
           amount: amountCents,
           status: 'succeeded',
           stripe_session_id: sessionId,
-          tax_credit_amount: taxCreditCents,
-          residency_province: province || null,
-          residency_country: country || null,
-          createdby_id: userId,
-          updatedby_id: userId,
+          state: province || null,
+          country: country || null,
         } as any)
         .returningAll()
         .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;
@@ -435,7 +409,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
           .values({
             tenant_id: tenantId,
             user_id: userId,
-            activity: `Collected a donation of $${amountCents / 100} (calculated tax credit: $${taxCreditCents / 100})`,
+            activity: `Collected a donation of $${amountCents / 100}`,
             entity: 'persons',
             entity_id: personId,
             quantity: 1,
