@@ -36,7 +36,6 @@ export const UpdateWebFormObj = z.object({
   status: z.enum(['active', 'archived']).optional(),
   send_confirmation: z.boolean().optional(),
   send_alert: z.boolean().optional(),
-  form_type: z.enum(['standard', 'donation']).optional(),
 });
 
 export const WebFormsObj = z.object({

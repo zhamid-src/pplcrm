@@ -159,10 +159,15 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     if (isMock) {
       // Return simulated local success redirect
       const mockSessionId = 'cs_mock_' + Math.random().toString(36).substring(7);
-      const redirectBase = customUrls?.successUrl 
+      let redirectBase = customUrls?.successUrl 
         ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
         : `${env.appUrl}/people/${personId}?mock_donation_success=true&amount=${amountCents / 100}&session_id=${mockSessionId}&province=${address.state || ''}&country=${address.country || ''}`;
       
+      if (customUrls?.successUrl) {
+        const separator = redirectBase.includes('?') ? '&' : '?';
+        redirectBase += `${separator}is_mock=true&person_id=${personId}&amount_cents=${amountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${auth.tenant_id}&user_id=${auth.user_id}`;
+      }
+
       return {
         url: redirectBase,
       };

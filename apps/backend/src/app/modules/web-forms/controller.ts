@@ -49,6 +49,14 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
   }
 
   public async updateForm(id: string, payload: UpdateWebFormType, auth: IAuthKeyPayload) {
+    const existing = await this.getOneById({ tenant_id: auth.tenant_id, id });
+    if (!existing) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Web form not found.',
+      });
+    }
+
     const row: any = {
       updatedby_id: auth.user_id,
       updated_at: new Date(),
@@ -64,7 +72,14 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     if (payload.status !== undefined) row.status = payload.status;
     if (payload.send_confirmation !== undefined) row.send_confirmation = payload.send_confirmation;
     if (payload.send_alert !== undefined) row.send_alert = payload.send_alert;
-    if (payload.form_type !== undefined) row.form_type = payload.form_type;
+
+    const rawPayload = payload as any;
+    if (rawPayload.form_type !== undefined && rawPayload.form_type !== existing.form_type) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Form type cannot be changed after the form has been created.',
+      });
+    }
 
     return this.update({
       tenant_id: auth.tenant_id,
@@ -252,6 +267,9 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           : JSON.parse((form.target_tags as any) || '[]');
         const systemTagName = `Source: ${form.name}`;
         const allTagsToApply = [...targetTags, systemTagName];
+        if (form.form_type === 'donation') {
+          allTagsToApply.push('Donor');
+        }
 
         for (const tagName of allTagsToApply) {
           if (!tagName.trim()) continue;
