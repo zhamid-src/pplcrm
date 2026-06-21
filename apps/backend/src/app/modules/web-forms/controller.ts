@@ -5,6 +5,8 @@ import type { Models } from '../../../../../../libs/common/src/lib/kysely.models
 import { type Transaction, sql } from 'kysely';
 import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
+import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
+import { HouseholdRepo } from '../households/repositories/households.repo';
 
 import { WorkflowsController } from '../workflows/controller';
 import { DonationsController } from '../donations/controller';
@@ -128,11 +130,83 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       });
     }
 
+    // Parse configuration fields
+    const formFields: string[] = form.fields
+      ? Array.isArray(form.fields)
+        ? (form.fields as any)
+        : JSON.parse(form.fields as any)
+      : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+    // Map payload key aliases helper
+    const getPayloadValue = (key: string): string => {
+      let value = '';
+      if (key === 'first_name') value = payload['first_name'] || payload['firstName'] || '';
+      else if (key === 'last_name') value = payload['last_name'] || payload['lastName'] || '';
+      else if (key === 'street1') value = payload['street1'] || payload['street_address'] || '';
+      else if (key === 'zip') value = payload['zip'] || payload['postal_code'] || '';
+      else if (key === 'country') value = payload['country'] || payload['residency_country'] || '';
+      else if (key === 'state') value = payload['state'] || payload['province'] || payload['residency_province'] || '';
+      else value = payload[key] || '';
+      return String(value).trim();
+    };
+
+    // Validate user-configured required fields for standard forms
+    if (form.form_type !== 'donation') {
+      const fieldLabels: Record<string, string> = {
+        first_name: 'First Name',
+        last_name: 'Last Name',
+        mobile: 'Mobile / Phone',
+        notes: 'Notes / Message',
+        street1: 'Street Address',
+        city: 'City',
+        state: 'State / Province',
+        zip: 'Zip / Postal Code',
+        country: 'Country',
+      };
+
+      for (const rawField of formFields) {
+        if (rawField.endsWith(':required')) {
+          const fieldName = rawField.replace(':required', '');
+          const val = getPayloadValue(fieldName);
+          if (!val) {
+            const label = fieldLabels[fieldName] || fieldName;
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `${label} is required.`,
+            });
+          }
+        }
+      }
+    }
+
     // Parse and validate donation fields if form is a donation form
     let amountCents = 0;
     let country = '';
     let state = '';
     if (form.form_type === 'donation') {
+      const firstName = (payload['first_name'] || payload['firstName'] || '').trim();
+      const lastName = (payload['last_name'] || payload['lastName'] || '').trim();
+      if (!firstName || !lastName) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'First name and last name are required for donations.',
+        });
+      }
+
+      const street1 = (payload['street1'] || payload['street_address'] || '').trim();
+      const city = (payload['city'] || '').trim();
+      const zip = (payload['zip'] || payload['postal_code'] || '').trim();
+      country = (payload['country'] || payload['residency_country'] || '').trim();
+      state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
+
+      if (!street1 || !city || !zip || !country || !state) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            'Street address, city, state/province, zip/postal code, and country of residence are required for donations.',
+        });
+      }
+
       const amountStr = payload['amount'] || payload['donation_amount'] || '';
       const amountDollars = parseFloat(amountStr);
       if (isNaN(amountDollars) || amountDollars <= 0) {
@@ -142,12 +216,10 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         });
       }
       amountCents = Math.round(amountDollars * 100);
-      country = (payload['country'] || payload['residency_country'] || '').trim();
-      state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
 
       // Check if email already exists to run eligibility checks
-      const existing = await this.getRepo().db
-        .selectFrom('persons')
+      const existing = await this.getRepo()
+        .db.selectFrom('persons')
         .select('id')
         .where('tenant_id', '=', tenantId as any)
         .where(sql`lower(email)`, '=', email.toLowerCase())
@@ -158,7 +230,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         tenantId,
         existing ? String(existing.id) : '0',
         amountCents,
-        { country, state }
+        { country, state },
       );
 
       if (!check.eligible) {
@@ -199,6 +271,64 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 
         const campaignId = await this.getCampaignId(tenantId, trx);
 
+        let finalHouseholdId = householdId;
+
+        const street1 = (payload['street1'] || payload['street_address'] || '').trim();
+        const city = (payload['city'] || '').trim();
+        const zip = (payload['zip'] || payload['postal_code'] || '').trim();
+        const country = (payload['country'] || payload['residency_country'] || '').trim();
+        const state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
+
+        const hasAddress = !!(street1 || city || zip || country || state);
+
+        if (hasAddress) {
+          const fp_street = fingerprintStreet({ street1 });
+          const fp_full = fingerprintFull({
+            street1,
+            city,
+            state,
+            zip,
+            country,
+          });
+
+          const householdRepo = new HouseholdRepo();
+          const existingHh = await trx
+            .selectFrom('households')
+            .select('id')
+            .where('tenant_id', '=', tenantId as any)
+            .where('campaign_id', '=', campaignId as any)
+            .where('address_fp_full', '=', fp_full)
+            .executeTakeFirst();
+
+          if (existingHh) {
+            finalHouseholdId = String(existingHh.id);
+          } else {
+            const createdHhs = await householdRepo.addMany(
+              {
+                rows: [
+                  {
+                    tenant_id: tenantId as any,
+                    campaign_id: campaignId as any,
+                    createdby_id: creatorId as any,
+                    updatedby_id: creatorId as any,
+                    street1,
+                    city,
+                    state,
+                    zip,
+                    country,
+                    address_fp_street: fp_street,
+                    address_fp_full: fp_full,
+                  } as any,
+                ],
+              },
+              trx,
+            );
+            if (createdHhs && createdHhs[0] && createdHhs[0].id) {
+              finalHouseholdId = String(createdHhs[0].id);
+            }
+          }
+        }
+
         // Check if email already exists
         const existing = await trx
           .selectFrom('persons')
@@ -218,6 +348,9 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           if (!existing.first_name && firstName) updateRow.first_name = firstName;
           if (!existing.last_name && lastName) updateRow.last_name = lastName;
           if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (form.form_type === 'donation' || hasAddress) {
+            updateRow.household_id = finalHouseholdId;
+          }
           if (!existing.notes && notes) {
             updateRow.notes = notes;
           } else if (existing.notes && notes) {
@@ -236,7 +369,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           const insertRow = {
             tenant_id: tenantId as any,
             campaign_id: campaignId as any,
-            household_id: householdId as any,
+            household_id: finalHouseholdId as any,
             createdby_id: creatorId as any,
             updatedby_id: creatorId as any,
             first_name: firstName,
@@ -427,7 +560,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         resolvedPersonId,
         amountCents,
         { country, state },
-        { successUrl, cancelUrl }
+        { successUrl, cancelUrl },
       );
 
       return { redirect_url: checkoutSession.url };

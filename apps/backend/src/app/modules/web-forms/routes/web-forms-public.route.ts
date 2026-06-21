@@ -448,15 +448,17 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
         reply.status(404).type('text/html');
         return reply.send(errorHtml('Web form not found or inactive.'));
       }
-      
+
       const formName = form.name;
       const formDescription = form.description || '';
-      
+
       // Extract fields configuration, default to all fields if null/empty
       const fields: string[] = form.fields
-        ? (Array.isArray(form.fields) ? (form.fields as any) : JSON.parse(form.fields as any))
+        ? Array.isArray(form.fields)
+          ? (form.fields as any)
+          : JSON.parse(form.fields as any)
         : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-      
+
       reply.type('text/html');
       return reply.send(renderFormHtml(formId, formName, formDescription, fields, form.form_type));
     } catch (err: any) {
@@ -469,7 +471,8 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
     const { formId } = req.params;
     // Standard reverse-proxy header check, fallback to req.ip
     const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
-    const isJsonExpected = req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
+    const isJsonExpected =
+      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
 
     try {
       const body = req.body || {};
@@ -503,7 +506,30 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 
 export default webFormsPublicRoute;
 
-const renderFormHtml = (formId: string, formName: string, formDescription: string, fields: string[], formType: string) => `
+const renderFormHtml = (
+  formId: string,
+  formName: string,
+  formDescription: string,
+  fields: string[],
+  formType: string,
+) => {
+  const isFieldEnabled = (name: string): boolean => {
+    if (formType === 'donation') {
+      const alwaysEnabled = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+      if (alwaysEnabled.includes(name)) return true;
+    }
+    return fields.includes(name) || fields.includes(`${name}:required`);
+  };
+
+  const isFieldRequired = (name: string): boolean => {
+    if (formType === 'donation') {
+      const alwaysRequired = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+      if (alwaysRequired.includes(name)) return true;
+    }
+    return fields.includes(`${name}:required`);
+  };
+
+  return `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -648,7 +674,7 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
       letter-spacing: 0.01em;
     }
 
-    input, textarea {
+    input, textarea, select {
       width: 100%;
       padding: 12px 16px;
       background: var(--input-bg);
@@ -665,12 +691,12 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
       color: var(--placeholder-color);
     }
 
-    input:hover, textarea:hover {
+    input:hover, textarea:hover, select:hover {
       border-color: var(--accent);
       opacity: 0.95;
     }
 
-    input:focus, textarea:focus {
+    input:focus, textarea:focus, select:focus {
       outline: none;
       border-color: var(--input-focus-border);
       box-shadow: 0 0 0 4px var(--input-focus-ring);
@@ -752,57 +778,117 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
       <!-- Honeypot Bot Field (leave empty!) -->
       <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
 
-      ${formType === 'donation' ? `
+      ${
+        formType === 'donation'
+          ? `
       <div class="form-group">
         <label for="amount">Donation Amount ($ CAD) *</label>
         <input type="number" id="amount" name="amount" min="1" step="any" placeholder="E.g. 50.00" required />
-      </div>` : ''}
+      </div>`
+          : ''
+      }
 
-      ${fields.includes('first_name') ? `
+      ${
+        isFieldEnabled('first_name')
+          ? `
       <div class="form-group">
-        <label for="first_name">First Name</label>
-        <input type="text" id="first_name" name="first_name" placeholder="E.g. John" />
-      </div>` : ''}
+        <label for="first_name">First Name ${isFieldRequired('first_name') ? '*' : ''}</label>
+        <input type="text" id="first_name" name="first_name" placeholder="E.g. John" ${isFieldRequired('first_name') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
 
-      ${fields.includes('last_name') ? `
+      ${
+        isFieldEnabled('last_name')
+          ? `
       <div class="form-group">
-        <label for="last_name">Last Name</label>
-        <input type="text" id="last_name" name="last_name" placeholder="E.g. Doe" />
-      </div>` : ''}
+        <label for="last_name">Last Name ${isFieldRequired('last_name') ? '*' : ''}</label>
+        <input type="text" id="last_name" name="last_name" placeholder="E.g. Doe" ${isFieldRequired('last_name') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
 
       <div class="form-group">
         <label for="email">Email Address *</label>
         <input type="email" id="email" name="email" placeholder="john@example.com" required />
       </div>
 
-      ${formType === 'donation' ? `
+      ${
+        isFieldEnabled('street1')
+          ? `
       <div class="form-group">
-        <label for="country">Country of Residence *</label>
-        <select id="country" name="country" required style="width: 100%; padding: 12px 16px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 12px; color: var(--text-primary);">
+        <label for="street1">Street Address ${isFieldRequired('street1') ? '*' : ''}</label>
+        <input type="text" id="street1" name="street1" placeholder="E.g. 123 Main St" ${isFieldRequired('street1') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('city')
+          ? `
+      <div class="form-group">
+        <label for="city">City ${isFieldRequired('city') ? '*' : ''}</label>
+        <input type="text" id="city" name="city" placeholder="E.g. Toronto" ${isFieldRequired('city') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('country')
+          ? `
+      <div class="form-group">
+        <label for="country">Country ${isFieldRequired('country') ? '*' : ''}</label>
+        <select id="country" name="country" ${isFieldRequired('country') ? 'required' : ''}>
           <option value="CA">Canada</option>
           <option value="US">United States</option>
           <option value="GB">United Kingdom</option>
           <option value="AU">Australia</option>
         </select>
-      </div>
-      <div class="form-group">
-        <label for="state">State / Province of Residence *</label>
-        <input type="text" id="state" name="state" placeholder="E.g. ON or NY" required />
-      </div>` : ''}
+      </div>`
+          : ''
+      }
 
-      ${fields.includes('mobile') ? `
+      ${
+        isFieldEnabled('state')
+          ? `
       <div class="form-group">
-        <label for="mobile">Mobile / Phone</label>
-        <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" />
-      </div>` : ''}
+        <label for="state">State / Province ${isFieldRequired('state') ? '*' : ''}</label>
+        <input type="text" id="state" name="state" placeholder="E.g. ON or NY" ${isFieldRequired('state') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
 
-      ${fields.includes('notes') ? `
+      ${
+        isFieldEnabled('zip')
+          ? `
       <div class="form-group">
-        <label for="notes">Notes / Message</label>
-        <textarea id="notes" name="notes" placeholder="How can we help you?"></textarea>
-      </div>` : ''}
+        <label for="zip">Zip / Postal Code ${isFieldRequired('zip') ? '*' : ''}</label>
+        <input type="text" id="zip" name="zip" placeholder="E.g. M5V 2T6" ${isFieldRequired('zip') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
 
-      <button type="submit">${formType === 'donation' ? 'Donate Now' : 'Submit'}</button>
+      ${
+        isFieldEnabled('mobile')
+          ? `
+      <div class="form-group">
+        <label for="mobile">Mobile / Phone ${isFieldRequired('mobile') ? '*' : ''}</label>
+        <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isFieldRequired('mobile') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('notes')
+          ? `
+      <div class="form-group">
+        <label for="notes">Notes / Message ${isFieldRequired('notes') ? '*' : ''}</label>
+        <textarea id="notes" name="notes" placeholder="How can we help you?" ${isFieldRequired('notes') ? 'required' : ''}></textarea>
+      </div>`
+          : ''
+      }
+
+      <button type="submit">${formType === 'donation' ? 'Next' : 'Submit'}</button>
     </form>
 
     <div class="footer-note">
@@ -812,3 +898,4 @@ const renderFormHtml = (formId: string, formName: string, formDescription: strin
 </body>
 </html>
 `;
+};

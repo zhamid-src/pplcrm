@@ -56,17 +56,63 @@ export class FormDetailComponent implements OnInit {
   protected readonly selectedTags = signal<string[]>([]);
   protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
 
-  protected readonly showFirstName = computed(() => this.selectedFields().includes('first_name'));
-  protected readonly showLastName = computed(() => this.selectedFields().includes('last_name'));
-  protected readonly showMobile = computed(() => this.selectedFields().includes('mobile'));
-  protected readonly showNotes = computed(() => this.selectedFields().includes('notes'));
+  private isEnabled(field: string): boolean {
+    const list = this.selectedFields();
+    return list.includes(field) || list.includes(`${field}:required`);
+  }
+
+  private isRequired(field: string): boolean {
+    const list = this.selectedFields();
+    return list.includes(`${field}:required`);
+  }
+
+  protected readonly showFirstName = computed(() => this.isEnabled('first_name'));
+  protected readonly isFirstNameRequired = computed(() => this.isRequired('first_name'));
+
+  protected readonly showLastName = computed(() => this.isEnabled('last_name'));
+  protected readonly isLastNameRequired = computed(() => this.isRequired('last_name'));
+
+  protected readonly showMobile = computed(() => this.isEnabled('mobile'));
+  protected readonly isMobileRequired = computed(() => this.isRequired('mobile'));
+
+  protected readonly showNotes = computed(() => this.isEnabled('notes'));
+  protected readonly isNotesRequired = computed(() => this.isRequired('notes'));
+
+  protected readonly showStreet1 = computed(() => this.isEnabled('street1'));
+  protected readonly isStreet1Required = computed(() => this.isRequired('street1'));
+
+  protected readonly showCity = computed(() => this.isEnabled('city'));
+  protected readonly isCityRequired = computed(() => this.isRequired('city'));
+
+  protected readonly showState = computed(() => this.isEnabled('state'));
+  protected readonly isStateRequired = computed(() => this.isRequired('state'));
+
+  protected readonly showZip = computed(() => this.isEnabled('zip'));
+  protected readonly isZipRequired = computed(() => this.isRequired('zip'));
+
+  protected readonly showCountry = computed(() => this.isEnabled('country'));
+  protected readonly isCountryRequired = computed(() => this.isRequired('country'));
 
   protected toggleField(field: string): void {
     const current = this.selectedFields();
-    if (current.includes(field)) {
-      this.selectedFields.set(current.filter((f) => f !== field));
+    const isCurrentlyEnabled = current.includes(field) || current.includes(`${field}:required`);
+
+    if (isCurrentlyEnabled) {
+      this.selectedFields.set(current.filter((f) => f !== field && f !== `${field}:required`));
     } else {
       this.selectedFields.set([...current, field]);
+    }
+  }
+
+  protected toggleRequired(field: string): void {
+    const current = this.selectedFields();
+    const hasOptional = current.includes(field);
+    const hasRequired = current.includes(`${field}:required`);
+
+    if (hasOptional) {
+      this.selectedFields.set([...current.filter((f) => f !== field), `${field}:required`]);
+    } else if (hasRequired) {
+      this.selectedFields.set([...current.filter((f) => f !== `${field}:required`), field]);
     }
   }
 
@@ -92,6 +138,22 @@ export class FormDetailComponent implements OnInit {
     const apiOrigin = window.location.origin.replace(':4200', ':3000'); // Auto-detect backend port
     const fields = this.selectedFields();
 
+    const isEnabled = (name: string): boolean => {
+      if (this.isDonationForm()) {
+        const alwaysEnabled = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+        if (alwaysEnabled.includes(name)) return true;
+      }
+      return fields.includes(name) || fields.includes(`${name}:required`);
+    };
+
+    const isRequired = (name: string): boolean => {
+      if (this.isDonationForm()) {
+        const alwaysRequired = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+        if (alwaysRequired.includes(name)) return true;
+      }
+      return fields.includes(`${name}:required`);
+    };
+
     if (this.isDonationForm()) {
       return `<!-- PeopleCRM Embeddable Donation Form -->
 <form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
@@ -104,18 +166,28 @@ export class FormDetailComponent implements OnInit {
   </div>
 
   <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name</label>
-    <input type="text" name="first_name" placeholder="John" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name *</label>
+    <input type="text" name="first_name" placeholder="John" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
   </div>
 
   <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name</label>
-    <input type="text" name="last_name" placeholder="Doe" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name *</label>
+    <input type="text" name="last_name" placeholder="Doe" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
   </div>
 
   <div style="margin-bottom: 12px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
     <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
+    <input type="text" name="street1" placeholder="E.g. 123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
+    <input type="text" name="city" placeholder="E.g. Toronto" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
   </div>
 
   <div style="margin-bottom: 12px;">
@@ -131,27 +203,32 @@ export class FormDetailComponent implements OnInit {
   <div style="margin-bottom: 12px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province of Residence *</label>
     <input type="text" name="state" placeholder="E.g. ON or NY" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal Code *</label>
+    <input type="text" name="zip" placeholder="E.g. M5V 2T6" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
   </div>${
-    fields.includes('mobile')
+    isEnabled('mobile')
       ? `
 
   <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
-    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label>
+    <input type="text" name="mobile" placeholder="Phone Number" ${isRequired('mobile') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
   </div>`
       : ''
   }${
-    fields.includes('notes')
+    isEnabled('notes')
       ? `
 
   <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
-    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message${isRequired('notes') ? ' *' : ''}</label>
+    <textarea name="notes" placeholder="How can we help?" ${isRequired('notes') ? 'required' : ''} rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
   </div>`
       : ''
   }
 
-  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">Donate Now</button>
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">Next</button>
   <p style="font-size: 11px; color: #666; margin-top: 8px; text-align: center;">Submitting will validate eligibility and redirect you to Stripe for secure payment.</p>
 </form>`;
     }
@@ -161,20 +238,20 @@ export class FormDetailComponent implements OnInit {
   <!-- Visually hidden honeypot field to prevent spam bots -->
   <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
 ${
-  fields.includes('first_name')
+  isEnabled('first_name')
     ? `
   <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name</label>
-    <input type="text" name="first_name" placeholder="First Name" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isRequired('first_name') ? ' *' : ''}</label>
+    <input type="text" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
   </div>`
     : ''
 }${
-      fields.includes('last_name')
+      isEnabled('last_name')
         ? `
 
   <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name</label>
-    <input type="text" name="last_name" placeholder="Last Name" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isRequired('last_name') ? ' *' : ''}</label>
+    <input type="text" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
   </div>`
         : ''
     }
@@ -183,21 +260,71 @@ ${
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
     <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
   </div>${
-    fields.includes('mobile')
+    isEnabled('mobile')
       ? `
 
   <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
-    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label>
+    <input type="text" name="mobile" placeholder="Phone Number" ${isRequired('mobile') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
   </div>`
       : ''
   }${
-    fields.includes('notes')
+    isEnabled('street1')
+      ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address${isRequired('street1') ? ' *' : ''}</label>
+    <input type="text" name="street1" placeholder="E.g. 123 Main St" ${isRequired('street1') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    isEnabled('city')
+      ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City${isRequired('city') ? ' *' : ''}</label>
+    <input type="text" name="city" placeholder="E.g. Toronto" ${isRequired('city') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    isEnabled('country')
+      ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country${isRequired('country') ? ' *' : ''}</label>
+    <select name="country" ${isRequired('country') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+      <option value="CA">Canada</option>
+      <option value="US">United States</option>
+      <option value="GB">United Kingdom</option>
+      <option value="AU">Australia</option>
+    </select>
+  </div>`
+      : ''
+  }${
+    isEnabled('state')
+      ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province${isRequired('state') ? ' *' : ''}</label>
+    <input type="text" name="state" placeholder="E.g. ON or NY" ${isRequired('state') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    isEnabled('zip')
+      ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label>
+    <input type="text" name="zip" placeholder="E.g. M5V 2T6" ${isRequired('zip') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    isEnabled('notes')
       ? `
 
   <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
-    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message${isRequired('notes') ? ' *' : ''}</label>
+    <textarea name="notes" placeholder="How can we help?" ${isRequired('notes') ? 'required' : ''} rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
   </div>`
       : ''
   }
