@@ -23,3 +23,5 @@ libs/.DS_Store
 .claude/worktrees
 migrations.json
 package-lock.json
+
+.claude/settings.local.json
