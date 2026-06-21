@@ -213,7 +213,6 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     tenantId: string,
     userId: string,
     sessionId: string,
-    mockData?: { amount: number; province: string; country: string },
   ) {
     // Check if donation already recorded
     const existing = await this.getRepo()
@@ -233,24 +232,21 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     let personId = '';
 
     if (sessionId.startsWith('cs_mock_')) {
-      if (!mockData) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Missing mock payload parameters.',
-        });
-      }
-      amountCents = mockData.amount * 100;
-      province = mockData.province;
-      country = mockData.country;
-      // Get the current path target from route
+      // Mock sessions must be confirmed via confirmMockDonation, which carries the personId.
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: 'Mock session confirm should specify personId.',
+        message: 'Mock sessions must be confirmed via the confirmMockDonation endpoint.',
       });
     }
 
     const tenantStripeKey = (await this.getSettingVal(tenantId, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-    const stripe = new Stripe(tenantStripeKey!);
+    if (!tenantStripeKey) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Stripe is not configured for this tenant.',
+      });
+    }
+    const stripe = new Stripe(tenantStripeKey);
 
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     if (session.payment_status !== 'paid') {
@@ -344,11 +340,10 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     // 3. Calculate credit
     const taxCreditCents = this.calculateTaxCredit(amountCents, cumulativeBefore, tiers);
 
-    let record: Selectable<Models['donations']>;
-
-    // 4. Execute all writes transactionally
-    await this.getRepo().db.transaction().execute(async (trx) => {
-      record = (await trx
+    // 4. Execute all writes transactionally — record is returned from within the callback
+    // to avoid an uninitialized variable reference after the transaction.
+    const record = await this.getRepo().db.transaction().execute(async (trx) => {
+      const inserted = (await trx
         .insertInto('donations' as any)
         .values({
           tenant_id: tenantId,
@@ -437,6 +432,8 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       } catch (err) {
         console.error('Failed to write audit activity log for donation:', err);
       }
+
+      return inserted;
     });
 
     // 6. Trigger donation workflow (if matches)
@@ -447,6 +444,6 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       console.error('Failed to trigger workflow on donation_received:', workflowErr);
     }
 
-    return record!;
+    return record;
   }
 }
