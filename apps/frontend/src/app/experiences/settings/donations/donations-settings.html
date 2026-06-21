@@ -14,14 +14,17 @@
         {{ stripeSecretKey().trim() ? 'Connected' : 'Not Configured' }}
       </span>
     </div>
-    
+
     <!-- Security Banner -->
-    <div class="alert alert-warning text-xs rounded-xl p-3 border-warning/30 bg-warning/5 text-warning-content shadow-sm flex items-start gap-3">
+    <div
+      class="alert alert-warning text-xs rounded-xl p-3 border-warning/30 bg-warning/5 text-warning-content shadow-sm flex items-start gap-3"
+    >
       <pc-icon name="shield-exclamation" [size]="5" class="shrink-0 mt-0.5 text-warning"></pc-icon>
       <div>
         <strong class="font-semibold">Security Best Practice: Use Stripe Restricted API Keys (RAK)</strong>
         <p class="mt-0.5 text-base-content/70">
-          For maximum security, do not provide your account's master Secret Key. Instead, go to your Stripe Dashboard and create a <strong class="font-medium">Restricted API Key (RAK)</strong> with the following permissions:
+          For maximum security, do not provide your account's master Secret Key. Instead, go to your Stripe Dashboard
+          and create a <strong class="font-medium">Restricted API Key (RAK)</strong> with the following permissions:
         </p>
         <ul class="list-disc list-inside mt-1 space-y-0.5 font-medium text-base-content/85">
           <li><code class="text-[10px] bg-base-300 px-1 rounded">Checkout Sessions</code>: Write</li>
@@ -165,7 +168,13 @@
               @for (cCode of selectedCountries(); track cCode) {
               <span class="badge badge-sm badge-primary gap-1.5 py-2 px-2.5 font-medium">
                 {{ getCountryName(cCode) }}
-                <button type="button" class="text-[10px] hover:text-base-content font-bold" (click)="removeCountry(cCode)">×</button>
+                <button
+                  type="button"
+                  class="text-[10px] hover:text-base-content font-bold"
+                  (click)="removeCountry(cCode)"
+                >
+                  ×
+                </button>
               </span>
               }
               <input
@@ -178,13 +187,19 @@
                 (blur)="showCountryDropdown.set(false)"
               />
             </div>
-            
+
             @if (showCountryDropdown() && availableCountriesToSelect().length) {
             <!-- Use mousedown to prevent input blur before selecting -->
-            <ul class="absolute z-50 left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 text-xs">
+            <ul
+              class="absolute z-50 left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 text-xs"
+            >
               @for (c of availableCountriesToSelect(); track c.code) {
               <li>
-                <button type="button" class="w-full text-left px-3 py-2 hover:bg-base-200/50 font-medium" (mousedown)="selectCountry(c); $event.preventDefault()">
+                <button
+                  type="button"
+                  class="w-full text-left px-3 py-2 hover:bg-base-200/50 font-medium"
+                  (mousedown)="selectCountry(c); $event.preventDefault()"
+                >
                   {{ c.name }} ({{ c.code }})
                 </button>
               </li>
@@ -192,12 +207,14 @@
             </ul>
             }
           </div>
-
-          <!-- Allowed Province/State Checkboxes for USA & Canada -->
-          @if (isCanadaSelected() || isUsaSelected()) {
+          <!-- Allowed Province/State Checkboxes for Selected Countries -->
+          @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() || isFranceSelected() || isIndiaSelected())
+          {
           <div class="flex flex-col gap-3 p-4 bg-base-100 border border-base-200 rounded-xl max-h-64 overflow-y-auto">
-            <label class="text-xs font-bold text-base-content/85 uppercase tracking-wide"> Allowed Provinces & States </label>
-            
+            <label class="text-xs font-bold text-base-content/85 uppercase tracking-wide">
+              Allowed Provinces & States
+            </label>
+
             @if (isCanadaSelected()) {
             <div class="space-y-1.5">
               <span class="text-[11px] font-bold text-primary/80">Canada Provinces</span>
@@ -215,16 +232,71 @@
                 }
               </div>
             </div>
-            }
-
-            @if (isUsaSelected()) {
-            @if (isCanadaSelected()) {
+            } @if (isUsaSelected()) { @if (isCanadaSelected()) {
             <div class="divider my-1"></div>
             }
             <div class="space-y-1.5">
               <span class="text-[11px] font-bold text-primary/80">United States States</span>
               <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 @for (s of usStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isGermanySelected()) { @if (isCanadaSelected() || isUsaSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">Germany States</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of germanyStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isFranceSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">France Regions</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (r of franceRegions; track r.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(r.code)"
+                    (change)="toggleRegion(r.code)"
+                  />
+                  <span>{{ r.name }} ({{ r.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isIndiaSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() ||
+            isFranceSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">India States & UTs</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of indiaStates; track s.code) {
                 <label class="flex items-center gap-2 cursor-pointer text-xs">
                   <input
                     type="checkbox"
