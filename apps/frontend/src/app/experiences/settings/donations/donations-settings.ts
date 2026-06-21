@@ -43,6 +43,10 @@ export class DonationsSettingsComponent implements OnInit {
     { code: 'NZ', name: 'New Zealand' },
     { code: 'FR', name: 'France' },
     { code: 'DE', name: 'Germany' },
+    { code: 'IN', name: 'India' },
+    { code: 'IT', name: 'Italy' },
+    { code: 'ES', name: 'Spain' },
+    { code: 'NL', name: 'Netherlands' },
   ];
 
   protected readonly canadaProvinces = [
@@ -114,6 +118,76 @@ export class DonationsSettingsComponent implements OnInit {
     { code: 'WY', name: 'Wyoming' },
   ];
 
+  protected readonly germanyStates = [
+    { code: 'DE-BW', name: 'Baden-Württemberg' },
+    { code: 'DE-BY', name: 'Bavaria' },
+    { code: 'DE-BE', name: 'Berlin' },
+    { code: 'DE-BB', name: 'Brandenburg' },
+    { code: 'DE-HB', name: 'Bremen' },
+    { code: 'DE-HH', name: 'Hamburg' },
+    { code: 'DE-HE', name: 'Hesse' },
+    { code: 'DE-MV', name: 'Mecklenburg-Vorpommern' },
+    { code: 'DE-NI', name: 'Lower Saxony' },
+    { code: 'DE-NW', name: 'North Rhine-Westphalia' },
+    { code: 'DE-RP', name: 'Rhineland-Palatinate' },
+    { code: 'DE-SL', name: 'Saarland' },
+    { code: 'DE-SN', name: 'Saxony' },
+    { code: 'DE-ST', name: 'Saxony-Anhalt' },
+    { code: 'DE-SH', name: 'Schleswig-Holstein' },
+    { code: 'DE-TH', name: 'Thuringia' },
+  ];
+
+  protected readonly franceRegions = [
+    { code: 'FR-ARA', name: 'Auvergne-Rhône-Alpes' },
+    { code: 'FR-BFC', name: 'Bourgogne-Franche-Comté' },
+    { code: 'FR-BRE', name: 'Brittany' },
+    { code: 'FR-CVL', name: 'Centre-Val de Loire' },
+    { code: 'FR-COR', name: 'Corsica' },
+    { code: 'FR-GES', name: 'Grand Est' },
+    { code: 'FR-HDF', name: 'Hauts-de-France' },
+    { code: 'FR-IDF', name: 'Île-de-France' },
+    { code: 'FR-NOR', name: 'Normandy' },
+    { code: 'FR-NAQ', name: 'Nouvelle-Aquitaine' },
+    { code: 'FR-OCC', name: 'Occitania' },
+    { code: 'FR-PDL', name: 'Pays de la Loire' },
+    { code: 'FR-PAC', name: "Provence-Alpes-Côte d'Azur" },
+  ];
+
+  protected readonly indiaStates = [
+    { code: 'IN-AP', name: 'Andhra Pradesh' },
+    { code: 'IN-AR', name: 'Arunachal Pradesh' },
+    { code: 'IN-AS', name: 'Assam' },
+    { code: 'IN-BR', name: 'Bihar' },
+    { code: 'IN-CG', name: 'Chhattisgarh' },
+    { code: 'IN-GA', name: 'Goa' },
+    { code: 'IN-GJ', name: 'Gujarat' },
+    { code: 'IN-HR', name: 'Haryana' },
+    { code: 'IN-HP', name: 'Himachal Pradesh' },
+    { code: 'IN-JH', name: 'Jharkhand' },
+    { code: 'IN-KA', name: 'Karnataka' },
+    { code: 'IN-KL', name: 'Kerala' },
+    { code: 'IN-MP', name: 'Madhya Pradesh' },
+    { code: 'IN-MH', name: 'Maharashtra' },
+    { code: 'IN-MN', name: 'Manipur' },
+    { code: 'IN-ML', name: 'Meghalaya' },
+    { code: 'IN-MZ', name: 'Mizoram' },
+    { code: 'IN-NL', name: 'Nagaland' },
+    { code: 'IN-OD', name: 'Odisha' },
+    { code: 'IN-PB', name: 'Punjab' },
+    { code: 'IN-RJ', name: 'Rajasthan' },
+    { code: 'IN-SK', name: 'Sikkim' },
+    { code: 'IN-TN', name: 'Tamil Nadu' },
+    { code: 'IN-TG', name: 'Telangana' },
+    { code: 'IN-TR', name: 'Tripura' },
+    { code: 'IN-UP', name: 'Uttar Pradesh' },
+    { code: 'IN-UT', name: 'Uttarakhand' },
+    { code: 'IN-WB', name: 'West Bengal' },
+    { code: 'IN-DL', name: 'Delhi (UT)' },
+    { code: 'IN-JK', name: 'Jammu and Kashmir (UT)' },
+    { code: 'IN-LA', name: 'Ladakh (UT)' },
+    { code: 'IN-PY', name: 'Puducherry (UT)' },
+  ];
+
   // Tiers editing inputs
   protected readonly newLimit = signal<number | null>(null);
   protected readonly newRate = signal<number | null>(null);
@@ -146,14 +220,15 @@ export class DonationsSettingsComponent implements OnInit {
     const search = this.countrySearch().toLowerCase().trim();
     const selected = new Set(this.selectedCountries());
     return this.allCountries.filter(
-      (c) =>
-        !selected.has(c.code) &&
-        (c.name.toLowerCase().includes(search) || c.code.toLowerCase().includes(search)),
+      (c) => !selected.has(c.code) && (c.name.toLowerCase().includes(search) || c.code.toLowerCase().includes(search)),
     );
   });
 
   protected readonly isCanadaSelected = computed(() => this.selectedCountries().includes('CA'));
   protected readonly isUsaSelected = computed(() => this.selectedCountries().includes('US'));
+  protected readonly isGermanySelected = computed(() => this.selectedCountries().includes('DE'));
+  protected readonly isFranceSelected = computed(() => this.selectedCountries().includes('FR'));
+  protected readonly isIndiaSelected = computed(() => this.selectedCountries().includes('IN'));
 
   // Plain-language calculation summary
   protected readonly taxCreditSummary = computed(() => {
@@ -189,13 +264,9 @@ export class DonationsSettingsComponent implements OnInit {
 
   private loadValues() {
     this.stripeSecretKey.set(this.settingsSvc.getValue<string>('donations.stripe_secret_key', ''));
-    this.stripeWebhookSecret.set(
-      this.settingsSvc.getValue<string>('donations.stripe_webhook_secret', ''),
-    );
+    this.stripeWebhookSecret.set(this.settingsSvc.getValue<string>('donations.stripe_webhook_secret', ''));
     this.donationLimit.set(this.settingsSvc.getValue<number>('donations.limit', 1000));
-    this.restrictResidency.set(
-      this.settingsSvc.getValue<boolean>('donations.restrict_residency', false),
-    );
+    this.restrictResidency.set(this.settingsSvc.getValue<boolean>('donations.restrict_residency', false));
 
     // Load countries
     const countriesStr = this.settingsSvc.getValue<string>('donations.allowed_countries', 'CA');
@@ -230,9 +301,7 @@ export class DonationsSettingsComponent implements OnInit {
     // Load or generate webhook token
     let token = this.settingsSvc.getValue<string>('donations.webhook_token', '');
     if (!token) {
-      token =
-        'wt_' +
-        Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      token = 'wt_' + Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
     }
     this.webhookToken.set(token);
   }
@@ -252,13 +321,20 @@ export class DonationsSettingsComponent implements OnInit {
     } else if (code === 'US') {
       const stateCodes = new Set(this.usStates.map((s) => s.code));
       this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    } else if (code === 'DE') {
+      const stateCodes = new Set(this.germanyStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    } else if (code === 'FR') {
+      const regionCodes = new Set(this.franceRegions.map((r) => r.code));
+      this.selectedRegions.update((list) => list.filter((r) => !regionCodes.has(r)));
+    } else if (code === 'IN') {
+      const stateCodes = new Set(this.indiaStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
     }
   }
 
   protected toggleRegion(code: string) {
-    this.selectedRegions.update((list) =>
-      list.includes(code) ? list.filter((r) => r !== code) : [...list, code],
-    );
+    this.selectedRegions.update((list) => (list.includes(code) ? list.filter((r) => r !== code) : [...list, code]));
   }
 
   protected getCountryName(code: string): string {
