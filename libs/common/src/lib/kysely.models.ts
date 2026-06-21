@@ -207,7 +207,7 @@ export interface Households extends Omit<RecordType, 'createdby_id'>, AddressTyp
   geocoding_status: string | null;
 }
 
-interface MapCampaignsUsers extends JunctionRecordType {
+interface MapCampaignsUsers extends Omit<JunctionRecordType, 'createdby_id' | 'updatedby_id'> {
   campaign_id: string;
   user_id: string;
 }
@@ -220,6 +220,7 @@ interface MapHouseholdsTags extends JunctionRecordType {
 export interface MapPeoplesTags extends JunctionRecordType {
   person_id: string;
   tag_id: string;
+  deletable: Generated<boolean>;
 }
 
 interface MapRolesUsers extends JunctionRecordType {
@@ -291,14 +292,20 @@ interface Settings extends RecordType {
   value: JsonValue;
 }
 
-export interface Donations extends RecordType {
-  person_id: string;
+export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
+  person_id: string | null;
   amount: number;
-  status: string;
+  status: Generated<string>;
   stripe_session_id: string | null;
-  tax_credit_amount: number | null;
-  residency_province: string | null;
-  residency_country: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  street: string | null;
+  apt: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  country: string | null;
 }
 
 interface Roles extends RecordType {
@@ -307,8 +314,7 @@ interface Roles extends RecordType {
   permissions: Json | null;
 }
 
-// We use a UUID for the Id here, so we can't extend the recordtype
-interface Sessions extends RecordType {
+interface Sessions extends Omit<RecordType, 'createdby_id' | 'updatedby_id' | 'updated_at'> {
   session_id: Generated<string>;
   user_id: string;
   ip_address: string;
@@ -355,7 +361,7 @@ interface Tenants extends RecordType, AddressType {
   admin_id: string | null;
   email: string | null;
   email2: string | null;
-  phone: string | null;
+  mobile: string | null;
   json: Json | null;
   notes: string | null;
   placeholder_household_id: string | null;
@@ -372,6 +378,7 @@ interface Emails extends RecordType {
   from_email: string | null;
   to_email: string | null;
   subject: string | null;
+  body: string | null;
   preview: string | null;
   assigned_to: string | null;
   is_favourite: boolean;
@@ -613,6 +620,7 @@ export interface GoogleOauthTokens {
 
 export interface TaskComments extends RecordType {
   task_id: string;
+  author_id: string;
   comment: string;
 }
 
