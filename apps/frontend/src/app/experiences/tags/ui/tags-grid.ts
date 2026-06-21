@@ -27,7 +27,12 @@ import { provideDataGridConfig } from '@frontend/shared/components/datagrid/data
 })
 export class TagsGridComponent {
   protected col = [
-    { field: 'name', headerName: 'Tag Name', editable: true },
+    {
+      field: 'name',
+      headerName: 'Tag Name',
+      editable: true,
+      valueFormatter: (p: any) => (p.value ? p.value.charAt(0).toUpperCase() + p.value.slice(1) : ''),
+    },
     { field: 'description', headerName: 'Description', editable: true },
     {
       field: 'color',

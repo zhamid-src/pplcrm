@@ -219,7 +219,7 @@ export const dashboardRoutes: Routes = [
       {
         path: '',
         loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
-        data: { shouldReuse: true, key: 'donorsgridroot', tags: ['Donor'] },
+        data: { shouldReuse: true, key: 'donorsgridroot', tags: ['donor'] },
       },
     ],
   },

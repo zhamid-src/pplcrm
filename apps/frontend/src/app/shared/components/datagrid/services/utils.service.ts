@@ -19,7 +19,14 @@ export class DataGridUtilsService {
   }
 
   tagsToString(tags: string[]): string {
-    return !tags || !tags[0] ? '' : tags.toString();
+    if (!tags || !Array.isArray(tags)) return '';
+    return tags
+      .filter((t) => typeof t === 'string' && t.trim().length > 0)
+      .map((t) => {
+        const trimmed = t.trim();
+        return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+      })
+      .join(', ');
   }
 
   tagArrayEquals(tagsA: string[], tagsB: string[]): number {

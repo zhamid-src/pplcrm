@@ -122,9 +122,11 @@ export class Tags implements OnInit {
       tagName = tagName.replace(',', '').trim();
     }
 
+    tagName = tagName.toLowerCase().trim();
+
     if (tagName.length === 0) return;
 
-    const index = this.tags().findIndex((tag) => tag === tagName);
+    const index = this.tags().findIndex((tag) => (tag || '').toLowerCase().trim() === tagName);
     if (index === -1) {
       this.tags().unshift(tagName);
       this.tagAdded.emit(tagName);
@@ -147,11 +149,12 @@ export class Tags implements OnInit {
   }
 
   protected remove(tagName: string) {
-    const index = this.tags().findIndex((tag) => tag === tagName);
+    const target = (tagName || '').toLowerCase().trim();
+    const index = this.tags().findIndex((tag) => (tag || '').toLowerCase().trim() === target);
     if (index > -1) {
-      this.tags().splice(index, 1);
+      const removed = this.tags().splice(index, 1)[0];
       this.tagsChange.emit(this.tags());
-      this.tagRemoved.emit(tagName);
+      this.tagRemoved.emit(removed);
     }
   }
 }

@@ -18,7 +18,7 @@ import { Icon } from '@icons/icon';
       [class.pr-2]="!canDelete()"
       [style.color]="textColor()"
     >
-      {{ name() }}</span
+      {{ displayName() }}</span
     >
     <pc-icon
       name="x-mark"
@@ -39,6 +39,11 @@ export class TagItem {
   public invisible = input<Signal<boolean>>(signal(false));
   public name = input.required<string>();
   public color = input<string | null | undefined>(null);
+
+  protected readonly displayName = computed(() => {
+    const n = this.name();
+    return n ? n.charAt(0).toUpperCase() + n.slice(1) : '';
+  });
 
   protected readonly background = computed(() => this.normalizeColor(this.color()));
   protected readonly textColor = computed(() => this.computeTextColor(this.background()));

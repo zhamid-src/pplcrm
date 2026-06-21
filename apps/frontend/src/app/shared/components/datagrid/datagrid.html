@@ -334,7 +334,7 @@
                     [checked]="isTagChecked(tag)"
                     (change)="toggleTagInEditor(tag, $any($event.target).checked)"
                   />
-                  <span class="text-xs">{{ tag }}</span>
+                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
                 </label>
                 } @if (!filteredTagChoices(col).length) {
                 <div class="text-xs text-base-content/50 px-3 py-2 italic">

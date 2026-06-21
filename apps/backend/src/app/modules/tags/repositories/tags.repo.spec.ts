@@ -10,51 +10,67 @@ async function createTestSeed(db: any) {
   const householdId = rand();
 
   // 1. Tenant
-  await db.insertInto('tenants').values({
-    id: tenantId,
-    name: 'Test Tenant',
-  }).execute();
+  await db
+    .insertInto('tenants')
+    .values({
+      id: tenantId,
+      name: 'Test Tenant',
+    })
+    .execute();
 
   // 2. User
-  await db.insertInto('authusers').values({
-    id: userId,
-    tenant_id: tenantId,
-    email: `test-${userId}@example.com`,
-    password: 'password',
-    first_name: 'Test',
-    last_name: 'User',
-    verified: true,
-    createdby_id: userId,
-    updatedby_id: userId,
-  }).execute();
+  await db
+    .insertInto('authusers')
+    .values({
+      id: userId,
+      tenant_id: tenantId,
+      email: `test-${userId}@example.com`,
+      password: 'password',
+      first_name: 'Test',
+      last_name: 'User',
+      verified: true,
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .execute();
 
   // Update tenant admin and creator
   await db.updateTable('tenants').set({ admin_id: userId, createdby_id: userId }).where('id', '=', tenantId).execute();
 
   // 3. Campaign
-  await db.insertInto('campaigns').values({
-    id: campaignId,
-    tenant_id: tenantId,
-    admin_id: userId,
-    name: 'Test Campaign',
-    createdby_id: userId,
-    updatedby_id: userId,
-  }).execute();
+  await db
+    .insertInto('campaigns')
+    .values({
+      id: campaignId,
+      tenant_id: tenantId,
+      admin_id: userId,
+      name: 'Test Campaign',
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .execute();
 
   // 4. Household
-  await db.insertInto('households').values({
-    id: householdId,
-    tenant_id: tenantId,
-    campaign_id: campaignId,
-    createdby_id: userId,
-    updatedby_id: userId,
-  }).execute();
+  await db
+    .insertInto('households')
+    .values({
+      id: householdId,
+      tenant_id: tenantId,
+      campaign_id: campaignId,
+      createdby_id: userId,
+      updatedby_id: userId,
+    })
+    .execute();
 
   return { tenantId, userId, campaignId, householdId };
 }
 
 async function cleanTenant(db: any, tenantId: string) {
-  await db.updateTable('tenants').set({ admin_id: null, createdby_id: null, placeholder_household_id: null }).where('id', '=', tenantId).execute();
+  await db
+    .updateTable('tenants')
+    .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+    .where('id', '=', tenantId)
+    .execute();
   await db.deleteFrom('map_peoples_tags').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('map_households_tags').where('tenant_id', '=', tenantId).execute();
   await db.deleteFrom('persons').where('tenant_id', '=', tenantId).execute();
@@ -93,7 +109,7 @@ describe('TagsRepo Integration', () => {
     const all = await repo.getAll({ tenant_id: tenantId });
     expect(all.length).toBeGreaterThan(0);
 
-    const systemTag = all.find(t => t.deletable === false);
+    const systemTag = all.find((t) => t.deletable === false);
     expect(systemTag).toBeDefined();
   });
 
@@ -108,13 +124,16 @@ describe('TagsRepo Integration', () => {
       },
     });
 
-    await db.insertInto('map_households_tags').values({
-      tenant_id: tenantId,
-      household_id: householdId,
-      tag_id: tag.id,
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('map_households_tags')
+      .values({
+        tenant_id: tenantId,
+        household_id: householdId,
+        tag_id: tag.id,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
 
     // Verify mapping exists
     const mapping = await db.selectFrom('map_households_tags').selectAll().where('tag_id', '=', tag.id).execute();
@@ -131,5 +150,40 @@ describe('TagsRepo Integration', () => {
     // Verify mapping is deleted
     const checkMapping = await db.selectFrom('map_households_tags').selectAll().where('tag_id', '=', tag.id).execute();
     expect(checkMapping).toHaveLength(0);
+  });
+
+  it('should lowercase tag name and handle queries/conflicts case-insensitively', async () => {
+    // 1. Adding a tag with mixed case should store it in lowercase
+    const tag = await repo.add({
+      row: {
+        tenant_id: tenantId,
+        name: 'MixedCaseTag',
+        deletable: true,
+        createdby_id: userId,
+        updatedby_id: userId,
+      },
+    });
+    expect(tag.name).toBe('mixedcasetag');
+
+    // 2. addOrGet with conflicting name (mixed case) should resolve to the same tag case-insensitively
+    const retrieved = await repo.addOrGet({
+      row: {
+        tenant_id: tenantId,
+        name: 'MIXEDCASETAG',
+        deletable: true,
+        createdby_id: userId,
+        updatedby_id: userId,
+      },
+      onConflictColumn: 'name',
+    });
+    expect(retrieved?.id).toBe(tag.id);
+    expect(retrieved?.name).toBe('mixedcasetag');
+
+    // 3. getIdByName should work case-insensitively
+    const idObj = await repo.getIdByName({
+      tenant_id: tenantId,
+      name: 'mIxEdCaSeTaG',
+    });
+    expect(idObj?.id).toBe(tag.id);
   });
 });

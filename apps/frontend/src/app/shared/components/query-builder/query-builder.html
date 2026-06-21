@@ -98,7 +98,9 @@
           />
         </div>
         @if (item.value) {
-        <span class="badge badge-neutral text-xs px-2 py-1 select-none">{{ item.value }}</span>
+        <span class="badge badge-neutral text-xs px-2 py-1 select-none"
+          >{{ item.value.charAt(0).toUpperCase() + item.value.slice(1) }}</span
+        >
         } } @else if (fieldDef?.inputType === 'select') {
         <select
           class="select select-bordered select-sm w-full max-w-xs text-xs"
