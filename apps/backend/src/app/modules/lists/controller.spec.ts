@@ -133,9 +133,9 @@ describe('ListsController Background Refresh', () => {
         is_dynamic: true,
         definition: {
           filterModel: {
-            tags_expression: { kind: 'rule', id: 'rule1', field: 'tag', op: 'eq', value: 'Volunteer' },
+            tags_expression: { kind: 'rule', id: 'rule1', field: 'tag', op: 'eq', value: 'volunteer' },
           },
-          tags: ['Volunteer'],
+          tags: ['volunteer'],
         },
       },
       auth,
@@ -166,7 +166,7 @@ describe('ListsController Background Refresh', () => {
         object: 'people',
         is_dynamic: true,
         status: 'idle',
-        definition: JSON.stringify({ tags: ['Subscribers'] }),
+        definition: JSON.stringify({ tags: ['subscribers'] }),
         createdby_id: userId,
         updatedby_id: userId,
       })
@@ -176,7 +176,7 @@ describe('ListsController Background Refresh', () => {
     await controller.updateList(
       listId,
       {
-        definition: { tags: ['Donors'] },
+        definition: { tags: ['donors'] },
       },
       auth,
     );
@@ -240,7 +240,7 @@ describe('ListsController Background Refresh', () => {
       .values({
         id: tagId,
         tenant_id: tenantId,
-        name: 'Volunteer',
+        name: 'volunteer',
         createdby_id: userId,
         updatedby_id: userId,
       })
@@ -268,7 +268,7 @@ describe('ListsController Background Refresh', () => {
         object: 'people',
         is_dynamic: true,
         status: 'refreshing',
-        definition: JSON.stringify({ tags: ['Volunteer'] }),
+        definition: JSON.stringify({ tags: ['volunteer'] }),
         createdby_id: userId,
         updatedby_id: userId,
       })
@@ -303,7 +303,7 @@ describe('ListsController Background Refresh', () => {
         is_dynamic: true,
         status: 'idle',
         last_refreshed_at: staleTime,
-        definition: JSON.stringify({ tags: ['Volunteer'] }),
+        definition: JSON.stringify({ tags: ['volunteer'] }),
         createdby_id: userId,
         updatedby_id: userId,
       })

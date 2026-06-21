@@ -199,7 +199,7 @@ describe('WebFormsController Integration', () => {
     const tagNames = personTags.map((t: any) => t.name);
     expect(tagNames).toContain('newsletter');
     expect(tagNames).toContain('public-form');
-    expect(tagNames).toContain('Source: Newsletter Form');
+    expect(tagNames).toContain('source: newsletter form');
 
     // 6. Verify List Mapping
     const personLists = await db
@@ -372,8 +372,8 @@ describe('WebFormsController Integration', () => {
       .execute();
 
     const tagNames = personTags.map((t: any) => t.name);
-    expect(tagNames).toContain('Donor');
-    expect(tagNames).toContain('Source: Donation Form Test');
+    expect(tagNames).toContain('donor');
+    expect(tagNames).toContain('source: donation form test');
   });
 
   it('should validate user-configured required fields on standard form submission', async () => {

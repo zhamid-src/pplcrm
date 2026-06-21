@@ -682,16 +682,17 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
 
         const workflowsController = new WorkflowsController();
 
-        // Add tag "volunteer" and "Event: <Event Name>"
-        const allTagsToApply = ['volunteer', `Event: ${event.name}`];
+        // Add tag "volunteer" and "event: <event name>"
+        const allTagsToApply = ['volunteer', `event: ${event.name}`];
         for (const tagName of allTagsToApply) {
-          if (!tagName.trim()) continue;
+          const normalizedTagName = tagName.trim().toLowerCase();
+          if (!normalizedTagName) continue;
 
           let tag = await trx
             .selectFrom('tags')
             .select('id')
             .where('tenant_id', '=', tenantId as any)
-            .where('name', '=', tagName.trim())
+            .where('name', '=', normalizedTagName)
             .where('type', '=', 'tag')
             .executeTakeFirst();
 
@@ -701,7 +702,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
                 .insertInto('tags')
                 .values({
                   tenant_id: tenantId as any,
-                  name: tagName.trim(),
+                  name: normalizedTagName,
                   type: 'tag',
                   deletable: true,
                   createdby_id: creatorId as any,
@@ -718,7 +719,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
                 .selectFrom('tags')
                 .select('id')
                 .where('tenant_id', '=', tenantId as any)
-                .where('name', '=', tagName.trim())
+                .where('name', '=', normalizedTagName)
                 .where('type', '=', 'tag')
                 .executeTakeFirst();
               if (!tag) throw insertErr;
@@ -749,7 +750,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
 
               // Trigger tag_added and specialized subscriber workflows
               try {
-                await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
+                await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
               } catch (err) {
                 console.error('Failed to trigger tag_added workflow in signupVolunteerPublic:', err);
               }

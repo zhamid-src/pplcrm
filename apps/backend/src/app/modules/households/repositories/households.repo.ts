@@ -169,8 +169,8 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
-    const tags = input.tags;
-    const issues = input.issues || options.issues;
+    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
     const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
 
     // Shared where clause builder (for both queries)

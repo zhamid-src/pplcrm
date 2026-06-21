@@ -398,20 +398,21 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         const targetTags: string[] = Array.isArray(form.target_tags)
           ? form.target_tags
           : JSON.parse((form.target_tags as any) || '[]');
-        const systemTagName = `Source: ${form.name}`;
+        const systemTagName = `source: ${form.name}`;
         const allTagsToApply = [...targetTags, systemTagName];
         if (form.form_type === 'donation') {
-          allTagsToApply.push('Donor');
+          allTagsToApply.push('donor');
         }
 
         for (const tagName of allTagsToApply) {
-          if (!tagName.trim()) continue;
+          const normalizedTagName = tagName.trim().toLowerCase();
+          if (!normalizedTagName) continue;
 
           let tag = await trx
             .selectFrom('tags')
             .select('id')
             .where('tenant_id', '=', tenantId as any)
-            .where('name', '=', tagName.trim())
+            .where('name', '=', normalizedTagName)
             .where('type', '=', 'tag')
             .executeTakeFirst();
 
@@ -420,7 +421,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
               .insertInto('tags')
               .values({
                 tenant_id: tenantId as any,
-                name: tagName.trim(),
+                name: normalizedTagName,
                 type: 'tag',
                 deletable: true,
                 createdby_id: creatorId as any,
@@ -453,7 +454,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 
             // Trigger tag_added and specialized subscriber workflows
             try {
-              await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
+              await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
             } catch (err) {
               console.error('Failed to trigger tag_added workflow in WebFormsController:', err);
             }
