@@ -72,7 +72,7 @@ export class FormDetailComponent implements OnInit {
   protected readonly embedSnippet = computed(() => {
     const id = this.formId();
     if (!id) return '';
-    const apiOrigin = window.location.origin.replace(':4200', ':5000'); // Auto-detect backend port
+    const apiOrigin = window.location.origin.replace(':4200', ':3000'); // Auto-detect backend port
     const fields = this.selectedFields();
 
     if (this.isDonationForm()) {
@@ -192,7 +192,7 @@ ${
   protected readonly formUrl = computed(() => {
     const id = this.formId();
     if (!id) return '';
-    return window.location.origin.replace(':4200', ':5000') + `/api/forms/view/${id}`;
+    return window.location.origin.replace(':4200', ':3000') + `/api/forms/view/${id}`;
   });
 
   public ngOnInit(): void {
