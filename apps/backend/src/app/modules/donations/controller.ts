@@ -365,8 +365,8 @@ export class DonationsController extends BaseController<'donations', DonationsRe
         .returningAll()
         .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;
 
-      // Ensure 'Donor' tag is resolved/created and applied to the donor
-      const tagName = 'Donor';
+      // Ensure 'donor' tag is resolved/created and applied to the donor
+      const tagName = 'donor';
       let tag = await trx
         .selectFrom('tags')
         .select('id')
