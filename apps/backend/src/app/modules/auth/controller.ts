@@ -45,6 +45,7 @@ import { TenantsRepo } from './repositories/tenants.repo';
 import { EmailRepo } from '../emails/repositories/email.repo';
 import { PersonsRepo } from '../persons/repositories/persons.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
+import { seedOnboardingData } from './onboarding-seed';
 import {
   AuthUsersType,
   GetOperandType,
@@ -853,6 +854,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           .set({ placeholder_household_id: placeholderHousehold.id as any })
           .where('id', '=', tenant_id as any)
           .execute();
+
+        await seedOnboardingData({ tenant_id, user_id: userId, campaign_id: campaign.id }, trx);
 
         const codeObj = await this.getRepo().addPasswordResetCode(user.id, trx);
         const verificationCode = codeObj?.password_reset_code;
