@@ -1,4 +1,5 @@
-import { Component, OnInit, effect, inject, signal, WritableSignal, input } from '@angular/core';
+import { Component, OnInit, effect, inject, signal, WritableSignal, input, computed } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { form, email, pattern, FormField, validate } from '@angular/forms/signals';
 import { Icon } from '@icons/icon';
@@ -29,7 +30,15 @@ interface SectionState {
 
 @Component({
   selector: 'pc-settings-page',
-  imports: [FormField, Icon, MsSyncSettings, GoogleSyncSettings, BillingSettingsComponent, DomainSettingsComponent],
+  imports: [
+    FormField,
+    Icon,
+    MsSyncSettings,
+    GoogleSyncSettings,
+    BillingSettingsComponent,
+    DomainSettingsComponent,
+    DatePipe,
+  ],
   templateUrl: './settings-page.html',
 })
 export class SettingsPage implements OnInit {
@@ -53,7 +62,29 @@ export class SettingsPage implements OnInit {
   protected readonly savingSectionId = signal<string | null>(null);
   protected readonly hasLoaded = signal(false);
   protected readonly verifyingEmail = signal<string | null>(null);
+  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
+  protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
   protected readonly recomputingFingerprints = signal(false);
+  protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
+  protected readonly senderEmailInput = signal('');
+  protected readonly lastRequestedEmail = signal<string | null>(null);
+  protected readonly verifiedEmailsList = computed<string[]>(() => {
+    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+  });
+
+  protected readonly fingerprintRecomputeNextAvailable = computed(() => {
+    const lastTime = this.lastFingerprintRecomputeTime();
+    if (!lastTime) return null;
+    const nextAvailable = new Date(lastTime.getTime());
+    nextAvailable.setMonth(nextAvailable.getMonth() + 1);
+    return nextAvailable;
+  });
+
+  protected readonly isFingerprintRecomputeCooldown = computed(() => {
+    const nextAvailable = this.fingerprintRecomputeNextAvailable();
+    if (!nextAvailable) return false;
+    return Date.now() < nextAvailable.getTime();
+  });
 
   constructor() {
     this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'configuration' | 'billing') || 'settings';
@@ -78,6 +109,29 @@ export class SettingsPage implements OnInit {
       const snapshot = this.snapshotSignal();
       this.applySnapshot(snapshot, false);
     });
+
+    effect(() => {
+      const snapshot = this.snapshotSignal();
+      const verifiedEmails = (snapshot['communications.verified_emails'] as string[]) || [];
+
+      const commsSection = this.sections.find((s) => s.id === 'communications');
+      if (commsSection) {
+        const fromEmailField = commsSection.fields.find((f) => f.key === 'communications.default_from_email');
+        const replyToField = commsSection.fields.find((f) => f.key === 'communications.reply_to');
+
+        const options = [
+          { label: 'Select a verified email', value: '' },
+          ...verifiedEmails.map((email) => ({ label: email, value: email })),
+        ];
+
+        if (fromEmailField) {
+          fromEmailField.options = options;
+        }
+        if (replyToField) {
+          replyToField.options = options;
+        }
+      }
+    });
   }
 
   protected get visibleSections(): SectionState[] {
@@ -95,6 +149,7 @@ export class SettingsPage implements OnInit {
     this.hasLoaded.set(true);
     this.applySnapshot(this.settingsSvc.snapshot(), true);
     await this.loadUserPrefs();
+    await this.loadLastFingerprintRecomputeTime();
   }
 
   protected trackSection = (_: number, section: SectionState) => section.config.id;
@@ -363,13 +418,32 @@ export class SettingsPage implements OnInit {
     return verified.includes(email.toLowerCase().trim());
   }
 
+  protected isVerifyCooldown(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
+    if (!lastTime) return false;
+    return Date.now() - lastTime < 60000;
+  }
+
   protected async verifySenderEmail(email: string | null | undefined) {
     if (!email) return;
     const normalized = email.toLowerCase().trim();
+
+    if (this.isVerifyCooldown(normalized)) {
+      this.alerts.showError('Please wait at least one minute before requesting verification again.');
+      return;
+    }
+
     this.verifyingEmail.set(normalized);
 
     try {
       await this.settingsSvc.requestEmailVerification(normalized);
+      this.lastVerificationTimes.update((prev) => ({
+        ...prev,
+        [normalized]: Date.now(),
+      }));
+      this.startEmailCooldown(normalized);
+      this.lastRequestedEmail.set(normalized);
       this.alerts.showSuccess(
         `Verification email sent to ${email}. Please check your inbox and click the verification link.`,
       );
@@ -416,11 +490,47 @@ export class SettingsPage implements OnInit {
       });
   }
 
+  private startEmailCooldown(email: string) {
+    this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: 60 }));
+    const interval = setInterval(() => {
+      const current = this.emailCooldownSeconds()[email] || 0;
+      if (current <= 1) {
+        clearInterval(interval);
+        this.emailCooldownSeconds.update((prev) => {
+          const next = { ...prev };
+          delete next[email];
+          return next;
+        });
+      } else {
+        this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
+      }
+    }, 1000);
+  }
+
+  protected async loadLastFingerprintRecomputeTime() {
+    try {
+      const res = await this.householdsSvc.getLastFingerprintRecomputation();
+      if (res && res.lastRunAt) {
+        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
+      } else {
+        this.lastFingerprintRecomputeTime.set(null);
+      }
+    } catch (err) {
+      console.error('Failed to load last fingerprint recompute time', err);
+    }
+  }
+
   protected async recomputeAddressFingerprints() {
+    if (this.isFingerprintRecomputeCooldown()) {
+      this.alerts.showError('Fingerprints can only be recomputed once a month.');
+      return;
+    }
+
     this.recomputingFingerprints.set(true);
     try {
       await this.householdsSvc.recomputeAddressFingerprints();
       this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
+      await this.loadLastFingerprintRecomputeTime();
     } catch (err: any) {
       this.alerts.showError(err.message || 'Failed to trigger address fingerprint recomputation.');
     } finally {

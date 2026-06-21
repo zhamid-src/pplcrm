@@ -76,6 +76,10 @@ export const HouseholdsRouter = router({
     .input(z.object({ target_id: idSchema, source_id: idSchema }))
     .mutation(({ input, ctx }) => households.mergeHouseholds(input.target_id, input.source_id, ctx.auth)),
 
+  getLastFingerprintRecomputation: authProcedure.query(({ ctx }) =>
+    households.getLastFingerprintRecomputation(ctx.auth.tenant_id),
+  ),
+
   recomputeAddressFingerprints: authProcedure.mutation(({ ctx }) =>
     households.recomputeAddressFingerprints(ctx.auth.tenant_id),
   ),

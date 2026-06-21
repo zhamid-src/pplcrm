@@ -6,6 +6,7 @@ import {
   getAllOptionsType,
 } from '../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
+import { sql } from 'kysely';
 
 import { BaseRepository, QueryParams } from '../../lib/base.repo';
 import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
@@ -287,7 +288,12 @@ export class HouseholdsController extends BaseController<'households', Household
     if (auth) {
       const result = await this.getAllWithPeopleCount(auth, input?.options);
       const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as { csv: string; fileName: string; columns: string[]; rowCount: number };
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
       await this.userActivity.log({
         tenant_id: auth.tenant_id,
         user_id: auth.user_id,
@@ -337,7 +343,37 @@ export class HouseholdsController extends BaseController<'households', Household
     });
   }
 
+  public async getLastFingerprintRecomputation(tenantId: string): Promise<{ lastRunAt: string | null }> {
+    const job = await this.getRepo()
+      .db.selectFrom('background_jobs' as any)
+      .select(['created_at'])
+      .where('tenant_id', '=', tenantId as any)
+      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+      .orderBy('created_at', 'desc')
+      .executeTakeFirst();
+
+    return { lastRunAt: job?.created_at ? new Date(job.created_at).toISOString() : null };
+  }
+
   public async recomputeAddressFingerprints(tenantId: string): Promise<void> {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+    const existingJob = await this.getRepo()
+      .db.selectFrom('background_jobs' as any)
+      .select(['created_at'])
+      .where('tenant_id', '=', tenantId as any)
+      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+      .where('created_at', '>', oneMonthAgo)
+      .executeTakeFirst();
+
+    if (existingJob) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Address fingerprints can only be recomputed once a month. A request was already submitted recently.',
+      });
+    }
+
     await this.getRepo()
       .db.insertInto('background_jobs' as any)
       .values({
