@@ -774,28 +774,31 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
               .where('id', '=', lockedEnrollment.workflow_id)
               .executeTakeFirst();
 
-            const actorId = workflow?.createdby_id || '1';
-
-            await trx
-              .insertInto('user_activity')
-              .values({
-                tenant_id: lockedEnrollment.tenant_id,
-                user_id: actorId,
-                activity: 'send',
-                entity: 'workflows',
-                entity_id: String(lockedEnrollment.workflow_id),
-                quantity: 1,
-                metadata: JSON.stringify({
-                  person_id: String(person.id),
-                  person_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
-                  email: person.email,
-                  subject: step.subject,
-                  step_number: step.step_number,
-                }),
-                createdby_id: actorId,
-                updatedby_id: actorId,
-              })
-              .execute();
+            // Only log activity if the workflow (and its creator) still exist;
+            // skip the log rather than writing a row referencing a phantom user.
+            if (workflow?.createdby_id) {
+              const actorId = String(workflow.createdby_id);
+              await trx
+                .insertInto('user_activity')
+                .values({
+                  tenant_id: lockedEnrollment.tenant_id,
+                  user_id: actorId,
+                  activity: 'send',
+                  entity: 'workflows',
+                  entity_id: String(lockedEnrollment.workflow_id),
+                  quantity: 1,
+                  metadata: JSON.stringify({
+                    person_id: String(person.id),
+                    person_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
+                    email: person.email,
+                    subject: step.subject,
+                    step_number: step.step_number,
+                  }),
+                  createdby_id: actorId,
+                  updatedby_id: actorId,
+                })
+                .execute();
+            }
           }
 
           const nextStep = await trx

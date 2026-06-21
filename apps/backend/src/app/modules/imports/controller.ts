@@ -85,6 +85,12 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
               { tenant_id: auth.tenant_id, household_ids: householdIds },
               trx,
             );
+            // Also clean up list associations before household deletion
+            await trx
+              .deleteFrom('map_lists_households')
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('household_id', 'in', householdIds)
+              .execute();
             await this.householdsRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: householdIds as any }, trx);
           }
         } else {
