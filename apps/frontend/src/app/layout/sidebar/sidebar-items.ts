@@ -2,20 +2,18 @@ import { PcIconNameType } from '@icons/icons.index';
 
 export interface ISidebarItem {
   adminOnly?: boolean;
-  indicator?: boolean;
   children?: ISidebarItem[];
   collapsed?: boolean;
   favourite?: boolean;
   hidden?: boolean;
-
   hiddenByFavourite?: boolean;
-
   icon?: PcIconNameType;
+  indicator?: boolean;
   name: string;
-  short_name?: string;
   parent?: ISidebarItem;
   pathMatchExact?: boolean;
   route?: string;
+  short_name?: string;
   type?: 'item' | 'subheading' | 'bookmark';
 }
 
@@ -108,7 +106,7 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Donors',
         route: '/donors',
-        icon: 'volunteer',
+        icon: 'document-currency-dollar',
       },
       {
         name: 'Volunteers',
