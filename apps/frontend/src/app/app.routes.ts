@@ -40,6 +40,11 @@ export const appRoutes = [
     loadComponent: () =>
       import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
   },
+  {
+    path: 'resume-account',
+    loadComponent: () =>
+      import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
+  },
 
   // Main dashboard shell + children (protected)
   {

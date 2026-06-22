@@ -26,6 +26,8 @@ export interface IAuthUser {
   avatar_url?: string | null;
 
   tenant_deletion_scheduled_at?: Date | null;
+
+  tenant_paused_at?: Date | null;
 }
 
 export interface IUserStatsSnapshot {

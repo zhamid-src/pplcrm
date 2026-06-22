@@ -10,9 +10,13 @@ export const authGuard: CanActivateFn = () => {
 
   if (!user) return router.navigateByUrl('/signin');
 
-  // /cancel-deletion is public, so this won't loop
+  // /cancel-deletion and /resume-account are public, so these won't loop
   if (user.tenant_deletion_scheduled_at) {
     return router.navigateByUrl('/cancel-deletion');
+  }
+
+  if (user.tenant_paused_at) {
+    return router.navigateByUrl('/resume-account');
   }
 
   return true;

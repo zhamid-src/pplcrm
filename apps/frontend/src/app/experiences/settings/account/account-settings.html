@@ -18,13 +18,24 @@
   </div>
 </div>
 } @else if (status()!.suspended_at) {
-<div class="alert alert-warning mb-6">
+<div class="alert alert-error mb-6">
   <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
   <div>
     <h4 class="font-bold">Account Suspended</h4>
     <p class="text-sm">
-      Your account has been suspended since {{ status()!.suspended_at | date : 'mediumDate' }}. Your data is preserved
-      and billing is paused. Reactivate to restore full access.
+      Your account has been suspended since {{ status()!.suspended_at | date : 'mediumDate' }}. Please contact support
+      to reactivate your account.
+    </p>
+  </div>
+</div>
+} @else if (status()!.paused_at) {
+<div class="alert alert-warning mb-6">
+  <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+  <div>
+    <h4 class="font-bold">Account Paused</h4>
+    <p class="text-sm">
+      Your account has been paused since {{ status()!.paused_at | date : 'mediumDate' }}. Your data is preserved and
+      billing is paused. Reactivate below to restore full access.
     </p>
   </div>
 </div>
@@ -38,17 +49,17 @@
 </div>
 }
 
-<!-- Suspend / Reactivate Section -->
+<!-- Pause / Reactivate Section -->
 <div class="card border border-base-200 bg-base-50/50 rounded-xl p-6 space-y-4">
   <div class="space-y-1">
-    <h3 class="text-base font-bold text-base-content/90">Suspend Account</h3>
+    <h3 class="text-base font-bold text-base-content/90">Pause Account</h3>
     <p class="text-sm text-base-content/60">
       Temporarily pause your account. Your data is preserved and billing is paused. You can reactivate at any time by
-      contacting support.
+      logging back in.
     </p>
   </div>
   <div class="flex items-center gap-3">
-    @if (status()!.suspended_at) {
+    @if (status()!.paused_at) {
     <button
       type="button"
       class="btn btn-success btn-sm"
@@ -59,16 +70,16 @@
       <span class="loading loading-spinner loading-xs"></span>
       } Reactivate Account
     </button>
-    } @else {
+    } @else if (!status()!.suspended_at) {
     <button
       type="button"
       class="btn btn-warning btn-sm btn-outline"
-      (click)="suspendAccount()"
+      (click)="pauseAccount()"
       [disabled]="actionPending() || !!status()!.deletion_scheduled_at"
     >
       @if (actionPending()) {
       <span class="loading loading-spinner loading-xs"></span>
-      } Suspend Account
+      } Pause Account
     </button>
     }
   </div>

@@ -93,14 +93,18 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       const avatar_url = profile?.['avatar_file_id'] ? `/api/files/download/${profile['avatar_file_id']}` : null;
 
       let tenant_deletion_scheduled_at: Date | null = null;
+      let tenant_paused_at: Date | null = null;
       if (auth.tenant_id) {
         const tenant = await this.getRepo()
           .db.selectFrom('tenants')
-          .select('deletion_scheduled_at')
+          .select(['deletion_scheduled_at', 'paused_at'])
           .where('id', '=', auth.tenant_id as any)
           .executeTakeFirst();
         if (tenant?.deletion_scheduled_at) {
           tenant_deletion_scheduled_at = new Date(tenant.deletion_scheduled_at as any);
+        }
+        if (tenant?.paused_at) {
+          tenant_paused_at = new Date(tenant.paused_at as any);
         }
       }
 
@@ -108,6 +112,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         ...user,
         avatar_url,
         tenant_deletion_scheduled_at,
+        tenant_paused_at,
       };
     } catch (err) {
       throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
@@ -505,7 +510,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (user.tenant_id) {
       const tenant = await this.getRepo()
         .db.selectFrom('tenants')
-        .select('suspended_at')
+        .select(['suspended_at', 'paused_at'])
         .where('id', '=', user.tenant_id as any)
         .executeTakeFirst();
 
@@ -514,6 +519,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           'This account has been suspended. Please contact support if you believe this is an error.',
         );
       }
+      // Paused accounts (user-initiated) allow login so the owner can reactivate from settings
     }
 
     return this.createTokens({
@@ -578,7 +584,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (user.tenant_id) {
       const tenant = await this.getRepo()
         .db.selectFrom('tenants')
-        .select('suspended_at')
+        .select(['suspended_at', 'paused_at'])
         .where('id', '=', user.tenant_id as any)
         .executeTakeFirst();
 
@@ -587,6 +593,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           'This account has been suspended. Please contact support if you believe this is an error.',
         );
       }
+      // Paused accounts (user-initiated) allow login so the owner can reactivate from settings
     }
 
     return this.createTokens({
@@ -1590,7 +1597,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   public async getTenantAccountStatus(auth: IAuthKeyPayload) {
     const tenant = await this.getRepo()
       .db.selectFrom('tenants')
-      .select(['deletion_scheduled_at', 'suspended_at'])
+      .select(['deletion_scheduled_at', 'suspended_at', 'paused_at'])
       .where('id', '=', auth.tenant_id as any)
       .executeTakeFirst();
 
@@ -1599,6 +1606,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return {
       deletion_scheduled_at: tenant.deletion_scheduled_at ?? null,
       suspended_at: tenant.suspended_at ?? null,
+      paused_at: tenant.paused_at ?? null,
     };
   }
 
@@ -1757,17 +1765,17 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return { success: true };
   }
 
-  public async suspendTenant(auth: IAuthKeyPayload) {
+  public async pauseTenant(auth: IAuthKeyPayload) {
     const db = this.getRepo().db;
 
     const tenant = await db
       .selectFrom('tenants')
-      .select(['id', 'suspended_at'])
+      .select(['id', 'paused_at'])
       .where('id', '=', auth.tenant_id as any)
       .executeTakeFirst();
 
     if (!tenant) throw new NotFoundError('Tenant not found');
-    if (tenant.suspended_at) throw new BadRequestError('Account is already suspended.');
+    if (tenant.paused_at) throw new BadRequestError('Account is already paused.');
 
     const ownerEmail = await db
       .selectFrom('authusers')
@@ -1779,11 +1787,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     await db.transaction().execute(async (trx) => {
       await trx
         .updateTable('tenants')
-        .set({ suspended_at: new Date() })
+        .set({ paused_at: new Date() })
         .where('id', '=', auth.tenant_id as any)
         .execute();
 
-      // Sign out all users immediately so the suspension takes effect for active sessions
+      // Sign out all users immediately so the pause takes effect for active sessions
       await trx
         .deleteFrom('sessions')
         .where('tenant_id', '=', auth.tenant_id as any)
@@ -1794,12 +1802,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.mailService.sendMail({
         to: ownerEmail.email,
         tenant_id: String(auth.tenant_id),
-        subject: 'Your account has been suspended',
-        text: `Hi ${ownerEmail.first_name},\n\nYour account has been suspended. Your data is preserved but billing has been paused. You can reactivate your account at any time by contacting support or logging back in.`,
-        html: `<h2>Account Suspended</h2>
+        subject: 'Your account has been paused',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account has been paused. Your data is preserved and billing has been paused. You can reactivate your account at any time by logging back in and visiting your account settings.`,
+        html: `<h2>Account Paused</h2>
 <p>Hi ${ownerEmail.first_name},</p>
-<p>Your account has been suspended as requested. Your data is safely preserved and you will not be billed during this period.</p>
-<p>You can reactivate your account at any time by contacting support.</p>`,
+<p>Your account has been paused as requested. Your data is safely preserved and you will not be billed during this period.</p>
+<p>You can reactivate your account at any time by logging back in and visiting your account settings.</p>`,
       });
     }
 
@@ -1811,12 +1819,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     const tenant = await db
       .selectFrom('tenants')
-      .select(['id', 'suspended_at'])
+      .select(['id', 'paused_at'])
       .where('id', '=', auth.tenant_id as any)
       .executeTakeFirst();
 
     if (!tenant) throw new NotFoundError('Tenant not found');
-    if (!tenant.suspended_at) throw new BadRequestError('Account is not suspended.');
+    if (!tenant.paused_at) throw new BadRequestError('Account is not paused.');
 
     const ownerEmail = await db
       .selectFrom('authusers')
@@ -1827,7 +1835,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     await db
       .updateTable('tenants')
-      .set({ suspended_at: null })
+      .set({ paused_at: null })
       .where('id', '=', auth.tenant_id as any)
       .execute();
 
