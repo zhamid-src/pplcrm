@@ -54,6 +54,15 @@ import type {
   AddWorkflowStepObj,
   UpdateWorkflowStepObj,
   WorkflowEnrollmentObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
 } from './schema';
 
 export interface INow {
@@ -149,5 +158,17 @@ export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
 export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
 export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
 export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
+
+export type AddEventType = z.infer<typeof AddEventObj>;
+export type EventType = z.infer<typeof EventObj>;
+export type UpdateEventType = z.infer<typeof UpdateEventObj>;
+
+export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
+export type TicketTypeType = z.infer<typeof TicketTypeObj>;
+export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
+
+export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
+export type RegistrationType = z.infer<typeof RegistrationObj>;
+export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
 
 export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
