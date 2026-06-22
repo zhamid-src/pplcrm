@@ -39,7 +39,7 @@
         </p>
       </div>
 
-      <div class="grid gap-6 md:grid-cols-3">
+      <div class="grid gap-6">
         <button
           type="button"
           class="card border border-base-300 hover:border-primary p-8 text-left bg-base-100 hover:shadow-md transition-all duration-200 group"
@@ -178,7 +178,10 @@
                   </p>
                   <p class="mt-1 leading-normal">
                     Configure Stripe credentials first.
-                    <a href="/configuration/donations" class="link link-primary font-bold inline-flex items-center gap-0.5">
+                    <a
+                      href="/configuration/donations"
+                      class="link link-primary font-bold inline-flex items-center gap-0.5"
+                    >
                       Configure Stripe
                       <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
                     </a>
@@ -705,7 +708,8 @@
                 </div>
                 <p class="mt-1 text-[11px] text-base-content/50">
                   A system tag <code class="badge badge-sm badge-neutral">Source: [Form Name]</code> will also be
-                  applied automatically. @if (payload().form_type === 'donation' || payload().form_type === 'recurring_donation') {
+                  applied automatically. @if (payload().form_type === 'donation' || payload().form_type ===
+                  'recurring_donation') {
                   <span class="block mt-1 text-success font-semibold flex items-center gap-1">
                     <pc-icon name="tag" [size]="3" class="text-success"></pc-icon>
                     The system tag <code class="badge badge-sm badge-success text-success-content">Donor</code> will
