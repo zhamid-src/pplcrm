@@ -10,7 +10,7 @@ import { VolunteerEventsFrontendService } from '../services/volunteer-events-fro
   template: `
     <div class="flex flex-col gap-6">
       <pc-datagrid
-        title="Events"
+        title="Shifts"
         description="Manage volunteer shifts, schedule events, and track attendance records."
         [colDefs]="col"
         [disableDelete]="false"

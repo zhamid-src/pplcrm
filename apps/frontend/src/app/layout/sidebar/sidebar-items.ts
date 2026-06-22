@@ -93,13 +93,18 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'volunteer',
       },
       {
+        name: 'Shifts',
+        route: '/events/shifts',
+        icon: 'add-schedule',
+      },
+      {
         name: 'Teams',
         route: '/teams',
         icon: 'user-group',
       },
       {
         name: 'Events',
-        route: '/events',
+        route: '/events/pages',
         icon: 'calendar',
       },
       {
@@ -122,6 +127,11 @@ export const SidebarItems: ISidebarItem[] = [
         name: 'Donations',
         route: '/donations',
         icon: 'currency-dollar',
+      },
+      {
+        name: 'Donation Pages',
+        route: '/donation-pages',
+        icon: 'clipboard-document-list',
       },
     ],
   },
