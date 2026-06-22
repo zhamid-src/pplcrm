@@ -1,0 +1,77 @@
+<pc-auth-layout>
+  @if (isLoading()) {
+  <div class="flex flex-col items-center justify-center py-6 space-y-4">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-sm font-medium text-neutral-100">Processing…</p>
+  </div>
+
+  } @else if (isTokenFlow()) {
+
+  <!-- EMAIL LINK FLOW: show result of token-based cancellation -->
+  @switch (status()) { @case ('success') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
+      <pc-icon [size]="6" name="check-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Deletion Cancelled</h2>
+      <p class="text-sm text-neutral-300">
+        Your account deletion has been cancelled. All your data is safe and your account remains active.
+      </p>
+    </div>
+    <a class="btn btn-primary w-full" routerLink="/signin">Sign In</a>
+  </div>
+  } @case ('error') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error/10 text-error">
+      <pc-icon [size]="6" name="exclamation-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Unable to Cancel</h2>
+      <p class="text-sm text-neutral-300">{{ errorMessage() }}</p>
+    </div>
+    <a class="btn btn-primary w-full" routerLink="/signin">Go to Sign In</a>
+  </div>
+  } } } @else {
+
+  <!-- LOGGED-IN FLOW: account is pending deletion, user just signed in -->
+  <div class="space-y-6 py-4">
+    <div class="flex items-center gap-3">
+      <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-error text-white">
+        <pc-icon [size]="5" name="exclamation-triangle" />
+      </div>
+      <div>
+        <h2 class="text-lg font-bold tracking-tight text-neutral-100">Account Scheduled for Deletion</h2>
+        <p class="text-xs text-white">
+          @if (deletionDate) { Deletion date: {{ deletionDate | date : 'medium' }} } @else { Deletion is pending. }
+        </p>
+      </div>
+    </div>
+
+    <p class="text-sm text-white">
+      This organization and all of its data — contacts, emails, campaigns, users, and settings — will be permanently and
+      irreversibly deleted. Once gone, the data cannot be recovered.
+    </p>
+
+    @if (errorMessage()) {
+    <p class="text-sm text-error font-medium">{{ errorMessage() }}</p>
+    }
+
+    <div class="flex flex-col gap-3 pt-2">
+      <button type="button" class="btn btn-primary w-full" (click)="cancelViaAuth()" [disabled]="actionPending()">
+        @if (actionPending()) { <span class="loading loading-spinner loading-xs"></span> } Cancel Deletion — Keep My
+        Account
+      </button>
+
+      <button type="button" class="btn btn-accent" (click)="auth.signOut()" [disabled]="actionPending()">
+        Sign out
+      </button>
+    </div>
+  </div>
+
+  }
+
+  <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
+    <span class="text-neutral-400">Copyright © 2026 PeopleCRM</span>
+  </div>
+</pc-auth-layout>

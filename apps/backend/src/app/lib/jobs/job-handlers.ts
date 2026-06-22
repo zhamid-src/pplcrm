@@ -889,6 +889,15 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
     for (const tenant of expiredTenants) {
       const tenantId = String(tenant.id);
+
+      // Capture owner emails before deletion — background_jobs is wiped inside the transaction
+      const ownerUsers = await db
+        .selectFrom('authusers')
+        .select(['email', 'first_name'])
+        .where('tenant_id', '=', BigInt(tenantId) as any)
+        .where('role', '=', 'owner')
+        .execute();
+
       console.log(`Hard-deleting tenant ${tenantId} (deletion_scheduled_at <= now)…`);
       await db.transaction().execute(async (trx: any) => {
         const tid = BigInt(tenantId) as any;
@@ -947,6 +956,8 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         await trx.deleteFrom('settings').where('tenant_id', '=', tid).execute();
 
         // ── Auth & Identity (last) ─────────────────────────────────────────
+        // Null out FK references on tenants before deleting authusers
+        await trx.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('id', '=', tid).execute();
         await trx.deleteFrom('sessions').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('profiles').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('authusers').where('tenant_id', '=', tid).execute();
@@ -954,6 +965,21 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
         console.log(`Tenant ${tenantId} fully hard-deleted.`);
       });
+
+      // Send confirmation emails after the transaction commits (outside the wiped tenant scope)
+      for (const owner of ownerUsers) {
+        if (owner.email) {
+          await mailService.sendMail({
+            to: owner.email,
+            subject: 'Your account data has been permanently deleted',
+            text: `Hi ${owner.first_name},\n\nAll data associated with your PeopleCRM account has been permanently and securely deleted as requested. You will not be billed going forward.\n\nThank you for using PeopleCRM.`,
+            html: `<h2>Account Data Deleted</h2>
+<p>Hi ${owner.first_name},</p>
+<p>All data associated with your PeopleCRM account has been permanently and securely deleted as requested. You will not be billed going forward.</p>
+<p>Thank you for using PeopleCRM. If you ever wish to return, you are always welcome to create a new account.</p>`,
+          });
+        }
+      }
     }
 
     // Permanently delete completed background jobs older than 7 days to prevent unbounded table growth

@@ -35,6 +35,11 @@ export const appRoutes = [
     loadComponent: () =>
       import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
   },
+  {
+    path: 'cancel-deletion',
+    loadComponent: () =>
+      import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
+  },
 
   // Main dashboard shell + children (protected)
   {

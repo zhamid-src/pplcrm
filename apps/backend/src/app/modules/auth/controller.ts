@@ -11,7 +11,7 @@ import {
   signUpInputType,
 } from '../../../../../../libs/common/src';
 
-import { randomBytes, randomUUID, createHash, timingSafeEqual } from 'crypto';
+import { randomBytes, randomUUID, createHash, createHmac, timingSafeEqual } from 'crypto';
 import { createSigner, createVerifier } from 'fast-jwt';
 import { QueryResult, Transaction } from 'kysely';
 import { env } from '../../../env';
@@ -92,9 +92,22 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       const profile = (await this.profiles.getOneByAuthId(String((user as any).id))) as Models['profiles'] | undefined;
       const avatar_url = profile?.['avatar_file_id'] ? `/api/files/download/${profile['avatar_file_id']}` : null;
 
+      let tenant_deletion_scheduled_at: Date | null = null;
+      if (auth.tenant_id) {
+        const tenant = await this.getRepo()
+          .db.selectFrom('tenants')
+          .select('deletion_scheduled_at')
+          .where('id', '=', auth.tenant_id as any)
+          .executeTakeFirst();
+        if (tenant?.deletion_scheduled_at) {
+          tenant_deletion_scheduled_at = new Date(tenant.deletion_scheduled_at as any);
+        }
+      }
+
       return {
         ...user,
         avatar_url,
+        tenant_deletion_scheduled_at,
       };
     } catch (err) {
       throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
@@ -487,6 +500,20 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         html: `<h2>Account Restored</h2>
 <p>Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.</p>`,
       });
+    }
+
+    if (user.tenant_id) {
+      const tenant = await this.getRepo()
+        .db.selectFrom('tenants')
+        .select(['suspended_at', 'deletion_scheduled_at'])
+        .where('id', '=', user.tenant_id as any)
+        .executeTakeFirst();
+
+      if (tenant?.suspended_at) {
+        throw new ForbiddenError(
+          'This account has been suspended. Please contact support if you believe this is an error.',
+        );
+      }
     }
 
     return this.createTokens({
@@ -1534,5 +1561,251 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     } else if (isRoleChange) {
       throw new BadRequestError('The system must have at least one owner.');
     }
+  }
+
+  public async getTenantAccountStatus(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select(['deletion_scheduled_at', 'suspended_at'])
+      .where('id', '=', auth.tenant_id as any)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+
+    return {
+      deletion_scheduled_at: tenant.deletion_scheduled_at ?? null,
+      suspended_at: tenant.suspended_at ?? null,
+    };
+  }
+
+  public async scheduleTenantDeletion(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'name', 'deletion_scheduled_at'])
+      .where('id', '=', auth.tenant_id as any)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+    if (tenant.deletion_scheduled_at) throw new BadRequestError('Account deletion is already scheduled.');
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    const deletionDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await db.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('tenants')
+        .set({ deletion_scheduled_at: deletionDate })
+        .where('id', '=', auth.tenant_id as any)
+        .execute();
+
+      // Invalidate every active session for the tenant so all users are signed out immediately
+      await trx
+        .deleteFrom('sessions')
+        .where('tenant_id', '=', auth.tenant_id as any)
+        .execute();
+    });
+
+    if (ownerEmail?.email) {
+      const cancelToken = this.makeDeletionCancelToken(String(auth.tenant_id));
+      const cancelUrl = `${env.appUrl}/cancel-deletion?tid=${auth.tenant_id}&token=${cancelToken}`;
+      const deletionDateStr = deletionDate.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
+
+      await this.mailService.sendMail({
+        to: ownerEmail.email,
+        tenant_id: String(auth.tenant_id),
+        subject: 'Your account is scheduled for deletion in 24 hours',
+        text: `Hi ${ownerEmail.first_name},\n\nYour organization account has been scheduled for permanent deletion. All data will be permanently removed on ${deletionDateStr}.\n\nChanged your mind? You have 24 hours to cancel:\n${cancelUrl}\n\nAfter that, all data will be permanently removed and cannot be recovered.`,
+        html: `<h2>Account Scheduled for Deletion</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your organization account has been scheduled for permanent deletion on <strong>${deletionDateStr}</strong>. All data associated with your account — contacts, emails, campaigns, and everything else — will be permanently and irreversibly removed.</p>
+<p><strong>Changed your mind?</strong> You have 24 hours to cancel this request:</p>
+<p><a href="${cancelUrl}" style="display:inline-block;padding:10px 20px;background:#4f46e5;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Cancel Account Deletion</a></p>
+<p class="warning">After the 24-hour window, all data will be permanently deleted and cannot be recovered.</p>`,
+      });
+    }
+
+    return { success: true };
+  }
+
+  public makeDeletionCancelToken(tenantId: string): string {
+    return createHmac('sha256', env.sharedSecret).update(`cancel-deletion:${tenantId}`).digest('hex');
+  }
+
+  public async cancelTenantDeletion(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'deletion_scheduled_at'])
+      .where('id', '=', auth.tenant_id as any)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+    if (!tenant.deletion_scheduled_at) throw new BadRequestError('No deletion is scheduled for this account.');
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    await db
+      .updateTable('tenants')
+      .set({ deletion_scheduled_at: null })
+      .where('id', '=', auth.tenant_id as any)
+      .execute();
+
+    if (ownerEmail?.email) {
+      await this.mailService.sendMail({
+        to: ownerEmail.email,
+        tenant_id: String(auth.tenant_id),
+        subject: 'Account deletion cancelled',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion request has been successfully cancelled. Your account and all data remain intact.`,
+        html: `<h2>Account Deletion Cancelled</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your account deletion request has been successfully cancelled. Your account and all data remain intact. Welcome back!</p>`,
+      });
+    }
+
+    return { success: true };
+  }
+
+  public async cancelTenantDeletionByToken(tenantId: string, token: string) {
+    const expectedToken = this.makeDeletionCancelToken(tenantId);
+    const expected = Buffer.from(expectedToken);
+    const provided = Buffer.from(token.length === expected.length ? token : expectedToken); // same length for safe compare
+    if (token.length !== expectedToken.length || !timingSafeEqual(expected, provided)) {
+      throw new BadRequestError('Invalid or expired cancellation link.');
+    }
+
+    const db = this.getRepo().db;
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'deletion_scheduled_at'])
+      .where('id', '=', tenantId as any)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Account not found.');
+    if (!tenant.deletion_scheduled_at) throw new BadRequestError('No deletion is pending for this account.');
+    if (new Date(tenant.deletion_scheduled_at as any) <= new Date()) {
+      throw new BadRequestError('The deletion window has already passed and data has been removed.');
+    }
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', tenantId as any)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    await db
+      .updateTable('tenants')
+      .set({ deletion_scheduled_at: null })
+      .where('id', '=', tenantId as any)
+      .execute();
+
+    if (ownerEmail?.email) {
+      await this.mailService.sendMail({
+        to: ownerEmail.email,
+        subject: 'Account deletion cancelled',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion has been successfully cancelled. Your account and all data remain intact. You can sign back in at any time.`,
+        html: `<h2>Account Deletion Cancelled</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your account deletion has been successfully cancelled. Your account and all data remain intact.</p>
+<p><a href="${env.appUrl}/signin">Sign back in</a> to continue using PeopleCRM.</p>`,
+      });
+    }
+
+    return { success: true };
+  }
+
+  public async suspendTenant(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'suspended_at'])
+      .where('id', '=', auth.tenant_id as any)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+    if (tenant.suspended_at) throw new BadRequestError('Account is already suspended.');
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    await db
+      .updateTable('tenants')
+      .set({ suspended_at: new Date() })
+      .where('id', '=', auth.tenant_id as any)
+      .execute();
+
+    if (ownerEmail?.email) {
+      await this.mailService.sendMail({
+        to: ownerEmail.email,
+        tenant_id: String(auth.tenant_id),
+        subject: 'Your account has been suspended',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account has been suspended. Your data is preserved but billing has been paused. You can reactivate your account at any time by contacting support or logging back in.`,
+        html: `<h2>Account Suspended</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your account has been suspended as requested. Your data is safely preserved and you will not be billed during this period.</p>
+<p>You can reactivate your account at any time by contacting support.</p>`,
+      });
+    }
+
+    return { success: true };
+  }
+
+  public async resumeTenant(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'suspended_at'])
+      .where('id', '=', auth.tenant_id as any)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+    if (!tenant.suspended_at) throw new BadRequestError('Account is not suspended.');
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    await db
+      .updateTable('tenants')
+      .set({ suspended_at: null })
+      .where('id', '=', auth.tenant_id as any)
+      .execute();
+
+    if (ownerEmail?.email) {
+      await this.mailService.sendMail({
+        to: ownerEmail.email,
+        tenant_id: String(auth.tenant_id),
+        subject: 'Your account has been reactivated',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account has been successfully reactivated. Welcome back!`,
+        html: `<h2>Account Reactivated</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your account has been successfully reactivated. Everything is back to normal — welcome back!</p>`,
+      });
+    }
+
+    return { success: true };
   }
 }

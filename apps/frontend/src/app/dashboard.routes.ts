@@ -356,15 +356,8 @@ export const dashboardRoutes: Routes = [
   },
   {
     path: 'billing',
-    canActivate: [roleGuard],
-    children: [
-      { path: '', redirectTo: 'billing', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'billing' },
-      },
-    ],
+    redirectTo: '/configuration/billing',
+    pathMatch: 'full',
   },
   {
     path: 'profile',

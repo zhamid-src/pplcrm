@@ -77,6 +77,32 @@ function cancelAccountDeletion() {
   return authProcedure.mutation(({ ctx }) => controller.cancelAccountDeletion(ctx.auth));
 }
 
+function getTenantAccountStatus() {
+  return adminOrOwnerProcedure.query(({ ctx }) => controller.getTenantAccountStatus(ctx.auth));
+}
+
+function cancelTenantDeletionByToken() {
+  return publicProcedure
+    .input(z.object({ tenantId: z.string(), token: z.string() }))
+    .mutation(({ input }) => controller.cancelTenantDeletionByToken(input.tenantId, input.token));
+}
+
+function scheduleTenantDeletion() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.scheduleTenantDeletion(ctx.auth));
+}
+
+function cancelTenantDeletion() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelTenantDeletion(ctx.auth));
+}
+
+function suspendTenant() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.suspendTenant(ctx.auth));
+}
+
+function resumeTenant() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.resumeTenant(ctx.auth));
+}
+
 function cancelEmailChange() {
   return authProcedure.mutation(({ ctx }) => controller.cancelEmailChange(ctx.auth));
 }
@@ -155,6 +181,12 @@ export const AuthRouter = router({
   scheduleAccountDeletion: scheduleAccountDeletion(),
   cancelAccountDeletion: cancelAccountDeletion(),
   cancelEmailChange: cancelEmailChange(),
+  getTenantAccountStatus: getTenantAccountStatus(),
+  scheduleTenantDeletion: scheduleTenantDeletion(),
+  cancelTenantDeletion: cancelTenantDeletion(),
+  cancelTenantDeletionByToken: cancelTenantDeletionByToken(),
+  suspendTenant: suspendTenant(),
+  resumeTenant: resumeTenant(),
   adminTriggerPasswordReset: adminTriggerPasswordReset(),
   uploadAvatar: uploadAvatar(),
   deleteAvatar: deleteAvatar(),
