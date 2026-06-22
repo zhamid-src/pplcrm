@@ -13,6 +13,8 @@ import { PersonsService } from '../services/persons-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { DonationsService } from '../../../services/api/donations-service';
 import { EventsService } from '../../../services/api/events-service';
+import { ConnectionsService } from '../../../services/api/connections-service';
+import { PersonConnections } from './person-connections';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Card as PcCard } from '@uxcommon/components/card/card';
@@ -52,6 +54,7 @@ interface SocialLinkDef {
     DetailItem,
     SystemMetadata,
     Tags,
+    PersonConnections,
   ],
   templateUrl: './person-view.html',
 })
@@ -68,6 +71,7 @@ export class PersonView implements OnInit {
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly eventsSvc = inject(EventsService);
+  private readonly connectionsSvc = inject(ConnectionsService);
 
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
@@ -91,6 +95,7 @@ export class PersonView implements OnInit {
   protected readonly donationHistory = signal<any[]>([]);
   protected readonly eventHistory = signal<any[]>([]);
   protected readonly eventStats = signal<{ events_count: number } | null>(null);
+  protected readonly connectionCount = signal(0);
   protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
   protected readonly openedNewslettersCount = computed(() => {
     return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
@@ -183,6 +188,7 @@ export class PersonView implements OnInit {
     { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
     { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
     { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length },
+    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
     { id: 'household', label: 'Household', icon: 'home' },
   ]);
 
@@ -272,6 +278,14 @@ export class PersonView implements OnInit {
         this.eventHistory.set(history || []);
       } catch (err) {
         console.error('Failed to load event history', err);
+      }
+
+      // 6. Load connection count (tab badge — full list loads lazily inside the tab)
+      try {
+        const count = await this.connectionsSvc.countForPerson(id);
+        this.connectionCount.set(count);
+      } catch (err) {
+        console.error('Failed to load connection count', err);
       }
 
       // Check query params for Stripe Checkout success redirects

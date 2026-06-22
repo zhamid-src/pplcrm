@@ -13,3 +13,4 @@ export * from './schemas/web-forms.schema';
 export * from './schemas/workflows.schema';
 export * from './schemas/companies.schema';
 export * from './schemas/events.schema';
+export * from './schemas/connections.schema';

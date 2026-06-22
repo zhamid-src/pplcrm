@@ -87,6 +87,7 @@ export interface Models {
   workflows: Workflows;
   workflow_steps: WorkflowSteps;
   workflow_enrollments: WorkflowEnrollments;
+  person_connections: PersonConnections;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -800,6 +801,27 @@ export interface WorkflowEnrollments {
   enrolled_at: Generated<Timestamp>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+export type RelationType =
+  | 'referred_by'
+  | 'referred_to'
+  | 'close_friend'
+  | 'family_member'
+  | 'spouse'
+  | 'colleague'
+  | 'org_affiliation'
+  | 'introduced_by'
+  | 'introduced_to'
+  | 'custom';
+
+export interface PersonConnections extends RecordType {
+  from_person_id: string;
+  to_person_id: string;
+  relation_type: RelationType;
+  custom_label: string | null;
+  is_mutual: Generated<boolean>;
+  notes: string | null;
 }
 
 type UnwrapSelect<T> = T extends ColumnType<infer S, any, any> ? S : T;

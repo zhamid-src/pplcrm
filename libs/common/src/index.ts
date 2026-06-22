@@ -72,6 +72,7 @@ export type {
   AddRegistrationType,
   RegistrationType,
   UpdateRegistrationType,
+  AddConnectionType,
 } from './lib/models';
 
 export {
@@ -143,6 +144,10 @@ export {
   AddRegistrationObj,
   RegistrationObj,
   UpdateRegistrationObj,
+  AddConnectionObj,
+  RELATION_TYPES,
+  RELATION_TYPE_LABELS,
+  relationTypeSchema,
 } from './lib/schema';
 
 export { debounce, sleep } from './lib/utils';
