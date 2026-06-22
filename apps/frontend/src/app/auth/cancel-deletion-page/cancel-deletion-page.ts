@@ -24,6 +24,10 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
 
   // Authenticated flow: user is logged in with a pending deletion
   protected readonly loggedInUser = this.auth.getUserSignal();
+  protected get canCancel(): boolean {
+    const role = this.loggedInUser()?.role;
+    return role === 'admin' || role === 'owner';
+  }
   protected get deletionDate(): Date | null {
     const d = this.loggedInUser()?.tenant_deletion_scheduled_at;
     return d ? new Date(d) : null;
@@ -66,6 +70,8 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
     try {
       await this.api.auth.cancelTenantDeletionByToken.mutate({ tenantId: this.tenantId!, token: this.token! });
       this.status.set('success');
+      // Refresh so authGuard doesn't re-redirect on subsequent navigation
+      await this.auth.getCurrentUser().catch(() => null);
     } catch (err: any) {
       this.status.set('error');
       this.errorMessage.set(err.message || 'This link is invalid or the deletion window has already passed.');

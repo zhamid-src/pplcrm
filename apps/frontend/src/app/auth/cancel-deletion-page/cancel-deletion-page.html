@@ -58,10 +58,16 @@
     }
 
     <div class="flex flex-col gap-3 pt-2">
+      @if (canCancel) {
       <button type="button" class="btn btn-primary w-full" (click)="cancelViaAuth()" [disabled]="actionPending()">
         @if (actionPending()) { <span class="loading loading-spinner loading-xs"></span> } Cancel Deletion — Keep My
         Account
       </button>
+      } @else {
+      <p class="text-sm text-warning text-center">
+        Only an admin or owner can cancel the deletion. Please contact your organization's admin.
+      </p>
+      }
 
       <button type="button" class="btn btn-accent" (click)="auth.signOut()" [disabled]="actionPending()">
         Sign out
