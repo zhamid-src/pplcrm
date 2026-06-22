@@ -95,8 +95,8 @@ function cancelTenantDeletion() {
   return adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelTenantDeletion(ctx.auth));
 }
 
-function suspendTenant() {
-  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.suspendTenant(ctx.auth));
+function pauseTenant() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.pauseTenant(ctx.auth));
 }
 
 function resumeTenant() {
@@ -185,7 +185,7 @@ export const AuthRouter = router({
   scheduleTenantDeletion: scheduleTenantDeletion(),
   cancelTenantDeletion: cancelTenantDeletion(),
   cancelTenantDeletionByToken: cancelTenantDeletionByToken(),
-  suspendTenant: suspendTenant(),
+  pauseTenant: pauseTenant(),
   resumeTenant: resumeTenant(),
   adminTriggerPasswordReset: adminTriggerPasswordReset(),
   uploadAvatar: uploadAvatar(),

@@ -1,0 +1,51 @@
+<pc-auth-layout>
+  <div class="space-y-6 py-4">
+    <div class="flex items-center gap-3">
+      <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-warning text-warning-content">
+        <pc-icon [size]="5" name="exclamation-circle" />
+      </div>
+      <div>
+        <h2 class="text-lg font-bold tracking-tight text-neutral-100">Account Paused</h2>
+        @if (pausedDate) {
+        <p class="text-xs text-neutral-300">Paused on {{ pausedDate | date : 'medium' }}</p>
+        }
+      </div>
+    </div>
+
+    <p class="text-sm text-white">
+      Your account is currently paused. All users have lost access and billing has been suspended. Your data is safely
+      preserved and nothing has been deleted.
+    </p>
+
+    @if (errorMessage()) {
+    <p class="text-sm text-error font-medium">{{ errorMessage() }}</p>
+    }
+
+    <div class="flex flex-col gap-3 pt-2">
+      @if (canResume) {
+      <button
+        type="button"
+        class="btn btn-primary w-full"
+        (click)="resumeAccount()"
+        [disabled]="actionPending()"
+      >
+        @if (actionPending()) {
+        <span class="loading loading-spinner loading-xs"></span>
+        } Reactivate Account
+      </button>
+      } @else {
+      <p class="text-sm text-warning text-center">
+        Only an admin or owner can reactivate the account. Please contact your organization's admin.
+      </p>
+      }
+
+      <button type="button" class="btn btn-accent" (click)="auth.signOut()" [disabled]="actionPending()">
+        Sign out
+      </button>
+    </div>
+  </div>
+
+  <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
+    <span class="text-neutral-400">Copyright © 2026 PeopleCRM</span>
+  </div>
+</pc-auth-layout>

@@ -10,6 +10,7 @@ import { AuthService } from '../../../auth/auth-service';
 export interface TenantAccountStatus {
   deletion_scheduled_at: Date | null;
   suspended_at: Date | null;
+  paused_at: Date | null;
 }
 
 @Component({
@@ -38,6 +39,7 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
       this.status.set({
         deletion_scheduled_at: data.deletion_scheduled_at ? new Date(data.deletion_scheduled_at) : null,
         suspended_at: data.suspended_at ? new Date(data.suspended_at) : null,
+        paused_at: data.paused_at ? new Date(data.paused_at) : null,
       });
     } catch (err: any) {
       this.alerts.showError(err.message || 'Failed to load account status.');
@@ -46,25 +48,23 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
     }
   }
 
-  protected async suspendAccount() {
+  protected async pauseAccount() {
     const confirmed = await this.dialog.confirm({
-      title: 'Suspend Account',
+      title: 'Pause Account',
       message:
-        'Are you sure you want to suspend your account? Your data will be preserved and billing paused, but all users will lose access until the account is reactivated.',
+        'Are you sure you want to pause your account? Your data will be preserved and billing paused, but all users will lose access until the account is reactivated.',
       variant: 'warning',
-      confirmText: 'Suspend',
+      confirmText: 'Pause',
       cancelText: 'Cancel',
     });
     if (!confirmed) return;
 
     this.actionPending.set(true);
     try {
-      await this.api.auth.suspendTenant.mutate();
-      await this.loadStatus();
-      this.alerts.showSuccess('Account suspended. Your data is safely preserved.');
+      await this.api.auth.pauseTenant.mutate();
+      await this.auth.signOut();
     } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to suspend account.');
-    } finally {
+      this.alerts.showError(err.message || 'Failed to pause account.');
       this.actionPending.set(false);
     }
   }

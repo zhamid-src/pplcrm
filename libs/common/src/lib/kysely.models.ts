@@ -372,6 +372,7 @@ interface Tenants extends RecordType, AddressType {
   subscription_ends_at: Timestamp | null;
   deletion_scheduled_at: Timestamp | null;
   suspended_at: Timestamp | null;
+  paused_at: Timestamp | null;
 }
 
 interface Emails extends RecordType {
