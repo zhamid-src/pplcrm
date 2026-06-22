@@ -99,6 +99,7 @@ export const icons = {
   'currency-dollar': 'assets/icons/currency-dollar.svg',
   document: 'assets/icons/document.svg',
   'document-check': 'assets/icons/document-check.svg',
+  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
   'document-duplicate': 'assets/icons/document-duplicate.svg',
   'document-text': 'assets/icons/document-text.svg',
   'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
