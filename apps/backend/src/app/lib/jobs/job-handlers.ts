@@ -368,6 +368,107 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         });
       }
     }
+  } else if (payload.type === 'send-event-registration-confirmation') {
+    const registration = await db
+      .selectFrom('event_registrations')
+      .select(['id', 'status', 'event_id', 'person_id', 'ticket_type_id'])
+      .where('id', '=', payload.registrationId)
+      .executeTakeFirst();
+
+    if (!registration || registration.status === 'cancelled') {
+      console.log(`Skipping event confirmation: registration ${payload.registrationId} not found or cancelled.`);
+      return;
+    }
+
+    const event = await db
+      .selectFrom('events')
+      .select(['name', 'start_time', 'end_time', 'location_address', 'contact_email', 'contact_phone', 'send_registration_confirmation'])
+      .where('id', '=', registration.event_id as any)
+      .executeTakeFirst();
+
+    if (!event || event.send_registration_confirmation === false) {
+      console.log(`Skipping event confirmation: event ${registration.event_id} not found or confirmations disabled.`);
+      return;
+    }
+
+    const person = await db
+      .selectFrom('persons')
+      .select(['first_name', 'email'])
+      .where('id', '=', registration.person_id as any)
+      .executeTakeFirst();
+
+    if (!person || !person.email) {
+      console.log(`Skipping event confirmation: person ${registration.person_id} has no email.`);
+      return;
+    }
+
+    const startFormatted = new Date(event.start_time).toLocaleString();
+    const endFormatted = new Date(event.end_time).toLocaleString();
+    const coordLine = [
+      event.contact_email ? `Email: ${event.contact_email}` : '',
+      event.contact_phone ? `Phone: ${event.contact_phone}` : '',
+    ].filter(Boolean).join('\n');
+    const coordHtml = [
+      event.contact_email ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
+      event.contact_phone ? `Phone: ${event.contact_phone}` : '',
+    ].filter(Boolean).join('<br>');
+
+    await mailService.sendMail({
+      to: person.email,
+      subject: `Registration Confirmed: ${event.name}`,
+      text: `Hi ${person.first_name || 'there'},\n\nYou're registered for "${event.name}"!\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${coordLine ? `\n\nContact:\n${coordLine}` : ''}\n\nWe look forward to seeing you there!`,
+      html: `<p>Hi ${person.first_name || 'there'},</p><p>You're registered for <strong>"${event.name}"</strong>!</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${coordHtml ? `<p style="margin:12px 0 4px 0"><strong>Contact:</strong><br>${coordHtml}</p>` : ''}</div><p>We look forward to seeing you there!</p>`,
+    });
+
+    console.log(`Sent registration confirmation to ${person.email} for event ${registration.event_id}`);
+  } else if (payload.type === 'send-event-reminder') {
+    const registration = await db
+      .selectFrom('event_registrations')
+      .select(['id', 'status', 'event_id', 'person_id'])
+      .where('id', '=', payload.registrationId)
+      .executeTakeFirst();
+
+    if (!registration || registration.status !== 'registered') {
+      console.log(`Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`);
+      return;
+    }
+
+    const event = await db
+      .selectFrom('events')
+      .selectAll()
+      .where('id', '=', registration.event_id as any)
+      .executeTakeFirst();
+
+    if (!event || event.send_reminder === false) {
+      console.log(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
+      return;
+    }
+
+    const person = await db
+      .selectFrom('persons')
+      .select(['first_name', 'email'])
+      .where('id', '=', registration.person_id as any)
+      .executeTakeFirst();
+
+    if (!person || !person.email) {
+      console.log(`Skipping event reminder: person ${registration.person_id} has no email.`);
+      return;
+    }
+
+    const startFormatted = new Date(event.start_time).toLocaleString();
+    const endFormatted = new Date(event.end_time).toLocaleString();
+    const mapsUrl = event.location_address
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
+      : null;
+
+    await mailService.sendMail({
+      to: person.email,
+      subject: `Reminder: ${event.name} is tomorrow`,
+      text: `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you're registered for "${event.name}" tomorrow.\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsUrl ? `\nDirections: ${mapsUrl}` : ''}\n\nWe look forward to seeing you there!`,
+      html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;padding:24px;"><h2 style="color:#0284c7;margin-top:0;">Event Reminder</h2><p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you're registered for <strong>"${event.name}"</strong> tomorrow.</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${mapsUrl ? `<p style="margin:12px 0 4px 0"><a href="${mapsUrl}" target="_blank" style="color:#0284c7;font-weight:600;">Open in Google Maps</a></p>` : ''}</div><p>We look forward to seeing you there!</p></div>`,
+    });
+
+    console.log(`Sent event reminder to ${person.email} for event ${registration.event_id}`);
   } else if (payload.type === 'send-transactional-email') {
     await mailService.sendMail({
       to: payload.to,
@@ -932,6 +1033,9 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         await trx.deleteFrom('webhook_events').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('volunteer_shifts').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('volunteer_events').where('tenant_id', '=', tid).execute();
+        await trx.deleteFrom('event_registrations').where('tenant_id', '=', tid).execute();
+        await trx.deleteFrom('event_ticket_types').where('tenant_id', '=', tid).execute();
+        await trx.deleteFrom('events').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('files').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('ms_oauth_tokens').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tid).execute();

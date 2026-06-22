@@ -1,0 +1,292 @@
+import { SelectQueryBuilder, Transaction, sql } from 'kysely';
+import { BaseRepository, JoinedQueryParams } from '../../../lib/base.repo';
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+export class EventsRepo extends BaseRepository<'events'> {
+  constructor() {
+    super('events');
+  }
+
+  public async getAllEventsWithCount(
+    input: { tenant_id: string; options?: any },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: any[]; count: number }> {
+    const options: JoinedQueryParams = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const filterModel = (options.filterModel ?? {}) as Record<string, any>;
+
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+      let q = qb.where('events.tenant_id', '=', tenantId).$if(!!searchStr, (qb2) => {
+        const text = searchStr;
+        return qb2.where(
+          sql`(
+            LOWER(events.name) LIKE ${text} OR
+            LOWER(events.description) LIKE ${text} OR
+            LOWER(events.location_address) LIKE ${text}
+          )` as any,
+        );
+      });
+
+      const includeArchived = (options as any).includeArchived === true;
+      if (includeArchived) {
+        q = q.where('events.end_time', '<', new Date());
+      } else {
+        q = q.where('events.end_time', '>=', new Date());
+      }
+
+      q = this.applyColumnFilter(q, 'events.name', filterModel['name']);
+      q = this.applyColumnFilter(q, 'events.location_address', filterModel['location_address']);
+
+      return q;
+    };
+
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count('events.id').as('total')])
+      .execute();
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    const rows = await applyFilters(this.getSelect(trx))
+      .select([
+        'events.id',
+        'events.tenant_id',
+        'events.name',
+        'events.description',
+        'events.location_address',
+        'events.start_time',
+        'events.end_time',
+        'events.capacity',
+        'events.slug',
+        'events.is_published',
+        'events.send_reminder',
+        'events.send_registration_confirmation',
+        'events.created_at',
+        'events.updated_at',
+      ])
+      .select((eb) => [
+        eb
+          .selectFrom('event_registrations')
+          .whereRef('event_registrations.event_id', '=', 'events.id')
+          .where('event_registrations.status', '!=', 'cancelled')
+          .select(({ fn }) => [fn.count<number>('event_registrations.id').as('registrations_count')])
+          .as('registrations_count'),
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        options.sortModel!.reduce((acc: any, sort: any) => acc.orderBy(sort.colId as any, sort.sort), qb),
+      )
+      .$if(!options.sortModel?.length, (qb) => qb.orderBy('events.start_time', 'asc'))
+      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
+        qb.offset(options.startRow!).limit(options.endRow! - options.startRow!),
+      )
+      .execute();
+
+    return { rows, count };
+  }
+
+  public async getTicketTypesForEvent(input: { tenant_id: string; event_id: string }, trx?: Transaction<Models>) {
+    const db = trx || (BaseRepository as any)['_db'];
+    return db
+      .selectFrom('event_ticket_types')
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('event_id', '=', input.event_id)
+      .orderBy('sort_order', 'asc')
+      .orderBy('created_at', 'asc')
+      .execute();
+  }
+
+  public async addTicketType(
+    input: {
+      tenant_id: string;
+      event_id: string;
+      name: string;
+      description?: string | null;
+      price_cents: number;
+      capacity?: number | null;
+      sort_order?: number;
+      user_id: string;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const db = trx || (BaseRepository as any)['_db'];
+    return db
+      .insertInto('event_ticket_types')
+      .values({
+        tenant_id: input.tenant_id,
+        event_id: input.event_id,
+        name: input.name,
+        description: input.description ?? null,
+        price_cents: input.price_cents,
+        capacity: input.capacity ?? null,
+        sort_order: input.sort_order ?? 0,
+        createdby_id: input.user_id,
+        updatedby_id: input.user_id,
+      })
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  public async updateTicketType(
+    input: {
+      tenant_id: string;
+      id: string;
+      row: {
+        name?: string;
+        description?: string | null;
+        price_cents?: number;
+        capacity?: number | null;
+        sort_order?: number;
+      };
+      user_id: string;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const db = trx || (BaseRepository as any)['_db'];
+    return db
+      .updateTable('event_ticket_types')
+      .set({ ...input.row, updatedby_id: input.user_id, updated_at: sql`now()` })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  public async deleteTicketType(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
+    const db = trx || (BaseRepository as any)['_db'];
+    const res = await db
+      .deleteFrom('event_ticket_types')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .executeTakeFirst();
+    return Number(res.numDeletedRows || 0) > 0;
+  }
+
+  public async getRegistrationsForEvent(input: { tenant_id: string; event_id: string }, trx?: Transaction<Models>) {
+    const db = trx || (BaseRepository as any)['_db'];
+    return db
+      .selectFrom('event_registrations')
+      .innerJoin('persons', 'persons.id', 'event_registrations.person_id')
+      .leftJoin('event_ticket_types', 'event_ticket_types.id', 'event_registrations.ticket_type_id')
+      .select([
+        'event_registrations.id',
+        'event_registrations.event_id',
+        'event_registrations.person_id',
+        'event_registrations.ticket_type_id',
+        'event_registrations.status',
+        'event_registrations.checked_in_at',
+        'event_registrations.notes',
+        'event_registrations.created_at',
+        'event_registrations.updated_at',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'event_ticket_types.name as ticket_type_name',
+        'event_ticket_types.price_cents as ticket_price_cents',
+      ])
+      .where('event_registrations.tenant_id', '=', input.tenant_id)
+      .where('event_registrations.event_id', '=', input.event_id)
+      .orderBy('persons.last_name', 'asc')
+      .execute();
+  }
+
+  public async addRegistration(
+    input: {
+      tenant_id: string;
+      event_id: string;
+      person_id: string;
+      ticket_type_id?: string | null;
+      status?: 'registered' | 'attended' | 'no_show' | 'cancelled';
+      notes?: string | null;
+      user_id: string;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const db = trx || (BaseRepository as any)['_db'];
+    return db
+      .insertInto('event_registrations')
+      .values({
+        tenant_id: input.tenant_id,
+        event_id: input.event_id,
+        person_id: input.person_id,
+        ticket_type_id: input.ticket_type_id ?? null,
+        status: input.status ?? 'registered',
+        notes: input.notes ?? null,
+        createdby_id: input.user_id,
+        updatedby_id: input.user_id,
+      })
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  public async updateRegistration(
+    input: {
+      tenant_id: string;
+      id: string;
+      row: {
+        ticket_type_id?: string | null;
+        status?: 'registered' | 'attended' | 'no_show' | 'cancelled';
+        checked_in_at?: Date | null;
+        notes?: string | null;
+      };
+      user_id: string;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const db = trx || (BaseRepository as any)['_db'];
+    return db
+      .updateTable('event_registrations')
+      .set({ ...input.row, updatedby_id: input.user_id, updated_at: sql`now()` })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  public async deleteRegistration(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
+    const db = trx || (BaseRepository as any)['_db'];
+    const res = await db
+      .deleteFrom('event_registrations')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('id', '=', input.id)
+      .executeTakeFirst();
+    return Number(res.numDeletedRows || 0) > 0;
+  }
+
+  public async getHistoryForPerson(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
+    const db = trx || (BaseRepository as any)['_db'];
+    return db
+      .selectFrom('event_registrations')
+      .innerJoin('events', 'events.id', 'event_registrations.event_id')
+      .leftJoin('event_ticket_types', 'event_ticket_types.id', 'event_registrations.ticket_type_id')
+      .select([
+        'event_registrations.id',
+        'event_registrations.event_id',
+        'event_registrations.status',
+        'event_registrations.checked_in_at',
+        'event_registrations.notes',
+        'event_registrations.created_at',
+        'events.name as event_name',
+        'events.start_time',
+        'events.end_time',
+        'events.location_address',
+        'event_ticket_types.name as ticket_type_name',
+      ])
+      .where('event_registrations.tenant_id', '=', input.tenant_id)
+      .where('event_registrations.person_id', '=', input.person_id)
+      .orderBy('events.start_time', 'desc')
+      .execute();
+  }
+
+  public async getEventStats(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
+    const db = trx || (BaseRepository as any)['_db'];
+    const result = await db
+      .selectFrom('event_registrations')
+      .select((eb: any) => [eb.fn.count('id').as('events_count')])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('person_id', '=', input.person_id)
+      .where('status', '=', 'attended')
+      .executeTakeFirst();
+    return { events_count: Number((result as any)?.events_count || 0) };
+  }
+}
