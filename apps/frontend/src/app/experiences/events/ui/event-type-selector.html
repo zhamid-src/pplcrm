@@ -1,0 +1,63 @@
+<div class="p-6 max-w-7xl mx-auto">
+  <div class="max-w-3xl mx-auto">
+    <div class="text-center mb-10 mt-6">
+      <h1 class="text-3xl font-bold tracking-tight text-base-content mb-2 flex items-center justify-center gap-2">
+        <pc-icon name="calendar" class="text-primary" [size]="8"></pc-icon>
+        Events
+      </h1>
+      <p class="text-base text-base-content/60 max-w-xl mx-auto">
+        Choose which type of event you want to manage.
+      </p>
+    </div>
+
+    <div class="grid gap-6">
+      <a
+        routerLink="shifts"
+        class="card bg-base-100 border border-base-300 shadow hover:shadow-md hover:border-primary/50 transition-all duration-300 cursor-pointer group p-6 flex flex-row items-center justify-between gap-6 no-underline"
+      >
+        <div class="flex items-center gap-5 flex-1">
+          <div
+            class="w-14 h-14 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-500 flex-shrink-0 transition-transform duration-300 group-hover:scale-110"
+          >
+            <pc-icon name="volunteer" [size]="7"></pc-icon>
+          </div>
+          <div class="flex-1">
+            <h3 class="font-bold text-lg text-base-content group-hover:text-primary transition-colors mb-1">
+              Volunteer Shifts
+            </h3>
+            <p class="text-sm text-base-content/60 font-light leading-relaxed">
+              Manage volunteer shifts, schedule events, and track attendance records.
+            </p>
+          </div>
+        </div>
+        <div class="text-base-content/30 group-hover:text-primary transition-colors pr-2">
+          <pc-icon name="chevron-right" [size]="5"></pc-icon>
+        </div>
+      </a>
+
+      <a
+        routerLink="pages"
+        class="card bg-base-100 border border-base-300 shadow hover:shadow-md hover:border-primary/50 transition-all duration-300 cursor-pointer group p-6 flex flex-row items-center justify-between gap-6 no-underline"
+      >
+        <div class="flex items-center gap-5 flex-1">
+          <div
+            class="w-14 h-14 rounded-xl bg-teal-500/10 flex items-center justify-center text-teal-500 flex-shrink-0 transition-transform duration-300 group-hover:scale-110"
+          >
+            <pc-icon name="file-calendar" [size]="7"></pc-icon>
+          </div>
+          <div class="flex-1">
+            <h3 class="font-bold text-lg text-base-content group-hover:text-primary transition-colors mb-1">
+              Event Pages
+            </h3>
+            <p class="text-sm text-base-content/60 font-light leading-relaxed">
+              Manage public event pages with RSVP and ticketing for fundraisers, town halls, and meet-and-greets.
+            </p>
+          </div>
+        </div>
+        <div class="text-base-content/30 group-hover:text-primary transition-colors pr-2">
+          <pc-icon name="chevron-right" [size]="5"></pc-icon>
+        </div>
+      </a>
+    </div>
+  </div>
+</div>

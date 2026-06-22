@@ -1,0 +1,307 @@
+<div class="p-6 max-w-5xl mx-auto space-y-6">
+  @if (error() && !detail() && !isNew()) {
+  <div class="alert alert-error m-4">
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!isNew() && !detail()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Loading event details...</p>
+  </div>
+  } @else {
+  <div class="space-y-6">
+    <pc-detail-header
+      [title]="isNew() ? 'Create Event Page' : detail()?.name"
+      [subtitle]="isNew() ? 'Create a public event page for RSVPs and ticketing.' : 'Manage event settings and ticket types.'"
+      icon="calendar"
+      [form]="form"
+      [isLoading]="saving()"
+      [disabled]="slugChecking() || slugUnique() === false"
+      buttonsToShow="two"
+      [btn1Text]="isNew() ? 'Create Event' : 'Save Event'"
+      [showDelete]="!isNew()"
+      deleteText="Delete Event"
+      (save)="save($event)"
+      (delete)="deleteEvent()"
+    ></pc-detail-header>
+
+    @if (error()) {
+    <div class="alert alert-error shadow-sm py-3 text-sm">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
+      <!-- Left 2 cols: Main details -->
+      <div class="md:col-span-2 space-y-6">
+        <pc-card title="Event Details">
+          <pc-input
+            id="event-name"
+            label="Event Name *"
+            [formField]="form.name"
+            placeholder="E.g., Annual Fundraising Dinner"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="event-slug"
+              label="URL Slug *"
+              [formField]="form.slug"
+              placeholder="e.g. annual-fundraising-dinner"
+              [hasError]="slugUnique() === false"
+              (input)="onSlugInput()"
+            >
+              <span pc-prefix class="text-xs text-base-content/50 font-mono">/events/</span>
+            </pc-input>
+            @if (slugChecking()) {
+            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
+              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
+            </p>
+            } @else if (slugUnique() === true) {
+            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
+            } @else if (slugUnique() === false) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
+            }
+          </div>
+
+          <pc-textarea
+            id="event-desc"
+            label="Description"
+            [formField]="form.description"
+            placeholder="Describe the event, agenda, and what attendees can expect..."
+            [rows]="4"
+          ></pc-textarea>
+
+          <pc-input
+            id="event-location"
+            label="Location Address"
+            [formField]="form.location_address"
+            placeholder="E.g., 123 Main St, City Hall Ballroom"
+          ></pc-input>
+
+          <div class="divider"></div>
+
+          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
+            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
+            Organizer Contact
+          </h4>
+          <p class="text-xs text-base-content/60">Contact info for attendees who have questions about this event.</p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <pc-input
+              id="contact-email"
+              label="Contact Email"
+              type="email"
+              [formField]="form.contact_email"
+              placeholder="organizer@example.com"
+            ></pc-input>
+            <pc-input
+              id="contact-phone"
+              label="Contact Phone"
+              [formField]="form.contact_phone"
+              placeholder="E.g., 555-0199"
+            ></pc-input>
+          </div>
+        </pc-card>
+
+        <!-- Ticket Types (only for existing events) -->
+        @if (!isNew()) {
+        <pc-card
+          title="Ticket Types"
+          subtitle="Define ticket tiers for this event. Leave empty for a free, unticketed RSVP."
+          icon="tag"
+        >
+          <button
+            pc-card-actions
+            type="button"
+            class="btn btn-xs btn-primary gap-1"
+            (click)="startAddTicket()"
+            [disabled]="addingTicket()"
+          >
+            <pc-icon name="plus" [size]="3"></pc-icon> Add Ticket Type
+          </button>
+
+          @if (ticketTypes().length === 0 && !addingTicket()) {
+          <p class="text-sm text-base-content/40 italic">No ticket types defined — this event uses a simple free RSVP.</p>
+          } @else {
+          <div class="overflow-x-auto border border-base-300 rounded-lg">
+            <table class="table table-sm w-full text-xs">
+              <thead>
+                <tr class="bg-base-200 text-base-content/70">
+                  <th>Name</th>
+                  <th>Price</th>
+                  <th>Capacity</th>
+                  <th class="w-16 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-base-200">
+                @for (ticket of ticketTypes(); track ticket.id) {
+                <tr class="hover:bg-base-200/40">
+                  <td>
+                    <div class="font-semibold">{{ ticket.name }}</div>
+                    @if (ticket.description) {
+                    <div class="text-[10px] text-base-content/50 mt-0.5">{{ ticket.description }}</div>
+                    }
+                  </td>
+                  <td class="font-mono">{{ formatPrice(ticket.price_cents) }}</td>
+                  <td>{{ ticket.capacity ?? 'Unlimited' }}</td>
+                  <td>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs text-error"
+                      (click)="deleteTicketType(ticket.id)"
+                    >
+                      <pc-icon name="trash" [size]="4"></pc-icon>
+                    </button>
+                  </td>
+                </tr>
+                }
+
+                @if (addingTicket()) {
+                <tr class="bg-base-200/30">
+                  <td>
+                    <input
+                      type="text"
+                      class="input input-bordered input-xs w-full"
+                      placeholder="Ticket name *"
+                      [ngModel]="newTicket().name"
+                      (ngModelChange)="newTicket.update(t => ({ ...t, name: $event }))"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-20 font-mono"
+                      placeholder="0"
+                      min="0"
+                      step="1"
+                      title="Price in cents (e.g. 2500 = $25.00)"
+                      [ngModel]="newTicket().price_cents"
+                      (ngModelChange)="newTicket.update(t => ({ ...t, price_cents: +$event }))"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                    <span class="text-[10px] text-base-content/40 ml-1">cents</span>
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-20 font-mono"
+                      placeholder="∞"
+                      min="1"
+                      [ngModel]="newTicket().capacity"
+                      (ngModelChange)="newTicket.update(t => ({ ...t, capacity: $event ? +$event : null }))"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <td>
+                    <div class="flex items-center gap-1">
+                      <button type="button" class="btn btn-ghost btn-xs text-success" (click)="saveNewTicket()">
+                        <pc-icon name="check-circle" [size]="4"></pc-icon>
+                      </button>
+                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="cancelAddTicket()">
+                        <pc-icon name="x-mark" [size]="4"></pc-icon>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          }
+        </pc-card>
+        }
+      </div>
+
+      <!-- Right col: Scheduling, toggles -->
+      <div class="space-y-6">
+        <pc-card title="Scheduling">
+          <pc-input
+            id="start-time"
+            label="Start Date & Time *"
+            type="datetime-local"
+            [formField]="form.start_time"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="end-time"
+              label="End Date & Time *"
+              type="datetime-local"
+              [formField]="form.end_time"
+              [hasError]="endBeforeStartError()"
+            ></pc-input>
+            @if (endBeforeStartError()) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
+            }
+          </div>
+
+          <pc-input
+            id="capacity"
+            label="Total Capacity"
+            type="number"
+            [formField]="form.capacity"
+            placeholder="Unlimited"
+          ></pc-input>
+        </pc-card>
+
+        <pc-card title="Publishing & Notifications">
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Published</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  When enabled, this event page is visible to the public.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_published" />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Registration Confirmation</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send a confirmation email when someone RSVPs for this event.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_registration_confirmation"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send 24h Reminder</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send automated reminder emails to registered attendees 24 hours before the event.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
+            </label>
+          </div>
+        </pc-card>
+
+        @if (!isNew()) {
+        <pc-entity-overview
+          title="Event Overview"
+          [createdAt]="detail()?.created_at"
+          createdBy="Representative"
+        ></pc-entity-overview>
+        }
+      </div>
+    </form>
+  </div>
+  }
+</div>
