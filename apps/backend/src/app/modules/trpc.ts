@@ -25,6 +25,7 @@ import { WorkflowsRouter } from './workflows/trpc.router';
 import { DonationsRouter } from './donations/trpc.router';
 import { ExportsRouter } from './exports/trpc.router';
 import { UsersRouter } from './users/trpc.router';
+import { EventsRouter } from './events/trpc.router';
 
 export type TRPCRouter = typeof trpcRouter;
 
@@ -56,6 +57,7 @@ export const trpcRouter = router({
   workflows: WorkflowsRouter,
   exports: ExportsRouter,
   users: UsersRouter,
+  events: EventsRouter,
 });
 
 // Re-export individual routers for convenience.
@@ -105,3 +107,4 @@ export { DonationsRouter } from './donations/trpc.router';
 export { WorkflowsRouter } from './workflows/trpc.router';
 export { ExportsRouter } from './exports/trpc.router';
 export { UsersRouter } from './users/trpc.router';
+export { EventsRouter } from './events/trpc.router';

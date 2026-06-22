@@ -76,6 +76,9 @@ export interface Models {
   notifications: Notifications;
   volunteer_events: VolunteerEvents;
   volunteer_shifts: VolunteerShifts;
+  events: Events;
+  event_ticket_types: EventTicketTypes;
+  event_registrations: EventRegistrations;
   web_forms: WebForms;
   background_jobs: BackgroundJobs;
   webhook_events: WebhookEvents;
@@ -727,6 +730,39 @@ export interface VolunteerShifts extends RecordType {
   person_id: string;
   status: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
   hours_worked: number | null;
+  notes: string | null;
+}
+
+export interface Events extends RecordType {
+  name: string;
+  description: string | null;
+  location_address: string | null;
+  start_time: Timestamp;
+  end_time: Timestamp;
+  capacity: number | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  slug: string;
+  is_published: Generated<boolean>;
+  send_reminder: Generated<boolean>;
+  send_registration_confirmation: Generated<boolean>;
+}
+
+export interface EventTicketTypes extends RecordType {
+  event_id: string;
+  name: string;
+  description: string | null;
+  price_cents: Generated<number>;
+  capacity: number | null;
+  sort_order: Generated<number>;
+}
+
+export interface EventRegistrations extends RecordType {
+  event_id: string;
+  person_id: string;
+  ticket_type_id: string | null;
+  status: Generated<'registered' | 'attended' | 'no_show' | 'cancelled'>;
+  checked_in_at: Timestamp | null;
   notes: string | null;
 }
 
