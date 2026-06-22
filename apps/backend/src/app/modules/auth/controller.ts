@@ -505,7 +505,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (user.tenant_id) {
       const tenant = await this.getRepo()
         .db.selectFrom('tenants')
-        .select(['suspended_at', 'deletion_scheduled_at'])
+        .select('suspended_at')
         .where('id', '=', user.tenant_id as any)
         .executeTakeFirst();
 
@@ -575,6 +575,20 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       });
     }
 
+    if (user.tenant_id) {
+      const tenant = await this.getRepo()
+        .db.selectFrom('tenants')
+        .select('suspended_at')
+        .where('id', '=', user.tenant_id as any)
+        .executeTakeFirst();
+
+      if (tenant?.suspended_at) {
+        throw new ForbiddenError(
+          'This account has been suspended. Please contact support if you believe this is an error.',
+        );
+      }
+    }
+
     return this.createTokens({
       user_id: String(user.id),
       tenant_id: String(user.tenant_id),
@@ -599,18 +613,21 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         .execute();
 
       await this.ensureAtLeastOneOwner(auth.tenant_id, trx, false, String(authUser.id));
-    });
 
-    await this.mailService.sendMail({
-      to: authUser.email,
-      tenant_id: auth.tenant_id,
-      subject: 'Security Alert: Account Scheduled for Deletion',
-      text: `Hi ${authUser.first_name},\n\nYour account has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nIf this was a mistake, you can cancel the deletion at any time before this date by logging back in.`,
-      html: `<h2>Account Scheduled for Deletion</h2>
+      await this.mailService.enqueueMail(
+        {
+          to: authUser.email,
+          tenant_id: auth.tenant_id,
+          subject: 'Security Alert: Account Scheduled for Deletion',
+          text: `Hi ${authUser.first_name},\n\nYour account has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nIf this was a mistake, you can cancel the deletion at any time before this date by logging back in.`,
+          html: `<h2>Account Scheduled for Deletion</h2>
 <p>Hi ${authUser.first_name},</p>
 <p>As requested, your CampaignRaven account has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
 <p>All of your data will be permanently removed. If you change your mind, you can cancel this request at any time before the deletion date by simply logging back in.</p>
 <p class="warning">If you did not make this request, please log in immediately to cancel the deletion and secure your account.</p>`,
+        },
+        trx,
+      );
     });
 
     return { success: true, deletion_scheduled_at: deletionDate };
@@ -622,19 +639,26 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const authUser = user as AuthUsersType;
 
     await this.getRepo()
-      .db.updateTable('authusers')
-      .set({ deletion_scheduled_at: null })
-      .where('id', '=', authUser.id)
-      .execute();
+      .transaction()
+      .execute(async (trx) => {
+        await trx
+          .updateTable('authusers')
+          .set({ deletion_scheduled_at: null })
+          .where('id', '=', authUser.id)
+          .execute();
 
-    await this.mailService.sendMail({
-      to: authUser.email,
-      tenant_id: auth.tenant_id,
-      subject: 'CampaignRaven - Account Deletion Canceled',
-      text: `Your request to delete your account has been successfully canceled, and your account is fully restored.`,
-      html: `<h2>Account Deletion Canceled</h2>
+        await this.mailService.enqueueMail(
+          {
+            to: authUser.email,
+            tenant_id: auth.tenant_id,
+            subject: 'Account Deletion Canceled',
+            text: `Your request to delete your account has been successfully canceled, and your account is fully restored.`,
+            html: `<h2>Account Deletion Canceled</h2>
 <p>Your request to delete your account has been successfully canceled, and your account is fully restored. Welcome back!</p>`,
-    });
+          },
+          trx,
+        );
+      });
 
     return { success: true };
   }
@@ -1598,6 +1622,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       .executeTakeFirst();
 
     const deletionDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const cancelToken = this.makeDeletionCancelToken(String(auth.tenant_id));
+    const cancelUrl = `${env.appUrl}/cancel-deletion?tid=${auth.tenant_id}&token=${cancelToken}`;
+    const deletionDateStr = deletionDate.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
 
     await db.transaction().execute(async (trx) => {
       await trx
@@ -1611,26 +1638,25 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         .deleteFrom('sessions')
         .where('tenant_id', '=', auth.tenant_id as any)
         .execute();
-    });
 
-    if (ownerEmail?.email) {
-      const cancelToken = this.makeDeletionCancelToken(String(auth.tenant_id));
-      const cancelUrl = `${env.appUrl}/cancel-deletion?tid=${auth.tenant_id}&token=${cancelToken}`;
-      const deletionDateStr = deletionDate.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
-
-      await this.mailService.sendMail({
-        to: ownerEmail.email,
-        tenant_id: String(auth.tenant_id),
-        subject: 'Your account is scheduled for deletion in 24 hours',
-        text: `Hi ${ownerEmail.first_name},\n\nYour organization account has been scheduled for permanent deletion. All data will be permanently removed on ${deletionDateStr}.\n\nChanged your mind? You have 24 hours to cancel:\n${cancelUrl}\n\nAfter that, all data will be permanently removed and cannot be recovered.`,
-        html: `<h2>Account Scheduled for Deletion</h2>
+      if (ownerEmail?.email) {
+        await this.mailService.enqueueMail(
+          {
+            to: ownerEmail.email,
+            tenant_id: String(auth.tenant_id),
+            subject: 'Your account is scheduled for deletion in 24 hours',
+            text: `Hi ${ownerEmail.first_name},\n\nYour organization account has been scheduled for permanent deletion. All data will be permanently removed on ${deletionDateStr}.\n\nChanged your mind? You have 24 hours to cancel:\n${cancelUrl}\n\nAfter that, all data will be permanently removed and cannot be recovered.`,
+            html: `<h2>Account Scheduled for Deletion</h2>
 <p>Hi ${ownerEmail.first_name},</p>
 <p>Your organization account has been scheduled for permanent deletion on <strong>${deletionDateStr}</strong>. All data associated with your account — contacts, emails, campaigns, and everything else — will be permanently and irreversibly removed.</p>
 <p><strong>Changed your mind?</strong> You have 24 hours to cancel this request:</p>
 <p><a href="${cancelUrl}" style="display:inline-block;padding:10px 20px;background:#4f46e5;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Cancel Account Deletion</a></p>
 <p class="warning">After the 24-hour window, all data will be permanently deleted and cannot be recovered.</p>`,
-      });
-    }
+          },
+          trx,
+        );
+      }
+    });
 
     return { success: true };
   }
@@ -1650,6 +1676,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     if (!tenant) throw new NotFoundError('Tenant not found');
     if (!tenant.deletion_scheduled_at) throw new BadRequestError('No deletion is scheduled for this account.');
+    if (new Date(tenant.deletion_scheduled_at as any) <= new Date()) {
+      throw new BadRequestError('The deletion window has already passed and data has been removed.');
+    }
 
     const ownerEmail = await db
       .selectFrom('authusers')
@@ -1747,11 +1776,19 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       .where('role', '=', 'owner')
       .executeTakeFirst();
 
-    await db
-      .updateTable('tenants')
-      .set({ suspended_at: new Date() })
-      .where('id', '=', auth.tenant_id as any)
-      .execute();
+    await db.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('tenants')
+        .set({ suspended_at: new Date() })
+        .where('id', '=', auth.tenant_id as any)
+        .execute();
+
+      // Sign out all users immediately so the suspension takes effect for active sessions
+      await trx
+        .deleteFrom('sessions')
+        .where('tenant_id', '=', auth.tenant_id as any)
+        .execute();
+    });
 
     if (ownerEmail?.email) {
       await this.mailService.sendMail({
