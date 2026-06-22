@@ -238,6 +238,7 @@ ${
 
   protected async deleteForm() {
     if (!this.id()) return;
+    const backRoute: string = this.route.snapshot.data['backRoute'] ?? '/forms';
     const confirmed = await this.dialogs.confirm({
       title: 'Delete Web Form',
       message: 'Are you sure you want to delete this web form? This action cannot be undone.',
@@ -250,7 +251,7 @@ ${
       await this.formsSvc.delete(this.id());
       this.formsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Web form deleted');
-      await this.router.navigate(['/forms']);
+      await this.router.navigate([backRoute]);
     } catch (err: any) {
       const message = err?.message || err?.data?.message || 'Unable to delete web form';
       this.alertSvc.showError(message);

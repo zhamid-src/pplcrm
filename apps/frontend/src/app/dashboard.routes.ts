@@ -184,8 +184,8 @@ export const dashboardRoutes: Routes = [
     children: [
       {
         path: '',
-        loadComponent: () =>
-          import('./experiences/events/ui/event-type-selector').then((m) => m.EventTypeSelectorComponent),
+        redirectTo: 'pages',
+        pathMatch: 'full',
       },
       {
         path: 'shifts',
@@ -375,6 +375,33 @@ export const dashboardRoutes: Routes = [
       },
     ],
   },
+  {
+    path: 'donation-pages',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/forms/ui/donation-pages-grid').then((m) => m.DonationPagesGridComponent),
+        data: { shouldReuse: true, key: 'donationpagesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/forms/ui/donation-page-detail').then((m) => m.DonationPageDetailComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
+        data: { backRoute: '/donation-pages' },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () =>
+          import('./experiences/forms/ui/donation-page-detail').then((m) => m.DonationPageDetailComponent),
+      },
+    ],
+  },
+
   {
     path: 'settings',
     children: [

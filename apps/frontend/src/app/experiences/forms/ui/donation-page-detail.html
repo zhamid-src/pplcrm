@@ -1,0 +1,428 @@
+<div class="flex h-full flex-col bg-base-100">
+  <!-- Header -->
+  <header class="flex items-center justify-between border-b border-base-200 px-6 py-4">
+    <h1 class="text-xl font-bold flex items-center gap-2">
+      <pc-icon name="currency-dollar" [size]="5" class="text-primary"></pc-icon>
+      {{ isNew() ? 'Create Donation Page' : 'Edit Donation Page' }}
+    </h1>
+    <pc-form-actions
+      [isLoading]="saving()"
+      [signalForm]="form"
+      (btn1Clicked)="save($event)"
+      [buttonsToShow]="'two'"
+      [btn1Text]="isNew() ? 'Create Donation Page' : 'Save Donation Page'"
+      [showDelete]="!isNew()"
+      [deleteText]="'Delete Donation Page'"
+      (deleteClicked)="deleteForm()"
+    ></pc-form-actions>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
+    @if (!isInitialized()) {
+    <div class="mx-auto max-w-4xl space-y-4">
+      <div class="skeleton h-8 w-1/3"></div>
+      <div class="skeleton h-12 w-full"></div>
+      <div class="skeleton h-12 w-full"></div>
+      <div class="skeleton h-24 w-full"></div>
+    </div>
+    } @else {
+
+    @if (!hasStripeKey()) {
+    <div class="mx-auto max-w-5xl mb-6">
+      <div class="alert alert-warning shadow-sm">
+        <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+        <div>
+          <span class="font-bold">Stripe Keys Required</span>
+          <p class="text-sm mt-0.5">
+            Donation pages require Stripe to process payments.
+            <a href="/configuration/donations" class="link link-primary font-bold">Configure Stripe</a>
+          </p>
+        </div>
+      </div>
+    </div>
+    }
+
+    @if (error()) {
+    <div class="mx-auto max-w-5xl mb-6">
+      <div class="alert alert-error shadow-sm">
+        <pc-icon name="shield-exclamation" [size]="6"></pc-icon>
+        <span>{{ error() }}</span>
+      </div>
+    </div>
+    }
+
+    <div class="mx-auto max-w-5xl">
+      <div class="grid gap-8 md:grid-cols-12">
+        <!-- Left Column: Page Configuration -->
+        <div class="space-y-6 md:col-span-7">
+          <form (submit)="save($event)">
+            <pc-card title="Page Settings">
+
+              <!-- Donation Type -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Donation Type</label>
+                @if (isNew()) {
+                <div class="flex gap-6">
+                  <label class="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="donationType"
+                      class="radio radio-success radio-sm"
+                      [checked]="!isRecurring()"
+                      (change)="setType('donation')"
+                    />
+                    <div>
+                      <span class="text-sm font-semibold">One-Time</span>
+                      <p class="text-[11px] text-base-content/50">Single donation via Stripe Checkout</p>
+                    </div>
+                  </label>
+                  <label class="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="donationType"
+                      class="radio radio-primary radio-sm"
+                      [checked]="isRecurring()"
+                      (change)="setType('recurring_donation')"
+                    />
+                    <div>
+                      <span class="text-sm font-semibold">Recurring</span>
+                      <p class="text-[11px] text-base-content/50">Monthly pledge via Stripe Subscription</p>
+                    </div>
+                  </label>
+                </div>
+                } @else {
+                <div class="flex items-center gap-2 px-3 py-2 bg-base-200/50 rounded-lg border border-base-200">
+                  @if (isRecurring()) {
+                  <pc-icon name="arrow-path" class="text-primary" [size]="5"></pc-icon>
+                  <span class="font-medium text-sm">Recurring (Monthly Pledge)</span>
+                  } @else {
+                  <pc-icon name="currency-dollar" class="text-success" [size]="5"></pc-icon>
+                  <span class="font-medium text-sm">One-Time Donation</span>
+                  }
+                </div>
+                <p class="text-[10px] text-base-content/50 mt-1">Donation type cannot be changed after creation.</p>
+                }
+              </div>
+
+              <!-- Name -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Page Name *</label>
+                <input
+                  type="text"
+                  [formField]="form.name"
+                  class="input input-bordered w-full"
+                  placeholder="E.g., Spring Fundraiser"
+                  [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
+                />
+                @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
+                form.name().errors(); track err) {
+                <p class="mt-1 text-xs text-error">{{ err.message }}</p>
+                } }
+              </div>
+
+              <!-- Description -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Description</label>
+                <textarea
+                  [formField]="form.description"
+                  class="textarea textarea-bordered w-full"
+                  rows="2"
+                  placeholder="Internal note about this donation page..."
+                ></textarea>
+              </div>
+
+              <!-- Redirect URL -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1 flex items-center justify-between">
+                  <span>Redirect URL (After Submit)</span>
+                  <span class="text-[10px] text-base-content/50 font-normal">Optional</span>
+                </label>
+                <input
+                  type="url"
+                  [formField]="form.redirect_url"
+                  class="input input-bordered w-full"
+                  placeholder="https://mywebsite.com/thank-you"
+                  [class.input-error]="form.redirect_url().invalid() && (form.redirect_url().dirty() || form.redirect_url().touched())"
+                />
+                <p class="mt-1 text-[11px] text-base-content/50">
+                  If blank, users will see the PeopleCRM default success page.
+                </p>
+              </div>
+
+              <!-- Status -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Status</label>
+                <select [formField]="form.status" class="select select-bordered w-full">
+                  <option value="active">Active</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <!-- Send Confirmation Email Toggle -->
+              <div class="form-control">
+                <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+                  <div class="flex-1 min-w-0">
+                    <span class="label-text font-bold text-sm whitespace-normal">Send Submission Confirmation</span>
+                    <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                      Send a thank-you confirmation email to donors when they complete their donation.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    [formField]="form.send_confirmation"
+                    class="toggle toggle-primary mt-1 shrink-0"
+                  />
+                </label>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <!-- Send Lead Notification Email Toggle -->
+              <div class="form-control">
+                <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+                  <div class="flex-1 min-w-0">
+                    <span class="label-text font-bold text-sm whitespace-normal">Send New Donor Notification</span>
+                    <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                      Send email alert notifications to organization admins when a new donation is received.
+                    </p>
+                  </div>
+                  <input type="checkbox" [formField]="form.send_alert" class="toggle toggle-primary mt-1 shrink-0" />
+                </label>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <!-- Form Fields (donation forms have fixed required fields) -->
+              <div class="form-control">
+                <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60 mb-3">Form Fields</h2>
+                <div
+                  class="space-y-2 bg-base-200/30 rounded-xl p-4 border border-base-200 text-xs text-base-content/70"
+                >
+                  <p class="font-bold text-primary flex items-center gap-1">
+                    <pc-icon name="information-circle" [size]="4"></pc-icon>
+                    Donation pages always collect:
+                  </p>
+                  <ul class="list-disc list-inside space-y-1 pl-1 font-semibold text-base-content/85">
+                    <li>{{ isRecurring() ? 'Monthly Pledge Amount ($)' : 'Donation Amount ($ CAD)' }}</li>
+                    <li>First Name & Last Name</li>
+                    <li>Email Address</li>
+                    <li>Street Address, City, State / Province, Zip / Postal Code, Country</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60">
+                Target Audience Actions
+              </h2>
+
+              <!-- Lists mapping -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Add donors to Lists</label>
+                @if (!availableLists().length) {
+                <p class="text-xs text-base-content/60 italic">No lists created yet.</p>
+                } @else {
+                <select class="select select-bordered select-sm w-full" (change)="handleListSelect($event)">
+                  <option value="">Select a list to target</option>
+                  @for (list of availableLists(); track list.id) {
+                  <option [value]="list.id" [disabled]="selectedLists().includes(list.id)">{{ list.name }}</option>
+                  }
+                </select>
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                  @if (!selectedLists().length) {
+                  <span class="text-[11px] text-base-content/50">No lists selected.</span>
+                  } @else { @for (listId of selectedLists(); track listId) {
+                  <pc-tagitem [name]="listName(listId)" (close)="removeList(listId)"></pc-tagitem>
+                  } }
+                </div>
+                }
+              </div>
+
+              <!-- Tags mapping -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Apply Tags to donors</label>
+                <div class="rounded border border-base-200 bg-base-50 p-2">
+                  <pc-tags
+                    [tags]="selectedTags()"
+                    [enableAutoComplete]="true"
+                    placeholder="Add tag"
+                    (tagsChange)="handleTagsChange($event)"
+                  ></pc-tags>
+                </div>
+                <p class="mt-1 text-[11px] text-base-content/50">
+                  A system tag <code class="badge badge-sm badge-neutral">Source: [Page Name]</code> will be applied
+                  automatically. The system tag
+                  <code class="badge badge-sm badge-success text-success-content">Donor</code> will also be applied to
+                  all submissions.
+                </p>
+              </div>
+            </pc-card>
+          </form>
+        </div>
+
+        <!-- Right Column: Preview & Snippet -->
+        <div class="space-y-6 md:col-span-5">
+          <!-- Live Form Preview -->
+          <pc-card
+            title="Live Form Preview"
+            subtitle="Real-time preview of the donation page layout."
+            icon="eye"
+          >
+            <div class="rounded-2xl border border-base-200 bg-base-200/30 p-6 mt-1 relative">
+              <div class="text-center mb-6">
+                <h4
+                  class="text-lg font-bold bg-gradient-to-br from-base-content to-base-content/75 bg-clip-text text-transparent"
+                >
+                  {{ payload().name || 'Untitled Donation Page' }}
+                </h4>
+                <p class="text-xs text-base-content/60 mt-1 whitespace-pre-wrap">
+                  {{ payload().description || 'Enter a description to see it here.' }}
+                </p>
+              </div>
+
+              <div class="space-y-4">
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">
+                    {{ isRecurring() ? 'Monthly Pledge Amount ($) *' : 'Donation Amount ($ CAD) *' }}
+                  </label>
+                  <input type="number" class="input input-bordered input-sm w-full" placeholder="E.g. 50" disabled />
+                </div>
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">First Name *</label>
+                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. John" disabled />
+                </div>
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">Last Name *</label>
+                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. Doe" disabled />
+                </div>
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">Email Address *</label>
+                  <input
+                    type="email"
+                    class="input input-bordered input-sm w-full"
+                    placeholder="john@example.com"
+                    disabled
+                  />
+                </div>
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">Street Address *</label>
+                  <input
+                    type="text"
+                    class="input input-bordered input-sm w-full"
+                    placeholder="E.g. 123 Main St"
+                    disabled
+                  />
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="form-control">
+                    <label class="label text-[11px] font-semibold py-0.5">City *</label>
+                    <input type="text" class="input input-bordered input-sm w-full" disabled />
+                  </div>
+                  <div class="form-control">
+                    <label class="label text-[11px] font-semibold py-0.5">Zip / Postal *</label>
+                    <input type="text" class="input input-bordered input-sm w-full" disabled />
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="form-control">
+                    <label class="label text-[11px] font-semibold py-0.5">State / Province *</label>
+                    <input type="text" class="input input-bordered input-sm w-full" disabled />
+                  </div>
+                  <div class="form-control">
+                    <label class="label text-[11px] font-semibold py-0.5">Country *</label>
+                    <input type="text" class="input input-bordered input-sm w-full" disabled />
+                  </div>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm w-full mt-2" disabled>
+                  {{ isRecurring() ? 'Start Monthly Pledge' : 'Donate Now' }}
+                </button>
+              </div>
+            </div>
+          </pc-card>
+
+          @if (isNew()) {
+          <div class="card bg-base-200 border border-base-300 text-center">
+            <div class="card-body items-center py-12">
+              <pc-icon name="currency-dollar" [size]="12" class="text-base-content/40 mb-3"></pc-icon>
+              <h3 class="font-bold text-lg">Snippet Generator</h3>
+              <p class="text-sm text-base-content/60 max-w-sm mt-1">
+                Once you save the page, we will generate the copy-paste HTML snippet you can embed on your website.
+              </p>
+            </div>
+          </div>
+          } @else {
+          <pc-card title="HTML Embed Snippet" subtitle="Deploy this donation page on your external website.">
+            <button pc-card-actions class="btn btn-sm btn-outline btn-primary" (click)="copySnippet()">
+              <pc-icon name="document-duplicate" class="mr-1"></pc-icon>
+              Copy
+            </button>
+
+            <div class="form-control">
+              <label class="label text-xs font-semibold py-1">Public Form ID</label>
+              <code class="badge badge-neutral font-mono select-all p-3 text-xs w-full justify-start h-auto break-all">
+                {{ formId() }}
+              </code>
+            </div>
+
+            <div class="form-control">
+              <label class="label text-xs font-semibold py-1">Public Landing Page URL</label>
+              <div class="flex gap-2">
+                <input
+                  type="text"
+                  [value]="formUrl()"
+                  readonly
+                  class="input input-bordered input-sm flex-1 font-mono text-xs"
+                />
+                <a
+                  [href]="formUrl()"
+                  target="_blank"
+                  class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
+                  title="Open landing page"
+                >
+                  <pc-icon name="arrow-top-right-on-square"></pc-icon>
+                </a>
+                <button
+                  class="btn btn-sm btn-outline btn-primary px-3"
+                  (click)="copyUrl()"
+                  title="Copy landing page URL"
+                >
+                  <pc-icon name="document-duplicate"></pc-icon>
+                </button>
+              </div>
+            </div>
+
+            <div class="form-control">
+              <label class="label text-xs font-semibold py-1">HTML Code</label>
+              <pre
+                class="bg-neutral text-neutral-content p-4 rounded-xl text-[11px] font-mono max-h-72 overflow-y-auto select-all leading-normal"
+              >
+{{ embedSnippet() }}
+              </pre>
+            </div>
+
+            <div class="divider my-1"></div>
+
+            <div class="rounded-lg bg-base-50 p-4 border border-base-200">
+              <h4
+                class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5 mb-2"
+              >
+                <pc-icon name="check-circle" class="text-success"></pc-icon>
+                Spam & BOT Protection Included
+              </h4>
+              <p class="text-[11px] text-base-content/60 leading-normal">
+                The generated snippet includes a hidden <strong>honeypot field</strong> (<code>name="_hp"</code>) to
+                silently reject spam bots.
+              </p>
+            </div>
+          </pc-card>
+          }
+        </div>
+      </div>
+    </div>
+    }
+  </main>
+</div>
