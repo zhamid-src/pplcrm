@@ -186,6 +186,7 @@ export const icons = {
   'view-column': 'assets/icons/view-column.svg',
   'view-kanban': 'assets/icons/view-kanban.svg',
   volunteer: 'assets/icons/volunteer.svg',
+  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
   'x-circle': 'assets/icons/x-circle.svg',
   x: 'assets/icons/x.svg',
   'x-mark': 'assets/icons/x-mark.svg',
