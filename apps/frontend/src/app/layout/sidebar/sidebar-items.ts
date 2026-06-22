@@ -24,7 +24,7 @@ export const SidebarItems: ISidebarItem[] = [
     hidden: true,
   },
   {
-    name: `Summary`,
+    name: `Dashboard`,
     route: '/summary',
     icon: 'presentation-chart-line',
     pathMatchExact: true,
@@ -36,8 +36,7 @@ export const SidebarItems: ISidebarItem[] = [
     hidden: true,
   },
   {
-    name: `CONSTITUENCY`,
-    short_name: 'DATA',
+    name: `CRM`,
     type: 'subheading',
     children: [
       {
@@ -54,16 +53,6 @@ export const SidebarItems: ISidebarItem[] = [
         name: `Companies`,
         route: '/companies',
         icon: 'briefcase',
-      },
-      {
-        name: `Duplicates`,
-        route: '/duplicates',
-        icon: 'document-duplicate',
-      },
-      {
-        name: 'Forms',
-        route: '/forms',
-        icon: 'clipboard-document-list',
       },
     ],
   },
@@ -82,32 +71,38 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'megaphone',
       },
       {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
+        name: 'Events',
+        route: '/events',
+        icon: 'calendar',
       },
+
       {
         name: 'Lists',
         route: '/lists',
         icon: 'queue-list',
       },
-
-      {
-        name: 'Workflows',
-        route: '/workflows',
-        icon: 'cog',
-      },
     ],
   },
   {
-    name: `OUTREACH`,
+    name: 'FUNDRAISING',
     type: 'subheading',
     children: [
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+      },
       {
         name: 'Donors',
         route: '/donors',
         icon: 'document-currency-dollar',
       },
+    ],
+  },
+  {
+    name: `PROGRAMS`,
+    type: 'subheading',
+    children: [
       {
         name: 'Volunteers',
         route: '/volunteers',
@@ -119,9 +114,9 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'user-group',
       },
       {
-        name: 'Events',
-        route: '/events',
-        icon: 'calendar',
+        name: 'Forms',
+        route: '/forms',
+        icon: 'clipboard-document-list',
       },
     ],
   },
@@ -131,14 +126,24 @@ export const SidebarItems: ISidebarItem[] = [
     collapsed: true,
     children: [
       {
-        name: `Tasks`,
+        name: `Task List`,
         route: '/tasks',
         icon: 'rectangle-stack',
       },
       {
-        name: `Board`,
+        name: `Task Board`,
         route: '/board',
         icon: 'view-kanban',
+      },
+      {
+        name: `Workflows`,
+        route: '/workflows',
+        icon: 'cog',
+      },
+      {
+        name: `Duplicates`,
+        route: '/duplicates',
+        icon: 'document-duplicate',
       },
       {
         name: 'Exports',
@@ -156,7 +161,7 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'document',
       },
       {
-        name: 'Activity',
+        name: 'Activity Log',
         route: '/activities',
         icon: 'clipboard-document-list',
       },
@@ -186,7 +191,7 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Configuration',
         route: '/configuration',
-        icon: 'cog-6-tooth',
+        icon: 'wrench-screwdriver',
       },
     ],
   },
