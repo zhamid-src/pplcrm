@@ -156,7 +156,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     };
 
     // Validate user-configured required fields for standard forms
-    if (form.form_type !== 'donation') {
+    if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
       const fieldLabels: Record<string, string> = {
         first_name: 'First Name',
         last_name: 'Last Name',
@@ -184,11 +184,12 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       }
     }
 
-    // Parse and validate donation fields if form is a donation form
+    // Parse and validate donation fields if form is a donation or recurring_donation form
     let amountCents = 0;
+    let monthlyAmountCents = 0;
     let country = '';
     let state = '';
-    if (form.form_type === 'donation') {
+    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
       const firstName = (payload['first_name'] || payload['firstName'] || '').trim();
       const lastName = (payload['last_name'] || payload['lastName'] || '').trim();
       if (!firstName || !lastName) {
@@ -212,16 +213,6 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         });
       }
 
-      const amountStr = payload['amount'] || payload['donation_amount'] || '';
-      const amountDollars = parseFloat(amountStr);
-      if (isNaN(amountDollars) || amountDollars <= 0) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'A valid donation amount is required.',
-        });
-      }
-      amountCents = Math.round(amountDollars * 100);
-
       // Check if email already exists to run eligibility checks
       const existing = await this.getRepo()
         .db.selectFrom('persons')
@@ -231,18 +222,43 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         .executeTakeFirst();
 
       const donationsController = new DonationsController();
-      const check = await donationsController.checkEligibility(
-        tenantId,
-        existing ? String(existing.id) : '0',
-        amountCents,
-        { country, state },
-      );
 
-      if (!check.eligible) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: check.reason,
-        });
+      if (form.form_type === 'donation') {
+        const amountStr = payload['amount'] || payload['donation_amount'] || '';
+        const amountDollars = parseFloat(amountStr);
+        if (isNaN(amountDollars) || amountDollars <= 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid donation amount is required.' });
+        }
+        amountCents = Math.round(amountDollars * 100);
+
+        const check = await donationsController.checkEligibility(
+          tenantId,
+          existing ? String(existing.id) : '0',
+          amountCents,
+          { country, state },
+        );
+        if (!check.eligible) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
+        }
+      } else {
+        // recurring_donation
+        const amountStr = payload['monthly_amount'] || payload['amount'] || '';
+        const amountDollars = parseFloat(amountStr);
+        if (isNaN(amountDollars) || amountDollars <= 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid monthly donation amount is required.' });
+        }
+        monthlyAmountCents = Math.round(amountDollars * 100);
+
+        const check = await donationsController.checkEligibility(
+          tenantId,
+          existing ? String(existing.id) : '0',
+          monthlyAmountCents,
+          { country, state },
+          { isRecurring: true },
+        );
+        if (!check.eligible) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
+        }
       }
     }
 
@@ -408,7 +424,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           : JSON.parse((form.target_tags as any) || '[]');
         const systemTagName = `source: ${form.name}`;
         const allTagsToApply = [...targetTags, systemTagName];
-        if (form.form_type === 'donation') {
+        if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
           allTagsToApply.push('donor');
         }
 
@@ -558,21 +574,31 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           .execute();
       });
 
-    // 7. If donation form, initialize checkout session after transactional writes commit
-    if (form.form_type === 'donation') {
+    // 7. If donation/recurring form, initialize checkout session after transactional writes commit
+    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
       const donationsController = new DonationsController();
       const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
       const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/view/${formId}?checkout_cancel=true`;
 
-      const checkoutSession = await donationsController.createCheckoutSession(
-        { tenant_id: tenantId, user_id: resolvedCreatorId },
-        resolvedPersonId,
-        amountCents,
-        { country, state },
-        { successUrl, cancelUrl },
-      );
-
-      return { redirect_url: checkoutSession.url };
+      if (form.form_type === 'donation') {
+        const checkoutSession = await donationsController.createCheckoutSession(
+          { tenant_id: tenantId, user_id: resolvedCreatorId },
+          resolvedPersonId,
+          amountCents,
+          { country, state },
+          { successUrl, cancelUrl },
+        );
+        return { redirect_url: checkoutSession.url };
+      } else {
+        const checkoutSession = await donationsController.createRecurringCheckoutSession(
+          { tenant_id: tenantId, user_id: resolvedCreatorId },
+          resolvedPersonId,
+          monthlyAmountCents,
+          { country, state },
+          { successUrl, cancelUrl },
+        );
+        return { redirect_url: checkoutSession.url };
+      }
     }
 
     return { redirect_url: form.redirect_url || null };

@@ -1,0 +1,109 @@
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
+import { RouterLink, RouterLinkActive } from '@angular/router';
+import { TitleCasePipe } from '@angular/common';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { DonationsService } from '../../../services/api/donations-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+@Component({
+  selector: 'pc-pledges-grid',
+  imports: [RouterLink, RouterLinkActive, TitleCasePipe, Icon, SpinOnClickDirective],
+  templateUrl: './pledges-grid.html',
+})
+export class PledgesGridComponent implements OnInit {
+  private readonly donationsSvc = inject(DonationsService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly pledges = signal<any[]>([]);
+  protected readonly _loading = createLoadingGate();
+  protected readonly cancelling = signal<string | null>(null);
+
+  protected readonly activePledgeCount = computed(() =>
+    this.pledges().filter((p) => p.status === 'active').length,
+  );
+
+  protected readonly totalMonthlyCommitted = computed(() =>
+    this.pledges()
+      .filter((p) => p.status === 'active')
+      .reduce((sum: number, p: any) => sum + Number(p.monthly_amount || 0), 0) / 100,
+  );
+
+  ngOnInit() {
+    void this.load();
+  }
+
+  protected refresh() {
+    void this.load();
+  }
+
+  protected async cancelPledge(pledge: any) {
+    const name = [pledge.person_first_name, pledge.person_last_name].filter(Boolean).join(' ') || pledge.person_email || 'this donor';
+    const confirmed = await this.dialogs.confirm({
+      title: `Cancel pledge for ${name}?`,
+      message: `This will stop the $${this.formatCurrency(pledge.monthly_amount)}/month recurring donation immediately. This cannot be undone.`,
+      confirmText: 'Cancel Pledge',
+      cancelText: 'Keep Pledge',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    this.cancelling.set(String(pledge.id));
+    try {
+      await this.donationsSvc.cancelPledge(String(pledge.id));
+      this.alertSvc.showSuccess('Pledge cancelled successfully.');
+      await this.load();
+    } catch (err: any) {
+      this.alertSvc.showError(err.message || 'Failed to cancel pledge.');
+    } finally {
+      this.cancelling.set(null);
+    }
+  }
+
+  protected formatCurrency(amountCents: number | null | undefined): string {
+    if (amountCents == null) return '$0.00';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amountCents / 100);
+  }
+
+  protected formatDate(dateStr: string | null | undefined): string {
+    if (!dateStr) return '—';
+    try {
+      return new Date(dateStr).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+    } catch {
+      return '';
+    }
+  }
+
+  protected toStr(val: any): string {
+    return String(val);
+  }
+
+  protected statusBadgeClass(status: string): string {
+    const map: Record<string, string> = {
+      active: 'badge-success',
+      past_due: 'badge-warning',
+      cancelled: 'badge-ghost',
+      unpaid: 'badge-error',
+    };
+    return map[status] ?? 'badge-neutral';
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    try {
+      const data = await this.donationsSvc.listPledges();
+      this.pledges.set(data || []);
+    } catch {
+      this.alertSvc.showError('Failed to load pledges. Please try again.');
+    } finally {
+      end();
+    }
+  }
+}

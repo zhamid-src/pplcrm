@@ -39,7 +39,7 @@
         </p>
       </div>
 
-      <div class="grid gap-6 md:grid-cols-2">
+      <div class="grid gap-6 md:grid-cols-3">
         <button
           type="button"
           class="card border border-base-300 hover:border-primary p-8 text-left bg-base-100 hover:shadow-md transition-all duration-200 group"
@@ -127,6 +127,74 @@
               (click)="selectType('donation')"
             >
               Configure Donation Form
+              <pc-icon name="chevron-right" [size]="4"></pc-icon>
+            </button>
+            } @else {
+            <div class="flex items-center gap-1.5 text-base-content/40 font-semibold text-sm text-left">
+              Configuration Locked
+            </div>
+            }
+          </div>
+        </div>
+
+        <!-- Recurring Donation Form Card -->
+        <div
+          class="card border border-base-300 p-8 text-left bg-base-100 transition-all duration-200"
+          [class.hover:border-primary]="hasStripeKey()"
+          [class.hover:shadow-md]="hasStripeKey()"
+          [class.opacity-60]="!hasStripeKey()"
+        >
+          <div class="flex flex-col h-full justify-between gap-6">
+            <div class="flex items-start gap-4">
+              <div
+                class="p-3 rounded-xl transition-colors"
+                [class.bg-primary/10]="hasStripeKey()"
+                [class.text-primary]="hasStripeKey()"
+                [class.bg-base-200]="!hasStripeKey()"
+                [class.text-base-content/40]="!hasStripeKey()"
+              >
+                <pc-icon name="arrow-path" [size]="10"></pc-icon>
+              </div>
+              <div>
+                <h3
+                  class="font-bold text-lg"
+                  [class.text-base-content]="hasStripeKey()"
+                  [class.text-base-content/50]="!hasStripeKey()"
+                >
+                  Monthly Pledge Form
+                </h3>
+                <p class="text-sm text-base-content/60 mt-1 leading-relaxed">
+                  Collect recurring monthly donations via Stripe Subscriptions. Enforces campaign period limits.
+                </p>
+                <div class="mt-2 text-xs text-primary font-semibold flex items-center gap-1">
+                  <pc-icon name="tag" [size]="4" class="text-primary"></pc-icon>
+                  The "Donor" tag is applied and pledge tracked automatically.
+                </div>
+                @if (!hasStripeKey()) {
+                <div class="mt-3 p-3 bg-warning/10 border border-warning/20 rounded-lg text-xs text-warning-content">
+                  <p class="font-semibold flex items-center gap-1">
+                    <pc-icon name="exclamation-triangle" [size]="3"></pc-icon>
+                    Stripe Keys Required
+                  </p>
+                  <p class="mt-1 leading-normal">
+                    Configure Stripe credentials first.
+                    <a href="/configuration/donations" class="link link-primary font-bold inline-flex items-center gap-0.5">
+                      Configure Stripe
+                      <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
+                    </a>
+                  </p>
+                </div>
+                }
+              </div>
+            </div>
+
+            @if (hasStripeKey()) {
+            <button
+              type="button"
+              class="flex items-center gap-1.5 text-primary font-semibold text-sm hover:translate-x-1 transition-transform text-left cursor-pointer"
+              (click)="selectType('recurring_donation')"
+            >
+              Configure Monthly Pledge Form
               <pc-icon name="chevron-right" [size]="4"></pc-icon>
             </button>
             } @else {
@@ -637,7 +705,7 @@
                 </div>
                 <p class="mt-1 text-[11px] text-base-content/50">
                   A system tag <code class="badge badge-sm badge-neutral">Source: [Form Name]</code> will also be
-                  applied automatically. @if (payload().form_type === 'donation') {
+                  applied automatically. @if (payload().form_type === 'donation' || payload().form_type === 'recurring_donation') {
                   <span class="block mt-1 text-success font-semibold flex items-center gap-1">
                     <pc-icon name="tag" [size]="3" class="text-success"></pc-icon>
                     The system tag <code class="badge badge-sm badge-success text-success-content">Donor</code> will

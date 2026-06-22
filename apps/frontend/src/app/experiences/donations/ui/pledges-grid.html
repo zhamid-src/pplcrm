@@ -1,0 +1,127 @@
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon name="arrow-path" class="text-primary" [size]="7"></pc-icon>
+        Monthly Pledges
+      </h1>
+      <p class="text-sm text-base-content/60 mt-1">
+        Recurring monthly donation subscriptions from your supporters.
+      </p>
+    </div>
+    <button
+      class="btn btn-outline btn-sm gap-2"
+      pcSpinOnClick
+      [disabled]="_loading.visible()"
+      (click)="refresh()"
+    >
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Refresh
+    </button>
+  </div>
+
+  <!-- Tabs -->
+  <div role="tablist" class="tabs tabs-box mb-6 w-fit">
+    <a routerLink="/donations" routerLinkActive="tab-active" [routerLinkActiveOptions]="{exact:true}" role="tab" class="tab font-semibold gap-1.5">
+      <pc-icon name="currency-dollar" [size]="4"></pc-icon>
+      One-time
+    </a>
+    <a routerLink="/donations/pledges" routerLinkActive="tab-active" role="tab" class="tab font-semibold gap-1.5">
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Monthly Pledges
+    </a>
+  </div>
+
+  @if (_loading.visible()) {
+  <progress class="progress w-full text-primary mb-6"></progress>
+  }
+
+  <!-- Summary stats -->
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+    <div class="stat rounded-xl border border-base-200 bg-base-50/50 p-4">
+      <div class="stat-title text-xs">Active Pledges</div>
+      <div class="stat-value text-2xl text-success">{{ activePledgeCount() }}</div>
+    </div>
+    <div class="stat rounded-xl border border-base-200 bg-base-50/50 p-4">
+      <div class="stat-title text-xs">Monthly Committed</div>
+      <div class="stat-value text-2xl text-primary">${{ totalMonthlyCommitted().toFixed(2) }}</div>
+    </div>
+    <div class="stat rounded-xl border border-base-200 bg-base-50/50 p-4">
+      <div class="stat-title text-xs">Total Pledges</div>
+      <div class="stat-value text-2xl">{{ pledges().length }}</div>
+    </div>
+  </div>
+
+  <!-- Pledges table -->
+  @if (!_loading.visible() && pledges().length === 0) {
+  <div class="flex flex-col items-center justify-center py-20 text-center text-base-content/50 gap-3">
+    <pc-icon name="arrow-path" [size]="12" class="opacity-20"></pc-icon>
+    <p class="text-lg font-semibold">No pledges yet</p>
+    <p class="text-sm max-w-sm">
+      Monthly pledges will appear here once donors commit through a recurring donation form or direct checkout.
+    </p>
+  </div>
+  } @else {
+  <div class="overflow-x-auto border border-base-200 rounded-xl bg-base-100 shadow-sm">
+    <table class="table table-sm w-full text-xs">
+      <thead>
+        <tr class="border-b border-base-200 bg-base-50">
+          <th class="font-bold text-base-content/70">Donor</th>
+          <th class="font-bold text-base-content/70">Monthly</th>
+          <th class="font-bold text-base-content/70">Status</th>
+          <th class="font-bold text-base-content/70">Started</th>
+          <th class="font-bold text-base-content/70">Next Billing</th>
+          <th class="font-bold text-base-content/70">Region</th>
+          <th class="font-bold text-base-content/70 text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (pledge of pledges(); track pledge.id) {
+        <tr class="hover:bg-base-200/20 border-b border-base-200">
+          <td>
+            @if (pledge.person_id) {
+            <a [routerLink]="['/people', pledge.person_id]" class="font-semibold text-primary hover:underline">
+              {{ pledge.person_first_name }} {{ pledge.person_last_name }}
+            </a>
+            } @else {
+            <span class="font-semibold">{{ pledge.first_name }} {{ pledge.last_name }}</span>
+            }
+            <div class="text-base-content/50">{{ pledge.person_email }}</div>
+          </td>
+          <td class="font-bold text-primary">{{ formatCurrency(pledge.monthly_amount) }}/mo</td>
+          <td>
+            <span class="badge badge-sm font-semibold {{ statusBadgeClass(pledge.status) }}">
+              {{ pledge.status | titlecase }}
+            </span>
+          </td>
+          <td class="text-base-content/70">{{ formatDate(pledge.started_at) }}</td>
+          <td class="text-base-content/70">{{ formatDate(pledge.next_billing_date) }}</td>
+          <td class="text-base-content/60">
+            @if (pledge.state || pledge.country) {
+            {{ pledge.state }}{{ pledge.state && pledge.country ? ', ' : '' }}{{ pledge.country }}
+            } @else { — }
+          </td>
+          <td class="text-right">
+            @if (pledge.status === 'active' || pledge.status === 'past_due') {
+            <button
+              type="button"
+              class="btn btn-xs btn-ghost text-error hover:bg-error/10"
+              [disabled]="cancelling() === toStr(pledge.id)"
+              (click)="cancelPledge(pledge)"
+            >
+              @if (cancelling() === toStr(pledge.id)) {
+              <span class="loading loading-spinner loading-xs"></span>
+              } @else {
+              Cancel
+              }
+            </button>
+            }
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  }
+</div>

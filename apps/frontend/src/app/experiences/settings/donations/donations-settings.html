@@ -104,33 +104,117 @@
 
   <!-- Donation Limit & Residency Restrictions Section -->
   <div class="grid gap-6 md:grid-cols-2">
-    <!-- Donation limits card -->
-    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6 flex flex-col justify-between">
-      <div class="space-y-3">
-        <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-          <pc-icon name="exclamation-circle" class="text-primary" [size]="5"></pc-icon>
-          Donation Limits
+    <!-- Donation Periods card -->
+    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6 flex flex-col">
+      <div class="border-b border-base-200 pb-3 flex items-center justify-between">
+        <h3 class="text-lg font-semibold flex items-center gap-2">
+          <pc-icon name="calendar" class="text-primary" [size]="5"></pc-icon>
+          Donation Limit Periods
         </h3>
-        <p class="text-xs text-base-content/60">
-          Set the maximum cumulative donation amount allowed per individual in a single calendar year to satisfy local
-          regulatory policies.
-        </p>
+        <button type="button" class="btn btn-xs btn-primary" (click)="showAddPeriod.set(true)" [hidden]="showAddPeriod()">
+          <pc-icon name="plus" [size]="3"></pc-icon>
+          Add Period
+        </button>
+      </div>
+      <p class="text-xs text-base-content/60">
+        Define campaign periods with custom date ranges and maximum limits instead of a flat calendar year.
+        The active period covering today is used for all eligibility checks.
+        If no period is defined, the fallback annual limit below applies.
+      </p>
 
-        <div class="flex flex-col gap-1.5 pt-2">
-          <label for="donation_limit" class="text-sm font-semibold text-base-content/90">
-            Maximum Annual Donation Limit ($)
-          </label>
-          <div class="relative max-w-xs">
-            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-semibold">$</span>
-            <input
-              id="donation_limit"
-              type="number"
-              min="1"
-              class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-sm font-semibold"
-              [value]="donationLimit()"
-              (input)="donationLimit.set($any($event.target).value)"
-            />
+      <!-- Existing periods list -->
+      <div class="space-y-2">
+        @for (period of donationPeriods(); track period.id) {
+        <div class="flex items-start justify-between gap-3 p-3 rounded-lg border border-base-200 bg-base-100 text-xs">
+          <div class="space-y-0.5 flex-1 min-w-0">
+            <div class="font-bold text-base-content truncate">{{ period.name }}</div>
+            <div class="text-base-content/60">
+              {{ formatDate(period.start_date) }} – {{ period.end_date ? formatDate(period.end_date) : 'No end date' }}
+            </div>
+            <div class="flex items-center gap-2 mt-1">
+              <span class="font-semibold text-primary">${{ (period.limit_amount / 100).toLocaleString() }} limit</span>
+              @if (isPeriodActive(period)) {
+              <span class="badge badge-xs badge-success font-semibold">Active now</span>
+              } @else if (period.is_active) {
+              <span class="badge badge-xs badge-neutral font-semibold">Enabled</span>
+              } @else {
+              <span class="badge badge-xs badge-ghost font-semibold">Disabled</span>
+              }
+            </div>
           </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <input
+              type="checkbox"
+              class="toggle toggle-xs toggle-success"
+              [checked]="period.is_active"
+              (change)="togglePeriodActive(period)"
+              title="Enable/disable period"
+            />
+            <button type="button" class="btn btn-xs btn-ghost text-error" (click)="deletePeriod(period)">
+              <pc-icon name="trash" [size]="3"></pc-icon>
+            </button>
+          </div>
+        </div>
+        } @empty {
+        <div class="text-xs text-base-content/50 italic py-2 text-center">
+          No periods defined. Using fallback annual limit.
+        </div>
+        }
+      </div>
+
+      <!-- Add period form -->
+      @if (showAddPeriod()) {
+      <div class="space-y-3 p-4 rounded-xl border border-base-300 bg-base-200/20 mt-1">
+        <h4 class="text-sm font-bold text-base-content/90">New Donation Period</h4>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold">Period Name</label>
+          <input type="text" class="input input-sm input-bordered bg-base-200/30" placeholder="e.g. 2024 Municipal Campaign"
+            [value]="newPeriodName()" (input)="newPeriodName.set($any($event.target).value)" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold">Start Date</label>
+            <input type="date" class="input input-sm input-bordered bg-base-200/30"
+              [value]="newPeriodStartDate()" (input)="newPeriodStartDate.set($any($event.target).value)" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold">End Date <span class="text-base-content/40">(optional)</span></label>
+            <input type="date" class="input input-sm input-bordered bg-base-200/30"
+              [value]="newPeriodEndDate()" (input)="newPeriodEndDate.set($any($event.target).value)" />
+          </div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold">Limit per Donor ($)</label>
+          <div class="relative max-w-xs">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-bold">$</span>
+            <input type="number" min="1" class="input input-sm input-bordered bg-base-200/30 pl-6 w-full"
+              [ngModel]="newPeriodLimit()" (ngModelChange)="newPeriodLimit.set($event)" />
+          </div>
+        </div>
+        <div class="flex items-center gap-2 pt-1">
+          <button type="button" class="btn btn-sm btn-primary" (click)="addPeriod()" [disabled]="isSavingPeriod()">
+            @if (isSavingPeriod()) { <span class="loading loading-spinner loading-xs"></span> }
+            Save Period
+          </button>
+          <button type="button" class="btn btn-sm btn-ghost" (click)="showAddPeriod.set(false)">Cancel</button>
+        </div>
+      </div>
+      }
+
+      <!-- Fallback annual limit (used when no period is active) -->
+      <div class="border-t border-base-200 pt-4 mt-2">
+        <p class="text-xs text-base-content/50 mb-2 font-semibold">Fallback: Calendar Year Limit</p>
+        <p class="text-[11px] text-base-content/40 mb-2">Used when no donation period covers the current date.</p>
+        <div class="relative max-w-xs">
+          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-semibold">$</span>
+          <input
+            id="donation_limit"
+            type="number"
+            min="1"
+            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-sm font-semibold"
+            [value]="donationLimit()"
+            (input)="donationLimit.set($any($event.target).value)"
+          />
         </div>
       </div>
     </div>

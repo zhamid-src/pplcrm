@@ -51,6 +51,8 @@ export interface Models {
   tenants: Tenants;
   settings: Settings;
   donations: Donations;
+  donation_periods: DonationPeriods;
+  donation_pledges: DonationPledges;
   emails: Emails;
   newsletters: Newsletters;
   newsletter_events: NewsletterEvents;
@@ -297,6 +299,7 @@ export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_
   amount: number;
   status: Generated<string>;
   stripe_session_id: string | null;
+  pledge_id: string | null;
   first_name: string | null;
   last_name: string | null;
   email: string | null;
@@ -305,6 +308,30 @@ export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_
   city: string | null;
   state: string | null;
   zip: string | null;
+  country: string | null;
+}
+
+export interface DonationPeriods extends RecordType {
+  name: string;
+  start_date: ColumnType<Date, Date | string, Date | string>;
+  end_date: ColumnType<Date, Date | string, Date | string> | null;
+  limit_amount: number;
+  is_active: Generated<boolean>;
+}
+
+export interface DonationPledges extends RecordType {
+  person_id: string | null;
+  stripe_subscription_id: string | null;
+  stripe_customer_id: string | null;
+  monthly_amount: number;
+  status: Generated<string>;
+  started_at: Generated<Timestamp>;
+  cancelled_at: Timestamp | null;
+  next_billing_date: ColumnType<Date, Date | string, Date | string> | null;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  state: string | null;
   country: string | null;
 }
 

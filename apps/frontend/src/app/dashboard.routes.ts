@@ -232,6 +232,11 @@ export const dashboardRoutes: Routes = [
         loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
         data: { shouldReuse: true, key: 'donationsgridroot' },
       },
+      {
+        path: 'pledges',
+        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
+        data: { shouldReuse: true, key: 'pledgesgridroot' },
+      },
     ],
   },
 

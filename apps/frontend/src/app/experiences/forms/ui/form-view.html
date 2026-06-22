@@ -148,6 +148,12 @@
                   } }
                   <!-- Automatic system tag -->
                   <span class="badge badge-outline badge-secondary px-3 py-2.5">Source: {{ formRecord().name }}</span>
+                  @if (formRecord().form_type === 'donation' || formRecord().form_type === 'recurring_donation') {
+                  <span class="badge badge-outline badge-success px-3 py-2.5 flex items-center gap-1">
+                    <pc-icon name="tag" [size]="3"></pc-icon>
+                    donor <span class="text-[10px] opacity-60">(auto)</span>
+                  </span>
+                  }
                 </div>
               </div>
             </div>

@@ -29,6 +29,33 @@ export class DonationsRepo extends BaseRepository<'donations'> {
   }
 
   /**
+   * Get the cumulative sum of successful donations for a person within an explicit date range.
+   * Used when a donation_period has been configured.
+   */
+  public async getPersonCumulativeDonationsForPeriod(
+    tenantId: string,
+    personId: string,
+    startDate: Date,
+    endDate: Date | null,
+  ): Promise<number> {
+    let query = this.getSelect()
+      .select(({ fn }) => [fn.sum<string | number>('amount').as('total')])
+      .where('tenant_id', '=', tenantId as any)
+      .where('person_id', '=', personId as any)
+      .where('status', '=', 'succeeded')
+      .where('created_at', '>=', startDate);
+
+    if (endDate) {
+      const endOfDay = new Date(endDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      query = query.where('created_at', '<=', endOfDay);
+    }
+
+    const result = await query.executeTakeFirst();
+    return Number(result?.total || 0);
+  }
+
+  /**
    * Retrieve the list of donations for a given person, ordered by date descending.
    */
   public async getPersonDonationsList(tenantId: string, personId: string): Promise<Selectable<Models['donations']>[]> {
