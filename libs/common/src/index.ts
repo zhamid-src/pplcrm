@@ -63,6 +63,15 @@ export type {
   AddWorkflowStepType,
   UpdateWorkflowStepType,
   WorkflowEnrollmentsType,
+  AddEventType,
+  EventType,
+  UpdateEventType,
+  AddTicketTypeType,
+  TicketTypeType,
+  UpdateTicketTypeType,
+  AddRegistrationType,
+  RegistrationType,
+  UpdateRegistrationType,
 } from './lib/models';
 
 export {
@@ -125,6 +134,15 @@ export {
   UpdateWorkflowStepObj,
   WorkflowEnrollmentObj,
   CompanyInputObj,
+  AddEventObj,
+  EventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  TicketTypeObj,
+  UpdateTicketTypeObj,
+  AddRegistrationObj,
+  RegistrationObj,
+  UpdateRegistrationObj,
 } from './lib/schema';
 
 export { debounce, sleep } from './lib/utils';
