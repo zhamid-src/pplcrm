@@ -70,37 +70,21 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/newsletters',
         icon: 'megaphone',
       },
-      {
-        name: 'Events',
-        route: '/events',
-        icon: 'calendar',
-      },
 
       {
         name: 'Lists',
         route: '/lists',
         icon: 'queue-list',
       },
-    ],
-  },
-  {
-    name: 'FUNDRAISING',
-    type: 'subheading',
-    children: [
       {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
-      },
-      {
-        name: 'Donors',
-        route: '/donors',
-        icon: 'document-currency-dollar',
+        name: `Automations`,
+        route: '/workflows',
+        icon: 'cog',
       },
     ],
   },
   {
-    name: `PROGRAMS`,
+    name: `CAMPAIGN`,
     type: 'subheading',
     children: [
       {
@@ -114,6 +98,11 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'user-group',
       },
       {
+        name: 'Events',
+        route: '/events',
+        icon: 'calendar',
+      },
+      {
         name: 'Forms',
         route: '/forms',
         icon: 'clipboard-document-list',
@@ -121,7 +110,23 @@ export const SidebarItems: ISidebarItem[] = [
     ],
   },
   {
-    name: 'TOOLS',
+    name: 'FUNDRAISING',
+    type: 'subheading',
+    children: [
+      {
+        name: 'Donors',
+        route: '/donors',
+        icon: 'document-currency-dollar',
+      },
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+      },
+    ],
+  },
+  {
+    name: 'WORKSPACE',
     type: 'subheading',
     collapsed: true,
     children: [
@@ -135,25 +140,27 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/board',
         icon: 'view-kanban',
       },
-      {
-        name: `Workflows`,
-        route: '/workflows',
-        icon: 'cog',
-      },
+    ],
+  },
+  {
+    name: 'DATA',
+    type: 'subheading',
+    collapsed: true,
+    children: [
       {
         name: `Duplicates`,
         route: '/duplicates',
         icon: 'document-duplicate',
       },
       {
-        name: 'Exports',
-        route: '/exports',
-        icon: 'arrow-down-tray',
-      },
-      {
         name: 'Imports',
         route: '/imports',
         icon: 'arrow-up-tray',
+      },
+      {
+        name: 'Exports',
+        route: '/exports',
+        icon: 'arrow-down-tray',
       },
       {
         name: 'Files',
