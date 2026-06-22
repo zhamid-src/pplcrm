@@ -1,27 +1,27 @@
-import { Component, computed, inject, input, signal, effect, untracked } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DatePipe } from '@angular/common';
-import { form, validateStandardSchema, FormField } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import {
-  AddVolunteerEventType,
-  UpdateVolunteerEventType,
-  AddVolunteerEventObj,
-} from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { environment } from '../../../../environments/environment';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
+import {
+  AddVolunteerEventObj,
+  AddVolunteerEventType,
+  UpdateVolunteerEventType,
+} from '../../../../../../../libs/common/src';
+import { environment } from '../../../../environments/environment';
+import { VolunteerService } from '../../../services/api/volunteer-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
-import { VolunteerService } from '../../../services/api/volunteer-service';
 
 @Component({
   selector: 'pc-event-detail',
@@ -41,19 +41,75 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
   providers: [VolunteerService],
 })
 export class EventDetailComponent {
-  readonly id = input<string>();
-
+  private readonly _loading = createLoadingGate();
   private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
   private readonly personsSvc = inject(PersonsService);
+  private readonly router = inject(Router);
   private readonly volunteerEventsSvc = inject(VolunteerEventsFrontendService);
   private readonly volunteerSvc = inject(VolunteerService);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
 
-  protected slugManuallyEdited = false;
+  private slugTimeoutId: any = null;
+
+  protected readonly allVolunteers = signal<any[]>([]);
+  protected readonly detail = signal<any>(null);
+  protected readonly payload = signal({
+    name: '',
+    slug: '',
+    description: '',
+    location_address: '',
+    start_time: '',
+    end_time: '',
+    capacity: null as number | null,
+    contact_email: '',
+    contact_phone: '',
+    is_private: false,
+    send_reminder: true,
+    send_signup_confirmation: true,
+    send_volunteer_alert: true,
+  });
+  protected readonly endBeforeStartError = computed(() => {
+    const { start_time, end_time } = this.payload();
+    if (!start_time || !end_time) return false;
+    return new Date(end_time) <= new Date(start_time);
+  });
+  protected readonly environment = environment;
+  protected readonly error = signal<string | null>(null);
+  protected readonly eventPassed = computed(() => {
+    const end = this.payload().end_time;
+    if (!end) return false;
+    return new Date(end) < new Date();
+  });
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddVolunteerEventObj);
+  });
+  protected readonly isNew = computed(() => !this.id());
+  protected readonly loading = this._loading.visible;
+
+  // Roster state
+  protected readonly roster = signal<any[]>([]);
+  protected readonly saving = signal(false);
   protected readonly slugChecking = signal(false);
   protected readonly slugUnique = signal<boolean | null>(null);
-  private slugTimeoutId: any = null;
+  protected readonly volunteerSearch = signal('');
+
+  // Filter out volunteers that are already signed up
+  protected readonly volunteerSearchResults = computed(() => {
+    const search = this.volunteerSearch().toLowerCase().trim();
+    if (!search) return [];
+
+    const rosterIds = new Set(this.roster().map((r) => String(r.person_id)));
+    return this.allVolunteers().filter((v) => {
+      if (rosterIds.has(String(v.id))) return false;
+      const fullName = `${v.first_name || ''} ${v.last_name || ''}`.toLowerCase();
+      const email = (v.email || '').toLowerCase();
+      return fullName.includes(search) || email.includes(search);
+    });
+  });
+
+  protected slugManuallyEdited = false;
+
+  public readonly id = input<string>();
 
   constructor() {
     const nameSignal = computed(() => this.payload().name);
@@ -104,71 +160,6 @@ export class EventDetailComponent {
     });
   }
 
-  protected slugify(text: string): string {
-    return text
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-  }
-
-  protected onSlugInput() {
-    this.slugManuallyEdited = true;
-  }
-
-  protected readonly detail = signal<any>(null);
-  protected readonly error = signal<string | null>(null);
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly isNew = computed(() => !this.id());
-  protected readonly eventPassed = computed(() => {
-    const end = this.payload().end_time;
-    if (!end) return false;
-    return new Date(end) < new Date();
-  });
-
-  // Roster state
-  protected readonly roster = signal<any[]>([]);
-  protected readonly allVolunteers = signal<any[]>([]);
-  protected readonly volunteerSearch = signal('');
-
-  protected readonly environment = environment;
-
-  protected readonly payload = signal({
-    name: '',
-    slug: '',
-    description: '',
-    location_address: '',
-    start_time: '',
-    end_time: '',
-    capacity: null as number | null,
-    contact_email: '',
-    contact_phone: '',
-    is_private: false,
-    send_reminder: true,
-    send_signup_confirmation: true,
-    send_volunteer_alert: true,
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddVolunteerEventObj);
-  });
-
-  // Filter out volunteers that are already signed up
-  protected readonly volunteerSearchResults = computed(() => {
-    const search = this.volunteerSearch().toLowerCase().trim();
-    if (!search) return [];
-
-    const rosterIds = new Set(this.roster().map((r) => String(r.person_id)));
-    return this.allVolunteers().filter((v) => {
-      if (rosterIds.has(String(v.id))) return false;
-      const fullName = `${v.first_name || ''} ${v.last_name || ''}`.toLowerCase();
-      const email = (v.email || '').toLowerCase();
-      return fullName.includes(search) || email.includes(search);
-    });
-  });
-
   public ngOnInit(): void {
     const end = this._loading.begin();
     try {
@@ -178,20 +169,49 @@ export class EventDetailComponent {
     }
   }
 
-  protected toDatetimeLocalString(val: any): string {
-    if (!val) return '';
-    const date = new Date(val);
-    if (Number.isNaN(date.getTime())) return '';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  // Roster Management
+  protected async addVolunteer(person: any) {
+    try {
+      await this.volunteerSvc.signupVolunteer({
+        event_id: this.id()!,
+        person_id: String(person.id),
+        status: 'signed_up',
+      });
+      this.volunteerSearch.set('');
+      this.alerts.showSuccess(`${person.first_name} added to roster`);
+      await this.loadRoster();
+    } catch (err: any) {
+      this.alerts.showError(err?.message || 'Failed to add volunteer');
+    }
   }
 
-  protected async loadVolunteers() {
+  protected copyToClipboard(url: string) {
+    navigator.clipboard
+      .writeText(url)
+      .then(() => this.alerts.showSuccess('Link copied to clipboard'))
+      .catch((err) => console.error('Failed to copy', err));
+  }
+
+  protected async deleteEvent() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Event',
+      message: 'Are you sure you want to delete this event? This will also delete all signed up shifts.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    this.saving.set(true);
     try {
-      const res = await this.personsSvc.getAll({ limit: 1000, tags: ['volunteer'] });
-      this.allVolunteers.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to load volunteers', err);
+      await this.volunteerEventsSvc.delete(this.id()!);
+      this.volunteerEventsSvc.triggerRefresh();
+      this.alerts.showSuccess('Event deleted');
+      await this.router.navigate(['/events/shifts']);
+    } catch (err: any) {
+      this.alerts.showError(err?.message || 'Failed to delete event');
+    } finally {
+      this.saving.set(false);
     }
   }
 
@@ -255,12 +275,47 @@ export class EventDetailComponent {
     }
   }
 
+  protected async loadVolunteers() {
+    try {
+      const res = await this.personsSvc.getAll({ limit: 1000, tags: ['volunteer'] });
+      this.allVolunteers.set(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to load volunteers', err);
+    }
+  }
+
+  protected onSlugInput() {
+    this.slugManuallyEdited = true;
+  }
+
+  protected async removeVolunteer(shift: any) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Volunteer',
+      message: 'Remove this person from the event roster?',
+      variant: 'danger',
+      confirmText: 'Remove',
+    });
+    if (!confirmed) return;
+    try {
+      await this.volunteerSvc.deleteShift(shift.id);
+      this.alerts.showSuccess('Volunteer removed');
+      await this.loadRoster();
+    } catch (err: any) {
+      this.alerts.showError(err?.message || 'Failed to remove volunteer');
+    }
+  }
+
   protected async save(done?: (() => void) | Event) {
     if (done instanceof Event) {
       done.preventDefault();
     }
     this.form().markAsTouched();
     if (this.form().invalid()) return;
+
+    if (this.endBeforeStartError()) {
+      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
+      return;
+    }
 
     if (this.slugUnique() === false) {
       this.alerts.showError('This URL slug is already in use. Please choose a different one.');
@@ -292,11 +347,7 @@ export class EventDetailComponent {
         const res = await this.volunteerEventsSvc.add(data as AddVolunteerEventType);
         this.volunteerEventsSvc.triggerRefresh();
         this.alerts.showSuccess('Event created successfully');
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/events', res.id]);
-        }
+        await this.router.navigate(['/events/shifts', res.id]);
       } else {
         await this.volunteerEventsSvc.update(this.id()!, data as UpdateVolunteerEventType);
         this.volunteerEventsSvc.triggerRefresh();
@@ -304,7 +355,7 @@ export class EventDetailComponent {
         if (typeof done === 'function') {
           done();
         } else {
-          await this.router.navigate(['/events', this.id()]);
+          await this.router.navigate(['/events/shifts', this.id()]);
         }
       }
     } catch (err: any) {
@@ -313,67 +364,6 @@ export class EventDetailComponent {
     } finally {
       this.saving.set(false);
     }
-  }
-
-  protected async deleteEvent() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Event',
-      message: 'Are you sure you want to delete this event? This will also delete all signed up shifts.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-
-    this.saving.set(true);
-    try {
-      await this.volunteerEventsSvc.delete(this.id()!);
-      this.volunteerEventsSvc.triggerRefresh();
-      this.alerts.showSuccess('Event deleted');
-      await this.router.navigate(['/events']);
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to delete event');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  // Roster Management
-  protected async addVolunteer(person: any) {
-    try {
-      await this.volunteerSvc.signupVolunteer({
-        event_id: this.id()!,
-        person_id: String(person.id),
-        status: 'signed_up',
-      });
-      this.volunteerSearch.set('');
-      this.alerts.showSuccess(`${person.first_name} added to roster`);
-      await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to add volunteer');
-    }
-  }
-
-  protected async updateShiftStatus(shift: any, status: any) {
-    try {
-      await this.volunteerSvc.updateShift(shift.id, {
-        status,
-        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
-        notes: shift.notes || null,
-      });
-      this.alerts.showSuccess('Shift status updated');
-      await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to update shift');
-    }
-  }
-
-  protected updateShiftHours(shift: any, hours: any) {
-    shift.hours_worked = hours ? Number(hours) : null;
-  }
-
-  protected updateShiftNotes(shift: any, notes: any) {
-    shift.notes = notes || null;
   }
 
   protected async saveShiftDetails(shift: any) {
@@ -390,27 +380,41 @@ export class EventDetailComponent {
     }
   }
 
-  protected async removeVolunteer(shift: any) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Remove Volunteer',
-      message: 'Remove this person from the event roster?',
-      variant: 'danger',
-      confirmText: 'Remove',
-    });
-    if (!confirmed) return;
-    try {
-      await this.volunteerSvc.deleteShift(shift.id);
-      this.alerts.showSuccess('Volunteer removed');
-      await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to remove volunteer');
-    }
+  protected slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
   }
 
-  protected copyToClipboard(url: string) {
-    navigator.clipboard
-      .writeText(url)
-      .then(() => this.alerts.showSuccess('Link copied to clipboard'))
-      .catch((err) => console.error('Failed to copy', err));
+  protected toDatetimeLocalString(val: any): string {
+    if (!val) return '';
+    const date = new Date(val);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  protected updateShiftHours(shift: any, hours: any) {
+    shift.hours_worked = hours ? Number(hours) : null;
+  }
+
+  protected updateShiftNotes(shift: any, notes: any) {
+    shift.notes = notes || null;
+  }
+
+  protected async updateShiftStatus(shift: any, status: any) {
+    try {
+      await this.volunteerSvc.updateShift(shift.id, {
+        status,
+        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
+        notes: shift.notes || null,
+      });
+      this.alerts.showSuccess('Shift status updated');
+      await this.loadRoster();
+    } catch (err: any) {
+      this.alerts.showError(err?.message || 'Failed to update shift');
+    }
   }
 }

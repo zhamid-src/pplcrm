@@ -10,6 +10,7 @@ import filesRoute from './modules/files/routes/files.route';
 import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
 import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
 import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
+import eventsPublicRoute from './modules/events/routes/events-public.route';
 import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
 import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
 import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
@@ -23,6 +24,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Register public volunteer events REST routes
   fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
+
+  // Register public RSVP event pages REST routes
+  fastify.register(eventsPublicRoute, { prefix: '/api/event-pages' });
 
   // Register Stripe billing webhook route
   fastify.register(billingWebhookRoute, { prefix: '/api/billing' });

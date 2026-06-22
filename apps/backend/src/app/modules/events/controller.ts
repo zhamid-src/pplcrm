@@ -47,7 +47,33 @@ export class EventsController extends BaseController<'events', EventsRepo> {
       send_registration_confirmation: payload.send_registration_confirmation ?? true,
     } as OperationDataType<'events', 'insert'>;
 
-    return this.add(row);
+    try {
+      return await this.add(row);
+    } catch (err: any) {
+      if (err?.message?.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
+  }
+
+  public async getEventBySlug(slug: string) {
+    return this.getRepo()
+      .db.selectFrom('events')
+      .selectAll()
+      .where('slug', '=', slug)
+      .where('is_published', '=', true as any)
+      .executeTakeFirst();
+  }
+
+  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
+    return this.getRepo()
+      .db.selectFrom('event_ticket_types')
+      .selectAll()
+      .where('event_id', '=', eventId)
+      .where('tenant_id', '=', tenantId)
+      .orderBy('sort_order', 'asc')
+      .execute();
   }
 
   public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
@@ -83,7 +109,15 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     }
 
     const row = { ...payload, updatedby_id: auth.user_id } as OperationDataType<'events', 'update'>;
-    const result = await this.update({ tenant_id: auth.tenant_id, id, row });
+    let result;
+    try {
+      result = await this.update({ tenant_id: auth.tenant_id, id, row });
+    } catch (err: any) {
+      if (err?.message?.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
 
     // Manage pending reminder jobs when the toggle changes
     if (payload.send_reminder === false) {

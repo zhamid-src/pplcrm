@@ -12,6 +12,7 @@ import { HouseholdsService } from '../../households/services/households-service'
 import { PersonsService } from '../services/persons-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { DonationsService } from '../../../services/api/donations-service';
+import { EventsService } from '../../../services/api/events-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Card as PcCard } from '@uxcommon/components/card/card';
@@ -66,6 +67,7 @@ export class PersonView implements OnInit {
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly volunteerSvc = inject(VolunteerService);
+  private readonly eventsSvc = inject(EventsService);
 
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
@@ -87,6 +89,8 @@ export class PersonView implements OnInit {
     remainingAmount: number;
   } | null>(null);
   protected readonly donationHistory = signal<any[]>([]);
+  protected readonly eventHistory = signal<any[]>([]);
+  protected readonly eventStats = signal<{ events_count: number } | null>(null);
   protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
   protected readonly openedNewslettersCount = computed(() => {
     return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
@@ -178,6 +182,7 @@ export class PersonView implements OnInit {
     { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
     { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
     { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
+    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length },
     { id: 'household', label: 'Household', icon: 'home' },
   ]);
 
@@ -203,6 +208,15 @@ export class PersonView implements OnInit {
     if (s === 'attended') return 'success';
     if (s === 'signed_up') return 'warning';
     if (s === 'no_show') return 'error';
+    return 'ghost';
+  }
+
+  protected getEventStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'attended') return 'success';
+    if (s === 'registered') return 'warning';
+    if (s === 'no_show') return 'error';
+    if (s === 'cancelled') return 'neutral';
     return 'ghost';
   }
 
@@ -248,6 +262,16 @@ export class PersonView implements OnInit {
         this.donationHistory.set(history || []);
       } catch (err) {
         console.error('Failed to load donations history', err);
+      }
+
+      // 5. Load event history
+      try {
+        const stats = await this.eventsSvc.getStatsForPerson(id);
+        this.eventStats.set(stats);
+        const history = await this.eventsSvc.getHistoryForPerson(id);
+        this.eventHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load event history', err);
       }
 
       // Check query params for Stripe Checkout success redirects

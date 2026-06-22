@@ -184,20 +184,59 @@ export const dashboardRoutes: Routes = [
     children: [
       {
         path: '',
-        loadComponent: () => import('./experiences/volunteer/ui/events-grid').then((m) => m.EventsGridComponent),
-        data: { shouldReuse: true, key: 'eventsgridroot' },
+        loadComponent: () =>
+          import('./experiences/events/ui/event-type-selector').then((m) => m.EventTypeSelectorComponent),
       },
       {
-        path: 'add',
-        loadComponent: () => import('./experiences/volunteer/ui/event-detail').then((m) => m.EventDetailComponent),
+        path: 'shifts',
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./experiences/volunteer/ui/events-grid').then((m) => m.EventsGridComponent),
+            data: { shouldReuse: true, key: 'eventsgridroot' },
+          },
+          {
+            path: 'add',
+            loadComponent: () =>
+              import('./experiences/volunteer/ui/event-detail').then((m) => m.EventDetailComponent),
+          },
+          {
+            path: ':id',
+            loadComponent: () =>
+              import('./experiences/volunteer/ui/event-view').then((m) => m.EventViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () =>
+              import('./experiences/volunteer/ui/event-detail').then((m) => m.EventDetailComponent),
+          },
+        ],
       },
       {
-        path: ':id',
-        loadComponent: () => import('./experiences/volunteer/ui/event-view').then((m) => m.EventViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/volunteer/ui/event-detail').then((m) => m.EventDetailComponent),
+        path: 'pages',
+        children: [
+          {
+            path: '',
+            loadComponent: () =>
+              import('./experiences/events/ui/events-grid').then((m) => m.EventPagesGridComponent),
+            data: { shouldReuse: true, key: 'eventpagesgridroot' },
+          },
+          {
+            path: 'add',
+            loadComponent: () =>
+              import('./experiences/events/ui/event-detail').then((m) => m.EventPageDetailComponent),
+          },
+          {
+            path: ':id',
+            loadComponent: () =>
+              import('./experiences/events/ui/event-view').then((m) => m.EventPageViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () =>
+              import('./experiences/events/ui/event-detail').then((m) => m.EventPageDetailComponent),
+          },
+        ],
       },
     ],
   },

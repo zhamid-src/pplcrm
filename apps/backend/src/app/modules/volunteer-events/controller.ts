@@ -42,6 +42,10 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       });
     }
 
+    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+    }
+
     const row = {
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
@@ -92,6 +96,10 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           message: 'This URL slug is already in use. Please choose a different one.',
         });
       }
+    }
+
+    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
     }
 
     const row = {

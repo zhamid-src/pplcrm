@@ -123,7 +123,7 @@ export class EventViewComponent {
       await this.volunteerEventsSvc.delete(this.id());
       this.volunteerEventsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Event deleted');
-      await this.router.navigate(['/events']);
+      await this.router.navigate(['/events/shifts']);
     } catch (err: any) {
       const message = err?.message || err?.data?.message || 'Unable to delete event';
       this.alertSvc.showError(message);

@@ -332,12 +332,18 @@
             [formField]="form.start_time"
           ></pc-input>
 
-          <pc-input
-            id="end-time"
-            label="End Date & Time *"
-            type="datetime-local"
-            [formField]="form.end_time"
-          ></pc-input>
+          <div>
+            <pc-input
+              id="end-time"
+              label="End Date & Time *"
+              type="datetime-local"
+              [formField]="form.end_time"
+              [hasError]="endBeforeStartError()"
+            ></pc-input>
+            @if (endBeforeStartError()) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
+            }
+          </div>
 
           <pc-input
             id="capacity"
