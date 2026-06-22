@@ -5,10 +5,21 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { TokenService } from '../../../services/api/token-service';
 import { environment } from '../../../../environments/environment';
+import { DonationsService } from '../../../services/api/donations-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 export interface TaxCreditTier {
-  limit: number; // Upper limit of bracket in dollars
-  rate: number; // Credit percentage (e.g. 0.75 for 75%)
+  limit: number;
+  rate: number;
+}
+
+export interface DonationPeriod {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string | null;
+  limit_amount: number;
+  is_active: boolean;
 }
 
 @Component({
@@ -20,6 +31,8 @@ export class DonationsSettingsComponent implements OnInit {
   private readonly settingsSvc = inject(SettingsService);
   private readonly alerts = inject(AlertService);
   private readonly tokenSvc = inject(TokenService);
+  private readonly donationsSvc = inject(DonationsService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   protected readonly stripeSecretKey = signal('');
   protected readonly stripeWebhookSecret = signal('');
@@ -27,6 +40,15 @@ export class DonationsSettingsComponent implements OnInit {
   protected readonly restrictResidency = signal(false);
   protected readonly taxCreditTiers = signal<TaxCreditTier[]>([]);
   protected readonly webhookToken = signal('');
+
+  // Donation periods
+  protected readonly donationPeriods = signal<DonationPeriod[]>([]);
+  protected readonly showAddPeriod = signal(false);
+  protected readonly newPeriodName = signal('');
+  protected readonly newPeriodStartDate = signal('');
+  protected readonly newPeriodEndDate = signal('');
+  protected readonly newPeriodLimit = signal<number>(1000);
+  protected readonly isSavingPeriod = signal(false);
 
   // New multi-country autocomplete & states checkboxes
   protected readonly selectedCountries = signal<string[]>([]);
@@ -260,6 +282,87 @@ export class DonationsSettingsComponent implements OnInit {
   async ngOnInit() {
     await this.settingsSvc.load();
     this.loadValues();
+    await this.loadPeriods();
+  }
+
+  private async loadPeriods() {
+    try {
+      const periods = await this.donationsSvc.getDonationPeriods();
+      this.donationPeriods.set(periods as any);
+    } catch {
+      // non-fatal — periods table may not exist yet if migration hasn't run
+    }
+  }
+
+  protected async addPeriod() {
+    const name = this.newPeriodName().trim();
+    const start = this.newPeriodStartDate().trim();
+    const limit = Number(this.newPeriodLimit());
+
+    if (!name) { this.alerts.showError('Period name is required'); return; }
+    if (!start) { this.alerts.showError('Start date is required'); return; }
+    if (!limit || limit <= 0) { this.alerts.showError('Limit amount must be greater than 0'); return; }
+
+    const endDate = this.newPeriodEndDate().trim() || null;
+    if (endDate && endDate <= start) { this.alerts.showError('End date must be after start date'); return; }
+
+    this.isSavingPeriod.set(true);
+    try {
+      await this.donationsSvc.createDonationPeriod({
+        name,
+        start_date: start,
+        end_date: endDate,
+        limit_amount: limit * 100,
+      });
+      this.alerts.showSuccess(`Donation period "${name}" created`);
+      this.newPeriodName.set('');
+      this.newPeriodStartDate.set('');
+      this.newPeriodEndDate.set('');
+      this.newPeriodLimit.set(1000);
+      this.showAddPeriod.set(false);
+      await this.loadPeriods();
+    } catch (err: any) {
+      this.alerts.showError(err.message || 'Failed to create donation period');
+    } finally {
+      this.isSavingPeriod.set(false);
+    }
+  }
+
+  protected async togglePeriodActive(period: DonationPeriod) {
+    try {
+      await this.donationsSvc.updateDonationPeriod({ id: period.id, is_active: !period.is_active });
+      await this.loadPeriods();
+    } catch (err: any) {
+      this.alerts.showError(err.message || 'Failed to update period');
+    }
+  }
+
+  protected async deletePeriod(period: DonationPeriod) {
+    const confirmed = await this.dialogs.confirm({
+      title: `Delete period "${period.name}"?`,
+      message: 'This cannot be undone. Existing donations collected during this period will not be affected.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      await this.donationsSvc.deleteDonationPeriod(period.id);
+      this.alerts.showSuccess('Period deleted');
+      await this.loadPeriods();
+    } catch (err: any) {
+      this.alerts.showError(err.message || 'Failed to delete period');
+    }
+  }
+
+  protected formatDate(dateStr: string | null): string {
+    if (!dateStr) return 'No end date';
+    return new Date(dateStr).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  protected isPeriodActive(period: DonationPeriod): boolean {
+    const today = new Date().toISOString().slice(0, 10);
+    return period.is_active && period.start_date <= today && (!period.end_date || period.end_date >= today);
   }
 
   private loadValues() {

@@ -38,7 +38,7 @@ export class FormDetailComponent implements OnInit {
   protected readonly formId = signal<string | null>(null);
   protected readonly step = signal<1 | 2>(1);
 
-  protected selectType(type: 'standard' | 'donation') {
+  protected selectType(type: 'standard' | 'donation' | 'recurring_donation') {
     this.payload.update((p) => ({ ...p, form_type: type }));
     this.step.set(2);
   }
@@ -124,7 +124,7 @@ export class FormDetailComponent implements OnInit {
     status: 'active' as 'active' | 'archived',
     send_confirmation: true,
     send_alert: true,
-    form_type: 'standard' as 'standard' | 'donation',
+    form_type: 'standard' as 'standard' | 'donation' | 'recurring_donation',
   });
 
   protected readonly form = form(this.payload, (p) => {
@@ -525,7 +525,7 @@ ${
           status: (form.status as 'active' | 'archived') ?? 'active',
           send_confirmation: form.send_confirmation !== false,
           send_alert: form.send_alert !== false,
-          form_type: (form.form_type as 'standard' | 'donation') ?? 'standard',
+          form_type: (form.form_type as 'standard' | 'donation' | 'recurring_donation') ?? 'standard',
         });
         this.form().reset();
         this.selectedTags.set(Array.isArray(form.target_tags) ? form.target_tags : []);

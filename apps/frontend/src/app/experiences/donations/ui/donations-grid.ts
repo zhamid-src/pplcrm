@@ -1,5 +1,5 @@
 import { Component, inject, signal, computed, OnInit } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { RouterLink, RouterLinkActive } from '@angular/router';
 import { CurrencyPipe } from '@angular/common';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -9,7 +9,7 @@ import { DonationsService } from '../../../services/api/donations-service';
 
 @Component({
   selector: 'pc-donations-grid',
-  imports: [RouterLink, Icon, SpinOnClickDirective, CurrencyPipe],
+  imports: [RouterLink, RouterLinkActive, Icon, SpinOnClickDirective, CurrencyPipe],
   templateUrl: './donations-grid.html',
 })
 export class DonationsGridComponent implements OnInit {

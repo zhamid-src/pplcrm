@@ -17,7 +17,7 @@ export const AddWebFormObj = z.object({
   status: z.enum(['active', 'archived']).default('active').optional(),
   send_confirmation: z.boolean().default(true).optional(),
   send_alert: z.boolean().default(true).optional(),
-  form_type: z.enum(['standard', 'donation']).default('standard').optional(),
+  form_type: z.enum(['standard', 'donation', 'recurring_donation']).default('standard').optional(),
 });
 
 export const UpdateWebFormObj = z.object({
