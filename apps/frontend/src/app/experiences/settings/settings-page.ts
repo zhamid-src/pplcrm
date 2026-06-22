@@ -15,6 +15,7 @@ import { GoogleSyncSettings } from './google-sync/google-sync-settings';
 import { BillingSettingsComponent } from './billing/billing-settings';
 import { DomainSettingsComponent } from './domains/domains-settings';
 import { DonationsSettingsComponent } from './donations/donations-settings';
+import { AccountSettingsComponent } from './account/account-settings';
 import { HouseholdsService } from '../households/services/households-service';
 
 interface SectionFieldState {
@@ -39,6 +40,7 @@ interface SectionState {
     BillingSettingsComponent,
     DomainSettingsComponent,
     DonationsSettingsComponent,
+    AccountSettingsComponent,
     DatePipe,
   ],
   templateUrl: './settings-page.html',
@@ -57,7 +59,7 @@ export class SettingsPage implements OnInit {
 
   protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
 
-  protected readonly currentMode: 'settings' | 'configuration' | 'billing';
+  protected readonly currentMode: 'settings' | 'configuration';
   protected readonly sections = SETTINGS_SECTIONS;
   protected readonly sectionStates: SectionState[];
   protected readonly selectedSectionId = signal<string>('');
@@ -89,7 +91,7 @@ export class SettingsPage implements OnInit {
   });
 
   constructor() {
-    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'configuration' | 'billing') || 'settings';
+    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'configuration') || 'settings';
     this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
 
     effect(() => {
@@ -101,8 +103,6 @@ export class SettingsPage implements OnInit {
           this.selectedSectionId.set('notifications');
         } else if (this.currentMode === 'configuration') {
           this.selectedSectionId.set('organization');
-        } else if (this.currentMode === 'billing') {
-          this.selectedSectionId.set('billing');
         }
       }
     });

@@ -94,6 +94,9 @@ export class AuthService extends TRPCService<'authusers'> {
     }
 
     const user = await this.updateTokensAndGetCurrentUser(response);
+    if (user?.tenant_deletion_scheduled_at) {
+      this.router.navigate(['/cancel-deletion']);
+    }
     return { requires2FA: false, user };
   }
 
@@ -101,7 +104,11 @@ export class AuthService extends TRPCService<'authusers'> {
     const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
       meta: { skipErrorHandler: true },
     });
-    return this.updateTokensAndGetCurrentUser(token);
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
+      this.router.navigate(['/cancel-deletion']);
+    }
+    return user;
   }
 
   public async signOut() {

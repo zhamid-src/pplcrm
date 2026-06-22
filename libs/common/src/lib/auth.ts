@@ -24,6 +24,8 @@ export interface IAuthUser {
   role?: string | null;
 
   avatar_url?: string | null;
+
+  tenant_deletion_scheduled_at?: Date | null;
 }
 
 export interface IUserStatsSnapshot {

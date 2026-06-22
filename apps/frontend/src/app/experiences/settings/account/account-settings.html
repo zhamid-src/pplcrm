@@ -1,0 +1,119 @@
+@if (loading()) {
+<div class="flex items-center gap-3 py-8 text-base-content/50">
+  <span class="loading loading-spinner loading-md"></span>
+  <span class="text-sm font-medium">Loading account status…</span>
+</div>
+} @else if (status()) {
+
+<!-- Account Status Banner -->
+@if (status()!.deletion_scheduled_at) {
+<div class="alert alert-error mb-6">
+  <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+  <div>
+    <h4 class="font-bold">Account Deletion In Progress</h4>
+    <p class="text-sm">
+      Your account is being permanently deleted. All data will be removed. You will receive a confirmation email when
+      the process is complete.
+    </p>
+  </div>
+</div>
+} @else if (status()!.suspended_at) {
+<div class="alert alert-warning mb-6">
+  <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+  <div>
+    <h4 class="font-bold">Account Suspended</h4>
+    <p class="text-sm">
+      Your account has been suspended since {{ status()!.suspended_at | date : 'mediumDate' }}. Your data is preserved
+      and billing is paused. Reactivate to restore full access.
+    </p>
+  </div>
+</div>
+} @else {
+<div class="alert alert-success mb-6">
+  <pc-icon name="check-circle" [size]="5"></pc-icon>
+  <div>
+    <h4 class="font-bold">Account Active</h4>
+    <p class="text-sm">Your account is active and in good standing.</p>
+  </div>
+</div>
+}
+
+<!-- Suspend / Reactivate Section -->
+<div class="card border border-base-200 bg-base-50/50 rounded-xl p-6 space-y-4">
+  <div class="space-y-1">
+    <h3 class="text-base font-bold text-base-content/90">Suspend Account</h3>
+    <p class="text-sm text-base-content/60">
+      Temporarily pause your account. Your data is preserved and billing is paused. You can reactivate at any time by
+      contacting support.
+    </p>
+  </div>
+  <div class="flex items-center gap-3">
+    @if (status()!.suspended_at) {
+    <button
+      type="button"
+      class="btn btn-success btn-sm"
+      (click)="resumeAccount()"
+      [disabled]="actionPending() || !!status()!.deletion_scheduled_at"
+    >
+      @if (actionPending()) {
+      <span class="loading loading-spinner loading-xs"></span>
+      } Reactivate Account
+    </button>
+    } @else {
+    <button
+      type="button"
+      class="btn btn-warning btn-sm btn-outline"
+      (click)="suspendAccount()"
+      [disabled]="actionPending() || !!status()!.deletion_scheduled_at"
+    >
+      @if (actionPending()) {
+      <span class="loading loading-spinner loading-xs"></span>
+      } Suspend Account
+    </button>
+    }
+  </div>
+</div>
+
+<!-- Danger Zone -->
+<div class="card border border-error/30 bg-error/5 rounded-xl p-6 space-y-4">
+  <div class="space-y-1">
+    <h3 class="text-base font-bold text-error">Danger Zone</h3>
+    <p class="text-sm text-base-content/60">
+      Permanently delete this organization and all its data. This includes all contacts, emails, campaigns, imports,
+      exports, and settings. This action cannot be undone.
+    </p>
+  </div>
+
+  @if (status()!.deletion_scheduled_at) {
+  <div class="space-y-3">
+    <p class="text-sm text-error font-medium">
+      Deletion was initiated on {{ status()!.deletion_scheduled_at | date : 'medium' }}. Your data is being
+      permanently removed.
+    </p>
+    <button
+      type="button"
+      class="btn btn-outline btn-sm"
+      (click)="cancelDeletion()"
+      [disabled]="actionPending()"
+    >
+      @if (actionPending()) {
+      <span class="loading loading-spinner loading-xs"></span>
+      } Cancel Deletion
+    </button>
+  </div>
+  } @else {
+  <button
+    type="button"
+    class="btn btn-error btn-sm"
+    (click)="deleteAccount()"
+    [disabled]="actionPending()"
+  >
+    @if (actionPending()) {
+    <span class="loading loading-spinner loading-xs"></span>
+    }
+    <pc-icon name="trash-forever" [size]="4"></pc-icon>
+    Delete Account Permanently
+  </button>
+  }
+</div>
+}

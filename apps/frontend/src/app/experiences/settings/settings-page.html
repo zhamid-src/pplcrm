@@ -1,13 +1,11 @@
 <div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
   <header class="mb-8 space-y-2">
     <h1 class="text-3xl font-bold tracking-tight">
-      @switch (currentMode) { @case ('settings') { Settings } @case ('configuration') { Configuration } @case
-      ('billing') { Billing } }
+      @switch (currentMode) { @case ('settings') { Settings } @case ('configuration') { Configuration } }
     </h1>
     <p class="text-base-content/70">
       @switch (currentMode) { @case ('settings') { Control user-specific preferences for PeopleCRM. } @case
-      ('configuration') { Control tenant-wide defaults for PeopleCRM. } @case ('billing') { Manage your subscription
-      plans and payment methods. } }
+      ('configuration') { Control tenant-wide defaults and account management for PeopleCRM. } }
     </p>
   </header>
 
@@ -83,7 +81,7 @@
           />
           Donations
         </button>
-        } @if (currentMode === 'billing') {
+
         <!-- Billing custom section -->
         <button
           id="settings-nav-billing"
@@ -95,6 +93,24 @@
         >
           <pc-icon name="credit-card" class="mr-2 opacity-80" [class.text-primary]="isSelected('billing')" [size]="5" />
           Billing
+        </button>
+
+        <!-- Account custom section -->
+        <button
+          id="settings-nav-account"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('account')"
+          [class.opacity-70]="!isSelected('account')"
+          (click)="selectSection('account')"
+        >
+          <pc-icon
+            name="user-circle"
+            class="mr-2 opacity-80"
+            [class.text-primary]="isSelected('account')"
+            [size]="5"
+          />
+          Account
         </button>
         }
       </nav>
@@ -506,7 +522,7 @@
       }
 
       <!-- Billing custom section -->
-      @if (currentMode === 'billing' && isSelected('billing')) {
+      @if (currentMode === 'configuration' && isSelected('billing')) {
       <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
         <header class="border-b border-base-200 pb-5">
           <h2 class="text-2xl font-semibold tracking-tight">Billing</h2>
@@ -515,6 +531,19 @@
           </p>
         </header>
         <pc-billing-settings></pc-billing-settings>
+      </section>
+      }
+
+      <!-- Account custom section -->
+      @if (currentMode === 'configuration' && isSelected('account')) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">Account</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Manage your organization account — suspend billing or permanently delete all data.
+          </p>
+        </header>
+        <pc-account-settings></pc-account-settings>
       </section>
       }
     </main>
