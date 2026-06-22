@@ -63,6 +63,7 @@ import type {
   AddRegistrationObj,
   RegistrationObj,
   UpdateRegistrationObj,
+  AddConnectionObj,
 } from './schema';
 
 export interface INow {
@@ -170,5 +171,7 @@ export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
 export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
 export type RegistrationType = z.infer<typeof RegistrationObj>;
 export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
+
+export type AddConnectionType = z.infer<typeof AddConnectionObj>;
 
 export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };

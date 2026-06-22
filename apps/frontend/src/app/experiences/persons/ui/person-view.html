@@ -214,6 +214,16 @@
           [valueColorClass]="'text-emerald-500'"
           [iconColorClass]="'text-emerald-500'"
         ></pc-stat-card>
+
+        <!-- Stats: Connections -->
+        <pc-stat-card
+          [title]="'Connections'"
+          [value]="connectionCount()"
+          [description]="'Network connections'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-violet-500'"
+          [iconColorClass]="'text-violet-500'"
+        ></pc-stat-card>
       </div>
 
       <!-- Activities, Interactions & History Tabs -->
@@ -489,6 +499,13 @@
             </div>
             }
           </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="connections" [activeTab]="activeTab()">
+          <pc-person-connections
+            [personId]="id()"
+            (countChange)="connectionCount.set($event)"
+          ></pc-person-connections>
         </pc-tab-panel>
 
         <pc-tab-panel id="household" [activeTab]="activeTab()">
