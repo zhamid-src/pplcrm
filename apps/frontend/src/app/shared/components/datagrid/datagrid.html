@@ -31,36 +31,6 @@
   </div>
   }
   <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
-    @if (isEmptyState() && !isFilteredEmpty()) {
-    <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-400 pointer-events-none">
-      <img
-        class="max-w-52 opacity-70"
-        src="assets/waiting.svg"
-        alt="No results"
-        i18n-alt="@@datagrid.emptyState.imageAlt"
-      />
-      <span class="text-base font-medium" i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
-        >Nothing here yet</span
-      >
-      <span class="text-sm opacity-70" i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
-        >Add your first record using the + button above</span
-      >
-    </div>
-    } @else if (isFilteredEmpty()) {
-    <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-400 pointer-events-none">
-      <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
-      <span
-        class="text-base font-medium"
-        i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
-        >No results match your filters</span
-      >
-      <span
-        class="text-sm opacity-70"
-        i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
-        >Try clearing or adjusting your filters</span
-      >
-    </div>
-    }
     <table #gridTable class="table w-full">
       <thead>
         <tr>
@@ -238,7 +208,48 @@
         </tr>
       </thead>
       <tbody class="bg-base-100">
-        @for (r of visibleTableRows(); let i = $index; track r.id) {
+        @if (hasActiveFilters() && !visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
+                >No results match your filters</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
+                >Try clearing or adjusting your filters</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @else if (!visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
+                >Nothing here yet</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
+                >Add your first record using the + button above</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @for (r of visibleTableRows(); let i = $index; track r.id) {
         <tr
           class="group hover:bg-base-300"
           [class.cursor-pointer]="rowNavigatesToDetail()"

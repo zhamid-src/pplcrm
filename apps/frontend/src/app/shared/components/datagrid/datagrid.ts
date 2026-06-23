@@ -214,29 +214,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   protected readonly canPrev = computed(() => this.pageIndex() > 0);
   protected readonly displayedCount = computed(() => this.rows().length);
   protected readonly isEmptyState = computed(
-    () => this.hasInitiatedLoad() && !this.isLoading() && this.totalCountAll() === 0,
+    () => this.hasInitiatedLoad() && !this.isLoading() && this.totalCountAll() === 0 && !this.hasActiveFilters(),
   );
-  protected readonly isFilteredEmpty = computed(() => {
-    if (!this.hasInitiatedLoad() || this.isLoading() || this.totalCountAll() > 0) return false;
-    const pf = this.panelFilters();
-    const fv = this.filterValues();
-    return Object.keys(pf).length > 0 || Object.keys(fv).length > 0;
-  });
-  public readonly hasActiveFilters = computed(() => {
-    const pf = this.panelFilters();
-    if (Object.keys(pf).length > 0) return true;
 
-    const fv = this.filterValues();
-    for (const key of Object.keys(fv)) {
-      const val = fv[key];
-      if (Array.isArray(val)) {
-        if (val.length > 0) return true;
-      } else if (val !== undefined && val !== null && val !== '') {
-        return true;
-      }
-    }
-    return false;
-  });
+  public readonly hasActiveFilters = computed(
+    () =>
+      this.selectedTags().length > 0 ||
+      this.selectedIssues().length > 0 ||
+      Object.keys(this.filterValues())?.length > 0 ||
+      this.hasActiveAdvancedFilters(),
+  );
 
   public isColFiltered(field: string): boolean {
     const fv = this.filterValues();
@@ -1016,11 +1003,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected async confirmMerge() {
     const svc = this.gridSvc as unknown as MergeableService;
-    const mergeFn =
-      svc.merge ||
-      svc.mergePersons ||
-      svc.mergeCompanies ||
-      svc.mergeHouseholds;
+    const mergeFn = svc.merge || svc.mergePersons || svc.mergeCompanies || svc.mergeHouseholds;
 
     if (!mergeFn) {
       this.alertSvc.showError('Merging is not supported for this data grid.');
@@ -1040,18 +1023,19 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
     const primaryChoice = await this.dialogs.choose<{ target: any; source: any }>({
       title: 'Select Primary Record',
-      message: 'Choose which record you want to keep as the primary record. The other record will be merged into this one and permanently deleted.',
+      message:
+        'Choose which record you want to keep as the primary record. The other record will be merged into this one and permanently deleted.',
       variant: 'info',
       choices: [
         {
           label: `${name1} (Keep this, merge the other into this)`,
-          value: { target: row1, source: row2 }
+          value: { target: row1, source: row2 },
         },
         {
           label: `${name2} (Keep this, merge the other into this)`,
-          value: { target: row2, source: row1 }
-        }
-      ]
+          value: { target: row2, source: row1 },
+        },
+      ],
     });
 
     if (!primaryChoice) return;
@@ -1064,7 +1048,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       message: `Are you sure you want to merge "${sourceName}" into "${targetName}"? This action will permanently delete "${sourceName}" and cannot be undone.`,
       variant: 'warning',
       confirmText: 'Merge',
-      cancelText: 'Cancel'
+      cancelText: 'Cancel',
     });
 
     if (!confirmed) return;
