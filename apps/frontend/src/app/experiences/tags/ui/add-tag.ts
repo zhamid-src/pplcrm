@@ -8,6 +8,10 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 
+function randomHexColor(): string {
+  return '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
+}
+
 @Component({
   selector: 'pc-add-tag',
   imports: [PcInput, FormField, FormActions],
@@ -41,7 +45,7 @@ export class AddTag {
   protected readonly payload = signal({
     name: '',
     description: '',
-    color: '#0ea5e9',
+    color: randomHexColor(),
   });
 
   public readonly form = form(this.payload, (p) => {
@@ -83,7 +87,7 @@ export class AddTag {
           this.payload.set({
             name: '',
             description: '',
-            color: '#0ea5e9',
+            color: randomHexColor(),
           });
 
           this.formActions()?.stayOrCancel();

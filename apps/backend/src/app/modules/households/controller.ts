@@ -201,8 +201,10 @@ export class HouseholdsController extends BaseController<'households', Household
       });
     }
 
+    const randomHexColor = () => '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
     const row = {
       name,
+      color: randomHexColor(),
       tenant_id: auth.tenant_id,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
