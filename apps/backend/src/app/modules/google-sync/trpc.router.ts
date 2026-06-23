@@ -1,5 +1,5 @@
 import { authProcedure, router } from '../../../trpc';
-import { GoogleOAuthService } from './google-oauth.service';
+import { GoogleOAuthService, NEEDS_FULL_SYNC } from './google-oauth.service';
 import { GoogleSyncService } from './google-sync.service';
 import { BaseRepository } from '../../lib/base.repo';
 import { env } from '../../../env';
@@ -113,10 +113,19 @@ function disconnect() {
     });
 }
 
+function resetSync() {
+  return authProcedure.mutation(async ({ ctx }) => {
+    const { oauthSvc } = getServices();
+    await oauthSvc.saveDeltaLink(ctx.auth.user_id, NEEDS_FULL_SYNC);
+    return { success: true };
+  });
+}
+
 export const GoogleSyncRouter = router({
   getAuthUrl: getAuthUrl(),
   getConnectionStatus: getConnectionStatus(),
   syncNow: syncNow(),
   disconnect: disconnect(),
+  resetSync: resetSync(),
 });
 export type GoogleSyncRouterType = typeof GoogleSyncRouter;

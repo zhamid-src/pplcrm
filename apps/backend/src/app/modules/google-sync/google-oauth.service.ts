@@ -1,7 +1,7 @@
 import { Kysely } from 'kysely';
 import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 
-const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
+export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
 
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
@@ -80,44 +80,54 @@ export class GoogleOAuthService {
       synced_at: null,
     };
 
-    if (refreshToken) {
-      insertObj.refresh_token = refreshToken;
-    } else {
+    if (!refreshToken) {
       // If we don't have refresh token in this callback, try keeping the existing one
       const existing = await this.db
         .selectFrom('google_oauth_tokens')
         .select('refresh_token')
         .where('user_id', '=', userId)
         .executeTakeFirst();
-
-      if (existing?.refresh_token) {
-        insertObj.refresh_token = existing.refresh_token;
-      } else {
-        insertObj.refresh_token = '';
-      }
+      insertObj.refresh_token = existing?.refresh_token ?? '';
+    } else {
+      insertObj.refresh_token = refreshToken;
     }
 
     if (!insertObj.refresh_token) {
       throw new Error('Consent required to obtain refresh token. Please disconnect and reconnect.');
     }
 
-    await this.db
-      .insertInto('google_oauth_tokens')
-      .values(insertObj)
-      .onConflict((oc) =>
-        oc.column('user_id').doUpdateSet({
-          access_token: insertObj.access_token,
-          refresh_token: insertObj.refresh_token,
-          expires_at: insertObj.expires_at,
-          google_email: insertObj.google_email,
-          delta_link: NEEDS_FULL_SYNC,
-          synced_at: null,
-          last_sync_error: null,
-          last_sync_error_at: null,
-          updated_at: new Date(),
-        }),
-      )
-      .execute();
+    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto('google_oauth_tokens')
+        .values(insertObj)
+        .onConflict((oc) =>
+          oc.column('user_id').doUpdateSet({
+            access_token: insertObj.access_token,
+            refresh_token: insertObj.refresh_token,
+            expires_at: insertObj.expires_at,
+            google_email: insertObj.google_email,
+            delta_link: NEEDS_FULL_SYNC,
+            synced_at: null,
+            last_sync_error: null,
+            last_sync_error_at: null,
+            updated_at: new Date(),
+          }),
+        )
+        .execute();
+
+      await trx
+        .insertInto('background_jobs' as any)
+        .values({
+          tenant_id: tenantId,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({ type: 'google_sync', userId, tenantId, requestedBy: userId }),
+          run_at: new Date(),
+          max_attempts: 3,
+        })
+        .execute();
+    });
   }
 
   public async getValidToken(userId: string): Promise<string> {

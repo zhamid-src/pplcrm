@@ -1,5 +1,5 @@
 import { authProcedure, router } from '../../../trpc';
-import { MsOAuthService } from './ms-oauth.service';
+import { MsOAuthService, NEEDS_FULL_SYNC } from './ms-oauth.service';
 import { MsSyncService } from './ms-sync.service';
 import { BaseRepository } from '../../lib/base.repo';
 import { env } from '../../../env';
@@ -117,7 +117,7 @@ function disconnect() {
 function resetSync() {
   return authProcedure.mutation(async ({ ctx }) => {
     const { oauthSvc } = getServices();
-    await oauthSvc.saveDeltaLink(ctx.auth.user_id, '{}');
+    await oauthSvc.saveDeltaLink(ctx.auth.user_id, NEEDS_FULL_SYNC);
     return { success: true };
   });
 }
