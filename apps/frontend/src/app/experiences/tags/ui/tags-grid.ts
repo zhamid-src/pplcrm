@@ -1,8 +1,15 @@
 import { Component } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import type { getAllOptionsType } from '../../../../../../../libs/common/src';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+class TagsOnlyService extends TagsService {
+  public override getAll(options?: getAllOptionsType) {
+    return this.getAllWithCounts({ ...(options ?? {}), type: 'tag' } as getAllOptionsType);
+  }
+}
 
 @Component({
   selector: 'pc-tags-grid',
@@ -21,7 +28,8 @@ import { provideDataGridConfig } from '@frontend/shared/components/datagrid/data
     </div>
   `,
   providers: [
-    { provide: AbstractAPIService, useExisting: TagsService },
+    TagsOnlyService,
+    { provide: AbstractAPIService, useExisting: TagsOnlyService },
     provideDataGridConfig({ messages: { exportEntity: 'tags', exportFileName: 'tags-export.csv' } }),
   ],
 })
