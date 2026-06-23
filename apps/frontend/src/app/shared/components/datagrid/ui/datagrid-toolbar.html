@@ -258,7 +258,7 @@
     icon="funnel"
     tip="Advanced Filters"
     [hidden]="!grid.allowFilter()"
-    [active]="grid.showFiltersState() || grid.hasActiveFilters()"
+    [active]="grid.showFiltersState() || grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
     [enabled]="!grid.hasActiveAdvancedFilters()"
     (action)="onToggleFilters()"
   />
@@ -268,7 +268,7 @@
     tip="Advanced Query Builder"
     [hidden]="!grid.allowFilter()"
     [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-    [enabled]="!grid.hasActiveFilters()"
+    [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
     (action)="grid.openAdvancedFilterBuilder()"
   />
 
