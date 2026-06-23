@@ -1,5 +1,5 @@
 import { DatePipe, UpperCasePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -9,13 +9,14 @@ import { PersonsService } from '@experiences/persons/services/persons-service';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import { EmailAssign } from '../email-assign/email-assign';
+import { EmailCreateTaskDialog } from '../email-create-task-dialog/email-create-task-dialog';
 import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
 import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Component({
   selector: 'pc-email-header',
   // include swap for expand/collapse control
-  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon, RouterLink, TagItem, Tags],
+  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon, RouterLink, TagItem, Tags, EmailCreateTaskDialog],
   host: {
     '(document:keydown)': 'handleDocumentKeydown($event)',
   },
@@ -25,6 +26,8 @@ export class EmailHeader {
   private alertSvc = inject(AlertService);
   private store = inject(EmailsStore);
   private personsSvc = inject(PersonsService);
+
+  private readonly createTaskDialog = viewChild<EmailCreateTaskDialog>('createTaskDialog');
 
   protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
   protected isClosed = signal(false);
@@ -249,6 +252,10 @@ export class EmailHeader {
       this.isClosed.set(currentStatus === 'closed');
       this.alertSvc.showError('Failed to update email status');
     }
+  }
+
+  protected handleCreateTask(): void {
+    void this.createTaskDialog()?.open();
   }
 
   protected toggleExpand(): void {

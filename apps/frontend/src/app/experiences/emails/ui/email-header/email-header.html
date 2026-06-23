@@ -11,6 +11,8 @@
         {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
       </span>
 
+      <div class="border-t border-base-300 my-1 h-0"></div>
+
       <!-- Reply -->
       <button
         class="tooltip btn btn-ghost btn-circle btn-sm"
@@ -102,6 +104,15 @@
           tabindex="0"
           class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
         >
+          <li>
+            <a
+              (click)="handleCreateTask()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create Task
+            </a>
+          </li>
+          <div class="border-t border-base-300 my-1 h-0"></div>
           <li>
             <a
               (click)="handleReply()"
@@ -489,3 +500,5 @@
     </div>
   </div>
 </header>
+
+<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
