@@ -68,6 +68,27 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit, OnDe
     }
   }
 
+  protected async forceFullResync() {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Force Full Re-sync',
+      message: 'This will reset the sync position and re-download all emails from scratch. Continue?',
+      variant: 'warning',
+      confirmText: 'Re-sync',
+    });
+    if (!confirmed) return;
+
+    this.isSyncing.set(true);
+    this.lastSyncResult.set(null);
+    try {
+      await this.api.msSync.resetSync.mutate();
+      await this.api.msSync.syncNow.mutate();
+      await this.loadStatus();
+    } catch {
+      this.alertSvc.showError('Failed to start re-sync. Please try again.');
+      this.isSyncing.set(false);
+    }
+  }
+
   protected async disconnect() {
     const confirmed = await this.dialogs.confirm({
       title: 'Disconnect Office 365',

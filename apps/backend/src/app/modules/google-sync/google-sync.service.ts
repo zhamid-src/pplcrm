@@ -50,21 +50,13 @@ export class GoogleSyncService {
   public async syncUser(userId: string, tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
     const accessToken = await this.oauthSvc.getValidToken(userId);
 
-    // Query active email folders for this tenant from database to prevent foreign key issues
-    const dbFolders: any[] = await (this.db as any)
-      .selectFrom('email_folders')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .execute();
-    const allowedFolderIds = new Set(dbFolders.map((f: any) => String(f.id)));
-
     // Map Gmail label names to pplcrm folder IDs
     const syncFolders = [
       { label: 'INBOX', pplcrmId: ALL_FOLDERS.INBOX },
       { label: 'SENT', pplcrmId: ALL_FOLDERS.SENT },
       { label: 'TRASH', pplcrmId: ALL_FOLDERS.TRASH },
       { label: 'SPAM', pplcrmId: ALL_FOLDERS.SPAM },
-    ].filter((f) => allowedFolderIds.has(f.pplcrmId));
+    ];
 
     // Stored delta_link is a JSON-encoded map of label -> last_sync_time (epoch seconds)
     const dbDeltaLink = await this.oauthSvc.getDeltaLink(userId);
