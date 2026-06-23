@@ -36,32 +36,6 @@ export const SidebarItems: ISidebarItem[] = [
     hidden: true,
   },
   {
-    name: `CONTACTS`,
-    type: 'subheading',
-    children: [
-      {
-        name: `People`,
-        route: '/people',
-        icon: 'identification',
-      },
-      {
-        name: `Households`,
-        route: '/households',
-        icon: 'house-modern',
-      },
-      {
-        name: `Companies`,
-        route: '/companies',
-        icon: 'briefcase',
-      },
-      {
-        name: `Duplicates`,
-        route: '/duplicates',
-        icon: 'document-duplicate',
-      },
-    ],
-  },
-  {
     name: `ENGAGE`,
     type: 'subheading',
     children: [
@@ -89,8 +63,51 @@ export const SidebarItems: ISidebarItem[] = [
     ],
   },
   {
+    name: `CONTACTS`,
+    type: 'subheading',
+    children: [
+      {
+        name: `People`,
+        route: '/people',
+        icon: 'identification',
+      },
+      {
+        name: `Households`,
+        route: '/households',
+        icon: 'house-modern',
+      },
+      {
+        name: `Companies`,
+        route: '/companies',
+        icon: 'briefcase',
+      },
+      {
+        name: `Duplicates`,
+        route: '/duplicates',
+        icon: 'document-duplicate',
+      },
+    ],
+  },
+  {
+    name: `CAMPAIGN`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Teams',
+        route: '/teams',
+        icon: 'user-group',
+      },
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+      },
+    ],
+  },
+  {
     name: 'FORMS',
     type: 'subheading',
+    collapsed: true,
     children: [
       {
         name: 'Forms',
@@ -111,22 +128,6 @@ export const SidebarItems: ISidebarItem[] = [
         name: 'Fundraising',
         route: '/donation-pages',
         icon: 'document-currency-dollar',
-      },
-    ],
-  },
-  {
-    name: `CAMPAIGN`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Teams',
-        route: '/teams',
-        icon: 'user-group',
-      },
-      {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
       },
     ],
   },
