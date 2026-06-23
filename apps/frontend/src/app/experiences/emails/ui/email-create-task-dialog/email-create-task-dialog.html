@@ -1,0 +1,140 @@
+<dialog #dlg class="modal">
+  <div class="modal-box max-w-2xl">
+    <div class="flex items-center justify-between mb-5">
+      <h3 class="text-xl font-bold flex items-center gap-2">
+        <pc-icon name="check-circle" [size]="5" class="text-primary"></pc-icon>
+        Create Task from Email
+      </h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <form class="space-y-4" (submit)="$event.preventDefault(); submit()" novalidate>
+      <!-- Task Name -->
+      <div class="form-control w-full">
+        <label class="label font-semibold text-sm" for="ct-name">
+          <span class="label-text">Task Name <span class="text-error">*</span></span>
+        </label>
+        <input
+          id="ct-name"
+          type="text"
+          placeholder="Enter task name..."
+          class="input input-bordered w-full focus:input-primary"
+          [formField]="form.name"
+          [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
+          autofocus
+        />
+        @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) {
+          @for (err of form.name().errors(); track err) {
+            <p class="text-xs text-error mt-1 flex items-center gap-1">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>{{ err.message }}
+            </p>
+          }
+        }
+      </div>
+
+      <!-- Details (pre-filled with email thread) -->
+      <div class="form-control w-full">
+        <label class="label font-semibold text-sm" for="ct-details">
+          <span class="label-text">Description / Details</span>
+        </label>
+        <textarea
+          id="ct-details"
+          class="textarea textarea-bordered h-40 w-full focus:textarea-primary resize-y font-mono text-xs"
+          [formField]="form.details"
+        ></textarea>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Status -->
+        <div class="form-control w-full">
+          <label class="label font-semibold text-sm" for="ct-status">
+            <span class="label-text">Status</span>
+          </label>
+          <select id="ct-status" class="select select-bordered w-full focus:select-primary" [formField]="form.status">
+            @for (s of statuses; track s) {
+              <option [value]="s">{{ toTitleCase(s) }}</option>
+            }
+          </select>
+        </div>
+
+        <!-- Priority -->
+        <div class="form-control w-full">
+          <label class="label font-semibold text-sm" for="ct-priority">
+            <span class="label-text">Priority</span>
+          </label>
+          <select id="ct-priority" class="select select-bordered w-full focus:select-primary" [formField]="form.priority">
+            @for (p of priorities; track p) {
+              <option [value]="p">{{ toTitleCase(p) }}</option>
+            }
+          </select>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Due Date -->
+        <div class="form-control w-full">
+          <label class="label font-semibold text-sm" for="ct-due">
+            <span class="label-text">Due Date</span>
+          </label>
+          <input
+            id="ct-due"
+            type="date"
+            class="input input-bordered w-full focus:input-primary"
+            [formField]="form.due_at"
+          />
+        </div>
+
+        <!-- Assignee -->
+        <div class="form-control w-full">
+          <label class="label font-semibold text-sm" for="ct-assigned">
+            <span class="label-text">Assignee</span>
+          </label>
+          <select id="ct-assigned" class="select select-bordered w-full focus:select-primary" [formField]="form.assigned_to">
+            <option value="">Unassigned</option>
+            @for (u of users(); track u.id) {
+              <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+            }
+          </select>
+        </div>
+      </div>
+
+      <!-- Team -->
+      <div class="form-control w-full">
+        <label class="label font-semibold text-sm" for="ct-team">
+          <span class="label-text">Associated Team</span>
+        </label>
+        <select id="ct-team" class="select select-bordered w-full focus:select-primary" [formField]="form.team_id">
+          <option value="">No Team</option>
+          @for (t of teamsList(); track t.id) {
+            <option [value]="t.id">{{ t.name }}</option>
+          }
+        </select>
+      </div>
+
+      @if (error()) {
+        <div class="alert alert-error py-2 text-sm rounded-xl flex items-center gap-2">
+          <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
+          <span>{{ error() }}</span>
+        </div>
+      }
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" class="btn btn-ghost" (click)="close()">Cancel</button>
+        <button type="submit" class="btn btn-primary" [disabled]="submitting()">
+          @if (submitting()) {
+            <span class="loading loading-spinner loading-sm"></span>
+          } @else {
+            <pc-icon name="plus" [size]="4"></pc-icon>
+          }
+          Create Task
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <form method="dialog" class="modal-backdrop">
+    <button (click)="close()">close</button>
+  </form>
+</dialog>

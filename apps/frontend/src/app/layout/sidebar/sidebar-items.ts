@@ -139,7 +139,7 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: `Tasks`,
         route: '/tasks',
-        icon: 'rectangle-stack',
+        icon: 'task',
       },
       {
         name: `Task Board`,

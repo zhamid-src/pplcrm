@@ -175,6 +175,7 @@ export const icons = {
   'table-cells': 'assets/icons/table-cells.svg',
   phone: 'assets/icons/phone.svg',
   tag: 'assets/icons/tag.svg',
+  task: 'assets/icons/task.svg',
   trash: 'assets/icons/trash.svg',
   'trash-forever': 'assets/icons/trash-forever.svg',
   'undo-fat': 'assets/icons/undo-fat.svg',
