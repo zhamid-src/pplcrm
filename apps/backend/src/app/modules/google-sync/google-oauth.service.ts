@@ -1,6 +1,8 @@
 import { Kysely } from 'kysely';
 import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 
+const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
+
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
@@ -74,7 +76,7 @@ export class GoogleOAuthService {
       access_token: accessToken,
       expires_at: expiresAt,
       google_email: googleEmail,
-      delta_link: null,
+      delta_link: NEEDS_FULL_SYNC,
       synced_at: null,
     };
 
@@ -108,6 +110,10 @@ export class GoogleOAuthService {
           refresh_token: insertObj.refresh_token,
           expires_at: insertObj.expires_at,
           google_email: insertObj.google_email,
+          delta_link: NEEDS_FULL_SYNC,
+          synced_at: null,
+          last_sync_error: null,
+          last_sync_error_at: null,
           updated_at: new Date(),
         }),
       )
@@ -169,10 +175,10 @@ export class GoogleOAuthService {
 
   public async getConnectionStatus(
     userId: string,
-  ): Promise<{ connected: boolean; googleEmail: string | null; syncedAt: Date | null }> {
+  ): Promise<{ connected: boolean; googleEmail: string | null; syncedAt: Date | null; lastSyncError: string | null; lastSyncErrorAt: Date | null }> {
     const row = await this.db
       .selectFrom('google_oauth_tokens')
-      .select(['google_email', 'synced_at'])
+      .select(['google_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
       .where('user_id', '=', userId)
       .executeTakeFirst();
 
@@ -180,6 +186,8 @@ export class GoogleOAuthService {
       connected: !!row,
       googleEmail: row?.google_email ?? null,
       syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
+      lastSyncError: row?.last_sync_error ?? null,
+      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
     };
   }
 
@@ -187,10 +195,26 @@ export class GoogleOAuthService {
     await this.db.deleteFrom('google_oauth_tokens').where('user_id', '=', userId).execute();
   }
 
+  public async resetDeltaLinkForTenant(tenantId: string): Promise<void> {
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
   public async saveDeltaLink(userId: string, deltaLink: string): Promise<void> {
     await this.db
       .updateTable('google_oauth_tokens')
-      .set({ delta_link: deltaLink, synced_at: new Date(), updated_at: new Date() })
+      .set({ delta_link: deltaLink, synced_at: new Date(), last_sync_error: null, last_sync_error_at: null, updated_at: new Date() })
+      .where('user_id', '=', userId)
+      .execute();
+  }
+
+  public async recordSyncError(userId: string, error: string): Promise<void> {
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
       .where('user_id', '=', userId)
       .execute();
   }

@@ -58,12 +58,19 @@ export class GoogleSyncService {
       { label: 'SPAM', pplcrmId: ALL_FOLDERS.SPAM },
     ];
 
-    // Stored delta_link is a JSON-encoded map of label -> last_sync_time (epoch seconds)
+    // Stored delta_link is a JSON-encoded map of label -> last_sync_time (epoch seconds).
+    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
+    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
+    // positions after a successful sync, so no explicit clear is needed.
     const dbDeltaLink = await this.oauthSvc.getDeltaLink(userId);
     let deltaMap: Record<string, number> = {};
     if (dbDeltaLink) {
       try {
-        deltaMap = JSON.parse(dbDeltaLink);
+        const parsed = JSON.parse(dbDeltaLink);
+        if (!parsed._needs_full_sync) {
+          deltaMap = parsed;
+        }
+        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
       } catch {
         deltaMap = {};
       }
@@ -75,6 +82,7 @@ export class GoogleSyncService {
 
     for (const folder of syncFolders) {
       const folderLastSync = deltaMap[folder.label] || 0;
+
       let pageToken: string | null = null;
       let hasMore = true;
       const allMessageIds: string[] = [];

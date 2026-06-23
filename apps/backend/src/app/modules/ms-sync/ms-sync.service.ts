@@ -55,12 +55,19 @@ export class MsSyncService {
       { wellKnownName: 'junkemail', pplcrmId: ALL_FOLDERS.SPAM },
     ];
 
-    // Read stored delta map
+    // Read stored delta map.
+    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
+    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
+    // positions after a successful sync, so no explicit clear is needed.
     const dbDeltaLink = await this.oauthSvc.getDeltaLink(userId);
     let deltaMap: Record<string, string> = {};
     if (dbDeltaLink) {
       try {
-        deltaMap = JSON.parse(dbDeltaLink);
+        const parsed = JSON.parse(dbDeltaLink);
+        if (!parsed._needs_full_sync) {
+          deltaMap = parsed;
+        }
+        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
       } catch {
         // If not valid JSON, it's a legacy plain URL string. Clear it.
         deltaMap = {};
@@ -71,26 +78,7 @@ export class MsSyncService {
     const nextDeltaMap: Record<string, string> = { ...deltaMap };
 
     for (const folder of syncFolders) {
-      let folderDeltaLink = deltaMap[folder.wellKnownName] || null;
-
-      // If a delta link exists but no emails are locally stored from this provider+folder,
-      // the delta position is ahead of local data (e.g. from a failed prior sync).
-      // Force a fresh full sync so messages aren't permanently skipped.
-      if (folderDeltaLink) {
-        const hasLocalEmails = await this.db
-          .selectFrom('emails')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('folder_id', '=', folder.pplcrmId)
-          .where('preview', 'like', 'ms:%')
-          .limit(1)
-          .executeTakeFirst();
-
-        if (!hasLocalEmails) {
-          folderDeltaLink = null;
-          delete nextDeltaMap[folder.wellKnownName];
-        }
-      }
+      const folderDeltaLink = deltaMap[folder.wellKnownName] || null;
 
       let pageUrl: string | null =
         folderDeltaLink ??

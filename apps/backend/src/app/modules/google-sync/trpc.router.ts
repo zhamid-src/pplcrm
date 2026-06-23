@@ -23,11 +23,11 @@ function getServices() {
 }
 
 function getAuthUrl() {
-  return authProcedure.query(async ({ ctx }) => {
+  return authProcedure.input(z.object({ returnTo: z.string().optional() })).query(async ({ ctx, input }) => {
     const { oauthSvc } = getServices();
-    const state = Buffer.from(JSON.stringify({ userId: ctx.auth.user_id, tenantId: ctx.auth.tenant_id })).toString(
-      'base64',
-    );
+    const state = Buffer.from(
+      JSON.stringify({ userId: ctx.auth.user_id, tenantId: ctx.auth.tenant_id, returnTo: input.returnTo }),
+    ).toString('base64');
     const url = oauthSvc.getAuthUrl(state);
     return { url };
   });
@@ -103,6 +103,9 @@ function disconnect() {
 
       if (input.removeLocalEmails) {
         await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id);
+        // Signal all remaining connected users in this tenant to do a full resync next time,
+        // since their locally-stored emails were just deleted.
+        await oauthSvc.resetDeltaLinkForTenant(ctx.auth.tenant_id);
       }
 
       await oauthSvc.disconnect(ctx.auth.user_id);

@@ -145,7 +145,10 @@ export class EmailIngesterService {
 
     if (existing) return false;
 
-    // Try finding by internetMessageId in email_headers to match locally composed & sent emails
+    // Try finding by internetMessageId in email_headers to match locally composed & sent emails.
+    // Only applies to emails with no provider prefix in preview (locally composed).
+    // If the matched email already has a provider prefix, it's a cross-folder duplicate
+    // (e.g. send-to-self appearing in both Sent and Inbox) — insert as a separate record.
     if (email.internetMessageId) {
       const headerRow = await this.db
         .selectFrom('email_headers')
@@ -157,25 +160,31 @@ export class EmailIngesterService {
       if (headerRow) {
         const matchedEmail = await this.db
           .selectFrom('emails')
-          .select(['id', 'folder_id'])
+          .select(['id', 'folder_id', 'preview'])
           .where('tenant_id', '=', tenantId)
           .where('id', '=', String(headerRow.email_id))
           .executeTakeFirst();
 
         if (matchedEmail) {
-          // Found matching email. Update it with the remote message ID dedupeKey and set to correct folder
-          await this.db
-            .updateTable('emails')
-            .set({
-              preview: dedupeKey,
-              folder_id: folderId, // align to synced folder (e.g. Sent folder '3')
-              updated_at: new Date(),
-            })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(matchedEmail.id))
-            .execute();
+          const existingPreview = matchedEmail.preview as string | null;
+          const alreadyTaggedByProvider = existingPreview?.startsWith('ms:') || existingPreview?.startsWith('google:');
 
-          return false; // prevent duplicate insertion
+          if (!alreadyTaggedByProvider) {
+            // Locally composed email — tag it with the provider ID and align folder
+            await this.db
+              .updateTable('emails')
+              .set({
+                preview: dedupeKey,
+                folder_id: folderId,
+                updated_at: new Date(),
+              })
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', String(matchedEmail.id))
+              .execute();
+
+            return false; // prevent duplicate insertion
+          }
+          // Already tagged by provider: fall through and insert as a fresh record in this folder
         }
       }
     }
