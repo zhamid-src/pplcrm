@@ -309,6 +309,41 @@ export class BackgroundJobWorker {
           }
         }
 
+        if (payload.type === 'ms_sync' && payload.userId) {
+          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
+          console.error(`[sync-error][${correlationId}] MS sync permanently failed for user ${payload.userId}:`, err);
+          try {
+            const { MsOAuthService } = await import('../../modules/ms-sync/ms-oauth.service');
+            const { env } = await import('../../../env');
+            const oauthSvc = new MsOAuthService(this.db as any, {
+              clientId: env.msClientId ?? '',
+              clientSecret: env.msClientSecret ?? '',
+              tenantId: env.msTenantId ?? 'common',
+              redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+            });
+            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
+          } catch (recordErr) {
+            console.error('Failed to record MS sync error on token:', recordErr);
+          }
+        }
+
+        if (payload.type === 'google_sync' && payload.userId) {
+          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
+          console.error(`[sync-error][${correlationId}] Google sync permanently failed for user ${payload.userId}:`, err);
+          try {
+            const { GoogleOAuthService } = await import('../../modules/google-sync/google-oauth.service');
+            const { env } = await import('../../../env');
+            const oauthSvc = new GoogleOAuthService(this.db as any, {
+              clientId: env.googleClientId ?? '',
+              clientSecret: env.googleClientSecret ?? '',
+              redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+            });
+            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
+          } catch (recordErr) {
+            console.error('Failed to record Google sync error on token:', recordErr);
+          }
+        }
+
         // If a recurrent cron-like job fails permanently, schedule the next iteration
         await this.rescheduleCronJobOnFailure(payload.type);
       }

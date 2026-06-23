@@ -17,6 +17,17 @@
     </div>
   </div>
 
+  @if (status()?.lastSyncError) {
+  <div class="rounded-xl border border-warning/30 bg-warning/10 px-5 py-4 flex items-start gap-4">
+    <pc-icon name="exclamation-triangle" class="text-warning mt-0.5 shrink-0" [size]="5"></pc-icon>
+    <div class="flex-1 min-w-0">
+      <p class="font-semibold text-warning">Last sync failed</p>
+      <p class="text-sm text-base-content/70 mt-1">Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with this code:</p>
+      <p class="font-mono text-sm font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
+    </div>
+  </div>
+  }
+
   <div class="flex flex-wrap gap-3">
     <button id="google-sync-now-btn" type="button" class="btn btn-primary" [disabled]="isSyncing()" (click)="syncNow()">
       @if (isSyncing()) {

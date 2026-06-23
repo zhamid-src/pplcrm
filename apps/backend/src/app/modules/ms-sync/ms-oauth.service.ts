@@ -2,6 +2,8 @@ import { ConfidentialClientApplication, AuthorizationCodeRequest } from '@azure/
 import { Kysely } from 'kysely';
 import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 
+const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
+
 const MS_SCOPES = [
   'https://graph.microsoft.com/Mail.Read',
   'https://graph.microsoft.com/Mail.ReadWrite',
@@ -67,7 +69,7 @@ export class MsOAuthService {
         refresh_token: refreshToken,
         expires_at: expiresAt,
         ms_email: response.account.username ?? null,
-        delta_link: null,
+        delta_link: NEEDS_FULL_SYNC,
         synced_at: null,
       })
       .onConflict((oc) =>
@@ -76,6 +78,10 @@ export class MsOAuthService {
           refresh_token: refreshToken,
           expires_at: expiresAt,
           ms_email: response.account?.username ?? null,
+          delta_link: NEEDS_FULL_SYNC,
+          synced_at: null,
+          last_sync_error: null,
+          last_sync_error_at: null,
           updated_at: new Date(),
         }),
       )
@@ -132,10 +138,10 @@ export class MsOAuthService {
 
   public async getConnectionStatus(
     userId: string,
-  ): Promise<{ connected: boolean; msEmail: string | null; syncedAt: Date | null }> {
+  ): Promise<{ connected: boolean; msEmail: string | null; syncedAt: Date | null; lastSyncError: string | null; lastSyncErrorAt: Date | null }> {
     const row = await this.db
       .selectFrom('ms_oauth_tokens')
-      .select(['ms_email', 'synced_at'])
+      .select(['ms_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
       .where('user_id', '=', userId)
       .executeTakeFirst();
 
@@ -143,6 +149,8 @@ export class MsOAuthService {
       connected: !!row,
       msEmail: row?.ms_email ?? null,
       syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
+      lastSyncError: row?.last_sync_error ?? null,
+      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
     };
   }
 
@@ -150,10 +158,26 @@ export class MsOAuthService {
     await this.db.deleteFrom('ms_oauth_tokens').where('user_id', '=', userId).execute();
   }
 
+  public async resetDeltaLinkForTenant(tenantId: string): Promise<void> {
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
   public async saveDeltaLink(userId: string, deltaLink: string): Promise<void> {
     await this.db
       .updateTable('ms_oauth_tokens')
-      .set({ delta_link: deltaLink, synced_at: new Date(), updated_at: new Date() })
+      .set({ delta_link: deltaLink, synced_at: new Date(), last_sync_error: null, last_sync_error_at: null, updated_at: new Date() })
+      .where('user_id', '=', userId)
+      .execute();
+  }
+
+  public async recordSyncError(userId: string, error: string): Promise<void> {
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
       .where('user_id', '=', userId)
       .execute();
   }

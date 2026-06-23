@@ -633,6 +633,8 @@ interface MsOauthTokens {
   ms_email: string | null;
   delta_link: string | null;
   synced_at: Timestamp | null;
+  last_sync_error: string | null;
+  last_sync_error_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }
@@ -647,6 +649,8 @@ export interface GoogleOauthTokens {
   google_email: string | null;
   delta_link: string | null;
   synced_at: Timestamp | null;
+  last_sync_error: string | null;
+  last_sync_error_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

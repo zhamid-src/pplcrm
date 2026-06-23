@@ -20,6 +20,8 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit, OnDe
     msEmail: string | null;
     syncedAt: Date | string | null;
     syncing?: boolean;
+    lastSyncError?: string | null;
+    lastSyncErrorAt?: Date | string | null;
   } | null>(null);
   protected readonly isLoading = signal(true);
   protected readonly isConnecting = signal(false);
@@ -48,7 +50,8 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit, OnDe
     this.isConnecting.set(true);
     this.connectError.set(null);
     try {
-      const result = await this.api.msSync.getAuthUrl.query();
+      const returnTo = window.location.pathname + window.location.search;
+      const result = await this.api.msSync.getAuthUrl.query({ returnTo });
       window.location.href = result.url;
     } catch {
       this.connectError.set('Failed to initiate Microsoft sign-in. Please try again.');
