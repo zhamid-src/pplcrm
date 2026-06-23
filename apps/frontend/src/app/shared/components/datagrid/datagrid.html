@@ -1,5 +1,5 @@
-@if (title()) {
-<pc-grid-header [title]="title()!" [description]="description() || ''"></pc-grid-header>
+@if (displayTitle()) {
+<pc-grid-header [title]="displayTitle()!" [description]="description() || ''"></pc-grid-header>
 }
 
 <div class="flex h-full w-full flex-col">

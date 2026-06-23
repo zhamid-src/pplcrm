@@ -1,6 +1,6 @@
 import { Component, inject, signal, input, viewChild, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { Router } from '@angular/router';
 import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
@@ -214,7 +214,12 @@ export class PersonsGrid implements OnInit {
 
   public listId = input<string | null>(null);
 
-  protected limitTags: string[] = [];
+  protected readonly narrowTypeOptions = [
+    { label: 'All', value: null, tags: [] },
+    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
+    { label: 'Donors', value: 'donor', tags: ['donor'] },
+  ];
+
   protected tagsInput = '';
 
   public async ngOnInit() {
@@ -238,13 +243,8 @@ export class PersonsGrid implements OnInit {
     }
   }
 
-  constructor() {
-    const route = inject(ActivatedRoute);
-    this.limitTags = route.snapshot.data['tags'] ?? [];
-  }
-
   protected getPlusIcon(): PcIconNameType {
-    return this.limitTags.includes('volunteer') ? 'add-volunteer' : 'user-plus';
+    return 'user-plus';
   }
 
   // paging/preview managed by CsvImportComponent
@@ -262,16 +262,10 @@ export class PersonsGrid implements OnInit {
   }
 
   protected getTitle() {
-    return this.limitTags.includes('volunteer') ? 'Volunteers' : this.limitTags.includes('donor') ? 'Donors' : 'People';
+    return 'People';
   }
 
   protected getDescription() {
-    if (this.limitTags.includes('volunteer')) {
-      return 'Manage volunteer records, track signups, and coordinate volunteer tags.';
-    }
-    if (this.limitTags.includes('donor')) {
-      return 'Manage donor records, track donations, and coordinate donor tags.';
-    }
     return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
   }
 
@@ -301,13 +295,11 @@ export class PersonsGrid implements OnInit {
     const rows = payload?.rows ?? [];
     const skippedReported = Number(payload?.skipped ?? 0) || 0;
     const fileName = (payload?.fileName ?? '').trim();
-    // Merge route-derived filter tags (e.g., 'volunteer', 'donor') with user-provided tags
     const inputTags = this.tagsInput
       .split(',')
       .map((t) => t.trim())
       .filter((t) => !!t);
-    const combined = new Set<string>([...this.limitTags, ...inputTags]);
-    const tags = Array.from(combined);
+    const tags = inputTags;
 
     try {
       const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);

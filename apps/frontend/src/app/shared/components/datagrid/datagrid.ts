@@ -406,6 +406,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public rowCanSelect = input<(row: any) => boolean>(() => true);
   public limitToTags = input<string[]>([]);
   public limitToIssues = input<string[]>([]);
+  public narrowTypeOptions = input<Array<{ label: string; value: string | null; tags: string[] }>>([]);
   public plusIcon = input<PcIconNameType>('plus');
 
   public showToolbar = input<boolean>(true);
@@ -441,6 +442,25 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     const defs = this.colDefs();
     return defs.some((col) => col.field === 'issues' || col.field === 'issue');
   });
+
+  public readonly showNarrowTypeFilter = computed(() => this.narrowTypeOptions().length > 0);
+  public readonly selectedNarrowType = signal<string | null>(null);
+  public readonly displayTitle = computed(() => {
+    const selected = this.selectedNarrowType();
+    if (selected !== null) {
+      const option = this.narrowTypeOptions().find((o) => o.value === selected);
+      if (option) return option.label;
+    }
+    return this.title() ?? null;
+  });
+
+  public selectNarrowType(value: string | null): void {
+    this.selectedNarrowType.set(value);
+    const option = this.narrowTypeOptions().find((o) => o.value === value);
+    const tags = option?.tags ?? [];
+    this.tagFilter.selectedTags.set([...tags]);
+    void this.doRefresh();
+  }
 
   public toggleTagFilter(tag: string, checked: boolean) {
     this.tagFilter.toggleTagFilter(tag, checked);

@@ -36,7 +36,7 @@ export const SidebarItems: ISidebarItem[] = [
     hidden: true,
   },
   {
-    name: `CRM`,
+    name: `CONTACTS`,
     type: 'subheading',
     children: [
       {
@@ -53,6 +53,11 @@ export const SidebarItems: ISidebarItem[] = [
         name: `Companies`,
         route: '/companies',
         icon: 'briefcase',
+      },
+      {
+        name: `Duplicates`,
+        route: '/duplicates',
+        icon: 'document-duplicate',
       },
     ],
   },
@@ -84,13 +89,13 @@ export const SidebarItems: ISidebarItem[] = [
     ],
   },
   {
-    name: `CAMPAIGN`,
+    name: 'FORMS',
     type: 'subheading',
     children: [
       {
-        name: 'Volunteers',
-        route: '/volunteers',
-        icon: 'volunteer',
+        name: 'Forms',
+        route: '/forms',
+        icon: 'clipboard-document-list',
       },
       {
         name: 'Shifts',
@@ -98,19 +103,25 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'add-schedule',
       },
       {
-        name: 'Teams',
-        route: '/teams',
-        icon: 'user-group',
-      },
-      {
         name: 'Events',
         route: '/events/pages',
         icon: 'calendar',
       },
       {
-        name: 'Forms',
-        route: '/forms',
+        name: 'Donations',
+        route: '/donation-pages',
         icon: 'clipboard-document-list',
+      },
+    ],
+  },
+  {
+    name: `CAMPAIGN`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Teams',
+        route: '/teams',
+        icon: 'user-group',
       },
     ],
   },
@@ -119,19 +130,9 @@ export const SidebarItems: ISidebarItem[] = [
     type: 'subheading',
     children: [
       {
-        name: 'Donors',
-        route: '/donors',
-        icon: 'document-currency-dollar',
-      },
-      {
         name: 'Donations',
         route: '/donations',
         icon: 'currency-dollar',
-      },
-      {
-        name: 'Donation Pages',
-        route: '/donation-pages',
-        icon: 'clipboard-document-list',
       },
     ],
   },
@@ -157,11 +158,6 @@ export const SidebarItems: ISidebarItem[] = [
     type: 'subheading',
     collapsed: true,
     children: [
-      {
-        name: `Duplicates`,
-        route: '/duplicates',
-        icon: 'document-duplicate',
-      },
       {
         name: 'Imports',
         route: '/imports',
