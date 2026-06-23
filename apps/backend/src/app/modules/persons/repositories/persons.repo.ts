@@ -335,6 +335,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
                 col = `households.${col}`;
               } else if (col === 'company_name') {
                 col = `companies.name`;
+              } else if (col === 'address') {
+                col = `households.street1`;
               }
             }
           }
