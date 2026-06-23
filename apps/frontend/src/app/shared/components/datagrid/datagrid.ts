@@ -451,9 +451,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   public toggleTagFilter(tag: string, checked: boolean) {
+    this.selectedNarrowType.set(null);
     this.tagFilter.toggleTagFilter(tag, checked);
   }
   public clearTagsFilter() {
+    this.selectedNarrowType.set(null);
     this.tagFilter.clearTagsFilter();
   }
   public selectAllTags() {
