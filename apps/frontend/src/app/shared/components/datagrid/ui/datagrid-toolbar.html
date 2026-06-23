@@ -52,18 +52,34 @@
     (action)="onExportCsv()"
   />
 
-  <!-- Tag Filter Dropdown -->
-  @if (grid.showTagFilter()) {
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableExport()"
-    [tip]="'Narrow by type'"
-    icon="arrow-down-tray"
-    (action)="onExportCsv()"
-  />
-
+  <!-- Narrow by Type / Tag Filter Dropdown -->
+  @if (grid.showNarrowTypeFilter() || grid.showTagFilter()) {
   <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
+  } @if (grid.showNarrowTypeFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'tag'"
+    [tip]="'Narrow by type'"
+    [active]="grid.selectedNarrowType() !== null"
+    [hasDropdown]="true"
+  >
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-48 p-2 shadow">
+      @for (opt of grid.narrowTypeOptions(); track opt.value) {
+      <li>
+        <label tabindex="-1" class="label cursor-pointer justify-start gap-2 py-1 px-2">
+          <input
+            type="radio"
+            name="narrowType"
+            class="radio radio-primary radio-xs shrink-0"
+            [checked]="grid.selectedNarrowType() === opt.value"
+            (change)="grid.selectNarrowType(opt.value)"
+          />
+          <span class="label-text text-xs">{{ opt.label }}</span>
+        </label>
+      </li>
+      }
+    </ul>
+  </pc-grid-tool-btn>
+  } @if (grid.showTagFilter()) {
   <pc-grid-tool-btn
     [icon]="'label'"
     [tip]="'Filter by Tags'"
@@ -110,7 +126,7 @@
         } @else { @for (tag of grid.filteredAvailableTags(); track tag) {
         <label
           tabindex="-1"
-          class="label cursor-pointer justify-start gap-2 py-1 px-2 rounded-md hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
+          class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
         >
           <input
             type="checkbox"
@@ -174,7 +190,7 @@
         } @else { @for (issue of grid.filteredAvailableIssues(); track issue) {
         <label
           tabindex="-1"
-          class="label cursor-pointer justify-start gap-2 py-1 px-2 rounded-md hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
+          class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
         >
           <input
             type="checkbox"
