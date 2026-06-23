@@ -108,9 +108,9 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'calendar',
       },
       {
-        name: 'Donations',
+        name: 'Fundraising',
         route: '/donation-pages',
-        icon: 'clipboard-document-list',
+        icon: 'document-currency-dollar',
       },
     ],
   },
@@ -123,12 +123,6 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/teams',
         icon: 'user-group',
       },
-    ],
-  },
-  {
-    name: 'FUNDRAISING',
-    type: 'subheading',
-    children: [
       {
         name: 'Donations',
         route: '/donations',
@@ -137,12 +131,12 @@ export const SidebarItems: ISidebarItem[] = [
     ],
   },
   {
-    name: 'WORKSPACE',
+    name: 'TOOLS',
     type: 'subheading',
     collapsed: true,
     children: [
       {
-        name: `Task List`,
+        name: `Tasks`,
         route: '/tasks',
         icon: 'rectangle-stack',
       },
@@ -151,13 +145,11 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/board',
         icon: 'view-kanban',
       },
-    ],
-  },
-  {
-    name: 'DATA',
-    type: 'subheading',
-    collapsed: true,
-    children: [
+      {
+        name: 'Files',
+        route: '/files',
+        icon: 'document',
+      },
       {
         name: 'Imports',
         route: '/imports',
@@ -168,11 +160,15 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/exports',
         icon: 'arrow-down-tray',
       },
-      {
-        name: 'Files',
-        route: '/files',
-        icon: 'document',
-      },
+    ],
+  },
+
+  {
+    name: `SYSTEM`,
+    type: 'subheading',
+    adminOnly: true,
+    collapsed: true,
+    children: [
       {
         name: 'Activity Log',
         route: '/activities',
@@ -188,14 +184,6 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/issues',
         icon: 'shield-exclamation',
       },
-    ],
-  },
-  {
-    name: `SYSTEM`,
-    type: 'subheading',
-    adminOnly: true,
-    collapsed: true,
-    children: [
       {
         name: 'Users',
         route: '/users',
