@@ -1,4 +1,4 @@
-import { Component, ElementRef, ViewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, ElementRef, viewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
 import { type IAuthUser } from '../../../../../../../libs/common/src';
@@ -87,15 +87,7 @@ export class HouseholdView {
   });
 
   private mapInitialized = false;
-
-  @ViewChild('mapContainer')
-  set mapContainer(elRef: ElementRef | undefined) {
-    if (elRef) {
-      void this.initMap(elRef.nativeElement);
-    } else {
-      this.mapInitialized = false;
-    }
-  }
+  private readonly mapContainer = viewChild<ElementRef>('mapContainer');
 
   // Active tab state
   protected activeTab = signal<string>('activity');
@@ -110,6 +102,15 @@ export class HouseholdView {
     effect(() => {
       const currentId = this.id();
       untracked(() => this.loadAllData(currentId));
+    });
+
+    effect(() => {
+      const elRef = this.mapContainer();
+      if (elRef) {
+        void this.initMap(elRef.nativeElement);
+      } else {
+        this.mapInitialized = false;
+      }
     });
 
     // Load users for addedby/updatedby display names

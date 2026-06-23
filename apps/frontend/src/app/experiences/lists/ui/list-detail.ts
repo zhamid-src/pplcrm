@@ -1,7 +1,9 @@
 import { Component, OnInit, computed, inject, input, resource, signal, viewChild } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { map } from 'rxjs';
 import { AddListType, UpdateListType } from '../../../../../../../libs/common/src';
 import { HouseholdsService } from '@experiences/households/services/households-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
@@ -178,21 +180,15 @@ export class ListDetail implements OnInit {
     is_dynamic: [false],
   });
 
-  protected readonly listType = signal<string>('people');
+  protected readonly listType = toSignal(
+    this.form.get('object')!.valueChanges.pipe(map((v) => v || 'people')),
+    { initialValue: (this.form.get('object')?.value ?? 'people') as string },
+  );
 
-  protected readonly isDynamic = signal<boolean>(false);
-
-  constructor() {
-    this.listType.set(this.form.get('object')?.value || 'people');
-    this.isDynamic.set(this.form.get('is_dynamic')?.value === true);
-
-    this.form.get('object')!.valueChanges.subscribe((val) => {
-      if (val) this.listType.set(val);
-    });
-    this.form.get('is_dynamic')!.valueChanges.subscribe((val) => {
-      this.isDynamic.set(val === true);
-    });
-  }
+  protected readonly isDynamic = toSignal(
+    this.form.get('is_dynamic')!.valueChanges.pipe(map((v) => v === true)),
+    { initialValue: this.form.get('is_dynamic')?.value === true },
+  );
 
   public async ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id');
@@ -217,8 +213,6 @@ export class ListDetail implements OnInit {
           object: list.object ?? 'people',
           is_dynamic: list.is_dynamic ?? false,
         });
-        this.listType.set(list.object ?? 'people');
-        this.isDynamic.set(list.is_dynamic ?? false);
 
         const definition = list.definition as any;
         if (definition) {
