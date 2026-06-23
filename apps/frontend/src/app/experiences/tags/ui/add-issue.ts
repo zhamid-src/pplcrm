@@ -9,6 +9,10 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 
+function randomHexColor(): string {
+  return '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
+}
+
 @Component({
   selector: 'pc-add-issue',
   imports: [PcInput, FormField, FormActions],
@@ -49,7 +53,7 @@ export class AddIssue {
   protected readonly payload = signal({
     name: '',
     description: '',
-    color: '#ef4444',
+    color: randomHexColor(),
   });
 
   public readonly form = form(this.payload, (p) => {
@@ -80,7 +84,7 @@ export class AddIssue {
           this.tagSvc.triggerRefresh();
           this.alertSvc.showSuccess('Issue added successfully.');
 
-          this.payload.set({ name: '', description: '', color: '#ef4444' });
+          this.payload.set({ name: '', description: '', color: randomHexColor() });
           this.formActions()?.stayOrCancel();
         } catch (err: any) {
           this.alertSvc.showError(err.message || "We've hit an unknown error. Please try again.");
