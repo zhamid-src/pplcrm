@@ -1,8 +1,9 @@
 import { Component } from '@angular/core';
 import { StandardFormsService } from '@experiences/forms/services/standard-forms-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Component({
   selector: 'pc-forms-grid',
@@ -13,6 +14,7 @@ import { provideDataGridConfig } from '@frontend/shared/components/datagrid/data
         title="Forms"
         description="Manage public and internal web forms, configure fields, and view submission statistics."
         [colDefs]="col"
+        [showDescription]="true"
         [disableDelete]="false"
         [allowFilter]="false"
         [disableView]="false"

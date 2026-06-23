@@ -1,7 +1,8 @@
 import { Component } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
 
 @Component({
@@ -12,6 +13,7 @@ import { VolunteerEventsFrontendService } from '../services/volunteer-events-fro
       <pc-datagrid
         title="Shifts"
         description="Manage volunteer shifts, schedule events, and track attendance records."
+        [showDescription]="true"
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"

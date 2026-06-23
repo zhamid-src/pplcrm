@@ -1,7 +1,8 @@
 import { Component } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { EventsFrontendService } from '../services/events-frontend-service';
 
 @Component({
@@ -12,6 +13,7 @@ import { EventsFrontendService } from '../services/events-frontend-service';
       <pc-datagrid
         title="Event Pages"
         description="Manage public event pages with RSVP and ticketing for fundraisers, town halls, and meet-and-greets."
+        [showDescription]="true"
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"
