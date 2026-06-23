@@ -30,6 +30,7 @@ export const AddEventObj = z.object({
   is_published: z.boolean().default(false).optional(),
   send_reminder: z.boolean().default(true).optional(),
   send_registration_confirmation: z.boolean().default(true).optional(),
+  fields: z.array(z.string()).optional(),
 });
 
 export const EventObj = z.object({
@@ -72,6 +73,7 @@ export const UpdateEventObj = z.object({
   is_published: z.boolean().optional(),
   send_reminder: z.boolean().optional(),
   send_registration_confirmation: z.boolean().optional(),
+  fields: z.array(z.string()).optional(),
 });
 
 export const AddTicketTypeObj = z.object({

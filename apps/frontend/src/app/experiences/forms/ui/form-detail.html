@@ -5,7 +5,6 @@
       <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
       {{ isNew() ? 'Create Web Form' : 'Edit Web Form' }}
     </h1>
-    @if (!isNew() || step() === 2) {
     <pc-form-actions
       [isLoading]="saving()"
       [signalForm]="form"
@@ -16,7 +15,6 @@
       [deleteText]="'Delete Web Form'"
       (deleteClicked)="deleteForm()"
     ></pc-form-actions>
-    }
   </header>
 
   <!-- Main Content -->
@@ -27,45 +25,6 @@
       <div class="skeleton h-12 w-full"></div>
       <div class="skeleton h-12 w-full"></div>
       <div class="skeleton h-24 w-full"></div>
-    </div>
-    } @else { @if (isNew() && step() === 1) {
-    <!-- Step 1: Type selection -->
-    <div class="mx-auto max-w-3xl py-12 px-6">
-      <div class="text-center mb-10">
-        <h2 class="text-3xl font-extrabold tracking-tight text-base-content">Choose Web Form Type</h2>
-        <p class="mt-3 text-lg text-base-content/60 max-w-xl mx-auto">
-          Select the type of form you want to create. This configuration dictates the fields collected and cannot be
-          changed later.
-        </p>
-      </div>
-
-      <div class="grid gap-6">
-        <button
-          type="button"
-          class="card border border-base-300 hover:border-primary p-8 text-left bg-base-100 hover:shadow-md transition-all duration-200 group"
-          (click)="selectType('standard')"
-        >
-          <div class="flex flex-col h-full justify-between gap-6">
-            <div class="flex items-start gap-4">
-              <div class="p-3 bg-info/10 text-info rounded-xl group-hover:bg-info/20 transition-colors">
-                <pc-icon name="document-text" [size]="10"></pc-icon>
-              </div>
-              <div>
-                <h3 class="font-bold text-lg text-base-content">Standard Form</h3>
-                <p class="text-sm text-base-content/60 mt-1 leading-relaxed">
-                  Collect basic contact info, custom tags, and newsletter subscriptions for general outreach.
-                </p>
-              </div>
-            </div>
-            <div
-              class="flex items-center gap-1.5 text-info font-semibold text-sm group-hover:translate-x-1 transition-transform"
-            >
-              Configure Standard Form
-              <pc-icon name="chevron-right" [size]="4"></pc-icon>
-            </div>
-          </div>
-        </button>
-      </div>
     </div>
     } @else {
     <div class="mx-auto max-w-5xl">
@@ -81,21 +40,6 @@
         <div class="space-y-6 md:col-span-7">
           <form (submit)="save($event)">
             <pc-card title="Form Settings">
-              <!-- Form Type -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">Form Type</label>
-                <div class="flex items-center gap-2 px-3 py-2 bg-base-200/50 rounded-lg border border-base-200">
-                  @if (payload().form_type === 'donation') {
-                  <pc-icon name="currency-dollar" class="text-success" [size]="5"></pc-icon>
-                  <span class="font-medium text-sm">Donation Form</span>
-                  } @else {
-                  <pc-icon name="document-text" class="text-info" [size]="5"></pc-icon>
-                  <span class="font-medium text-sm">Standard Form</span>
-                  }
-                </div>
-                <p class="text-[10px] text-base-content/50 mt-1">Form type cannot be changed after creation.</p>
-              </div>
-
               <!-- Name -->
               <div class="form-control">
                 <label class="label text-xs font-semibold py-1">Form Name *</label>
@@ -200,254 +144,10 @@
               @if (!isDonationForm()) {
               <div class="form-control">
                 <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60 mb-3">Form Fields</h2>
-                <div
-                  class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 bg-base-200/30 rounded-xl p-4 border border-base-200"
-                >
-                  <!-- Email (Always Required) -->
-                  <div
-                    class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
-                  >
-                    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                      <input type="checkbox" checked disabled class="checkbox checkbox-sm checkbox-primary" />
-                      <span class="text-sm font-bold text-primary">Email Address</span>
-                    </label>
-                    <span class="badge badge-sm badge-outline text-[10px] font-bold">Required</span>
-                  </div>
-
-                  <!-- First Name -->
-                  <div
-                    class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
-                  >
-                    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        [checked]="showFirstName()"
-                        (change)="toggleField('first_name')"
-                        class="checkbox checkbox-sm checkbox-primary"
-                      />
-                      <span class="text-sm font-medium text-base-content/85">First Name</span>
-                    </label>
-                    @if (showFirstName()) {
-                    <button
-                      type="button"
-                      (click)="toggleRequired('first_name')"
-                      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-                      [class.btn-primary]="isFirstNameRequired()"
-                      [class.btn-outline]="!isFirstNameRequired()"
-                    >
-                      {{ isFirstNameRequired() ? 'Required' : 'Optional' }}
-                    </button>
-                    }
-                  </div>
-
-                  <!-- Last Name -->
-                  <div
-                    class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
-                  >
-                    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        [checked]="showLastName()"
-                        (change)="toggleField('last_name')"
-                        class="checkbox checkbox-sm checkbox-primary"
-                      />
-                      <span class="text-sm font-medium text-base-content/85">Last Name</span>
-                    </label>
-                    @if (showLastName()) {
-                    <button
-                      type="button"
-                      (click)="toggleRequired('last_name')"
-                      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-                      [class.btn-primary]="isLastNameRequired()"
-                      [class.btn-outline]="!isLastNameRequired()"
-                    >
-                      {{ isLastNameRequired() ? 'Required' : 'Optional' }}
-                    </button>
-                    }
-                  </div>
-
-                  <!-- Mobile / Phone -->
-                  <div
-                    class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
-                  >
-                    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        [checked]="showMobile()"
-                        (change)="toggleField('mobile')"
-                        class="checkbox checkbox-sm checkbox-primary"
-                      />
-                      <span class="text-sm font-medium text-base-content/85">Mobile</span>
-                    </label>
-                    @if (showMobile()) {
-                    <button
-                      type="button"
-                      (click)="toggleRequired('mobile')"
-                      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-                      [class.btn-primary]="isMobileRequired()"
-                      [class.btn-outline]="!isMobileRequired()"
-                    >
-                      {{ isMobileRequired() ? 'Required' : 'Optional' }}
-                    </button>
-                    }
-                  </div>
-
-                  <!-- Notes / Message -->
-                  <div
-                    class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
-                  >
-                    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        [checked]="showNotes()"
-                        (change)="toggleField('notes')"
-                        class="checkbox checkbox-sm checkbox-primary"
-                      />
-                      <span class="text-sm font-medium text-base-content/85">Notes</span>
-                    </label>
-                    @if (showNotes()) {
-                    <button
-                      type="button"
-                      (click)="toggleRequired('notes')"
-                      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-                      [class.btn-primary]="isNotesRequired()"
-                      [class.btn-outline]="!isNotesRequired()"
-                    >
-                      {{ isNotesRequired() ? 'Required' : 'Optional' }}
-                    </button>
-                    }
-                  </div>
-
-                  <!-- Street Address -->
-                  <div
-                    class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
-                  >
-                    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        [checked]="showStreet1()"
-                        (change)="toggleField('street1')"
-                        class="checkbox checkbox-sm checkbox-primary"
-                      />
-                      <span class="text-sm font-medium text-base-content/85">Street Address</span>
-                    </label>
-                    @if (showStreet1()) {
-                    <button
-                      type="button"
-                      (click)="toggleRequired('street1')"
-                      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-                      [class.btn-primary]="isStreet1Required()"
-                      [class.btn-outline]="!isStreet1Required()"
-                    >
-                      {{ isStreet1Required() ? 'Required' : 'Optional' }}
-                    </button>
-                    }
-                  </div>
-
-                  <!-- City -->
-                  <div
-                    class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
-                  >
-                    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        [checked]="showCity()"
-                        (change)="toggleField('city')"
-                        class="checkbox checkbox-sm checkbox-primary"
-                      />
-                      <span class="text-sm font-medium text-base-content/85">City</span>
-                    </label>
-                    @if (showCity()) {
-                    <button
-                      type="button"
-                      (click)="toggleRequired('city')"
-                      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-                      [class.btn-primary]="isCityRequired()"
-                      [class.btn-outline]="!isCityRequired()"
-                    >
-                      {{ isCityRequired() ? 'Required' : 'Optional' }}
-                    </button>
-                    }
-                  </div>
-
-                  <!-- State / Province -->
-                  <div
-                    class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
-                  >
-                    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        [checked]="showState()"
-                        (change)="toggleField('state')"
-                        class="checkbox checkbox-sm checkbox-primary"
-                      />
-                      <span class="text-sm font-medium text-base-content/85">State / Province</span>
-                    </label>
-                    @if (showState()) {
-                    <button
-                      type="button"
-                      (click)="toggleRequired('state')"
-                      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-                      [class.btn-primary]="isStateRequired()"
-                      [class.btn-outline]="!isStateRequired()"
-                    >
-                      {{ isStateRequired() ? 'Required' : 'Optional' }}
-                    </button>
-                    }
-                  </div>
-
-                  <!-- Zip / Postal Code -->
-                  <div
-                    class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
-                  >
-                    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        [checked]="showZip()"
-                        (change)="toggleField('zip')"
-                        class="checkbox checkbox-sm checkbox-primary"
-                      />
-                      <span class="text-sm font-medium text-base-content/85">Zip / Postal Code</span>
-                    </label>
-                    @if (showZip()) {
-                    <button
-                      type="button"
-                      (click)="toggleRequired('zip')"
-                      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-                      [class.btn-primary]="isZipRequired()"
-                      [class.btn-outline]="!isZipRequired()"
-                    >
-                      {{ isZipRequired() ? 'Required' : 'Optional' }}
-                    </button>
-                    }
-                  </div>
-
-                  <!-- Country -->
-                  <div
-                    class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
-                  >
-                    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        [checked]="showCountry()"
-                        (change)="toggleField('country')"
-                        class="checkbox checkbox-sm checkbox-primary"
-                      />
-                      <span class="text-sm font-medium text-base-content/85">Country</span>
-                    </label>
-                    @if (showCountry()) {
-                    <button
-                      type="button"
-                      (click)="toggleRequired('country')"
-                      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-                      [class.btn-primary]="isCountryRequired()"
-                      [class.btn-outline]="!isCountryRequired()"
-                    >
-                      {{ isCountryRequired() ? 'Required' : 'Optional' }}
-                    </button>
-                    }
-                  </div>
-                </div>
+                <pc-fields-selector
+                  [selectedFields]="selectedFields()"
+                  (fieldsChange)="selectedFields.set($event)"
+                ></pc-fields-selector>
               </div>
               } @else {
               <div class="form-control">
@@ -577,15 +277,6 @@
                 </p>
               </div>
 
-              @if (isNew() && step() === 2) {
-              <div class="divider my-4"></div>
-              <div class="flex justify-start">
-                <button type="button" class="btn btn-outline btn-sm" (click)="back()">
-                  <pc-icon name="arrow-left" [size]="4" class="mr-1"></pc-icon>
-                  Back to Type Selection
-                </button>
-              </div>
-              }
             </pc-card>
           </form>
         </div>
@@ -806,6 +497,6 @@
         </div>
       </div>
     </div>
-    } }
+    }
   </main>
 </div>

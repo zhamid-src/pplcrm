@@ -270,6 +270,61 @@ const renderErrorHtml = (message: string) => `
 </html>
 `;
 
+function buildSignupFormFields(fields: string[], disabled: boolean): string {
+  const fieldSet = new Set(fields);
+  const isEnabled = (f: string) => fieldSet.has(f) || fieldSet.has(`${f}:required`);
+  const isRequired = (f: string) => fieldSet.has(`${f}:required`);
+  const dis = disabled ? 'disabled' : '';
+  const html: string[] = [];
+
+  html.push(`<input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />`);
+
+  if (isEnabled('first_name') || isEnabled('last_name')) {
+    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
+    if (isEnabled('first_name')) {
+      html.push(`<div class="form-group"><label for="first_name">First Name${isRequired('first_name') ? ' *' : ''}</label><input type="text" id="first_name" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} ${dis} /></div>`);
+    } else {
+      html.push(`<div></div>`);
+    }
+    if (isEnabled('last_name')) {
+      html.push(`<div class="form-group"><label for="last_name">Last Name${isRequired('last_name') ? ' *' : ''}</label><input type="text" id="last_name" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} ${dis} /></div>`);
+    } else {
+      html.push(`<div></div>`);
+    }
+    html.push(`</div>`);
+  }
+
+  html.push(`<div class="form-group"><label for="email">Email Address *</label><input type="email" id="email" name="email" placeholder="you@example.com" required ${dis} /></div>`);
+
+  if (isEnabled('mobile')) {
+    html.push(`<div class="form-group"><label for="mobile">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label><input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isRequired('mobile') ? 'required' : ''} ${dis} /></div>`);
+  }
+  if (isEnabled('street1')) {
+    html.push(`<div class="form-group"><label for="street1">Street Address${isRequired('street1') ? ' *' : ''}</label><input type="text" id="street1" name="street1" placeholder="123 Main St" ${isRequired('street1') ? 'required' : ''} ${dis} /></div>`);
+  }
+  if (isEnabled('city') || isEnabled('zip')) {
+    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
+    html.push(isEnabled('city') ? `<div class="form-group"><label for="city">City${isRequired('city') ? ' *' : ''}</label><input type="text" id="city" name="city" ${isRequired('city') ? 'required' : ''} ${dis} /></div>` : `<div></div>`);
+    html.push(isEnabled('zip') ? `<div class="form-group"><label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label><input type="text" id="zip" name="zip" ${isRequired('zip') ? 'required' : ''} ${dis} /></div>` : `<div></div>`);
+    html.push(`</div>`);
+  }
+  if (isEnabled('state') || isEnabled('country')) {
+    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
+    html.push(isEnabled('state') ? `<div class="form-group"><label for="state">State / Province${isRequired('state') ? ' *' : ''}</label><input type="text" id="state" name="state" ${isRequired('state') ? 'required' : ''} ${dis} /></div>` : `<div></div>`);
+    if (isEnabled('country')) {
+      html.push(`<div class="form-group"><label for="country">Country${isRequired('country') ? ' *' : ''}</label><select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${dis}><option value="">Select…</option><option value="CA">Canada</option><option value="US">United States</option><option value="GB">United Kingdom</option><option value="AU">Australia</option></select></div>`);
+    } else {
+      html.push(`<div></div>`);
+    }
+    html.push(`</div>`);
+  }
+  if (isEnabled('notes')) {
+    html.push(`<div class="form-group"><label for="notes">Notes / Special Requirements${isRequired('notes') ? ' *' : ''}</label><textarea id="notes" name="notes" placeholder="Optional. Any notes or scheduling preferences…" ${isRequired('notes') ? 'required' : ''} ${dis}></textarea></div>`);
+  }
+
+  return html.join('\n');
+}
+
 const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   fastify.register(formBody);
 
@@ -1019,34 +1074,7 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
           }
 
           <form action="/api/events/signup/${event.slug || event.id}" method="POST">
-            <!-- Honeypot Bot Field (leave empty!) -->
-            <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
-
-            <div class="form-group">
-              <label for="first_name">First Name</label>
-              <input type="text" id="first_name" name="first_name" placeholder="John" ${hasPassed ? 'disabled' : ''} />
-            </div>
-
-            <div class="form-group">
-              <label for="last_name">Last Name</label>
-              <input type="text" id="last_name" name="last_name" placeholder="Doe" ${hasPassed ? 'disabled' : ''} />
-            </div>
-
-            <div class="form-group">
-              <label for="email">Email Address *</label>
-              <input type="email" id="email" name="email" placeholder="john@example.com" required ${hasPassed ? 'disabled' : ''} />
-            </div>
-
-            <div class="form-group">
-              <label for="mobile">Mobile / Phone Number</label>
-              <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${hasPassed ? 'disabled' : ''} />
-            </div>
-
-            <div class="form-group">
-              <label for="notes">Notes / Special Requirements</label>
-              <textarea id="notes" name="notes" placeholder="Optional. Any notes or scheduling preferences..." ${hasPassed ? 'disabled' : ''}></textarea>
-            </div>
-
+            ${buildSignupFormFields(Array.isArray(event.fields) ? event.fields : typeof event.fields === 'string' ? JSON.parse(event.fields) : ['first_name', 'last_name', 'email', 'mobile', 'notes'], isFull || hasPassed)}
             <button type="submit" ${isFull || hasPassed ? 'disabled' : ''}>${hasPassed ? 'Registration Closed' : 'Sign Up for Shift'}</button>
           </form>
         </div>

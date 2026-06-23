@@ -92,6 +92,15 @@
             placeholder="E.g., Central Park Pavilion, or street coordinates"
           ></pc-input>
 
+          <div class="divider mt-4"></div>
+          <div>
+            <h4 class="font-bold text-md">Collected Fields</h4>
+            <h5>Choose which fields appear on the public signup form.</h5>
+            <pc-fields-selector
+              [selectedFields]="selectedFields()"
+              (fieldsChange)="selectedFields.set($event)"
+            ></pc-fields-selector>
+          </div>
           <div class="divider"></div>
 
           <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
@@ -437,6 +446,15 @@
         }
       </div>
     </form>
+
+    @if (!isNew() && publicUrl()) {
+    <pc-public-link-panel
+      [url]="publicUrl()"
+      label="Public Signup Link"
+      subtitle="Share this link so volunteers can sign up for the shift."
+    ></pc-public-link-panel>
+    }
   </div>
+
   }
 </div>

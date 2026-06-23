@@ -26,6 +26,8 @@ export * from './components/profile-card/profile-card';
 export * from './components/detail-row/detail-row';
 export * from './components/detail-item/detail-item';
 export * from './components/system-metadata/system-metadata';
+export * from './components/fields-selector/fields-selector';
+export * from './components/public-link-panel/public-link-panel';
 
 // Directives
 export * from './directives/animate-if.directive';

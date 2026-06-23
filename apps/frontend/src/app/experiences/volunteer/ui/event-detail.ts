@@ -11,6 +11,8 @@ import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
+import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
 
 import {
   AddVolunteerEventObj,
@@ -36,6 +38,8 @@ import { VolunteerEventsFrontendService } from '../services/volunteer-events-fro
     PcDetailHeader,
     PcEntityOverview,
     PcCard,
+    FieldsSelector,
+    PublicLinkPanel,
   ],
   templateUrl: './event-detail.html',
   providers: [VolunteerService],
@@ -50,6 +54,13 @@ export class EventDetailComponent {
   private readonly volunteerSvc = inject(VolunteerService);
 
   private slugTimeoutId: any = null;
+
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+  protected readonly publicUrl = computed(() => {
+    const slug = this.payload().slug;
+    if (!slug || this.isNew()) return '';
+    return `${environment.apiUrl}/api/events/view/${slug}`;
+  });
 
   protected readonly allVolunteers = signal<any[]>([]);
   protected readonly detail = signal<any>(null);
@@ -258,6 +269,10 @@ export class EventDetailComponent {
         send_volunteer_alert: event.send_volunteer_alert !== false,
       });
 
+      if (Array.isArray((event as any).fields) && (event as any).fields.length > 0) {
+        this.selectedFields.set((event as any).fields);
+      }
+
       await this.loadRoster();
     } catch (err: any) {
       this.error.set(err?.message || 'Failed to load event');
@@ -340,6 +355,7 @@ export class EventDetailComponent {
       send_reminder: !!raw.send_reminder,
       send_signup_confirmation: !!raw.send_signup_confirmation,
       send_volunteer_alert: !!raw.send_volunteer_alert,
+      fields: this.selectedFields(),
     };
 
     try {

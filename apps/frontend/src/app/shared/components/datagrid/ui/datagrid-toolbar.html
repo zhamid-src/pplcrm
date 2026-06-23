@@ -54,6 +54,14 @@
 
   <!-- Tag Filter Dropdown -->
   @if (grid.showTagFilter()) {
+
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableExport()"
+    [tip]="'Narrow by type'"
+    icon="arrow-down-tray"
+    (action)="onExportCsv()"
+  />
+
   <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
 
   <pc-grid-tool-btn

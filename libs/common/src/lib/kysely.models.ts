@@ -724,6 +724,7 @@ export interface VolunteerEvents extends RecordType {
   slug: string;
   send_signup_confirmation: boolean;
   send_volunteer_alert: boolean;
+  fields: Generated<string[]>;
 }
 
 export interface VolunteerShifts extends RecordType {
@@ -747,6 +748,7 @@ export interface Events extends RecordType {
   is_published: Generated<boolean>;
   send_reminder: Generated<boolean>;
   send_registration_confirmation: Generated<boolean>;
+  fields: Generated<string[]>;
 }
 
 export interface EventTicketTypes extends RecordType {
