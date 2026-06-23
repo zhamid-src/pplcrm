@@ -1,4 +1,4 @@
-import { Component, effect, inject, output, signal, computed, ViewChild, ElementRef } from '@angular/core';
+import { Component, effect, inject, output, signal, computed, viewChild, ElementRef } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -34,7 +34,7 @@ export class EmailList {
   private readonly store = inject(EmailsStore);
   private readonly alertSvc = inject(AlertService);
 
-  @ViewChild('scrollContainer') public scrollContainer?: ElementRef<HTMLUListElement>;
+  public readonly scrollContainer = viewChild<ElementRef<HTMLUListElement>>('scrollContainer');
 
   public readonly emailSelected = output<EmailType>();
 
@@ -85,8 +85,9 @@ export class EmailList {
       const folderChanged = folderId !== lastFolderId;
       lastFolderId = folderId;
 
-      if (folderChanged && this.scrollContainer) {
-        this.scrollContainer.nativeElement.scrollTop = 0;
+      const container = this.scrollContainer();
+      if (folderChanged && container) {
+        container.nativeElement.scrollTop = 0;
       }
 
       // If the list is empty, clear any existing selection and bail out.
