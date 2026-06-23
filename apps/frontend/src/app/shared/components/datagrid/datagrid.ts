@@ -403,6 +403,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public listId = input<string | null>(null);
   public title = input<string | null>(null);
   public description = input<string | null>(null);
+  public showDescription = input<boolean>(false);
 
   protected readonly dgTagOptionsSvc = inject(TagOptionsService);
 

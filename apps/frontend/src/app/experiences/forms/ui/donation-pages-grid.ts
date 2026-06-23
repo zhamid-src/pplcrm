@@ -1,8 +1,9 @@
 import { Component } from '@angular/core';
 import { DonationPagesService } from '@experiences/forms/services/donation-pages-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Component({
   selector: 'pc-donation-pages-grid',
@@ -12,6 +13,7 @@ import { provideDataGridConfig } from '@frontend/shared/components/datagrid/data
       <pc-datagrid
         title="Donation Pages"
         description="Manage embeddable donation and recurring pledge pages that connect to Stripe."
+        [showDescription]="true"
         [colDefs]="col"
         [disableDelete]="false"
         [allowFilter]="false"
