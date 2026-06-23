@@ -20,6 +20,7 @@ export const AddVolunteerEventObj = z.object({
   send_reminder: z.boolean().default(true).optional(),
   send_signup_confirmation: z.boolean().default(true).optional(),
   send_volunteer_alert: z.boolean().default(true).optional(),
+  fields: z.array(z.string()).optional(),
   slug: z
     .string()
     .trim()
@@ -72,6 +73,7 @@ export const UpdateVolunteerEventObj = z.object({
   send_reminder: z.boolean().optional(),
   send_signup_confirmation: z.boolean().optional(),
   send_volunteer_alert: z.boolean().optional(),
+  fields: z.array(z.string()).optional(),
   slug: z
     .string()
     .trim()

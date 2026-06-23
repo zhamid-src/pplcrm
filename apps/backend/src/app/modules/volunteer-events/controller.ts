@@ -8,6 +8,8 @@ import { env } from '../../../env';
 import { createHmac } from 'crypto';
 import { WorkflowsController } from '../workflows/controller';
 
+const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
 const ipSignupTimestamps = new Map<string, number[]>();
 const SIGNUP_RATE_LIMIT_MAX = 5;
 const SIGNUP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
@@ -63,6 +65,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       send_signup_confirmation: payload.send_signup_confirmation ?? true,
       send_volunteer_alert: payload.send_volunteer_alert ?? true,
       slug: payload.slug,
+      fields: payload.fields ?? DEFAULT_FIELDS,
     } as OperationDataType<'volunteer_events', 'insert'>;
     return this.add(row);
   }
@@ -503,6 +506,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         'volunteer_events.is_private',
         'volunteer_events.send_reminder',
         'volunteer_events.slug',
+        'volunteer_events.fields',
       ])
       .select((eb) => [
         eb

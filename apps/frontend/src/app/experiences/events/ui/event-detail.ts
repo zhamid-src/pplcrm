@@ -10,6 +10,9 @@ import { EntityOverview as PcEntityOverview } from "@uxcommon/components/entity-
 import { Input as PcInput } from "@uxcommon/components/input/input";
 import { Textarea as PcTextarea } from "@uxcommon/components/textarea/textarea";
 import { createLoadingGate } from "@uxcommon/loading-gate";
+import { FieldsSelector } from "@uxcommon/components/fields-selector/fields-selector";
+import { PublicLinkPanel } from "@uxcommon/components/public-link-panel/public-link-panel";
+import { environment } from "../../../../environments/environment";
 
 import { AddEventObj, AddEventType, UpdateEventType } from "../../../../../../../libs/common/src";
 import { EventsService } from "../../../services/api/events-service";
@@ -28,6 +31,8 @@ import { EventsFrontendService } from "../services/events-frontend-service";
     PcDetailHeader,
     PcEntityOverview,
     PcCard,
+    FieldsSelector,
+    PublicLinkPanel,
   ],
   templateUrl: './event-detail.html',
   providers: [EventsService],
@@ -43,6 +48,12 @@ export class EventPageDetailComponent {
   private slugTimeoutId: any = null;
 
   protected readonly addingTicket = signal(false);
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+  protected readonly publicUrl = computed(() => {
+    const slug = this.payload().slug;
+    if (!slug || this.isNew()) return '';
+    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
+  });
   protected readonly detail = signal<any>(null);
   protected readonly payload = signal({
     name: '',
@@ -199,6 +210,9 @@ export class EventPageDetailComponent {
         send_reminder: event.send_reminder !== false,
         send_registration_confirmation: event.send_registration_confirmation !== false,
       });
+      if (Array.isArray(event.fields) && event.fields.length > 0) {
+        this.selectedFields.set(event.fields);
+      }
       await this.loadTicketTypes();
     } catch (err: any) {
       this.error.set(err?.message || 'Failed to load event');
@@ -252,6 +266,7 @@ export class EventPageDetailComponent {
       is_published: !!raw.is_published,
       send_reminder: !!raw.send_reminder,
       send_registration_confirmation: !!raw.send_registration_confirmation,
+      fields: this.selectedFields(),
     };
 
     try {

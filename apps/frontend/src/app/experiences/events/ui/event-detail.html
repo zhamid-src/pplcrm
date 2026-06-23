@@ -80,6 +80,16 @@
             placeholder="E.g., 123 Main St, City Hall Ballroom"
           ></pc-input>
 
+          <div class="divider mt-4"></div>
+          <div>
+            <h4 class="font-bold text-md">Collected Fields</h4>
+            <h5>Choose which fields appear on the public RSVP form.</h5>
+            <pc-fields-selector
+              [selectedFields]="selectedFields()"
+              (fieldsChange)="selectedFields.set($event)"
+            ></pc-fields-selector>
+          </div>
+
           <div class="divider"></div>
 
           <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
@@ -123,7 +133,9 @@
           </button>
 
           @if (ticketTypes().length === 0 && !addingTicket()) {
-          <p class="text-sm text-base-content/40 italic">No ticket types defined — this event uses a simple free RSVP.</p>
+          <p class="text-sm text-base-content/40 italic">
+            No ticket types defined — this event uses a simple free RSVP.
+          </p>
           } @else {
           <div class="overflow-x-auto border border-base-300 rounded-lg">
             <table class="table table-sm w-full text-xs">
@@ -147,18 +159,12 @@
                   <td class="font-mono">{{ formatPrice(ticket.price_cents) }}</td>
                   <td>{{ ticket.capacity ?? 'Unlimited' }}</td>
                   <td>
-                    <button
-                      type="button"
-                      class="btn btn-ghost btn-xs text-error"
-                      (click)="deleteTicketType(ticket.id)"
-                    >
+                    <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteTicketType(ticket.id)">
                       <pc-icon name="trash" [size]="4"></pc-icon>
                     </button>
                   </td>
                 </tr>
-                }
-
-                @if (addingTicket()) {
+                } @if (addingTicket()) {
                 <tr class="bg-base-200/30">
                   <td>
                     <input
@@ -301,6 +307,16 @@
         ></pc-entity-overview>
         }
       </div>
+
+      <!-- Right col: Fields & Public Link -->
+
+      @if (!isNew() && publicUrl()) {
+      <pc-public-link-panel
+        [url]="publicUrl()"
+        label="Public RSVP Link"
+        subtitle="Share this link so people can RSVP for the event."
+      ></pc-public-link-panel>
+      }
     </form>
   </div>
   }

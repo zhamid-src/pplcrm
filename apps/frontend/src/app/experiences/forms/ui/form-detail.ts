@@ -12,12 +12,13 @@ import { Icon } from '@icons/icon';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
+import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
 import { SettingsService } from '@experiences/settings/services/settings-service';
 import { environment } from '../../../../environments/environment';
 
 @Component({
   selector: 'pc-form-detail',
-  imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions, PcCard],
+  imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions, PcCard, FieldsSelector],
   templateUrl: './form-detail.html',
 })
 export class FormDetailComponent implements OnInit {
@@ -36,16 +37,6 @@ export class FormDetailComponent implements OnInit {
   protected readonly error = signal<string | null>(null);
   protected readonly isNew = signal(true);
   protected readonly formId = signal<string | null>(null);
-  protected readonly step = signal<1 | 2>(1);
-
-  protected selectType(type: 'standard' | 'donation' | 'recurring_donation') {
-    this.payload.update((p) => ({ ...p, form_type: type }));
-    this.step.set(2);
-  }
-
-  protected back() {
-    this.step.set(1);
-  }
 
   protected readonly hasStripeKey = computed(() => {
     const key = this.settingsSvc.getValue<string>('donations.stripe_secret_key', '');
@@ -345,9 +336,6 @@ ${
     if (id && id !== 'add') {
       this.isNew.set(false);
       this.formId.set(id);
-      this.step.set(2);
-    } else {
-      this.step.set(1);
     }
     void this.loadLists();
     void this.settingsSvc.load();
