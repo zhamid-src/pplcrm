@@ -33,7 +33,9 @@ const msSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
       }
     }
 
-    const returnBase = parsedState.returnTo ? `${frontendBase}${parsedState.returnTo}` : `${frontendBase}/settings`;
+    // Only allow a relative path that doesn't start with // (prevents open redirect)
+    const safeReturnTo = parsedState.returnTo?.match(/^\/(?!\/)/) ? parsedState.returnTo : null;
+    const returnBase = safeReturnTo ? `${frontendBase}${safeReturnTo}` : `${frontendBase}/settings`;
     const sep = (base: string) => (base.includes('?') ? '&' : '?');
 
     if (error) {
@@ -44,24 +46,14 @@ const msSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
       return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=missing_code`);
     }
 
+    const { userId, tenantId } = parsedState;
+    if (!userId || !tenantId) {
+      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=invalid_state`);
+    }
+
     try {
-      const { userId, tenantId } = parsedState;
       const oauthSvc = getOAuthService();
-      await oauthSvc.handleCallback(code, userId!, tenantId!);
-
-      const db = (BaseRepository as any)['_db'];
-      await db
-        .insertInto('background_jobs')
-        .values({
-          tenant_id: tenantId,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({ type: 'ms_sync', userId, tenantId, requestedBy: userId }),
-          run_at: new Date(),
-          max_attempts: 3,
-        })
-        .execute();
-
+      await oauthSvc.handleCallback(code, userId, tenantId);
       return reply.redirect(`${returnBase}${sep(returnBase)}ms_connected=1`);
     } catch (err: any) {
       const msg = err?.message ?? 'unknown_error';

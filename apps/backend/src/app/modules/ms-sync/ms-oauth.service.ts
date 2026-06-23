@@ -2,7 +2,7 @@ import { ConfidentialClientApplication, AuthorizationCodeRequest } from '@azure/
 import { Kysely } from 'kysely';
 import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 
-const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
+export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
 
 const MS_SCOPES = [
   'https://graph.microsoft.com/Mail.Read',
@@ -60,32 +60,47 @@ export class MsOAuthService {
     const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
     const refreshToken = refreshTokenEntry[0]?.secret ?? '';
 
-    await this.db
-      .insertInto('ms_oauth_tokens')
-      .values({
-        tenant_id: tenantId,
-        user_id: userId,
-        access_token: response.accessToken,
-        refresh_token: refreshToken,
-        expires_at: expiresAt,
-        ms_email: response.account.username ?? null,
-        delta_link: NEEDS_FULL_SYNC,
-        synced_at: null,
-      })
-      .onConflict((oc) =>
-        oc.column('user_id').doUpdateSet({
+    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto('ms_oauth_tokens')
+        .values({
+          tenant_id: tenantId,
+          user_id: userId,
           access_token: response.accessToken,
           refresh_token: refreshToken,
           expires_at: expiresAt,
           ms_email: response.account?.username ?? null,
           delta_link: NEEDS_FULL_SYNC,
           synced_at: null,
-          last_sync_error: null,
-          last_sync_error_at: null,
-          updated_at: new Date(),
-        }),
-      )
-      .execute();
+        })
+        .onConflict((oc) =>
+          oc.column('user_id').doUpdateSet({
+            access_token: response.accessToken,
+            refresh_token: refreshToken,
+            expires_at: expiresAt,
+            ms_email: response.account?.username ?? null,
+            delta_link: NEEDS_FULL_SYNC,
+            synced_at: null,
+            last_sync_error: null,
+            last_sync_error_at: null,
+            updated_at: new Date(),
+          }),
+        )
+        .execute();
+
+      await trx
+        .insertInto('background_jobs' as any)
+        .values({
+          tenant_id: tenantId,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({ type: 'ms_sync', userId, tenantId, requestedBy: userId }),
+          run_at: new Date(),
+          max_attempts: 3,
+        })
+        .execute();
+    });
   }
 
   public async getValidToken(userId: string): Promise<string> {

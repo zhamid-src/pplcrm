@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
+import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -10,10 +10,11 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
   imports: [Icon],
   templateUrl: './ms-sync-settings.html',
 })
-export class MsSyncSettings extends TRPCService<unknown> implements OnInit, OnDestroy {
+export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly route = inject(ActivatedRoute);
   private readonly dialogs = inject(ConfirmDialogService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly status = signal<{
     connected: boolean;
@@ -28,7 +29,7 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit, OnDe
   protected readonly isSyncing = signal(false);
   protected readonly connectError = signal<string | null>(null);
   protected readonly lastSyncResult = signal<{ inserted: number } | null>(null);
-  private pollingTimer: any = null;
+  private pollingTimer: ReturnType<typeof setInterval> | null = null;
 
   public async ngOnInit() {
     // Handle OAuth redirect result (ms_connected or ms_error query params)
@@ -40,10 +41,6 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit, OnDe
     }
 
     await this.loadStatus();
-  }
-
-  public ngOnDestroy() {
-    this.stopPollingStatus();
   }
 
   protected async connect() {
@@ -136,6 +133,7 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit, OnDe
       }
     } catch (err) {
       console.error('Failed to load connection status:', err);
+      this.isSyncing.set(false);
     } finally {
       this.isLoading.set(false);
     }
@@ -157,6 +155,7 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit, OnDe
         this.stopPollingStatus();
       }
     }, 4000);
+    this.destroyRef.onDestroy(() => this.stopPollingStatus());
   }
 
   private stopPollingStatus() {
