@@ -71,9 +71,12 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
     return !!route.data['shouldReuse'];
   }
 
-  public shouldReuseRoute(future: ActivatedRouteSnapshot): boolean {
+  public shouldReuseRoute(future: ActivatedRouteSnapshot, curr: ActivatedRouteSnapshot): boolean {
     this.ensureRouterSubscription();
-    return !!future.data['shouldReuse'];
+    if (future.data['shouldReuse'] !== undefined) {
+      return !!future.data['shouldReuse'];
+    }
+    return future.routeConfig === curr.routeConfig;
   }
 
   public store(route: ActivatedRouteSnapshot, handle: DetachedRouteHandle | null): void {
