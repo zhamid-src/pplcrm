@@ -1,91 +1,84 @@
 import { computed, signal } from '@angular/core';
 
 export class UndoManager {
-  private readonly redoSize = signal(0);
-  private readonly undoSize = signal(0);
   private readonly isOperating = signal(false);
 
-  private undoStack: any[] = [];
-  private redoStack: any[] = [];
+  private readonly undoStack = signal<any[]>([]);
+  private readonly redoStack = signal<any[]>([]);
   private grid: any = null;
 
-  public readonly canRedo = computed(() => this.redoSize() > 0 && !this.isOperating());
-  public readonly canUndo = computed(() => this.undoSize() > 0 && !this.isOperating());
+  public readonly canRedo = computed(() => this.redoStack().length > 0 && !this.isOperating());
+  public readonly canUndo = computed(() => this.undoStack().length > 0 && !this.isOperating());
 
   public getRedoSize(): number {
-    return this.redoStack.length;
+    return this.redoStack().length;
   }
 
   public getUndoSize(): number {
-    return this.undoStack.length;
+    return this.undoStack().length;
   }
 
   public initialize(_api: any): void {
     this.grid = _api;
     this.isOperating.set(false);
-    this.updateSizes();
   }
 
   public pushUndo(snapshot: any): void {
-    this.undoStack.push(snapshot);
-    if (this.undoStack.length > 50) {
-      this.undoStack.shift();
-    }
-    this.redoStack = [];
-    this.updateSizes();
+    this.undoStack.update((s) => {
+      const next = [...s, snapshot];
+      return next.length > 50 ? next.slice(1) : next;
+    });
+    this.redoStack.set([]);
   }
 
   public async redo() {
-    if (this.isOperating()) return;
-    if (this.redoStack.length === 0 || !this.grid) return;
+    const redoStack = this.redoStack();
+    if (this.isOperating() || redoStack.length === 0 || !this.grid) return;
 
     this.isOperating.set(true);
     try {
-      const target = this.redoStack.pop();
+      const target = redoStack[redoStack.length - 1];
+      this.redoStack.update((s) => s.slice(0, -1));
+
       const current = this.captureCurrentState();
       if (current && target.editMeta) {
         current.editMeta = target.editMeta;
       }
 
-      this.undoStack.push(current);
-      if (this.undoStack.length > 50) {
-        this.undoStack.shift();
-      }
+      this.undoStack.update((s) => {
+        const next = [...s, current];
+        return next.length > 50 ? next.slice(1) : next;
+      });
 
       await this.applySnapshot(target, 'redo');
     } finally {
       this.isOperating.set(false);
-      this.updateSizes();
     }
   }
 
   public async undo() {
-    if (this.isOperating()) return;
-    if (this.undoStack.length === 0 || !this.grid) return;
+    const undoStack = this.undoStack();
+    if (this.isOperating() || undoStack.length === 0 || !this.grid) return;
 
     this.isOperating.set(true);
     try {
-      const target = this.undoStack.pop();
+      const target = undoStack[undoStack.length - 1];
+      this.undoStack.update((s) => s.slice(0, -1));
+
       const current = this.captureCurrentState();
       if (current && target.editMeta) {
         current.editMeta = target.editMeta;
       }
 
-      this.redoStack.push(current);
-      if (this.redoStack.length > 50) {
-        this.redoStack.shift();
-      }
+      this.redoStack.update((s) => {
+        const next = [...s, current];
+        return next.length > 50 ? next.slice(1) : next;
+      });
 
       await this.applySnapshot(target, 'undo');
     } finally {
       this.isOperating.set(false);
-      this.updateSizes();
     }
-  }
-
-  public updateSizes() {
-    this.undoSize.set(this.getUndoSize());
-    this.redoSize.set(this.getRedoSize());
   }
 
   private captureCurrentState(): any {
@@ -133,7 +126,6 @@ export class UndoManager {
         }
       }
     } else {
-      // Fallback: diff current and target rows when metadata is not present
       try {
         const currentRows = store.rows() || [];
         const diffs = this.findRowsDiff(currentRows, target.rows);

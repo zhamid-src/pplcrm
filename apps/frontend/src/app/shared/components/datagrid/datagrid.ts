@@ -318,7 +318,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly showArchiveIcon = input<boolean>(false);
   public readonly archiveIcon = input<PcIconNameType>('archive-box');
   public readonly archiveTip = input<string>('See archived tasks');
-  public readonly updateUndoSizes = this.undoMgr.updateSizes.bind(this.undoMgr);
   public readonly labelForFn = (f: string) => this.panelLabelFor(f);
   public readonly optionsForFn = (f: string) => this.panelOptionsFor(f);
   // Header handlers now called directly by pc-dg-header via injection
