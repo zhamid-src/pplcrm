@@ -1,6 +1,8 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, WritableSignal, computed, effect, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { NgTemplateOutlet } from '@angular/common';
-import { Router, RouterLink } from '@angular/router';
+import { NavigationCancel, NavigationError, NavigationStart, Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { filter, map } from 'rxjs';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
 
@@ -11,7 +13,7 @@ import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 
 @Component({
   selector: 'pc-sidebar',
-  imports: [NgTemplateOutlet, Icon, RouterLink, Swap, AnimateIfDirective],
+  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
   templateUrl: './sidebar.html',
   styles: [
     `
@@ -24,12 +26,21 @@ import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 export class Sidebar {
   private readonly sidebarSvc = inject(SidebarService);
   private readonly auth = inject(AuthService);
-
-  protected readonly router = inject(Router);
+  private readonly router = inject(Router);
 
   protected hoveringSidebar = signal(false);
 
-  protected get items() {
+  protected readonly pendingRoute = toSignal(
+    this.router.events.pipe(
+      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
+      map((e) => (e instanceof NavigationStart ? e.url : null)),
+    ),
+    { initialValue: null },
+  );
+
+  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
+
+  protected readonly items = computed(() => {
     const role = this.auth.getUser()?.role;
     const allItems = this.sidebarSvc.getItems()();
     if (role === 'user') {
@@ -44,15 +55,35 @@ export class Sidebar {
       });
     }
     return allItems;
+  });
+
+  constructor() {
+    effect(() => {
+      const flatItems = this.flattenItems(this.items());
+      for (const item of flatItems) {
+        const key = item.name + (item.route ?? '');
+        const visible = !item.hidden && !item.hiddenByFavourite;
+        const existing = this.visibilitySignals.get(key);
+        if (existing) {
+          existing.set(visible);
+        } else {
+          this.visibilitySignals.set(key, signal(visible));
+        }
+      }
+    });
   }
 
   protected closeMobile() {
     this.sidebarSvc.closeMobile();
   }
 
-  // return a signal indicating whether the item should be visible or not as indicated by !nav.hidden && !nav.hiddenByFavourite
-  protected getVisibilitySignal(item: ISidebarItem) {
-    return signal(!item.hidden && !item.hiddenByFavourite);
+  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
+    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
+  }
+
+  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
+    const key = item.name + (item.route ?? '');
+    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
   }
 
   protected isCollapsed(name: string): boolean {
