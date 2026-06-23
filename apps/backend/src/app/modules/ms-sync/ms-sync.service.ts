@@ -48,20 +48,12 @@ export class MsSyncService {
     const accessToken = await this.oauthSvc.getValidToken(userId);
     const client = this.buildGraphClient(accessToken);
 
-    // Query active email folders for this tenant from database to prevent foreign key issues
-    const dbFolders: any[] = await (this.db as any)
-      .selectFrom('email_folders')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .execute();
-    const allowedFolderIds = new Set(dbFolders.map((f: any) => String(f.id)));
-
     const syncFolders = [
       { wellKnownName: 'inbox', pplcrmId: ALL_FOLDERS.INBOX },
       { wellKnownName: 'sentitems', pplcrmId: ALL_FOLDERS.SENT },
       { wellKnownName: 'deleteditems', pplcrmId: ALL_FOLDERS.TRASH },
       { wellKnownName: 'junkemail', pplcrmId: ALL_FOLDERS.SPAM },
-    ].filter((f) => allowedFolderIds.has(f.pplcrmId));
+    ];
 
     // Read stored delta map
     const dbDeltaLink = await this.oauthSvc.getDeltaLink(userId);
@@ -79,7 +71,27 @@ export class MsSyncService {
     const nextDeltaMap: Record<string, string> = { ...deltaMap };
 
     for (const folder of syncFolders) {
-      const folderDeltaLink = deltaMap[folder.wellKnownName] || null;
+      let folderDeltaLink = deltaMap[folder.wellKnownName] || null;
+
+      // If a delta link exists but no emails are locally stored from this provider+folder,
+      // the delta position is ahead of local data (e.g. from a failed prior sync).
+      // Force a fresh full sync so messages aren't permanently skipped.
+      if (folderDeltaLink) {
+        const hasLocalEmails = await this.db
+          .selectFrom('emails')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('folder_id', '=', folder.pplcrmId)
+          .where('preview', 'like', 'ms:%')
+          .limit(1)
+          .executeTakeFirst();
+
+        if (!hasLocalEmails) {
+          folderDeltaLink = null;
+          delete nextDeltaMap[folder.wellKnownName];
+        }
+      }
+
       let pageUrl: string | null =
         folderDeltaLink ??
         `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;

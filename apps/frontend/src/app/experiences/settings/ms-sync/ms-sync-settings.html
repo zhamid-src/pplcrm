@@ -27,6 +27,16 @@
     </button>
 
     <button
+      type="button"
+      class="btn btn-ghost"
+      [disabled]="isSyncing()"
+      (click)="forceFullResync()"
+    >
+      <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
+      Force Full Re-sync
+    </button>
+
+    <button
       id="ms-disconnect-btn"
       type="button"
       class="btn btn-ghost text-error hover:bg-error/10"

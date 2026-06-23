@@ -112,9 +112,18 @@ function disconnect() {
     });
 }
 
+function resetSync() {
+  return authProcedure.mutation(async ({ ctx }) => {
+    const { oauthSvc } = getServices();
+    await oauthSvc.saveDeltaLink(ctx.auth.user_id, '{}');
+    return { success: true };
+  });
+}
+
 export const MsSyncRouter = router({
   getAuthUrl: getAuthUrl(),
   getConnectionStatus: getConnectionStatus(),
   syncNow: syncNow(),
   disconnect: disconnect(),
+  resetSync: resetSync(),
 });
