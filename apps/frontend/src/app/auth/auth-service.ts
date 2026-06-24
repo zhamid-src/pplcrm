@@ -2,6 +2,7 @@ import { signal, Service } from '@angular/core';
 import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
 import { TRPCService } from '../services/api/trpc-service';
 import { TRPCError } from '@trpc/server';
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 
 @Service()
 export class AuthService extends TRPCService<'authusers'> {
@@ -141,6 +142,47 @@ export class AuthService extends TRPCService<'authusers'> {
 
   public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
     return this.api.auth.resendVerificationEmail.mutate({ email }) as Promise<{ success: boolean }>;
+  }
+
+  public async signInWithPasskey(): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
+    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
+    let response: any;
+    try {
+      response = await startAuthentication({ optionsJSON: options });
+    } catch (err: any) {
+      if (err?.name === 'NotAllowedError') return { user: null, cancelled: true };
+      throw err;
+    }
+    const token = await (
+      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
+    )({ response, nonce }, { meta: { skipErrorHandler: true } });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if (user?.tenant_deletion_scheduled_at) {
+      this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      this.router.navigate(['/resume-account']);
+    }
+    return { user, cancelled: false };
+  }
+
+  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
+    const options = await this.api.auth.passkeyRegistrationOptions.query();
+    const response = await startRegistration({ optionsJSON: options as any });
+    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
+      verified: boolean;
+    };
+  }
+
+  public listPasskeys() {
+    return this.api.auth.listPasskeys.query();
+  }
+
+  public deletePasskey(id: string) {
+    return this.api.auth.deletePasskey.mutate({ id });
+  }
+
+  public updatePasskeyName(id: string, friendlyName: string) {
+    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
   }
 
   private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {

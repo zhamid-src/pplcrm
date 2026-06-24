@@ -16,6 +16,7 @@ import { BillingSettingsComponent } from './billing/billing-settings';
 import { DomainSettingsComponent } from './domains/domains-settings';
 import { DonationsSettingsComponent } from './donations/donations-settings';
 import { AccountSettingsComponent } from './account/account-settings';
+import { PasskeySettingsComponent } from './security/passkey-settings';
 import { HouseholdsService } from '../households/services/households-service';
 
 interface SectionFieldState {
@@ -41,6 +42,7 @@ interface SectionState {
     DomainSettingsComponent,
     DonationsSettingsComponent,
     AccountSettingsComponent,
+    PasskeySettingsComponent,
     DatePipe,
   ],
   templateUrl: './settings-page.html',
