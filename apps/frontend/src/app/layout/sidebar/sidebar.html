@@ -1,7 +1,7 @@
 <ng-template #navLink let-nav>
   <a
     *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="hover:font-bold hover:text-primary flex flex-auto items-center pb-1 pl-2 tracking-widest hover:rounded-lg cursor-pointer"
+    class="hover:font-bold hover:text-primary flex flex-auto items-center pb-1 pl-2 tracking-widest hover:rounded-lg !cursor-pointer"
     (click)="this.closeMobile()"
     [routerLink]="nav.route"
     routerLinkActive="font-bold"
@@ -10,7 +10,7 @@
   >
     <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
     <span
-      class="indicator pl-2 group-hover:md:visible text-sm cursor-pointer"
+      class="indicator pl-2 group-hover:md:visible text-sm"
       [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()"
     >
       {{ nav.name }} @if (nav.indicator) {
