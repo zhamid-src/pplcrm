@@ -32,6 +32,8 @@ const envSchema = z.object({
   POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
   SENDGRID_API_KEY: z.string().optional(),
   GOOGLE_MAPS_API_KEY: z.string().optional(),
+  WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
+  WEBAUTHN_RP_NAME: z.string().optional().default('PeopleCRM'),
 });
 
 const parsedEnv = envSchema.parse(process.env);
@@ -67,4 +69,6 @@ export const env = {
   postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
   sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
   googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
+  webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
+  webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
 };

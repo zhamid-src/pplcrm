@@ -189,6 +189,19 @@ export class SignInPage implements OnInit {
     this.otpData.update((o) => ({ ...o, code: '' }));
   }
 
+  public async signInWithPasskey() {
+    const end = this._loading.begin();
+    try {
+      const result = await this.authService.signInWithPasskey();
+      if (result.cancelled) return;
+      if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
+    } catch (err: any) {
+      this.alertSvc.showError(err.message || 'Passkey sign-in failed. Please try again.');
+    } finally {
+      end();
+    }
+  }
+
   public async resendVerification() {
     const emailVal = this.pendingEmail().trim();
     if (!emailVal) return;

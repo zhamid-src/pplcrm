@@ -16,7 +16,7 @@ import type {
 } from 'kysely';
 import type { EmailStatus } from './emails';
 import type { z } from 'zod';
-import { addressSchema } from './schema';
+import type { addressSchema } from './schema';
 
 export type Keys<T> = keyof T;
 type Json = ColumnType<JsonValue, string, string>;
@@ -88,6 +88,7 @@ export interface Models {
   workflow_steps: WorkflowSteps;
   workflow_enrollments: WorkflowEnrollments;
   person_connections: PersonConnections;
+  passkeys: Passkeys;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -828,6 +829,21 @@ export interface PersonConnections extends RecordType {
   custom_label: string | null;
   is_mutual: Generated<boolean>;
   notes: string | null;
+}
+
+interface Passkeys {
+  id: Generated<bigint>;
+  user_id: string;
+  tenant_id: string;
+  credential_id: string;
+  public_key: string;
+  counter: Generated<bigint>;
+  device_type: string;
+  backed_up: Generated<boolean>;
+  transports: string[] | null;
+  aaguid: string | null;
+  friendly_name: string | null;
+  created_at: Generated<Timestamp>;
 }
 
 type UnwrapSelect<T> = T extends ColumnType<infer S, any, any> ? S : T;

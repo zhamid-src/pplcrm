@@ -1,0 +1,89 @@
+<div class="space-y-6">
+  <div class="flex items-center justify-between">
+    <p class="text-sm text-base-content/60">
+      Passkeys let you sign in securely using your device's biometrics or PIN — no password required.
+    </p>
+    <button
+      type="button"
+      class="btn btn-sm btn-primary shrink-0"
+      (click)="addPasskey()"
+      [disabled]="adding() || loading()"
+    >
+      @if (adding()) {
+      <span class="loading loading-spinner loading-xs"></span>
+      } @else {
+      <pc-icon name="plus" [size]="4"></pc-icon>
+      } Add Passkey
+    </button>
+  </div>
+
+  @if (loading()) {
+  <div class="flex justify-center py-8">
+    <span class="loading loading-spinner loading-md text-primary"></span>
+  </div>
+  } @else if (passkeys().length === 0) {
+  <div class="rounded-xl border border-dashed border-base-300 bg-base-50/50 p-8 text-center">
+    <pc-icon name="lock-closed" [size]="10" class="mx-auto text-base-content/20 mb-3"></pc-icon>
+    <p class="text-sm text-base-content/50 font-medium">No passkeys registered</p>
+    <p class="text-xs text-base-content/40 mt-1">Add a passkey to sign in faster and more securely.</p>
+  </div>
+  } @else {
+  <ul class="space-y-3">
+    @for (pk of passkeys(); track pk.id) {
+    <li class="flex items-center gap-4 rounded-xl border border-base-200 bg-base-100 p-4">
+      <pc-icon name="lock-closed" [size]="6" class="shrink-0 text-primary/70"></pc-icon>
+      <div class="flex-1 min-w-0">
+        @if (pk.editingName) {
+        <div class="flex items-center gap-2">
+          <input
+            type="text"
+            class="input input-sm input-bordered flex-1 max-w-xs"
+            [value]="pk.pendingName"
+            (input)="updatePendingName(pk, $any($event.target).value)"
+            (keydown.enter)="savePasskeyName(pk)"
+            (keydown.escape)="cancelEditName(pk)"
+            placeholder="Passkey name"
+            maxlength="100"
+            autofocus
+          />
+          <button type="button" class="btn btn-xs btn-primary" (click)="savePasskeyName(pk)">Save</button>
+          <button type="button" class="btn btn-xs btn-ghost" (click)="cancelEditName(pk)">Cancel</button>
+        </div>
+        } @else {
+        <div class="flex items-center gap-2">
+          <span class="font-medium text-sm truncate">{{ pk.friendly_name || 'Unnamed passkey' }}</span>
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs opacity-50 hover:opacity-100"
+            (click)="startEditName(pk)"
+            aria-label="Rename passkey"
+          >
+            <pc-icon name="pencil-square" [size]="3"></pc-icon>
+          </button>
+        </div>
+        }
+        <div class="flex items-center gap-3 mt-1 flex-wrap">
+          <span class="text-xs text-base-content/50">Added {{ pk.created_at | date:'mediumDate' }}</span>
+          @if (pk.device_type === 'multiDevice') {
+          <span class="badge badge-xs badge-success gap-1">
+            <pc-icon name="cloud-arrow-up" [size]="3"></pc-icon>
+            Synced
+          </span>
+          } @else {
+          <span class="badge badge-xs badge-ghost">Single device</span>
+          }
+        </div>
+      </div>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-error hover:bg-error/10 shrink-0"
+        (click)="deletePasskey(pk)"
+        aria-label="Remove passkey"
+      >
+        <pc-icon name="trash" [size]="4"></pc-icon>
+      </button>
+    </li>
+    }
+  </ul>
+  }
+</div>

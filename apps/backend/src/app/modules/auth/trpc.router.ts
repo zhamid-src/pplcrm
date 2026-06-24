@@ -12,6 +12,12 @@ import z from 'zod';
 
 import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
 import { AuthController } from './controller';
+import { PasskeyController } from './passkey.controller';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import type { RegistrationResponseJSON, AuthenticationResponseJSON } from '@simplewebauthn/types';
+
+const MIN15 = 15 * 60 * 1000;
+const HOUR1 = 60 * 60 * 1000;
 
 function currentUser() {
   return authProcedure.query(({ ctx }) => controller.currentUser(ctx.auth));
@@ -42,20 +48,27 @@ function renewAuthToken() {
 }
 
 function resetPassword() {
-  return publicProcedure
-    .input(z.object({ password: z.string(), code: z.string() }))
-    .mutation(({ input }) => controller.resetPassword(input.password, input.code));
+  return publicProcedure.input(z.object({ password: z.string(), code: z.string() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:resetPassword`, 5, MIN15);
+    return controller.resetPassword(input.password, input.code);
+  });
 }
 
 function sendPasswordResetEmail() {
   return publicProcedure
     .input(z.object({ email: z.string().trim().email('Invalid email address') }))
-    .mutation(({ input }) => controller.sendPasswordResetEmail(input.email));
+    .mutation(({ input, ctx }) => {
+      const ip = ctx.req?.ip ?? 'unknown';
+      checkRateLimit(`${ip}:sendPasswordResetEmail`, 3, HOUR1);
+      return controller.sendPasswordResetEmail(input.email);
+    });
 }
 
 function signIn() {
   return publicProcedure.input(signInInputObj).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip;
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:signIn`, 10, MIN15);
     const ua = ctx.req?.headers?.['user-agent'] || '';
     return controller.signIn(input, ip, ua);
   });
@@ -63,7 +76,8 @@ function signIn() {
 
 function verify2FA() {
   return publicProcedure.input(Verify2FAObj).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip;
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:verify2FA`, 5, MIN15);
     const ua = ctx.req?.headers?.['user-agent'] || '';
     return controller.verify2FA(input.email, input.code, ip, ua);
   });
@@ -140,7 +154,11 @@ function signOut() {
 }
 
 function signUp() {
-  return publicProcedure.input(signUpInputObj).mutation(({ input }) => controller.signUp(input));
+  return publicProcedure.input(signUpInputObj).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:signUp`, 5, HOUR1);
+    return controller.signUp(input);
+  });
 }
 
 function deleteOne() {
@@ -160,6 +178,58 @@ function resendVerificationEmail() {
 }
 
 const controller = new AuthController();
+const passkeyController = new PasskeyController();
+
+function passkeyRegistrationOptions() {
+  return authProcedure.query(({ ctx }) => passkeyController.getRegistrationOptions(ctx.auth));
+}
+
+function verifyPasskeyRegistration() {
+  return authProcedure
+    .input(
+      z.object({
+        response: z.any().transform((v) => v as RegistrationResponseJSON),
+        friendlyName: z.string().max(100).optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => passkeyController.verifyRegistration(ctx.auth, input.response, input.friendlyName));
+}
+
+function passkeyAuthenticationOptions() {
+  return publicProcedure.query(() => passkeyController.getAuthenticationOptions());
+}
+
+function verifyPasskeyAuthentication() {
+  return publicProcedure
+    .input(
+      z.object({
+        response: z.any().transform((v) => v as AuthenticationResponseJSON),
+        nonce: z.string(),
+      }),
+    )
+    .mutation(({ input, ctx }) => {
+      const ip = ctx.req?.ip ?? 'unknown';
+      checkRateLimit(`${ip}:verifyPasskeyAuthentication`, 10, MIN15);
+      const ua = ctx.req?.headers?.['user-agent'] ?? '';
+      return passkeyController.verifyAuthentication(input.response, input.nonce, ip, ua);
+    });
+}
+
+function listPasskeys() {
+  return authProcedure.query(({ ctx }) => passkeyController.listPasskeys(ctx.auth));
+}
+
+function deletePasskey() {
+  return authProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => passkeyController.deletePasskey(ctx.auth, input.id));
+}
+
+function updatePasskeyName() {
+  return authProcedure
+    .input(z.object({ id: z.string(), friendlyName: z.string().min(1).max(100) }))
+    .mutation(({ input, ctx }) => passkeyController.updatePasskeyName(ctx.auth, input.id, input.friendlyName));
+}
 
 export const AuthRouter = router({
   signUp: signUp(),
@@ -190,4 +260,11 @@ export const AuthRouter = router({
   adminTriggerPasswordReset: adminTriggerPasswordReset(),
   uploadAvatar: uploadAvatar(),
   deleteAvatar: deleteAvatar(),
+  passkeyRegistrationOptions: passkeyRegistrationOptions(),
+  verifyPasskeyRegistration: verifyPasskeyRegistration(),
+  passkeyAuthenticationOptions: passkeyAuthenticationOptions(),
+  verifyPasskeyAuthentication: verifyPasskeyAuthentication(),
+  listPasskeys: listPasskeys(),
+  deletePasskey: deletePasskey(),
+  updatePasskeyName: updatePasskeyName(),
 });

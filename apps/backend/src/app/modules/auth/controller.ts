@@ -1,6 +1,8 @@
-import * as bcrypt from 'bcrypt';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
+import { createSigner, createVerifier } from 'fast-jwt';
+import type { QueryResult, Transaction } from 'kysely';
 
-import {
+import type {
   IAuthKeyPayload,
   INow,
   IToken,
@@ -10,21 +12,15 @@ import {
   signInInputType,
   signUpInputType,
 } from '../../../../../../libs/common/src';
-
-import { randomBytes, randomUUID, createHash, createHmac, timingSafeEqual } from 'crypto';
-import { createSigner, createVerifier } from 'fast-jwt';
-import { QueryResult, Transaction } from 'kysely';
+import type {
+  AuthUsersType,
+  GetOperandType,
+  Keys,
+  Models,
+  OperationDataType,
+  TablesOperationMap,
+} from '../../../../../../libs/common/src/lib/kysely.models';
 import { env } from '../../../env';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { hashToken, generateToken } from '../../lib/token-hash';
-import { StorageService } from '../../lib/storage.service';
-
-const renewalVerifier = createVerifier({
-  algorithms: ['HS256'],
-  key: env.sharedSecret,
-  ignoreExpiration: true,
-});
-
 import {
   AppError,
   BadRequestError,
@@ -37,39 +33,236 @@ import {
   UnauthorizedError,
 } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
-import { QueryParams } from '../../lib/base.repo';
-import { UserProfiles } from '../userprofiles/repositories/userprofiles.repo';
-import { AuthUsersRepo } from './repositories/authusers.repo';
-import { SessionsRepo } from './repositories/sessions.repo';
-import { TenantsRepo } from './repositories/tenants.repo';
+import type { QueryParams } from '../../lib/base.repo';
+import { COMMON_PASSWORDS } from '../../lib/common-passwords';
+import { getPwnedCount } from '../../lib/hibp';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { hashPassword, verifyPassword } from '../../lib/password-hash';
+import { StorageService } from '../../lib/storage.service';
+import { generateToken, hashToken } from '../../lib/token-hash';
 import { EmailRepo } from '../emails/repositories/email.repo';
 import { PersonsRepo } from '../persons/repositories/persons.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
+import { UserProfiles } from '../userprofiles/repositories/userprofiles.repo';
 import { seedOnboardingData } from './onboarding-seed';
-import {
-  AuthUsersType,
-  GetOperandType,
-  Keys,
-  Models,
-  OperationDataType,
-  TablesOperationMap,
-} from '../../../../../../libs/common/src/lib/kysely.models';
+import { AuthUsersRepo } from './repositories/authusers.repo';
+import { SessionsRepo } from './repositories/sessions.repo';
+import { TenantsRepo } from './repositories/tenants.repo';
 
 export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
-  private profiles: UserProfiles = new UserProfiles();
-  private sessions: SessionsRepo = new SessionsRepo();
-  private tenants: TenantsRepo = new TenantsRepo();
-  private emailsRepo: EmailRepo = new EmailRepo();
-  private personsRepo: PersonsRepo = new PersonsRepo();
-  private tagsRepo: TagsRepo = new TagsRepo();
-  private mailService = new TransactionalEmailService();
-  private storage = new StorageService();
-
   private static readonly AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
   private static readonly AVATAR_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
+  private emailsRepo: EmailRepo = new EmailRepo();
+  private mailService = new TransactionalEmailService();
+  private personsRepo: PersonsRepo = new PersonsRepo();
+  private profiles: UserProfiles = new UserProfiles();
+  private sessions: SessionsRepo = new SessionsRepo();
+  private storage = new StorageService();
+  private tagsRepo: TagsRepo = new TagsRepo();
+  private tenants: TenantsRepo = new TenantsRepo();
+
   constructor() {
     super(new AuthUsersRepo());
+  }
+
+  public async adminTriggerPasswordReset(auth: IAuthKeyPayload, userId: string) {
+    const callerRole = auth.role;
+    if (callerRole === 'user') {
+      throw new ForbiddenError('You do not have permission to trigger password resets.');
+    }
+
+    const user = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: userId });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    if (callerRole === 'admin' && authUser.role === 'owner') {
+      throw new ForbiddenError('Admins cannot trigger password resets for owners.');
+    }
+
+    return await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        const codeObj = await this.getRepo().addPasswordResetCode(authUser.id, trx);
+        const code = codeObj?.password_reset_code;
+
+        await this.mailService.enqueueMail(
+          {
+            to: authUser.email,
+            tenant_id: auth.tenant_id,
+            subject: 'Password Reset Request',
+            text: `Hi ${authUser.first_name},\n\nAn administrator has initiated a password reset for your account.\n\nPlease reset your password using the link below:\n${env.appUrl}/new-password?code=${code}\n\nThis link is valid for 15 minutes.`,
+            html: `<h2>Password Reset Request</h2>
+<p>Hi ${authUser.first_name},</p>
+<p>An administrator has initiated a password reset for your account.</p>
+<p>Please click the button below to reset your password and select a new one:</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset Password</a>
+</div>
+<p class="warning">For security reasons, this reset link is single-use and will expire in 15 minutes.</p>`,
+          },
+          trx,
+        );
+
+        return { success: true };
+      });
+  }
+
+  public async cancelAccountDeletion(auth: IAuthKeyPayload) {
+    const user = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        await trx.updateTable('authusers').set({ deletion_scheduled_at: null }).where('id', '=', authUser.id).execute();
+
+        await this.mailService.enqueueMail(
+          {
+            to: authUser.email,
+            tenant_id: auth.tenant_id,
+            subject: 'Account Deletion Canceled',
+            text: `Your request to delete your account has been successfully canceled, and your account is fully restored.`,
+            html: `<h2>Account Deletion Canceled</h2>
+<p>Your request to delete your account has been successfully canceled, and your account is fully restored. Welcome back!</p>`,
+          },
+          trx,
+        );
+      });
+
+    return { success: true };
+  }
+
+  public async cancelEmailChange(auth: IAuthKeyPayload) {
+    if (!auth?.user_id) {
+      throw new UnauthorizedError();
+    }
+
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+    const authUser = user as AuthUsersType;
+
+    if (!authUser.previous_email) {
+      throw new BadRequestError('No email change in progress.');
+    }
+
+    const previousEmail = authUser.previous_email;
+
+    await repo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('authusers')
+        .set({
+          email: previousEmail,
+          role: authUser.previous_role,
+          verified: true,
+          previous_email: null,
+          previous_role: null,
+          password_reset_code: null,
+          password_reset_code_created_at: null,
+          updated_at: new Date(),
+          updatedby_id: auth.user_id,
+        })
+        .where('id', '=', authUser.id)
+        .execute();
+    });
+
+    return { success: true };
+  }
+
+  public async cancelTenantDeletion(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'deletion_scheduled_at'])
+      .where('id', '=', auth.tenant_id as any)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+    if (!tenant.deletion_scheduled_at) throw new BadRequestError('No deletion is scheduled for this account.');
+    if (new Date(tenant.deletion_scheduled_at as any) <= new Date()) {
+      throw new BadRequestError('The deletion window has already passed and data has been removed.');
+    }
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    await db
+      .updateTable('tenants')
+      .set({ deletion_scheduled_at: null })
+      .where('id', '=', auth.tenant_id as any)
+      .execute();
+
+    if (ownerEmail?.email) {
+      await this.mailService.sendMail({
+        to: ownerEmail.email,
+        tenant_id: String(auth.tenant_id),
+        subject: 'Account deletion cancelled',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion request has been successfully cancelled. Your account and all data remain intact.`,
+        html: `<h2>Account Deletion Cancelled</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your account deletion request has been successfully cancelled. Your account and all data remain intact. Welcome back!</p>`,
+      });
+    }
+
+    return { success: true };
+  }
+
+  public async cancelTenantDeletionByToken(tenantId: string, token: string) {
+    const expectedToken = this.makeDeletionCancelToken(tenantId);
+    const expected = Buffer.from(expectedToken);
+    const provided = Buffer.from(token.length === expected.length ? token : expectedToken); // same length for safe compare
+    if (token.length !== expectedToken.length || !timingSafeEqual(expected, provided)) {
+      throw new BadRequestError('Invalid or expired cancellation link.');
+    }
+
+    const db = this.getRepo().db;
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'deletion_scheduled_at'])
+      .where('id', '=', tenantId as any)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Account not found.');
+    if (!tenant.deletion_scheduled_at) throw new BadRequestError('No deletion is pending for this account.');
+    if (new Date(tenant.deletion_scheduled_at as any) <= new Date()) {
+      throw new BadRequestError('The deletion window has already passed and data has been removed.');
+    }
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', tenantId as any)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    await db
+      .updateTable('tenants')
+      .set({ deletion_scheduled_at: null })
+      .where('id', '=', tenantId as any)
+      .execute();
+
+    if (ownerEmail?.email) {
+      await this.mailService.sendMail({
+        to: ownerEmail.email,
+        subject: 'Account deletion cancelled',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion has been successfully cancelled. Your account and all data remain intact. You can sign back in at any time.`,
+        html: `<h2>Account Deletion Cancelled</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your account deletion has been successfully cancelled. Your account and all data remain intact.</p>
+<p><a href="${env.appUrl}/signin">Sign back in</a> to continue using PeopleCRM.</p>`,
+      });
+    }
+
+    return { success: true };
   }
 
   public async currentUser(auth: IAuthKeyPayload) {
@@ -119,6 +312,154 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
   }
 
+  public async deleteAvatar(auth: IAuthKeyPayload) {
+    const existingProfile = (await this.profiles.getOneByAuthId(auth.user_id)) as any;
+    if (!existingProfile?.avatar_file_id) return { success: true };
+
+    const fileId = existingProfile.avatar_file_id;
+
+    await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        try {
+          const oldFile = await trx
+            .selectFrom('files')
+            .select('storage_key')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', fileId)
+            .executeTakeFirst();
+          if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
+          await trx.deleteFrom('files').where('tenant_id', '=', auth.tenant_id).where('id', '=', fileId).execute();
+        } catch {
+          /* non-critical */
+        }
+
+        await trx
+          .updateTable('profiles')
+          .set({ avatar_file_id: null, updated_at: new Date(), updatedby_id: auth.user_id })
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('auth_id', '=', auth.user_id)
+          .execute();
+      });
+
+    return { success: true };
+  }
+
+  public async deleteUser(auth: IAuthKeyPayload, userId: string) {
+    const callerRole = auth.role;
+    if (callerRole !== 'admin' && callerRole !== 'owner') {
+      throw new ForbiddenError('Only admins and owners can delete users.');
+    }
+
+    const userIdToDelete = String(userId);
+    if (userIdToDelete === auth.user_id) {
+      throw new BadRequestError('You cannot delete yourself.');
+    }
+
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: userIdToDelete });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+
+    if (callerRole === 'admin' && authUser.role === 'owner') {
+      throw new ForbiddenError('Admins cannot delete owner accounts.');
+    }
+
+    return await repo.transaction().execute(async (trx) => {
+      const profile = (await this.profiles.getOneByAuthId(userIdToDelete)) as any;
+      if (profile?.avatar_file_id) {
+        try {
+          const oldFile = await trx
+            .selectFrom('files')
+            .select('storage_key')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', profile.avatar_file_id)
+            .executeTakeFirst();
+          if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
+          await trx
+            .deleteFrom('files')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', profile.avatar_file_id)
+            .execute();
+        } catch (err) {
+          console.error('Failed to clean up user avatar on delete', err);
+        }
+      }
+
+      await trx
+        .deleteFrom('profiles')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('auth_id', '=', userIdToDelete)
+        .execute();
+      await this.sessions.deleteByUserId(userIdToDelete, auth.tenant_id, trx);
+      await trx
+        .deleteFrom('authusers')
+        .where('id', '=', userIdToDelete)
+        .where('tenant_id', '=', auth.tenant_id)
+        .execute();
+
+      await this.ensureAtLeastOneOwner(auth.tenant_id, trx, false, userIdToDelete);
+
+      await this.userActivity.log(
+        {
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'delete',
+          entity: 'authusers',
+          entity_id: userIdToDelete,
+          quantity: 1,
+          metadata: {
+            id: userIdToDelete,
+            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
+          },
+        },
+        trx,
+      );
+
+      return { success: true };
+    });
+  }
+
+  public async ensureAtLeastOneOwner(
+    tenantId: string,
+    trx: Transaction<Models>,
+    isRoleChange = false,
+    excludeUserId?: string,
+  ) {
+    const activeOwners = await trx
+      .selectFrom('authusers')
+      .select(['id'])
+      .where('tenant_id', '=', tenantId)
+      .where((eb) =>
+        eb.or([eb('role', '=', 'owner'), eb.and([eb('role', '=', 'viewer'), eb('previous_role', '=', 'owner')])]),
+      )
+      .where('deletion_scheduled_at', 'is', null)
+      .execute();
+
+    if (activeOwners.length > 0) {
+      return;
+    }
+
+    // Find the oldest active user to promote
+    let query = trx
+      .selectFrom('authusers')
+      .select(['id'])
+      .where('tenant_id', '=', tenantId)
+      .where('deletion_scheduled_at', 'is', null);
+
+    if (excludeUserId) {
+      query = query.where('id', '!=', excludeUserId as any);
+    }
+
+    const oldestUser = await query.orderBy('created_at', 'asc').executeTakeFirst();
+
+    if (oldestUser) {
+      await trx.updateTable('authusers').set({ role: 'owner' }).where('id', '=', oldestUser.id).execute();
+    } else if (isRoleChange) {
+      throw new BadRequestError('The system must have at least one owner.');
+    }
+  }
+
   public async getAllUsers(auth: IAuthKeyPayload, options?: getAllOptionsType) {
     const sanitizedOptions = options ? ({ ...options, columns: undefined } as any) : undefined;
     const result = await this.getRepo().getAllWithCounts({
@@ -134,14 +475,20 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     };
   }
 
-  public async getUsersList(auth: IAuthKeyPayload) {
-    const result = await this.getRepo().getAllWithCounts({
-      tenant_id: auth.tenant_id,
-    });
-    return result.rows.map((row) => ({
-      ...this.sanitizeUser(row),
-      avatar_url: row['avatar_file_id'] ? `/api/files/download/${row['avatar_file_id']}` : null,
-    }));
+  public async getTenantAccountStatus(auth: IAuthKeyPayload) {
+    const tenant = await this.getRepo()
+      .db.selectFrom('tenants')
+      .select(['deletion_scheduled_at', 'suspended_at', 'paused_at'])
+      .where('id', '=', auth.tenant_id as any)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+
+    return {
+      deletion_scheduled_at: tenant.deletion_scheduled_at ?? null,
+      suspended_at: tenant.suspended_at ?? null,
+      paused_at: tenant.paused_at ?? null,
+    };
   }
 
   public async getUserById(auth: IAuthKeyPayload, id: string) {
@@ -160,6 +507,16 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return { ...sanitized, avatar_url, stats };
   }
 
+  public async getUsersList(auth: IAuthKeyPayload) {
+    const result = await this.getRepo().getAllWithCounts({
+      tenant_id: auth.tenant_id,
+    });
+    return result.rows.map((row) => ({
+      ...this.sanitizeUser(row),
+      avatar_url: row['avatar_file_id'] ? `/api/files/download/${row['avatar_file_id']}` : null,
+    }));
+  }
+
   public async inviteUser(auth: IAuthKeyPayload, input: InviteAuthUserType) {
     const callerRole = auth.role;
     if (callerRole === 'user') {
@@ -173,7 +530,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     await this.verifyUserDoesNotExist(email);
 
     const tempPassword = this.generateTempPassword();
-    const password = await this.hashPassword(tempPassword);
+    const password = await hashPassword(tempPassword);
     const repo = this.getRepo();
 
     const created = await repo.transaction().execute(async (trx) => {
@@ -251,6 +608,59 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return this.sanitizeUser({ ...created, last_name: input.last_name });
   }
 
+  public makeDeletionCancelToken(tenantId: string): string {
+    return createHmac('sha256', env.sharedSecret).update(`cancel-deletion:${tenantId}`).digest('hex');
+  }
+
+  public async pauseTenant(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'paused_at'])
+      .where('id', '=', auth.tenant_id as any)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+    if (tenant.paused_at) throw new BadRequestError('Account is already paused.');
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    await db.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('tenants')
+        .set({ paused_at: new Date() })
+        .where('id', '=', auth.tenant_id as any)
+        .execute();
+
+      // Sign out all users immediately so the pause takes effect for active sessions
+      await trx
+        .deleteFrom('sessions')
+        .where('tenant_id', '=', auth.tenant_id as any)
+        .execute();
+    });
+
+    if (ownerEmail?.email) {
+      await this.mailService.sendMail({
+        to: ownerEmail.email,
+        tenant_id: String(auth.tenant_id),
+        subject: 'Your account has been paused',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account has been paused. Your data is preserved and billing has been paused. You can reactivate your account at any time by logging back in and visiting your account settings.`,
+        html: `<h2>Account Paused</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your account has been paused as requested. Your data is safely preserved and you will not be billed during this period.</p>
+<p>You can reactivate your account at any time by logging back in and visiting your account settings.</p>`,
+      });
+    }
+
+    return { success: true };
+  }
+
   public async renewAuthToken(input: IToken) {
     if (!input?.auth_token || !input?.refresh_token) {
       throw new UnauthorizedError();
@@ -296,8 +706,39 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
   }
 
+  public async resendVerificationEmail(email: string) {
+    const user = await this.getUserByEmail(email);
+    if (user.verified) {
+      throw new BadRequestError('Email is already verified.');
+    }
+    return await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        const codeObj = await this.getRepo().addPasswordResetCode(user.id, trx);
+        const code = codeObj?.password_reset_code;
+
+        await this.mailService.enqueueMail(
+          {
+            to: email,
+            tenant_id: user.tenant_id ? String(user.tenant_id) : null,
+            subject: 'Verify Your Email - CampaignRaven',
+            text: `Please verify your email by clicking this link: ${env.appUrl}/verify-email?code=${code}`,
+            html: `<h2>Verify Your Email</h2>
+<p>To verify your email address and activate your login, please click the button below:</p>
+<div class="btn-container">
+  <a href="${env.appUrl}/verify-email?code=${code}" class="btn">Verify Email Address</a>
+</div>
+<p class="warning">For security reasons, this link will expire in 24 hours.</p>`,
+          },
+          trx,
+        );
+        return { success: true };
+      });
+  }
+
   public async resetPassword(plaintextPassword: string, code: string) {
-    const password = await this.hashPassword(plaintextPassword);
+    await this.validateNewPassword(plaintextPassword);
+    const password = await hashPassword(plaintextPassword);
 
     const user = await this.getRepo()
       .db.selectFrom('authusers')
@@ -347,75 +788,138 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       });
   }
 
-  public async verifyEmail(code: string) {
-    const msec = await this.getCodeAge(code);
-    // 24 hours in milliseconds for verification links
-    if (msec > 24 * 60 * 60 * 1000) {
-      throw new BadRequestError('The verification link has expired. Please request a new one.');
-    }
+  public async resumeTenant(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
 
-    const repo = this.getRepo();
-    const user = await repo.db
-      .selectFrom('authusers')
-      .select(['id', 'previous_email', 'previous_role'])
-      .where('password_reset_code', '=', hashToken(code))
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'paused_at'])
+      .where('id', '=', auth.tenant_id as any)
       .executeTakeFirst();
 
-    if (!user) {
-      throw new BadRequestError('Invalid or expired verification link.');
+    if (!tenant) throw new NotFoundError('Tenant not found');
+    if (!tenant.paused_at) throw new BadRequestError('Account is not paused.');
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    await db
+      .updateTable('tenants')
+      .set({ paused_at: null })
+      .where('id', '=', auth.tenant_id as any)
+      .execute();
+
+    if (ownerEmail?.email) {
+      await this.mailService.sendMail({
+        to: ownerEmail.email,
+        tenant_id: String(auth.tenant_id),
+        subject: 'Your account has been reactivated',
+        text: `Hi ${ownerEmail.first_name},\n\nYour account has been successfully reactivated. Welcome back!`,
+        html: `<h2>Account Reactivated</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your account has been successfully reactivated. Everything is back to normal — welcome back!</p>`,
+      });
     }
-
-    await repo.transaction().execute(async (trx) => {
-      const updateData: Record<string, any> = {
-        verified: true,
-        password_reset_code: null,
-        password_reset_code_created_at: null,
-      };
-
-      if (user.previous_email) {
-        // Email change confirmation: restore role and clear pending state.
-        // Invalidate all existing sessions — an old-email session token
-        // should not remain valid after the address has been changed.
-        updateData['role'] = user.previous_role;
-        updateData['previous_email'] = null;
-        updateData['previous_role'] = null;
-        await trx.deleteFrom('sessions').where('user_id', '=', user.id).execute();
-      }
-
-      await trx.updateTable('authusers').set(updateData).where('id', '=', user.id).execute();
-    });
 
     return { success: true };
   }
 
-  public async resendVerificationEmail(email: string) {
-    const user = await this.getUserByEmail(email);
-    if (user.verified) {
-      throw new BadRequestError('Email is already verified.');
-    }
-    return await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        const codeObj = await this.getRepo().addPasswordResetCode(user.id, trx);
-        const code = codeObj?.password_reset_code;
+  public async scheduleAccountDeletion(auth: IAuthKeyPayload) {
+    const repo = this.getRepo();
+    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
+    if (!user) throw new NotFoundError('User not found');
+    const authUser = user as AuthUsersType;
+    const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
+    await repo.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('authusers')
+        .set({ deletion_scheduled_at: deletionDate })
+        .where('id', '=', authUser.id)
+        .execute();
+
+      await this.ensureAtLeastOneOwner(auth.tenant_id, trx, false, String(authUser.id));
+
+      await this.mailService.enqueueMail(
+        {
+          to: authUser.email,
+          tenant_id: auth.tenant_id,
+          subject: 'Security Alert: Account Scheduled for Deletion',
+          text: `Hi ${authUser.first_name},\n\nYour account has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nIf this was a mistake, you can cancel the deletion at any time before this date by logging back in.`,
+          html: `<h2>Account Scheduled for Deletion</h2>
+<p>Hi ${authUser.first_name},</p>
+<p>As requested, your CampaignRaven account has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
+<p>All of your data will be permanently removed. If you change your mind, you can cancel this request at any time before the deletion date by simply logging back in.</p>
+<p class="warning">If you did not make this request, please log in immediately to cancel the deletion and secure your account.</p>`,
+        },
+        trx,
+      );
+    });
+
+    return { success: true, deletion_scheduled_at: deletionDate };
+  }
+
+  public async scheduleTenantDeletion(auth: IAuthKeyPayload) {
+    const db = this.getRepo().db;
+
+    const tenant = await db
+      .selectFrom('tenants')
+      .select(['id', 'name', 'deletion_scheduled_at'])
+      .where('id', '=', auth.tenant_id as any)
+      .executeTakeFirst();
+
+    if (!tenant) throw new NotFoundError('Tenant not found');
+    if (tenant.deletion_scheduled_at) throw new BadRequestError('Account deletion is already scheduled.');
+
+    const ownerEmail = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('role', '=', 'owner')
+      .executeTakeFirst();
+
+    const deletionDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const cancelToken = this.makeDeletionCancelToken(String(auth.tenant_id));
+    const cancelUrl = `${env.appUrl}/cancel-deletion?tid=${auth.tenant_id}&token=${cancelToken}`;
+    const deletionDateStr = deletionDate.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
+
+    await db.transaction().execute(async (trx) => {
+      await trx
+        .updateTable('tenants')
+        .set({ deletion_scheduled_at: deletionDate })
+        .where('id', '=', auth.tenant_id as any)
+        .execute();
+
+      // Invalidate every active session for the tenant so all users are signed out immediately
+      await trx
+        .deleteFrom('sessions')
+        .where('tenant_id', '=', auth.tenant_id as any)
+        .execute();
+
+      if (ownerEmail?.email) {
         await this.mailService.enqueueMail(
           {
-            to: email,
-            tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-            subject: 'Verify Your Email - CampaignRaven',
-            text: `Please verify your email by clicking this link: ${env.appUrl}/verify-email?code=${code}`,
-            html: `<h2>Verify Your Email</h2>
-<p>To verify your email address and activate your login, please click the button below:</p>
-<div class="btn-container">
-  <a href="${env.appUrl}/verify-email?code=${code}" class="btn">Verify Email Address</a>
-</div>
-<p class="warning">For security reasons, this link will expire in 24 hours.</p>`,
+            to: ownerEmail.email,
+            tenant_id: String(auth.tenant_id),
+            subject: 'Your account is scheduled for deletion in 24 hours',
+            text: `Hi ${ownerEmail.first_name},\n\nYour organization account has been scheduled for permanent deletion. All data will be permanently removed on ${deletionDateStr}.\n\nChanged your mind? You have 24 hours to cancel:\n${cancelUrl}\n\nAfter that, all data will be permanently removed and cannot be recovered.`,
+            html: `<h2>Account Scheduled for Deletion</h2>
+<p>Hi ${ownerEmail.first_name},</p>
+<p>Your organization account has been scheduled for permanent deletion on <strong>${deletionDateStr}</strong>. All data associated with your account — contacts, emails, campaigns, and everything else — will be permanently and irreversibly removed.</p>
+<p><strong>Changed your mind?</strong> You have 24 hours to cancel this request:</p>
+<p><a href="${cancelUrl}" style="display:inline-block;padding:10px 20px;background:#4f46e5;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Cancel Account Deletion</a></p>
+<p class="warning">After the 24-hour window, all data will be permanently deleted and cannot be recovered.</p>`,
           },
           trx,
         );
-        return { success: true };
-      });
+      }
+    });
+
+    return { success: true };
   }
 
   public async sendPasswordResetEmail(email: string) {
@@ -450,8 +954,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   public async signIn(input: signInInputType, ipAddress?: string, userAgent?: string) {
     const user = await this.getUserByEmail(input.email.toLowerCase());
 
-    if (!(await bcrypt.compare(input.password, user.password))) {
+    const { valid, needsRehash } = await verifyPassword(input.password, user.password);
+    if (!valid) {
       throw new UnauthorizedError();
+    }
+    if (needsRehash) {
+      const newHash = await hashPassword(input.password);
+      this.getRepo().db.updateTable('authusers').set({ password: newHash }).where('id', '=', user.id).execute().catch();
     }
 
     if (!user.verified) {
@@ -531,312 +1040,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     });
   }
 
-  public async verify2FA(email: string, code: string, ipAddress?: string, userAgent?: string) {
-    const user = await this.getUserByEmail(email.toLowerCase());
-
-    // Use timing-safe comparison to eliminate OTP brute-force side-channel
-    const storedCode = user.two_factor_code ?? '';
-    const inputCode = String(code ?? '');
-    const codeMatch =
-      storedCode.length > 0 &&
-      storedCode.length === inputCode.length &&
-      timingSafeEqual(Buffer.from(storedCode), Buffer.from(inputCode));
-    if (!codeMatch) {
-      throw new BadRequestError('Invalid verification code.');
-    }
-
-    if (!user.verified) {
-      throw new ForbiddenError(
-        'Your email address is not verified yet. Please check your inbox for a verification link.',
-      );
-    }
-
-    if (!user.two_factor_expires_at || new Date(user.two_factor_expires_at as any).getTime() < Date.now()) {
-      throw new BadRequestError('Verification code has expired. Please log in again.');
-    }
-
-    await this.getRepo()
-      .db.updateTable('authusers')
-      .set({
-        two_factor_code: null,
-        two_factor_expires_at: null,
-      })
-      .where('id', '=', user.id)
-      .execute();
-
-    if (user.deletion_scheduled_at) {
-      await this.getRepo()
-        .db.updateTable('authusers')
-        .set({ deletion_scheduled_at: null })
-        .where('id', '=', user.id)
-        .execute();
-
-      await this.mailService.sendMail({
-        to: user.email,
-        tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-        subject: 'CampaignRaven - Account Restored',
-        text: `Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.`,
-        html: `<h2>Account Restored</h2>
-<p>Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.</p>`,
-      });
-    }
-
-    if (user.tenant_id) {
-      const tenant = await this.getRepo()
-        .db.selectFrom('tenants')
-        .select(['suspended_at', 'paused_at'])
-        .where('id', '=', user.tenant_id as any)
-        .executeTakeFirst();
-
-      if (tenant?.suspended_at) {
-        throw new ForbiddenError(
-          'This account has been suspended. Please contact support if you believe this is an error.',
-        );
-      }
-      // Paused accounts (user-initiated) allow login so the owner can reactivate from settings
-    }
-
-    return this.createTokens({
-      user_id: String(user.id),
-      tenant_id: String(user.tenant_id),
-      name: user.first_name,
-      ipAddress,
-      userAgent,
-    });
-  }
-
-  public async scheduleAccountDeletion(auth: IAuthKeyPayload) {
-    const repo = this.getRepo();
-    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
-    if (!user) throw new NotFoundError('User not found');
-    const authUser = user as AuthUsersType;
-    const deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-    await repo.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('authusers')
-        .set({ deletion_scheduled_at: deletionDate })
-        .where('id', '=', authUser.id)
-        .execute();
-
-      await this.ensureAtLeastOneOwner(auth.tenant_id, trx, false, String(authUser.id));
-
-      await this.mailService.enqueueMail(
-        {
-          to: authUser.email,
-          tenant_id: auth.tenant_id,
-          subject: 'Security Alert: Account Scheduled for Deletion',
-          text: `Hi ${authUser.first_name},\n\nYour account has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nIf this was a mistake, you can cancel the deletion at any time before this date by logging back in.`,
-          html: `<h2>Account Scheduled for Deletion</h2>
-<p>Hi ${authUser.first_name},</p>
-<p>As requested, your CampaignRaven account has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
-<p>All of your data will be permanently removed. If you change your mind, you can cancel this request at any time before the deletion date by simply logging back in.</p>
-<p class="warning">If you did not make this request, please log in immediately to cancel the deletion and secure your account.</p>`,
-        },
-        trx,
-      );
-    });
-
-    return { success: true, deletion_scheduled_at: deletionDate };
-  }
-
-  public async cancelAccountDeletion(auth: IAuthKeyPayload) {
-    const user = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
-    if (!user) throw new NotFoundError('User not found');
-    const authUser = user as AuthUsersType;
-
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        await trx
-          .updateTable('authusers')
-          .set({ deletion_scheduled_at: null })
-          .where('id', '=', authUser.id)
-          .execute();
-
-        await this.mailService.enqueueMail(
-          {
-            to: authUser.email,
-            tenant_id: auth.tenant_id,
-            subject: 'Account Deletion Canceled',
-            text: `Your request to delete your account has been successfully canceled, and your account is fully restored.`,
-            html: `<h2>Account Deletion Canceled</h2>
-<p>Your request to delete your account has been successfully canceled, and your account is fully restored. Welcome back!</p>`,
-          },
-          trx,
-        );
-      });
-
-    return { success: true };
-  }
-
-  public async cancelEmailChange(auth: IAuthKeyPayload) {
-    if (!auth?.user_id) {
-      throw new UnauthorizedError();
-    }
-
-    const repo = this.getRepo();
-    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: auth.user_id });
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-    const authUser = user as AuthUsersType;
-
-    if (!authUser.previous_email) {
-      throw new BadRequestError('No email change in progress.');
-    }
-
-    await repo.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('authusers')
-        .set({
-          email: authUser.previous_email!,
-          role: authUser.previous_role,
-          verified: true,
-          previous_email: null,
-          previous_role: null,
-          password_reset_code: null,
-          password_reset_code_created_at: null,
-          updated_at: new Date(),
-          updatedby_id: auth.user_id,
-        })
-        .where('id', '=', authUser.id)
-        .execute();
-    });
-
-    return { success: true };
-  }
-
-  public async adminTriggerPasswordReset(auth: IAuthKeyPayload, userId: string) {
-    const callerRole = auth.role;
-    if (callerRole === 'user') {
-      throw new ForbiddenError('You do not have permission to trigger password resets.');
-    }
-
-    const user = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: userId });
-    if (!user) throw new NotFoundError('User not found');
-    const authUser = user as AuthUsersType;
-
-    if (callerRole === 'admin' && authUser.role === 'owner') {
-      throw new ForbiddenError('Admins cannot trigger password resets for owners.');
-    }
-
-    return await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        const codeObj = await this.getRepo().addPasswordResetCode(authUser.id, trx);
-        const code = codeObj?.password_reset_code;
-
-        await this.mailService.enqueueMail(
-          {
-            to: authUser.email,
-            tenant_id: auth.tenant_id,
-            subject: 'Password Reset Request',
-            text: `Hi ${authUser.first_name},\n\nAn administrator has initiated a password reset for your account.\n\nPlease reset your password using the link below:\n${env.appUrl}/new-password?code=${code}\n\nThis link is valid for 15 minutes.`,
-            html: `<h2>Password Reset Request</h2>
-<p>Hi ${authUser.first_name},</p>
-<p>An administrator has initiated a password reset for your account.</p>
-<p>Please click the button below to reset your password and select a new one:</p>
-<div class="btn-container">
-  <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset Password</a>
-</div>
-<p class="warning">For security reasons, this reset link is single-use and will expire in 15 minutes.</p>`,
-          },
-          trx,
-        );
-
-        return { success: true };
-      });
-  }
-
-  public async deleteUser(auth: IAuthKeyPayload, userId: string) {
-    const callerRole = auth.role;
-    if (callerRole !== 'admin' && callerRole !== 'owner') {
-      throw new ForbiddenError('Only admins and owners can delete users.');
-    }
-
-    const userIdToDelete = String(userId);
-    if (userIdToDelete === auth.user_id) {
-      throw new BadRequestError('You cannot delete yourself.');
-    }
-
-    const repo = this.getRepo();
-    const user = await repo.getOneBy('id', { tenant_id: auth.tenant_id, value: userIdToDelete });
-    if (!user) throw new NotFoundError('User not found');
-    const authUser = user as AuthUsersType;
-
-    if (callerRole === 'admin' && authUser.role === 'owner') {
-      throw new ForbiddenError('Admins cannot delete owner accounts.');
-    }
-
-    return await repo.transaction().execute(async (trx) => {
-      const profile = (await this.profiles.getOneByAuthId(userIdToDelete)) as any;
-      if (profile?.avatar_file_id) {
-        try {
-          const oldFile = await trx
-            .selectFrom('files')
-            .select('storage_key')
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('id', '=', profile.avatar_file_id)
-            .executeTakeFirst();
-          if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
-          await trx
-            .deleteFrom('files')
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('id', '=', profile.avatar_file_id)
-            .execute();
-        } catch (err) {
-          console.error('Failed to clean up user avatar on delete', err);
-        }
-      }
-
-      await trx
-        .deleteFrom('profiles')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('auth_id', '=', userIdToDelete)
-        .execute();
-      await this.sessions.deleteByUserId(userIdToDelete, auth.tenant_id, trx);
-      await trx
-        .deleteFrom('authusers')
-        .where('id', '=', userIdToDelete)
-        .where('tenant_id', '=', auth.tenant_id)
-        .execute();
-
-      await this.ensureAtLeastOneOwner(auth.tenant_id, trx, false, userIdToDelete);
-
-      await this.userActivity.log(
-        {
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'delete',
-          entity: 'authusers',
-          entity_id: userIdToDelete,
-          quantity: 1,
-          metadata: {
-            id: userIdToDelete,
-            entity_label: `${authUser.first_name} ${authUser.last_name || ''}`.trim(),
-          },
-        },
-        trx,
-      );
-
-      return { success: true };
-    });
-  }
-
-  private async isNewDeviceOrLocation(userId: string, ipAddress?: string, userAgent?: string): Promise<boolean> {
-    if (!ipAddress) return false;
-    const existing = await this.sessions.db
-      .selectFrom('sessions')
-      .select('id')
-      .where('user_id', '=', BigInt(userId) as any)
-      .where('ip_address', '=', ipAddress)
-      .where('user_agent', '=', userAgent || '')
-      .where('status', '=', 'active')
-      .executeTakeFirst();
-    return !existing;
-  }
-
   public async signOut(auth: IAuthKeyPayload | null) {
     if (!auth?.session_id) {
       return null;
@@ -850,7 +1053,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     try {
       await this.verifyUserDoesNotExist(email);
-      const password = await this.hashPassword(input.password);
+      await this.validateNewPassword(input.password);
+      const password = await hashPassword(input.password);
 
       await this.tenants.transaction().execute(async (trx) => {
         const tenant_id = await this.createTenant(trx, input.organization);
@@ -1114,6 +1318,248 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return this.sanitizeUser({ ...updated, profile });
   }
 
+  public async uploadAvatar(auth: IAuthKeyPayload, input: { dataBase64: string; mimeType: string; filename: string }) {
+    const { dataBase64, mimeType, filename } = input;
+
+    if (!AuthController.AVATAR_ALLOWED_TYPES.includes(mimeType)) {
+      throw new BadRequestError(`Unsupported image type. Allowed: ${AuthController.AVATAR_ALLOWED_TYPES.join(', ')}`);
+    }
+
+    const buffer = Buffer.from(dataBase64, 'base64');
+    if (buffer.length > AuthController.AVATAR_MAX_BYTES) {
+      throw new BadRequestError('File too large. Maximum size is 5 MB.');
+    }
+
+    const storageFileUUID = randomUUID();
+    const ext = mimeType.split('/')[1] || 'jpg';
+    const storageKey = `avatars/${auth.tenant_id}/${auth.user_id}/${storageFileUUID}.${ext}`;
+    const sha256_hex = createHash('sha256').update(buffer).digest('hex');
+
+    await this.storage.upload(storageKey, buffer, mimeType);
+
+    let finalFileId = '';
+
+    await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        const existingProfile = (await this.profiles.getOneByAuthId(auth.user_id)) as any;
+
+        // Clean up old avatar
+        if (existingProfile?.avatar_file_id) {
+          try {
+            const oldFile = await trx
+              .selectFrom('files')
+              .select('storage_key')
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('id', '=', existingProfile.avatar_file_id)
+              .executeTakeFirst();
+            if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
+            await trx
+              .deleteFrom('files')
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('id', '=', existingProfile.avatar_file_id)
+              .execute();
+          } catch {
+            /* non-critical */
+          }
+        }
+
+        // Insert new file record
+        const fileResult = await trx
+          .insertInto('files')
+          .values({
+            tenant_id: auth.tenant_id,
+            filename,
+            mime_type: mimeType,
+            size_bytes: buffer.length,
+            storage_key: storageKey,
+            sha256_hex,
+            uploaded_by: auth.user_id,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        const fileId = String(fileResult.id);
+        finalFileId = fileId;
+
+        // Update or insert profile
+        if (existingProfile) {
+          await trx
+            .updateTable('profiles')
+            .set({ avatar_file_id: fileId, updated_at: new Date(), updatedby_id: auth.user_id })
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('auth_id', '=', auth.user_id)
+            .execute();
+        } else {
+          await trx
+            .insertInto('profiles')
+            .values({
+              tenant_id: auth.tenant_id,
+              auth_id: auth.user_id,
+              avatar_file_id: fileId,
+              createdby_id: auth.user_id,
+              updatedby_id: auth.user_id,
+            })
+            .execute();
+        }
+      });
+
+    return { file_id: finalFileId, avatar_url: `/api/files/download/${finalFileId}` };
+  }
+
+  public async verify2FA(email: string, code: string, ipAddress?: string, userAgent?: string) {
+    const user = await this.getUserByEmail(email.toLowerCase());
+
+    // Use timing-safe comparison to eliminate OTP brute-force side-channel
+    const storedCode = user.two_factor_code ?? '';
+    const inputCode = String(code ?? '');
+    const codeMatch =
+      storedCode.length > 0 &&
+      storedCode.length === inputCode.length &&
+      timingSafeEqual(Buffer.from(storedCode), Buffer.from(inputCode));
+    if (!codeMatch) {
+      throw new BadRequestError('Invalid verification code.');
+    }
+
+    if (!user.verified) {
+      throw new ForbiddenError(
+        'Your email address is not verified yet. Please check your inbox for a verification link.',
+      );
+    }
+
+    if (!user.two_factor_expires_at || new Date(user.two_factor_expires_at as any).getTime() < Date.now()) {
+      throw new BadRequestError('Verification code has expired. Please log in again.');
+    }
+
+    await this.getRepo()
+      .db.updateTable('authusers')
+      .set({
+        two_factor_code: null,
+        two_factor_expires_at: null,
+      })
+      .where('id', '=', user.id)
+      .execute();
+
+    if (user.deletion_scheduled_at) {
+      await this.getRepo()
+        .db.updateTable('authusers')
+        .set({ deletion_scheduled_at: null })
+        .where('id', '=', user.id)
+        .execute();
+
+      await this.mailService.sendMail({
+        to: user.email,
+        tenant_id: user.tenant_id ? String(user.tenant_id) : null,
+        subject: 'CampaignRaven - Account Restored',
+        text: `Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.`,
+        html: `<h2>Account Restored</h2>
+<p>Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.</p>`,
+      });
+    }
+
+    if (user.tenant_id) {
+      const tenant = await this.getRepo()
+        .db.selectFrom('tenants')
+        .select(['suspended_at', 'paused_at'])
+        .where('id', '=', user.tenant_id as any)
+        .executeTakeFirst();
+
+      if (tenant?.suspended_at) {
+        throw new ForbiddenError(
+          'This account has been suspended. Please contact support if you believe this is an error.',
+        );
+      }
+      // Paused accounts (user-initiated) allow login so the owner can reactivate from settings
+    }
+
+    return this.createTokens({
+      user_id: String(user.id),
+      tenant_id: String(user.tenant_id),
+      name: user.first_name,
+      ipAddress,
+      userAgent,
+    });
+  }
+
+  public async verifyEmail(code: string) {
+    const msec = await this.getCodeAge(code);
+    // 24 hours in milliseconds for verification links
+    if (msec > 24 * 60 * 60 * 1000) {
+      throw new BadRequestError('The verification link has expired. Please request a new one.');
+    }
+
+    const repo = this.getRepo();
+    const user = await repo.db
+      .selectFrom('authusers')
+      .select(['id', 'previous_email', 'previous_role'])
+      .where('password_reset_code', '=', hashToken(code))
+      .executeTakeFirst();
+
+    if (!user) {
+      throw new BadRequestError('Invalid or expired verification link.');
+    }
+
+    await repo.transaction().execute(async (trx) => {
+      const updateData: Record<string, any> = {
+        verified: true,
+        password_reset_code: null,
+        password_reset_code_created_at: null,
+      };
+
+      if (user.previous_email) {
+        // Email change confirmation: restore role and clear pending state.
+        // Invalidate all existing sessions — an old-email session token
+        // should not remain valid after the address has been changed.
+        updateData['role'] = user.previous_role;
+        updateData['previous_email'] = null;
+        updateData['previous_role'] = null;
+        await trx.deleteFrom('sessions').where('user_id', '=', user.id).execute();
+      }
+
+      await trx.updateTable('authusers').set(updateData).where('id', '=', user.id).execute();
+    });
+
+    return { success: true };
+  }
+
+  private async buildUserStats(auth: IAuthKeyPayload, userId: string) {
+    const defaults = {
+      emails_assigned: { total: 0, open: 0, closed: 0 },
+      contacts_added: { total: 0, last_created_at: null as Date | null },
+      files_imported: { count: 0, total_rows: 0, last_activity_at: null as Date | null },
+      files_exported: { count: 0, total_rows: 0, last_activity_at: null as Date | null },
+    };
+
+    try {
+      const [emails, contacts, activity] = await Promise.all([
+        this.emailsRepo.getAssignmentStats({ tenant_id: auth.tenant_id, user_id: userId }),
+        this.personsRepo.getCreatedStats({ tenant_id: auth.tenant_id, user_id: userId }),
+        this.userActivity.getStats({ tenant_id: auth.tenant_id, user_id: userId }),
+      ]);
+
+      const importActivity = activity['import'] ?? { count: 0, total_quantity: 0, last_activity_at: null };
+      const exportActivity = activity['export'] ?? { count: 0, total_quantity: 0, last_activity_at: null };
+
+      return {
+        emails_assigned: emails,
+        contacts_added: contacts,
+        files_imported: {
+          count: importActivity.count ?? 0,
+          total_rows: importActivity.total_quantity ?? 0,
+          last_activity_at: importActivity.last_activity_at ?? null,
+        },
+        files_exported: {
+          count: exportActivity.count ?? 0,
+          total_rows: exportActivity.total_quantity ?? 0,
+          last_activity_at: exportActivity.last_activity_at ?? null,
+        },
+      };
+    } catch (err) {
+      console.error('Failed to build user stats', err);
+      return defaults;
+    }
+  }
+
   private coerceBoolean(value: unknown): boolean {
     if (typeof value === 'boolean') return value;
     if (typeof value === 'number') return value !== 0;
@@ -1265,12 +1711,17 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return user;
   }
 
-  private async hashPassword(password: string) {
-    const hashedPassword = await bcrypt.hash(password, 12);
-    if (!hashedPassword) {
-      throw new InternalError('Something went wrong, please try again');
-    }
-    return hashedPassword;
+  private async isNewDeviceOrLocation(userId: string, ipAddress?: string, userAgent?: string): Promise<boolean> {
+    if (!ipAddress) return false;
+    const existing = await this.sessions.db
+      .selectFrom('sessions')
+      .select('id')
+      .where('user_id', '=', BigInt(userId) as any)
+      .where('ip_address', '=', ipAddress)
+      .where('user_agent', '=', userAgent || '')
+      .where('status', '=', 'active')
+      .executeTakeFirst();
+    return !existing;
   }
 
   private sanitizeUser(record: any) {
@@ -1322,165 +1773,6 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       previous_role: record.previous_role ?? null,
       notification_preferences: notificationPreferences,
     };
-  }
-  public async uploadAvatar(auth: IAuthKeyPayload, input: { dataBase64: string; mimeType: string; filename: string }) {
-    const { dataBase64, mimeType, filename } = input;
-
-    if (!AuthController.AVATAR_ALLOWED_TYPES.includes(mimeType)) {
-      throw new BadRequestError(`Unsupported image type. Allowed: ${AuthController.AVATAR_ALLOWED_TYPES.join(', ')}`);
-    }
-
-    const buffer = Buffer.from(dataBase64, 'base64');
-    if (buffer.length > AuthController.AVATAR_MAX_BYTES) {
-      throw new BadRequestError('File too large. Maximum size is 5 MB.');
-    }
-
-    const storageFileUUID = randomUUID();
-    const ext = mimeType.split('/')[1] || 'jpg';
-    const storageKey = `avatars/${auth.tenant_id}/${auth.user_id}/${storageFileUUID}.${ext}`;
-    const sha256_hex = createHash('sha256').update(buffer).digest('hex');
-
-    await this.storage.upload(storageKey, buffer, mimeType);
-
-    let finalFileId = '';
-
-    await this.getRepo()
-      .db.transaction()
-      .execute(async (trx) => {
-        const existingProfile = (await this.profiles.getOneByAuthId(auth.user_id)) as any;
-
-        // Clean up old avatar
-        if (existingProfile?.avatar_file_id) {
-          try {
-            const oldFile = await trx
-              .selectFrom('files')
-              .select('storage_key')
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('id', '=', existingProfile.avatar_file_id)
-              .executeTakeFirst();
-            if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
-            await trx
-              .deleteFrom('files')
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('id', '=', existingProfile.avatar_file_id)
-              .execute();
-          } catch {
-            /* non-critical */
-          }
-        }
-
-        // Insert new file record
-        const fileResult = await trx
-          .insertInto('files')
-          .values({
-            tenant_id: auth.tenant_id,
-            filename,
-            mime_type: mimeType,
-            size_bytes: buffer.length,
-            storage_key: storageKey,
-            sha256_hex,
-            uploaded_by: auth.user_id,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-
-        const fileId = String(fileResult.id);
-        finalFileId = fileId;
-
-        // Update or insert profile
-        if (existingProfile) {
-          await trx
-            .updateTable('profiles')
-            .set({ avatar_file_id: fileId, updated_at: new Date(), updatedby_id: auth.user_id })
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('auth_id', '=', auth.user_id)
-            .execute();
-        } else {
-          await trx
-            .insertInto('profiles')
-            .values({
-              tenant_id: auth.tenant_id,
-              auth_id: auth.user_id,
-              avatar_file_id: fileId,
-              createdby_id: auth.user_id,
-              updatedby_id: auth.user_id,
-            })
-            .execute();
-        }
-      });
-
-    return { file_id: finalFileId, avatar_url: `/api/files/download/${finalFileId}` };
-  }
-
-  public async deleteAvatar(auth: IAuthKeyPayload) {
-    const existingProfile = (await this.profiles.getOneByAuthId(auth.user_id)) as any;
-    if (!existingProfile?.avatar_file_id) return { success: true };
-
-    const fileId = existingProfile.avatar_file_id;
-
-    await this.getRepo()
-      .db.transaction()
-      .execute(async (trx) => {
-        try {
-          const oldFile = await trx
-            .selectFrom('files')
-            .select('storage_key')
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('id', '=', fileId)
-            .executeTakeFirst();
-          if (oldFile?.storage_key) await this.storage.delete(oldFile.storage_key);
-          await trx.deleteFrom('files').where('tenant_id', '=', auth.tenant_id).where('id', '=', fileId).execute();
-        } catch {
-          /* non-critical */
-        }
-
-        await trx
-          .updateTable('profiles')
-          .set({ avatar_file_id: null, updated_at: new Date(), updatedby_id: auth.user_id })
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('auth_id', '=', auth.user_id)
-          .execute();
-      });
-
-    return { success: true };
-  }
-
-  private async buildUserStats(auth: IAuthKeyPayload, userId: string) {
-    const defaults = {
-      emails_assigned: { total: 0, open: 0, closed: 0 },
-      contacts_added: { total: 0, last_created_at: null as Date | null },
-      files_imported: { count: 0, total_rows: 0, last_activity_at: null as Date | null },
-      files_exported: { count: 0, total_rows: 0, last_activity_at: null as Date | null },
-    };
-
-    try {
-      const [emails, contacts, activity] = await Promise.all([
-        this.emailsRepo.getAssignmentStats({ tenant_id: auth.tenant_id, user_id: userId }),
-        this.personsRepo.getCreatedStats({ tenant_id: auth.tenant_id, user_id: userId }),
-        this.userActivity.getStats({ tenant_id: auth.tenant_id, user_id: userId }),
-      ]);
-
-      const importActivity = activity['import'] ?? { count: 0, total_quantity: 0, last_activity_at: null };
-      const exportActivity = activity['export'] ?? { count: 0, total_quantity: 0, last_activity_at: null };
-
-      return {
-        emails_assigned: emails,
-        contacts_added: contacts,
-        files_imported: {
-          count: importActivity.count ?? 0,
-          total_rows: importActivity.total_quantity ?? 0,
-          last_activity_at: importActivity.last_activity_at ?? null,
-        },
-        files_exported: {
-          count: exportActivity.count ?? 0,
-          total_rows: exportActivity.total_quantity ?? 0,
-          last_activity_at: exportActivity.last_activity_at ?? null,
-        },
-      };
-    } catch (err) {
-      console.error('Failed to build user stats', err);
-      return defaults;
-    }
   }
 
   private async syncProfile(auth: IAuthKeyPayload, authUserId: string, data: UpdateAuthUserType) {
@@ -1547,310 +1839,28 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     await this.tenants.update({ id, tenant_id, row }, trx);
   }
 
+  private async validateNewPassword(password: string): Promise<void> {
+    if (COMMON_PASSWORDS.has(password.toLowerCase())) {
+      throw new BadRequestError('This password is too common. Please choose a different password.');
+    }
+    const count = await getPwnedCount(password);
+    if (count > 0) {
+      throw new BadRequestError(
+        'This password has appeared in a known data breach. Please choose a different password.',
+      );
+    }
+  }
+
   private async verifyUserDoesNotExist(email: string) {
     const exists = await this.getRepo().existsByEmail(email);
     if (exists) {
       throw new ConflictError('This email already exists. Did you want to sign in?');
     }
   }
-
-  public async ensureAtLeastOneOwner(
-    tenantId: string,
-    trx: Transaction<Models>,
-    isRoleChange = false,
-    excludeUserId?: string,
-  ) {
-    const activeOwners = await trx
-      .selectFrom('authusers')
-      .select(['id'])
-      .where('tenant_id', '=', tenantId)
-      .where((eb) =>
-        eb.or([eb('role', '=', 'owner'), eb.and([eb('role', '=', 'viewer'), eb('previous_role', '=', 'owner')])]),
-      )
-      .where('deletion_scheduled_at', 'is', null)
-      .execute();
-
-    if (activeOwners.length > 0) {
-      return;
-    }
-
-    // Find the oldest active user to promote
-    let query = trx
-      .selectFrom('authusers')
-      .select(['id'])
-      .where('tenant_id', '=', tenantId)
-      .where('deletion_scheduled_at', 'is', null);
-
-    if (excludeUserId) {
-      query = query.where('id', '!=', excludeUserId as any);
-    }
-
-    const oldestUser = await query.orderBy('created_at', 'asc').executeTakeFirst();
-
-    if (oldestUser) {
-      await trx.updateTable('authusers').set({ role: 'owner' }).where('id', '=', oldestUser.id).execute();
-    } else if (isRoleChange) {
-      throw new BadRequestError('The system must have at least one owner.');
-    }
-  }
-
-  public async getTenantAccountStatus(auth: IAuthKeyPayload) {
-    const tenant = await this.getRepo()
-      .db.selectFrom('tenants')
-      .select(['deletion_scheduled_at', 'suspended_at', 'paused_at'])
-      .where('id', '=', auth.tenant_id as any)
-      .executeTakeFirst();
-
-    if (!tenant) throw new NotFoundError('Tenant not found');
-
-    return {
-      deletion_scheduled_at: tenant.deletion_scheduled_at ?? null,
-      suspended_at: tenant.suspended_at ?? null,
-      paused_at: tenant.paused_at ?? null,
-    };
-  }
-
-  public async scheduleTenantDeletion(auth: IAuthKeyPayload) {
-    const db = this.getRepo().db;
-
-    const tenant = await db
-      .selectFrom('tenants')
-      .select(['id', 'name', 'deletion_scheduled_at'])
-      .where('id', '=', auth.tenant_id as any)
-      .executeTakeFirst();
-
-    if (!tenant) throw new NotFoundError('Tenant not found');
-    if (tenant.deletion_scheduled_at) throw new BadRequestError('Account deletion is already scheduled.');
-
-    const ownerEmail = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', auth.tenant_id as any)
-      .where('role', '=', 'owner')
-      .executeTakeFirst();
-
-    const deletionDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const cancelToken = this.makeDeletionCancelToken(String(auth.tenant_id));
-    const cancelUrl = `${env.appUrl}/cancel-deletion?tid=${auth.tenant_id}&token=${cancelToken}`;
-    const deletionDateStr = deletionDate.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
-
-    await db.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('tenants')
-        .set({ deletion_scheduled_at: deletionDate })
-        .where('id', '=', auth.tenant_id as any)
-        .execute();
-
-      // Invalidate every active session for the tenant so all users are signed out immediately
-      await trx
-        .deleteFrom('sessions')
-        .where('tenant_id', '=', auth.tenant_id as any)
-        .execute();
-
-      if (ownerEmail?.email) {
-        await this.mailService.enqueueMail(
-          {
-            to: ownerEmail.email,
-            tenant_id: String(auth.tenant_id),
-            subject: 'Your account is scheduled for deletion in 24 hours',
-            text: `Hi ${ownerEmail.first_name},\n\nYour organization account has been scheduled for permanent deletion. All data will be permanently removed on ${deletionDateStr}.\n\nChanged your mind? You have 24 hours to cancel:\n${cancelUrl}\n\nAfter that, all data will be permanently removed and cannot be recovered.`,
-            html: `<h2>Account Scheduled for Deletion</h2>
-<p>Hi ${ownerEmail.first_name},</p>
-<p>Your organization account has been scheduled for permanent deletion on <strong>${deletionDateStr}</strong>. All data associated with your account — contacts, emails, campaigns, and everything else — will be permanently and irreversibly removed.</p>
-<p><strong>Changed your mind?</strong> You have 24 hours to cancel this request:</p>
-<p><a href="${cancelUrl}" style="display:inline-block;padding:10px 20px;background:#4f46e5;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">Cancel Account Deletion</a></p>
-<p class="warning">After the 24-hour window, all data will be permanently deleted and cannot be recovered.</p>`,
-          },
-          trx,
-        );
-      }
-    });
-
-    return { success: true };
-  }
-
-  public makeDeletionCancelToken(tenantId: string): string {
-    return createHmac('sha256', env.sharedSecret).update(`cancel-deletion:${tenantId}`).digest('hex');
-  }
-
-  public async cancelTenantDeletion(auth: IAuthKeyPayload) {
-    const db = this.getRepo().db;
-
-    const tenant = await db
-      .selectFrom('tenants')
-      .select(['id', 'deletion_scheduled_at'])
-      .where('id', '=', auth.tenant_id as any)
-      .executeTakeFirst();
-
-    if (!tenant) throw new NotFoundError('Tenant not found');
-    if (!tenant.deletion_scheduled_at) throw new BadRequestError('No deletion is scheduled for this account.');
-    if (new Date(tenant.deletion_scheduled_at as any) <= new Date()) {
-      throw new BadRequestError('The deletion window has already passed and data has been removed.');
-    }
-
-    const ownerEmail = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', auth.tenant_id as any)
-      .where('role', '=', 'owner')
-      .executeTakeFirst();
-
-    await db
-      .updateTable('tenants')
-      .set({ deletion_scheduled_at: null })
-      .where('id', '=', auth.tenant_id as any)
-      .execute();
-
-    if (ownerEmail?.email) {
-      await this.mailService.sendMail({
-        to: ownerEmail.email,
-        tenant_id: String(auth.tenant_id),
-        subject: 'Account deletion cancelled',
-        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion request has been successfully cancelled. Your account and all data remain intact.`,
-        html: `<h2>Account Deletion Cancelled</h2>
-<p>Hi ${ownerEmail.first_name},</p>
-<p>Your account deletion request has been successfully cancelled. Your account and all data remain intact. Welcome back!</p>`,
-      });
-    }
-
-    return { success: true };
-  }
-
-  public async cancelTenantDeletionByToken(tenantId: string, token: string) {
-    const expectedToken = this.makeDeletionCancelToken(tenantId);
-    const expected = Buffer.from(expectedToken);
-    const provided = Buffer.from(token.length === expected.length ? token : expectedToken); // same length for safe compare
-    if (token.length !== expectedToken.length || !timingSafeEqual(expected, provided)) {
-      throw new BadRequestError('Invalid or expired cancellation link.');
-    }
-
-    const db = this.getRepo().db;
-    const tenant = await db
-      .selectFrom('tenants')
-      .select(['id', 'deletion_scheduled_at'])
-      .where('id', '=', tenantId as any)
-      .executeTakeFirst();
-
-    if (!tenant) throw new NotFoundError('Account not found.');
-    if (!tenant.deletion_scheduled_at) throw new BadRequestError('No deletion is pending for this account.');
-    if (new Date(tenant.deletion_scheduled_at as any) <= new Date()) {
-      throw new BadRequestError('The deletion window has already passed and data has been removed.');
-    }
-
-    const ownerEmail = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', tenantId as any)
-      .where('role', '=', 'owner')
-      .executeTakeFirst();
-
-    await db
-      .updateTable('tenants')
-      .set({ deletion_scheduled_at: null })
-      .where('id', '=', tenantId as any)
-      .execute();
-
-    if (ownerEmail?.email) {
-      await this.mailService.sendMail({
-        to: ownerEmail.email,
-        subject: 'Account deletion cancelled',
-        text: `Hi ${ownerEmail.first_name},\n\nYour account deletion has been successfully cancelled. Your account and all data remain intact. You can sign back in at any time.`,
-        html: `<h2>Account Deletion Cancelled</h2>
-<p>Hi ${ownerEmail.first_name},</p>
-<p>Your account deletion has been successfully cancelled. Your account and all data remain intact.</p>
-<p><a href="${env.appUrl}/signin">Sign back in</a> to continue using PeopleCRM.</p>`,
-      });
-    }
-
-    return { success: true };
-  }
-
-  public async pauseTenant(auth: IAuthKeyPayload) {
-    const db = this.getRepo().db;
-
-    const tenant = await db
-      .selectFrom('tenants')
-      .select(['id', 'paused_at'])
-      .where('id', '=', auth.tenant_id as any)
-      .executeTakeFirst();
-
-    if (!tenant) throw new NotFoundError('Tenant not found');
-    if (tenant.paused_at) throw new BadRequestError('Account is already paused.');
-
-    const ownerEmail = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', auth.tenant_id as any)
-      .where('role', '=', 'owner')
-      .executeTakeFirst();
-
-    await db.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('tenants')
-        .set({ paused_at: new Date() })
-        .where('id', '=', auth.tenant_id as any)
-        .execute();
-
-      // Sign out all users immediately so the pause takes effect for active sessions
-      await trx
-        .deleteFrom('sessions')
-        .where('tenant_id', '=', auth.tenant_id as any)
-        .execute();
-    });
-
-    if (ownerEmail?.email) {
-      await this.mailService.sendMail({
-        to: ownerEmail.email,
-        tenant_id: String(auth.tenant_id),
-        subject: 'Your account has been paused',
-        text: `Hi ${ownerEmail.first_name},\n\nYour account has been paused. Your data is preserved and billing has been paused. You can reactivate your account at any time by logging back in and visiting your account settings.`,
-        html: `<h2>Account Paused</h2>
-<p>Hi ${ownerEmail.first_name},</p>
-<p>Your account has been paused as requested. Your data is safely preserved and you will not be billed during this period.</p>
-<p>You can reactivate your account at any time by logging back in and visiting your account settings.</p>`,
-      });
-    }
-
-    return { success: true };
-  }
-
-  public async resumeTenant(auth: IAuthKeyPayload) {
-    const db = this.getRepo().db;
-
-    const tenant = await db
-      .selectFrom('tenants')
-      .select(['id', 'paused_at'])
-      .where('id', '=', auth.tenant_id as any)
-      .executeTakeFirst();
-
-    if (!tenant) throw new NotFoundError('Tenant not found');
-    if (!tenant.paused_at) throw new BadRequestError('Account is not paused.');
-
-    const ownerEmail = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', auth.tenant_id as any)
-      .where('role', '=', 'owner')
-      .executeTakeFirst();
-
-    await db
-      .updateTable('tenants')
-      .set({ paused_at: null })
-      .where('id', '=', auth.tenant_id as any)
-      .execute();
-
-    if (ownerEmail?.email) {
-      await this.mailService.sendMail({
-        to: ownerEmail.email,
-        tenant_id: String(auth.tenant_id),
-        subject: 'Your account has been reactivated',
-        text: `Hi ${ownerEmail.first_name},\n\nYour account has been successfully reactivated. Welcome back!`,
-        html: `<h2>Account Reactivated</h2>
-<p>Hi ${ownerEmail.first_name},</p>
-<p>Your account has been successfully reactivated. Everything is back to normal — welcome back!</p>`,
-      });
-    }
-
-    return { success: true };
-  }
 }
+
+const renewalVerifier = createVerifier({
+  algorithms: ['HS256'],
+  key: env.sharedSecret,
+  ignoreExpiration: true,
+});

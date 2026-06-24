@@ -32,6 +32,24 @@
           />
           {{ section.config.title }}
         </button>
+        } @if (currentMode === 'settings') {
+        <!-- Passkeys custom section -->
+        <button
+          id="settings-nav-passkeys"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('passkeys')"
+          [class.opacity-70]="!isSelected('passkeys')"
+          (click)="selectSection('passkeys')"
+        >
+          <pc-icon
+            name="lock-closed"
+            class="mr-2 opacity-80"
+            [class.text-primary]="isSelected('passkeys')"
+            [size]="5"
+          />
+          Passkeys
+        </button>
         } @if (currentMode === 'configuration') {
         <!-- Email Sync custom section -->
         <button
@@ -104,12 +122,7 @@
           [class.opacity-70]="!isSelected('account')"
           (click)="selectSection('account')"
         >
-          <pc-icon
-            name="user-circle"
-            class="mr-2 opacity-80"
-            [class.text-primary]="isSelected('account')"
-            [size]="5"
-          />
+          <pc-icon name="user-circle" class="mr-2 opacity-80" [class.text-primary]="isSelected('account')" [size]="5" />
           Account
         </button>
         }
@@ -531,6 +544,19 @@
           </p>
         </header>
         <pc-billing-settings></pc-billing-settings>
+      </section>
+      }
+
+      <!-- Passkeys custom section -->
+      @if (currentMode === 'settings' && isSelected('passkeys')) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">Passkeys</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.
+          </p>
+        </header>
+        <pc-passkey-settings></pc-passkey-settings>
       </section>
       }
 
