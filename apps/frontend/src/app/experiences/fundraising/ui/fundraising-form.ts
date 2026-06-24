@@ -4,7 +4,7 @@ import { form, FormField, validateStandardSchema, submit } from '@angular/forms/
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AddWebFormObj } from '../../../../../../../libs/common/src';
 import { ListsService } from '@experiences/lists/services/lists-service';
-import { FormsService } from '../services/forms-service';
+import { FormsService } from '@experiences/forms/services/forms-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Tags } from '@experiences/tags/ui/tags';
 import { TagItem } from '@uxcommon/components/tags/tagitem';
@@ -16,11 +16,11 @@ import { SettingsService } from '@experiences/settings/services/settings-service
 import { environment } from '../../../../environments/environment';
 
 @Component({
-  selector: 'pc-donation-page-detail',
+  selector: 'pc-fundraising-form',
   imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions, PcCard],
-  templateUrl: './donation-page-detail.html',
+  templateUrl: './fundraising-form.html',
 })
-export class DonationPageDetailComponent implements OnInit {
+export class FundraisingFormComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly formsSvc = inject(FormsService);

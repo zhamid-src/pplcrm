@@ -17,11 +17,11 @@ import { SettingsService } from '@experiences/settings/services/settings-service
 import { environment } from '../../../../environments/environment';
 
 @Component({
-  selector: 'pc-form-detail',
+  selector: 'pc-form-editor',
   imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions, PcCard, FieldsSelector],
-  templateUrl: './form-detail.html',
+  templateUrl: './form-editor.html',
 })
-export class FormDetailComponent implements OnInit {
+export class FormEditorComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly formsSvc = inject(FormsService);

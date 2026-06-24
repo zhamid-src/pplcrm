@@ -16,11 +16,11 @@ import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
-  selector: 'pc-user-detail',
+  selector: 'pc-user-edit',
   imports: [PcInput, PcSelect, PcToggle, RouterModule, Icon, PcDetailHeader, PcCard],
-  templateUrl: './user-detail.html',
+  templateUrl: './user-edit.html',
 })
-export class UserDetailComponent {
+export class UserEditComponent {
   readonly id = input.required<string>();
 
   private readonly alerts = inject(AlertService);

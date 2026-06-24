@@ -6,7 +6,7 @@ import { Loader } from '@googlemaps/js-api-loader';
 import { HouseholdsService } from '../services/households-service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { TagsService } from '../../tags/services/tags-service';
-import { HouseholdDetail } from './household-detail';
+import { HouseholdForm } from './household-form';
 import { AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 const mockHouseholdData = {
@@ -29,8 +29,8 @@ const mockHouseholdData = {
   updated_at: '2026-05-20T13:00:00Z',
 };
 
-let component: HouseholdDetail;
-let fixture: ComponentFixture<HouseholdDetail>;
+let component: HouseholdForm;
+let fixture: ComponentFixture<HouseholdForm>;
 let mockHouseholdsSvc: any;
 let mockPersonsSvc: any;
 let mockTagsSvc: any;
@@ -77,7 +77,7 @@ const setupTestBed = async (mode: 'new' | 'edit') => {
   };
 
   await TestBed.configureTestingModule({
-    imports: [HouseholdDetail],
+    imports: [HouseholdForm],
     providers: [
       provideRouter([]),
       { provide: HouseholdsService, useValue: mockHouseholdsSvc },
@@ -89,7 +89,7 @@ const setupTestBed = async (mode: 'new' | 'edit') => {
     ],
   }).compileComponents();
 
-  fixture = TestBed.createComponent(HouseholdDetail);
+  fixture = TestBed.createComponent(HouseholdForm);
   component = fixture.componentInstance;
 
   // Set component inputs
@@ -97,7 +97,7 @@ const setupTestBed = async (mode: 'new' | 'edit') => {
   fixture.componentRef.setInput('id', mode === 'edit' ? '123' : null);
 };
 
-describe('HouseholdDetail', () => {
+describe('HouseholdForm', () => {
   // Loader mock handles loading. No google.maps.places.Autocomplete mock needed.
 
   describe('new mode', () => {

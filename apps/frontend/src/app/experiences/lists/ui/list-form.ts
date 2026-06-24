@@ -149,11 +149,11 @@ export class PeopleFilterGrid {
 }
 
 @Component({
-  selector: 'pc-list-detail',
+  selector: 'pc-list-form',
   imports: [ReactiveFormsModule, FormActions, PeopleFilterGrid, HouseholdFilterGrid, Icon, QueryBuilderComponent],
-  templateUrl: './list-detail.html',
+  templateUrl: './list-form.html',
 })
-export class ListDetail implements OnInit {
+export class ListForm implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly fb = inject(FormBuilder);
   private readonly householdsSvc = inject(HouseholdsService);

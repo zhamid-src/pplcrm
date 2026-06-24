@@ -10,7 +10,7 @@ import {
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Service()
-export class VolunteerEventsFrontendService extends AbstractAPIService<'volunteer_events', UpdateVolunteerEventType> {
+export class ShiftsService extends AbstractAPIService<'volunteer_events', UpdateVolunteerEventType> {
   protected override readonly endpointName = 'volunteer';
 
   public add(row: AddVolunteerEventType) {

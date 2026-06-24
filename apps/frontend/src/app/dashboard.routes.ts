@@ -19,7 +19,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: 'add',
-        loadComponent: () => import('./experiences/persons/ui/person-detail').then((m) => m.PersonDetail),
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
       },
       {
         path: ':id',
@@ -27,7 +27,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: ':id/edit',
-        loadComponent: () => import('./experiences/persons/ui/person-detail').then((m) => m.PersonDetail),
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
       },
     ],
   },
@@ -42,7 +42,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: 'add',
-        loadComponent: () => import('./experiences/households/ui/household-detail').then((m) => m.HouseholdDetail),
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
       },
       {
         path: ':id',
@@ -50,7 +50,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: ':id/edit',
-        loadComponent: () => import('./experiences/households/ui/household-detail').then((m) => m.HouseholdDetail),
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
       },
     ],
   },
@@ -119,7 +119,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: 'add',
-        loadComponent: () => import('./experiences/lists/ui/list-detail').then((m) => m.ListDetail),
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
         data: { mode: 'new' },
       },
       {
@@ -128,7 +128,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: ':id/edit',
-        loadComponent: () => import('./experiences/lists/ui/list-detail').then((m) => m.ListDetail),
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
         data: { mode: 'edit' },
       },
     ],
@@ -169,12 +169,12 @@ export const dashboardRoutes: Routes = [
       {
         path: 'add',
         loadComponent: () =>
-          import('./experiences/workflows/ui/workflow-detail').then((m) => m.WorkflowDetailComponent),
+          import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
       },
       {
         path: ':id',
         loadComponent: () =>
-          import('./experiences/workflows/ui/workflow-detail').then((m) => m.WorkflowDetailComponent),
+          import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
       },
     ],
   },
@@ -192,23 +192,23 @@ export const dashboardRoutes: Routes = [
         children: [
           {
             path: '',
-            loadComponent: () => import('./experiences/volunteer/ui/events-grid').then((m) => m.EventsGridComponent),
+            loadComponent: () => import('./experiences/shifts/ui/shifts-grid').then((m) => m.ShiftsGridComponent),
             data: { shouldReuse: true, key: 'eventsgridroot' },
           },
           {
             path: 'add',
             loadComponent: () =>
-              import('./experiences/volunteer/ui/event-detail').then((m) => m.EventDetailComponent),
+              import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
           },
           {
             path: ':id',
             loadComponent: () =>
-              import('./experiences/volunteer/ui/event-view').then((m) => m.EventViewComponent),
+              import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
           },
           {
             path: ':id/edit',
             loadComponent: () =>
-              import('./experiences/volunteer/ui/event-detail').then((m) => m.EventDetailComponent),
+              import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
           },
         ],
       },
@@ -218,23 +218,23 @@ export const dashboardRoutes: Routes = [
           {
             path: '',
             loadComponent: () =>
-              import('./experiences/events/ui/events-grid').then((m) => m.EventPagesGridComponent),
+              import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
             data: { shouldReuse: true, key: 'eventpagesgridroot' },
           },
           {
             path: 'add',
             loadComponent: () =>
-              import('./experiences/events/ui/event-detail').then((m) => m.EventPageDetailComponent),
+              import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
           },
           {
             path: ':id',
             loadComponent: () =>
-              import('./experiences/events/ui/event-view').then((m) => m.EventPageViewComponent),
+              import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
           },
           {
             path: ':id/edit',
             loadComponent: () =>
-              import('./experiences/events/ui/event-detail').then((m) => m.EventPageDetailComponent),
+              import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
           },
         ],
       },
@@ -294,7 +294,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: 'add',
-        loadComponent: () => import('./experiences/teams/ui/team-detail').then((m) => m.TeamDetailComponent),
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
         data: { mode: 'new' },
       },
       {
@@ -303,7 +303,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: ':id/edit',
-        loadComponent: () => import('./experiences/teams/ui/team-detail').then((m) => m.TeamDetailComponent),
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
         data: { mode: 'edit' },
       },
     ],
@@ -327,7 +327,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: ':id/edit',
-        loadComponent: () => import('./experiences/users/ui/user-detail').then((m) => m.UserDetailComponent),
+        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
       },
     ],
   },
@@ -341,7 +341,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: 'add',
-        loadComponent: () => import('./experiences/forms/ui/form-detail').then((m) => m.FormDetailComponent),
+        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
       },
       {
         path: ':id',
@@ -349,7 +349,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: ':id/edit',
-        loadComponent: () => import('./experiences/forms/ui/form-detail').then((m) => m.FormDetailComponent),
+        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
       },
     ],
   },
@@ -359,13 +359,13 @@ export const dashboardRoutes: Routes = [
       {
         path: '',
         loadComponent: () =>
-          import('./experiences/forms/ui/donation-pages-grid').then((m) => m.DonationPagesGridComponent),
+          import('./experiences/fundraising/ui/fundraising-grid').then((m) => m.FundraisingGridComponent),
         data: { shouldReuse: true, key: 'donationpagesgridroot' },
       },
       {
         path: 'add',
         loadComponent: () =>
-          import('./experiences/forms/ui/donation-page-detail').then((m) => m.DonationPageDetailComponent),
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
       },
       {
         path: ':id',
@@ -375,7 +375,7 @@ export const dashboardRoutes: Routes = [
       {
         path: ':id/edit',
         loadComponent: () =>
-          import('./experiences/forms/ui/donation-page-detail').then((m) => m.DonationPageDetailComponent),
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
       },
     ],
   },
@@ -430,7 +430,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: 'add',
-        loadComponent: () => import('./experiences/companies/ui/company-detail').then((m) => m.CompanyDetail),
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
       },
       {
         path: ':id',
@@ -438,7 +438,7 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: ':id/edit',
-        loadComponent: () => import('./experiences/companies/ui/company-detail').then((m) => m.CompanyDetail),
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
       },
     ],
   },

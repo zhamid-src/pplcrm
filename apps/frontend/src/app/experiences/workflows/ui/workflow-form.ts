@@ -11,7 +11,7 @@ import { Icon } from '@icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { VisualNewsletterEditorComponent } from '../../newsletters/ui/visual-newsletter-editor';
-import { VolunteerEventsFrontendService } from '../../volunteer/services/volunteer-events-frontend-service';
+import { ShiftsService } from '../../shifts/services/shifts-service';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { FormsService } from '@experiences/forms/services/forms-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
@@ -20,7 +20,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 
 @Component({
-  selector: 'pc-workflow-detail',
+  selector: 'pc-workflow-form',
   imports: [
     RouterModule,
     FormsModule,
@@ -33,16 +33,16 @@ import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
     Tabs,
     TabPanel,
   ],
-  templateUrl: './workflow-detail.html',
-  providers: [WorkflowsService, VolunteerEventsFrontendService, TagsService, FormsService, ListsService],
+  templateUrl: './workflow-form.html',
+  providers: [WorkflowsService, ShiftsService, TagsService, FormsService, ListsService],
 })
-export class WorkflowDetailComponent implements OnInit {
+export class WorkflowFormComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly workflowsSvc = inject(WorkflowsService);
   private readonly personsSvc = inject(PersonsService);
   private readonly alertSvc = inject(AlertService);
-  private readonly volunteerEventsSvc = inject(VolunteerEventsFrontendService);
+  private readonly volunteerEventsSvc = inject(ShiftsService);
   private readonly tagsSvc = inject(TagsService);
   private readonly formsSvc = inject(FormsService);
   private readonly listsSvc = inject(ListsService);

@@ -3,11 +3,11 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { vi, describe, beforeEach, it, expect } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { UserAdminService } from '../services/useradmin-service';
-import { UserDetailComponent } from './user-detail';
+import { UserEditComponent } from './user-edit';
 
-describe('UserDetailComponent', () => {
-  let component: UserDetailComponent;
-  let fixture: ComponentFixture<UserDetailComponent>;
+describe('UserEditComponent', () => {
+  let component: UserEditComponent;
+  let fixture: ComponentFixture<UserEditComponent>;
   let mockUsersSvc: any;
   let mockAlertSvc: any;
   let mockRouter: any;
@@ -52,7 +52,7 @@ describe('UserDetailComponent', () => {
     });
 
     await TestBed.configureTestingModule({
-      imports: [UserDetailComponent],
+      imports: [UserEditComponent],
       providers: [
         { provide: UserAdminService, useValue: mockUsersSvc },
         { provide: AlertService, useValue: mockAlertSvc },
@@ -61,7 +61,7 @@ describe('UserDetailComponent', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(UserDetailComponent);
+    fixture = TestBed.createComponent(UserEditComponent);
     component = fixture.componentInstance;
     fixture.componentRef.setInput('id', 'user-123');
     fixture.detectChanges();

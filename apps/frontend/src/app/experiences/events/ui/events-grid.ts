@@ -6,7 +6,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { EventsFrontendService } from '../services/events-frontend-service';
 
 @Component({
-  selector: 'pc-event-pages-grid',
+  selector: 'pc-events-grid',
   imports: [DataGrid],
   template: `
     <div class="flex flex-col gap-6">
@@ -33,7 +33,7 @@ import { EventsFrontendService } from '../services/events-frontend-service';
     provideDataGridConfig({ messages: { exportFileName: 'events-export.csv' } }),
   ],
 })
-export class EventPagesGridComponent {
+export class EventsGridComponent {
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',

@@ -4,7 +4,7 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
+import { ShiftsService } from '../services/shifts-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { environment } from '../../../../environments/environment';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -18,7 +18,7 @@ import { Card as PcCard } from '@uxcommon/components/card/card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 @Component({
-  selector: 'pc-event-view',
+  selector: 'pc-shift-view',
   imports: [
     DatePipe,
     RouterModule,
@@ -33,14 +33,14 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
     DetailRow,
     PcCard,
   ],
-  templateUrl: './event-view.html',
+  templateUrl: './shift-view.html',
   providers: [VolunteerService],
 })
-export class EventViewComponent {
+export class ShiftViewComponent {
   readonly id = input.required<string>();
 
   private readonly alertSvc = inject(AlertService);
-  private readonly volunteerEventsSvc = inject(VolunteerEventsFrontendService);
+  private readonly volunteerEventsSvc = inject(ShiftsService);
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);

@@ -6,7 +6,7 @@ import { provideDataGridConfig } from '@frontend/shared/components/datagrid/data
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Component({
-  selector: 'pc-donation-pages-grid',
+  selector: 'pc-fundraising-grid',
   imports: [DataGrid],
   template: `
     <div class="flex flex-col gap-6">
@@ -28,7 +28,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
     provideDataGridConfig({ messages: { exportEntity: 'forms', exportFileName: 'donation-pages-export.csv' } }),
   ],
 })
-export class DonationPagesGridComponent {
+export class FundraisingGridComponent {
   protected col = [
     { field: 'name', headerName: 'Page Name', editable: false },
     { field: 'description', headerName: 'Description', editable: false },

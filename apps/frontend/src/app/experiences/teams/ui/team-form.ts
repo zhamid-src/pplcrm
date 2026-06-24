@@ -27,11 +27,11 @@ interface PersonOption {
 import { DatePipe } from '@angular/common';
 
 @Component({
-  selector: 'pc-team-detail',
+  selector: 'pc-team-form',
   imports: [FormField, RouterModule, Icon, DatePipe, PcDetailHeader, PcInput, PcTextarea, PcSelect, PcCard],
-  templateUrl: './team-detail.html',
+  templateUrl: './team-form.html',
 })
-export class TeamDetailComponent implements OnInit {
+export class TeamFormComponent implements OnInit {
   readonly id = input<string>();
 
   private readonly alerts = inject(AlertService);

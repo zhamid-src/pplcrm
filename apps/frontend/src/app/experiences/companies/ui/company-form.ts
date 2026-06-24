@@ -14,11 +14,11 @@ import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-
 import { Card as PcCard } from '@uxcommon/components/card/card';
 
 @Component({
-  selector: 'pc-company-detail',
+  selector: 'pc-company-form',
   imports: [PcInput, PcTextarea, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview, PcCard],
-  templateUrl: './company-detail.html',
+  templateUrl: './company-form.html',
 })
-export class CompanyDetail implements OnInit {
+export class CompanyForm implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly companiesSvc = inject(CompaniesService);
   private readonly router = inject(Router);
