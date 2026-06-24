@@ -122,12 +122,12 @@ export const SidebarItems: ISidebarItem[] = [
       {
         name: 'Events',
         route: '/events/pages',
-        icon: 'calendar',
+        icon: 'ticket',
       },
       {
         name: 'Fundraising',
         route: '/donation-pages',
-        icon: 'document-currency-dollar',
+        icon: 'currency-dollar',
       },
     ],
   },

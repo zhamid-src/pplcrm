@@ -19,7 +19,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
         [allowFilter]="false"
         [disableView]="false"
         addRoute="add"
-        plusIcon="currency-dollar"
+        plusIcon="add-fundraising"
       ></pc-datagrid>
     </div>
   `,
