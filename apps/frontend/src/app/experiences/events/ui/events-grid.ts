@@ -21,7 +21,7 @@ import { EventsFrontendService } from '../services/events-frontend-service';
         [disableImport]="true"
         [allowFilter]="false"
         [addRoute]="'add'"
-        plusIcon="calendar"
+        plusIcon="add-ticket"
         [showArchiveIcon]="true"
         archiveIcon="archive-box-arrow-down"
         archiveTip="See past events"
