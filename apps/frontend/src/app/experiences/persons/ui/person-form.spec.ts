@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { PersonDetail } from './person-detail';
+import { PersonForm } from './person-form';
 import { UserService } from '../../../services/user.service';
 import { PersonsService } from '../services/persons-service';
 import { HouseholdsService } from '../../households/services/households-service';
@@ -11,9 +11,9 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-describe('PersonDetail', () => {
-  let component: PersonDetail;
-  let fixture: ComponentFixture<PersonDetail>;
+describe('PersonForm', () => {
+  let component: PersonForm;
+  let fixture: ComponentFixture<PersonForm>;
 
   let mockAlertSvc: any;
   let mockUserService: any;
@@ -78,7 +78,7 @@ describe('PersonDetail', () => {
     };
 
     await TestBed.configureTestingModule({
-      imports: [PersonDetail],
+      imports: [PersonForm],
       providers: [
         provideRouter([]),
         { provide: AlertService, useValue: mockAlertSvc },
@@ -97,7 +97,7 @@ describe('PersonDetail', () => {
     vi.spyOn(mockRouter, 'navigate').mockResolvedValue(true as any);
     vi.spyOn(mockRouter, 'navigateByUrl').mockResolvedValue(true as any);
 
-    fixture = TestBed.createComponent(PersonDetail);
+    fixture = TestBed.createComponent(PersonForm);
     component = fixture.componentInstance;
   });
 
@@ -150,7 +150,7 @@ describe('PersonDetail', () => {
 
   it('should add new person when in new mode', async () => {
     mockRoute.snapshot.paramMap.get.mockReturnValue(null);
-    const fixtureNew = TestBed.createComponent(PersonDetail);
+    const fixtureNew = TestBed.createComponent(PersonForm);
     const componentNew = fixtureNew.componentInstance;
     fixtureNew.componentRef.setInput('mode', 'new');
     fixtureNew.componentRef.setInput('id', null);
@@ -199,7 +199,7 @@ describe('PersonDetail', () => {
 
   it('should assign new pending household if in new mode', async () => {
     mockRoute.snapshot.paramMap.get.mockReturnValue(null);
-    const fixtureNew = TestBed.createComponent(PersonDetail);
+    const fixtureNew = TestBed.createComponent(PersonForm);
     const componentNew = fixtureNew.componentInstance;
     fixtureNew.componentRef.setInput('mode', 'new');
     fixtureNew.componentRef.setInput('id', null);

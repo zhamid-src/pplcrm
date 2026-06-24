@@ -3,10 +3,10 @@ import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
+import { ShiftsService } from '../services/shifts-service';
 
 @Component({
-  selector: 'pc-events-grid',
+  selector: 'pc-shifts-grid',
   imports: [DataGrid],
   template: `
     <div class="flex flex-col gap-6">
@@ -29,11 +29,11 @@ import { VolunteerEventsFrontendService } from '../services/volunteer-events-fro
     </div>
   `,
   providers: [
-    { provide: AbstractAPIService, useExisting: VolunteerEventsFrontendService },
+    { provide: AbstractAPIService, useExisting: ShiftsService },
     provideDataGridConfig({ messages: { exportEntity: 'volunteer', exportFileName: 'volunteer-export.csv' } }),
   ],
 })
-export class EventsGridComponent {
+export class ShiftsGridComponent {
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',

@@ -23,10 +23,10 @@ import { environment } from '../../../../environments/environment';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
-import { VolunteerEventsFrontendService } from '../services/volunteer-events-frontend-service';
+import { ShiftsService } from '../services/shifts-service';
 
 @Component({
-  selector: 'pc-event-detail',
+  selector: 'pc-shift-form',
   imports: [
     DatePipe,
     FormsModule,
@@ -41,16 +41,16 @@ import { VolunteerEventsFrontendService } from '../services/volunteer-events-fro
     FieldsSelector,
     PublicLinkPanel,
   ],
-  templateUrl: './event-detail.html',
+  templateUrl: './shift-form.html',
   providers: [VolunteerService],
 })
-export class EventDetailComponent {
+export class ShiftFormComponent {
   private readonly _loading = createLoadingGate();
   private readonly alerts = inject(AlertService);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly personsSvc = inject(PersonsService);
   private readonly router = inject(Router);
-  private readonly volunteerEventsSvc = inject(VolunteerEventsFrontendService);
+  private readonly volunteerEventsSvc = inject(ShiftsService);
   private readonly volunteerSvc = inject(VolunteerService);
 
   private slugTimeoutId: any = null;

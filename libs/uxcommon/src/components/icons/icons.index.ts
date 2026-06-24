@@ -176,6 +176,7 @@ export const icons = {
   phone: 'assets/icons/phone.svg',
   tag: 'assets/icons/tag.svg',
   task: 'assets/icons/task.svg',
+  'ticket-add': 'assets/icons/ticket-add.svg',
   trash: 'assets/icons/trash.svg',
   'trash-forever': 'assets/icons/trash-forever.svg',
   'undo-fat': 'assets/icons/undo-fat.svg',

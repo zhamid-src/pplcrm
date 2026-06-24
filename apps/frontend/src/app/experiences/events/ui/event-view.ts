@@ -19,7 +19,7 @@ import { EventsService } from '../../../services/api/events-service';
 import { PersonsService } from '../../persons/services/persons-service';
 
 @Component({
-  selector: 'pc-event-page-view',
+  selector: 'pc-event-view',
   imports: [
     DatePipe,
     RouterModule,
@@ -37,7 +37,7 @@ import { PersonsService } from '../../persons/services/persons-service';
   templateUrl: './event-view.html',
   providers: [EventsService],
 })
-export class EventPageViewComponent {
+export class EventViewComponent {
   readonly id = input.required<string>();
 
   private readonly alertSvc = inject(AlertService);

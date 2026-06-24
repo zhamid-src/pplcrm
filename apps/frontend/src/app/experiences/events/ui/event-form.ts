@@ -20,7 +20,7 @@ import { ConfirmDialogService } from "../../../services/shared-dialog.service";
 import { EventsFrontendService } from "../services/events-frontend-service";
 
 @Component({
-  selector: 'pc-event-page-detail',
+  selector: 'pc-event-form',
   imports: [
     FormsModule,
     FormField,
@@ -34,10 +34,10 @@ import { EventsFrontendService } from "../services/events-frontend-service";
     FieldsSelector,
     PublicLinkPanel,
   ],
-  templateUrl: './event-detail.html',
+  templateUrl: './event-form.html',
   providers: [EventsService],
 })
-export class EventPageDetailComponent {
+export class EventFormComponent {
   private readonly _loading = createLoadingGate();
   private readonly alerts = inject(AlertService);
   private readonly dialogs = inject(ConfirmDialogService);

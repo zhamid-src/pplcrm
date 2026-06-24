@@ -4,12 +4,12 @@ import { vi, describe, beforeEach, it, expect } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { TeamsService } from '../services/teams-service';
-import { TeamDetailComponent } from './team-detail';
+import { TeamFormComponent } from './team-form';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
-describe('TeamDetailComponent', () => {
-  let component: TeamDetailComponent;
-  let fixture: ComponentFixture<TeamDetailComponent>;
+describe('TeamFormComponent', () => {
+  let component: TeamFormComponent;
+  let fixture: ComponentFixture<TeamFormComponent>;
   let mockTeamsSvc: any;
   let mockPersonsSvc: any;
   let mockAlertSvc: any;
@@ -61,7 +61,7 @@ describe('TeamDetailComponent', () => {
 
   async function createComponent() {
     await TestBed.configureTestingModule({
-      imports: [TeamDetailComponent],
+      imports: [TeamFormComponent],
       providers: [
         { provide: TeamsService, useValue: mockTeamsSvc },
         { provide: PersonsService, useValue: mockPersonsSvc },
@@ -72,7 +72,7 @@ describe('TeamDetailComponent', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(TeamDetailComponent);
+    fixture = TestBed.createComponent(TeamFormComponent);
     component = fixture.componentInstance;
   }
 

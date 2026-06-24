@@ -19,7 +19,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
 
 @Component({
-  selector: 'pc-household-detail',
+  selector: 'pc-household-form',
   imports: [
     PcTextarea,
     AddressAutocomplete,
@@ -30,9 +30,9 @@ import { PersonsService } from '../../persons/services/persons-service';
     PcEntityOverview,
     PcAddressFormGroup,
   ],
-  templateUrl: './household-detail.html',
+  templateUrl: './household-form.html',
 })
-export class HouseholdDetail implements OnInit {
+export class HouseholdForm implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly householdsSvc = inject(HouseholdsService);
   private readonly tagOptionsSvc = inject(TagOptionsService);

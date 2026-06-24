@@ -24,11 +24,11 @@ import { TagOptionsService } from '@frontend/shared/components/datagrid/services
 import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
 
 @Component({
-  selector: 'pc-person-detail',
+  selector: 'pc-person-form',
   imports: [PcInput, PcSelect, PcTextarea, Tags, RouterModule, Icon, PcDetailHeader, SideDrawer, PcEntityOverview],
-  templateUrl: './person-detail.html',
+  templateUrl: './person-form.html',
 })
-export class PersonDetail implements OnInit {
+export class PersonForm implements OnInit {
   private readonly alertSvc = inject(AlertService);
   private readonly userService = inject(UserService);
   private readonly confirmDlg = inject(ConfirmDialogService);
