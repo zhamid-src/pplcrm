@@ -954,13 +954,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   public async signIn(input: signInInputType, ipAddress?: string, userAgent?: string) {
     const user = await this.getUserByEmail(input.email.toLowerCase());
 
-    const { valid, needsRehash } = await verifyPassword(input.password, user.password);
+    const valid = await verifyPassword(input.password, user.password);
     if (!valid) {
       throw new UnauthorizedError();
-    }
-    if (needsRehash) {
-      const newHash = await hashPassword(input.password);
-      this.getRepo().db.updateTable('authusers').set({ password: newHash }).where('id', '=', user.id).execute().catch();
     }
 
     if (!user.verified) {
