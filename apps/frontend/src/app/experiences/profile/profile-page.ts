@@ -85,14 +85,14 @@ export class ProfilePage implements OnInit {
     const first = this.payload().first_name?.trim();
     const last = this.payload().last_name?.trim();
     if (first && last) {
-      return (first[0] + last[0]).toUpperCase();
+      return (first[0]! + last[0]!).toUpperCase();
     }
     if (first) {
-      return first[0].toUpperCase();
+      return first[0]!.toUpperCase();
     }
     const emailStr = this.payload().email?.trim();
     if (emailStr) {
-      return emailStr[0].toUpperCase();
+      return emailStr[0]!.toUpperCase();
     }
     return '?';
   });

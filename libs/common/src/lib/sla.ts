@@ -10,9 +10,9 @@ export function calculateWorkingTimeMs(
   }
 
   // Parse start hour/minute
-  const [startHour, startMin] = workingHoursStart.split(':').map(Number);
+  const [startHour = NaN, startMin = NaN] = workingHoursStart.split(':').map(Number);
   // Parse end hour/minute
-  const [endHour, endMin] = workingHoursEnd.split(':').map(Number);
+  const [endHour = NaN, endMin = NaN] = workingHoursEnd.split(':').map(Number);
 
   if (isNaN(startHour) || isNaN(startMin) || isNaN(endHour) || isNaN(endMin) || workingDays.length === 0) {
     // Return standard elapsed time as fallback if settings are malformed

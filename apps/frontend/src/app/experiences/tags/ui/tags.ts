@@ -99,8 +99,6 @@ export class Tags implements OnInit {
     return limitVal !== undefined && !isExpanded ? out.slice(0, limitVal) : out;
   }
 
-  constructor() {}
-
   public async filter(key: string) {
     if (!key || key.length === 0) {
       return [];
@@ -134,7 +132,7 @@ export class Tags implements OnInit {
       this.tagOptionsSvc.invalidate(this.type());
     } else {
       // Bring tag that maches to the front.
-      const [tag] = this.tags().splice(index, 1); // remove it
+      const [tag] = this.tags().splice(index, 1) as [string]; // remove it
       this.tags().unshift(tag); // move to front
     }
     this.tagsChange.emit(this.tags());
@@ -152,7 +150,7 @@ export class Tags implements OnInit {
     const target = (tagName || '').toLowerCase().trim();
     const index = this.tags().findIndex((tag) => (tag || '').toLowerCase().trim() === target);
     if (index > -1) {
-      const removed = this.tags().splice(index, 1)[0];
+      const removed = this.tags().splice(index, 1)[0]!;
       this.tagsChange.emit(this.tags());
       this.tagRemoved.emit(removed);
     }

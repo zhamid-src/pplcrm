@@ -10,7 +10,7 @@ export async function processMentions(
   if (!commentText || !commentText.trim()) return;
 
   // Find matches for @username (characters, numbers, dots, dashes, underscores)
-  const matches = [...commentText.matchAll(/\B@([a-zA-Z0-9._-]+)/g)].map((m) => m[1].toLowerCase());
+  const matches = [...commentText.matchAll(/\B@([a-zA-Z0-9._-]+)/g)].map((m) => m[1]!.toLowerCase());
   if (matches.length === 0) return;
 
   try {

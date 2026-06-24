@@ -31,7 +31,7 @@ export class AuthService extends TRPCService<'authusers'> {
       reader.onload = () => {
         const result = reader.result as string;
         // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
-        resolve(result.split(',')[1]);
+        resolve(result.split(',')[1]!);
       };
       reader.onerror = reject;
       reader.readAsDataURL(file);

@@ -1,19 +1,15 @@
 // tsco:ignore
 
-import { INow, QueryBuilderGroupNode } from '../../../../../libs/common/src';
+import type { INow, QueryBuilderGroupNode } from '../../../../../libs/common/src';
 
 import { promises as fs } from 'fs';
-import {
+import type {
   DeleteQueryBuilder,
   DeleteResult,
-  FileMigrationProvider,
   InsertQueryBuilder,
   InsertResult,
-  Kysely,
-  Migrator,
   OperandValueExpressionOrList,
   OrderByExpression,
-  PostgresDialect,
   QueryResult,
   ReferenceExpression,
   SelectExpression,
@@ -21,12 +17,17 @@ import {
   Selectable,
   Transaction,
   UpdateQueryBuilder,
-  UpdateResult,
+  UpdateResult} from 'kysely';
+import {
+  FileMigrationProvider,
+  Kysely,
+  Migrator,
+  PostgresDialect,
   sql,
 } from 'kysely';
 import path from 'path';
 
-import {
+import type {
   Models,
   OperationDataType,
   TypeId,
@@ -76,7 +77,7 @@ export class BaseRepository<T extends keyof Models> {
 
   public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
     const results = await this.addMany({ rows: [input.row] }, trx);
-    return results[0];
+    return results[0]!;
   }
 
   public async addMany(input: { rows: OperationDataType<T, 'insert'>[] }, trx?: Transaction<Models>) {

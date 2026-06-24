@@ -61,7 +61,7 @@ export class MentionController {
       this.index.set((this.index() - 1 + list.length) % list.length);
     } else if (ev.key === 'Enter' || ev.key === 'Tab') {
       ev.preventDefault();
-      onSelect(list[this.index()]);
+      onSelect(list[this.index()]!);
     } else if (ev.key === 'Escape') {
       this.open.set(false);
     }
@@ -69,7 +69,7 @@ export class MentionController {
 
   public select(user: IAuthUser, text: string): { text: string; caret: number } {
     if (this.start < 0) return { text, caret: this.caretPos };
-    const display = user.first_name || user.email.split('@')[0];
+    const display = user.first_name || user.email.split('@')[0]!;
     let before = text.slice(0, this.start);
     // Collapse any trailing whitespace/newlines immediately before '@' into a single space to keep inline
     before = before.replace(/\s+$/g, ' ');
@@ -93,15 +93,15 @@ export class MentionController {
   private findMentionAt(text: string, pos: number): { start: number; token: string } | null {
     let i = pos - 1;
     while (i >= 0) {
-      const ch = text[i];
+      const ch = text[i]!;
       if (ch === '@') break;
       if (!/[-A-Za-z0-9_.]/.test(ch)) return null; // hit a separator before '@'
       i--;
     }
-    if (i < 0 || text[i] !== '@') return null;
+    if (i < 0 || text[i]! !== '@') return null;
     const start = i;
     if (start > 0) {
-      const prev = text[start - 1];
+      const prev = text[start - 1]!;
       if (/[@A-Za-z0-9_]/.test(prev)) return null;
     }
     const token = text.slice(start + 1, pos);
@@ -111,5 +111,5 @@ export class MentionController {
 }
 
 export function userDisplay(u: IAuthUser): string {
-  return u.first_name || u.email.split('@')[0];
+  return u.first_name || u.email.split('@')[0]!;
 }

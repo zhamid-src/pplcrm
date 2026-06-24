@@ -122,8 +122,6 @@ export class TasksGrid implements OnInit {
   protected importerOpen = signal(false);
   protected isArchiveMode = signal(false);
 
-  constructor() {}
-
   public async ngOnInit() {
     // Load users to drive Assigned To options and name mapping
     try {
@@ -405,7 +403,7 @@ export class TasksGrid implements OnInit {
     return v
       .replace(/[_-]+/g, ' ')
       .split(' ')
-      .map((s) => (s ? s[0].toUpperCase() + s.slice(1) : s))
+      .map((s) => (s ? s[0]!.toUpperCase() + s.slice(1) : s))
       .join(' ');
   }
 

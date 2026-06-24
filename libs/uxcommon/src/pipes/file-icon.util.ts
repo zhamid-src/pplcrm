@@ -1,4 +1,4 @@
-import { PcIconNameType } from '@icons/icons.index';
+import type { PcIconNameType } from '@icons/icons.index';
 
 // file-icon.util.ts
 export type FileIconKey =
@@ -25,7 +25,7 @@ export type FileIconKey =
 
 function cleanName(name: string): string {
   // strip query/hash (e.g., foo.pdf?dl=1#x)
-  return name.split('#')[0].split('?')[0].trim();
+  return name.split('#')[0]!.split('?')[0]!.trim();
 }
 
 export function iconKeyForFilename(filename: string): FileIconKey {

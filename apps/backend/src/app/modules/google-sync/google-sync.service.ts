@@ -1,7 +1,8 @@
-import { Kysely } from 'kysely';
-import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { GoogleOAuthService } from './google-oauth.service';
-import { EmailIngesterService, IngestableEmail } from '../emails/services/email-ingester.service';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { GoogleOAuthService } from './google-oauth.service';
+import type { IngestableEmail } from '../emails/services/email-ingester.service';
+import { EmailIngesterService } from '../emails/services/email-ingester.service';
 import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
 
 const MAX_MESSAGES_PER_SYNC = 50;
@@ -204,7 +205,7 @@ export class GoogleSyncService {
     const extractEmail = (val: string | null): string | null => {
       if (!val) return null;
       const match = val.match(/<([^>]+)>/);
-      return match ? match[1] : val.trim();
+      return match ? match[1]! : val.trim();
     };
 
     const fromEmail = extractEmail(fromVal);
@@ -250,9 +251,9 @@ export class GoogleSyncService {
         const trimmed = item.trim();
         if (!trimmed) return;
         const emailMatch = trimmed.match(/<([^>]+)>/);
-        const email = emailMatch ? emailMatch[1] : trimmed;
+        const email = emailMatch ? emailMatch[1]! : trimmed;
         const nameMatch = trimmed.match(/^([^<]+)/);
-        let name = nameMatch ? nameMatch[1].trim() : null;
+        let name = nameMatch ? nameMatch[1]!.trim() : null;
         if (name) {
           name = name.replace(/^["']|["']$/g, ''); // strip quotes
         }

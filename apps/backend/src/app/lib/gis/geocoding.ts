@@ -1,5 +1,5 @@
-import { Kysely } from 'kysely';
-import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { isBlankAddress, isIncompleteAddress } from '../address-normalize';
 import { env } from '../../../env';
 import { promises as fs } from 'fs';
@@ -23,10 +23,10 @@ export async function loadBoundaries(): Promise<any> {
 function isPointInRing(lng: number, lat: number, ring: number[][]): boolean {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0];
-    const yi = ring[i][1];
-    const xj = ring[j][0];
-    const yj = ring[j][1];
+    const xi = ring[i]![0]!;
+    const yi = ring[i]![1]!;
+    const xj = ring[j]![0]!;
+    const yj = ring[j]![1]!;
     const intersect = yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
     if (intersect) inside = !inside;
   }
@@ -40,7 +40,7 @@ export function isPointInPolygon(lng: number, lat: number, polygon: number[][][]
   }
   // If it's inside any inner rings (holes), it is NOT in the polygon
   for (let i = 1; i < polygon.length; i++) {
-    if (isPointInRing(lng, lat, polygon[i])) {
+    if (isPointInRing(lng, lat, polygon[i]!)) {
       return false;
     }
   }

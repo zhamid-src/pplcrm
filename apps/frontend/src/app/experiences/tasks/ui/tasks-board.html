@@ -9,7 +9,7 @@
     <div class="bg-base-200 rounded-lg p-3 min-h-72 flex flex-col">
       <div class="flex items-center justify-between mb-2">
         <h3 class="font-semibold">{{ toLabel(col) }}</h3>
-        <span class="badge badge-sm">{{ grouped()[col].length || 0 }}</span>
+        <span class="badge badge-sm">{{ (grouped()[col] ?? []).length || 0 }}</span>
       </div>
       <div
         class="flex-1 overflow-auto"
@@ -18,7 +18,7 @@
         (drop)="onDrop($event, col)"
       >
         <div class="flex flex-wrap gap-2 pb-6" (dragover)="onDragOver($event)" (drop)="onDrop($event, col)">
-          @for (t of grouped()[col]; track t.id) {
+          @for (t of (grouped()[col] ?? []); track t.id) {
           <div
             class="card bg-warning/10 border border-warning/20 shadow-sm cursor-move w-32 md:w-36 aspect-square relative"
             draggable="true"

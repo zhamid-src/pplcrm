@@ -193,8 +193,8 @@ export class SidebarService {
   private normalizeRoute(route: string) {
     if (!route) return '';
 
-    const [pathWithHash] = route.split('?');
-    const path = pathWithHash.split('#')[0];
+    const [pathWithHash = ''] = route.split('?');
+    const path = pathWithHash.split('#')[0]!;
     const trimmed = path.endsWith('/') && path !== '/' ? path.slice(0, -1) : path;
     return trimmed || '/';
   }
@@ -209,7 +209,7 @@ export class SidebarService {
 
     if (favouritesSectionIndex === -1) return;
 
-    const favouritesSection = currentItems[favouritesSectionIndex];
+    const favouritesSection = currentItems[favouritesSectionIndex]!;
     const favouriteRoutes = new Set(this.favourites);
 
     const favouriteItems = this.flattenItems(currentItems)

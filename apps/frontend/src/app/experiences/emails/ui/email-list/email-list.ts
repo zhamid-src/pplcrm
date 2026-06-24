@@ -106,7 +106,7 @@ export class EmailList {
         const currentSelectionStillExists = selectedId ? emails.some((e) => e.id === selectedId) : false;
 
         if (folderChanged || (selectedId && !currentSelectionStillExists)) {
-          this.selectEmail(emails[0]);
+          this.selectEmail(emails[0]!);
         }
       }
     });
@@ -213,7 +213,16 @@ export class EmailList {
       // Section 4: Print
       {
         show: true,
-        items: [{ label: 'Print', icon: 'print', extraClass: '!py-1', action: () => {} }] as ContextMenuItem[],
+        items: [
+          {
+            label: 'Print',
+            icon: 'print',
+            extraClass: '!py-1',
+            action: () => {
+              window.print();
+            },
+          },
+        ] as ContextMenuItem[],
       },
     ].filter((section) => section.show && section.items.length > 0);
   }

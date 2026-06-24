@@ -23,7 +23,11 @@ module.exports = [
   /* Stand-alone HTML templates */
   ...compat
     .config({
-      extends: ['plugin:@nx/angular-template', 'plugin:@angular-eslint/template/recommended'],
+      extends: [
+        'plugin:@nx/angular-template',
+        'plugin:@angular-eslint/template/recommended',
+        'plugin:@angular-eslint/template/accessibility',
+      ],
     })
     .map((cfg) => ({
       ...cfg,

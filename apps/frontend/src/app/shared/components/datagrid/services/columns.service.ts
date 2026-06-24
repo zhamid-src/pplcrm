@@ -41,7 +41,7 @@ export class DataGridColumnsService {
     const right: Record<string, number> = {};
     let racc = 0;
     for (let i = (args.pinned.right || []).length - 1; i >= 0; i--) {
-      const id = args.pinned.right[i];
+      const id = args.pinned.right[i]!;
       const w = args.getColWidth(id) || args.headerWidthMap.get(id) || 0;
       right[id] = racc;
       racc += w;

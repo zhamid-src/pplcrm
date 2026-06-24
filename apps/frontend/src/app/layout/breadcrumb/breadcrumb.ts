@@ -85,7 +85,7 @@ export class Breadcrumb {
   }
 
   private handleNavigationChange(url: string) {
-    const cleanUrl = url.split('?')[0].split('#')[0];
+    const cleanUrl = url.split('?')[0]!.split('#')[0]!;
     this.crumbs = cleanUrl.split('/').slice(1).filter(Boolean);
     this.currentItem = this.sidebarSvc.findItemForUrl(url);
     this.favourite.set(!!this.currentItem?.favourite);

@@ -1,5 +1,6 @@
 import type { Router } from '@angular/router';
-import { type Operation, TRPCClientError, TRPCLink, createTRPCClient, httpLink } from '@trpc/client';
+import type { TRPCLink} from '@trpc/client';
+import { type Operation, TRPCClientError, createTRPCClient, httpLink } from '@trpc/client';
 import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
 import superjson from 'superjson';
 
@@ -93,7 +94,7 @@ function isTokenExpired(token: string | null | undefined, leewaySeconds = 30): b
 
 function parseJwt(token: string): JwtPayload | null {
   try {
-    const [, payload] = token.split('.');
+    const [, payload = ''] = token.split('.');
     return JSON.parse(atob(payload)) as JwtPayload;
   } catch {
     return null;

@@ -39,7 +39,7 @@ export class MentionifyPipe implements PipeTransform {
       if (!u) return `${pre}@${token}`; // leave as-is if no match
 
       // Display prefers first_name; fallback to email local part
-      const display = u.first_name || u.email.split('@')[0];
+      const display = u.first_name || u.email.split('@')[0]!;
       // Use utility classes for styling; sanitized later by sanitizeHtml pipe
       // Mark with data-mention for CSS targeting to enforce inline layout
       return `${pre}<span data-mention="1" class="inline font-bold hover:cursor-pointer">@${this.escapeHtml(display)}</span>`;

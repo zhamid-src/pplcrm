@@ -67,7 +67,7 @@ export class QueryBuilderComponent {
   }
 
   public setField(index: number, fieldName: string) {
-    const node = this.group().rules[index];
+    const node = this.group().rules[index]!;
     if (this.isRule(node)) {
       const fieldDef = this.getFieldDef(fieldName);
       node.field = fieldName;
@@ -78,7 +78,7 @@ export class QueryBuilderComponent {
   }
 
   public setOp(index: number, op: string) {
-    const node = this.group().rules[index];
+    const node = this.group().rules[index]!;
     if (this.isRule(node)) {
       node.op = op;
       // Reset value if we switch to empty/notempty
@@ -90,7 +90,7 @@ export class QueryBuilderComponent {
   }
 
   public setRuleValue(index: number, value: any) {
-    const node = this.group().rules[index];
+    const node = this.group().rules[index]!;
     if (this.isRule(node)) {
       node.value = value;
       this.emitChange();

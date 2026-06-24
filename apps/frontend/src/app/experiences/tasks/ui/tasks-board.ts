@@ -63,7 +63,7 @@ export class TasksBoard implements OnInit {
     const list = this.tasks();
     const idx = list.findIndex((x) => x.id === id);
     if (idx < 0) return;
-    const curr = list[idx];
+    const curr = list[idx]!;
     const next = String(toStatus) as UpdateTaskType['status'];
     if (curr.status === next) return;
 
