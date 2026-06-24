@@ -49,9 +49,9 @@ export class UserAvatarComponent {
     if (!n) return '?';
     const parts = n.split(/\s+/);
     if (parts.length >= 2) {
-      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
     }
-    return n[0].toUpperCase();
+    return n[0]!.toUpperCase();
   });
 
   protected readonly colorClass = computed(() => {

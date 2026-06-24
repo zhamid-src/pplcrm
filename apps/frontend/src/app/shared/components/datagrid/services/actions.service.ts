@@ -128,7 +128,7 @@ export class DataGridActionsService {
         return;
       }
       const rowCount = rows.length;
-      const headers = Object.keys(rows[0]);
+      const headers = Object.keys(rows[0]!);
       const escape = (v: any) => {
         const s = v == null ? '' : String(v);
         return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;

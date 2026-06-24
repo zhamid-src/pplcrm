@@ -6,7 +6,12 @@
     "lint": "eslint . --ext .ts",
     "azurite:init": "node --loader ts-node/esm scripts/azurite-init.ts",
     "households:recompute-fp": "node --loader ts-node/esm scripts/recompute-fingerprints.ts",
-    "households:regeocode-all": "node --loader ts-node/esm scripts/regeocode-all.ts"
+    "households:regeocode-all": "node --loader ts-node/esm scripts/regeocode-all.ts",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,html}": "eslint --fix",
+    "*.{ts,html,css,json,md}": "prettier --write"
   },
   "private": true,
   "type": "module",
@@ -110,12 +115,14 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-playwright": "^1.6.2",
     "globals": "^15.15.0",
+    "husky": "^9.1.7",
     "jest": "30.3.0",
     "jest-environment-jsdom": "30.3.0",
     "jest-preset-angular": "16.0.0",
     "jest-util": "30.3.0",
     "jiti": "2.4.2",
     "jsonc-eslint-parser": "^2.4.2",
+    "lint-staged": "^17.0.8",
     "npm-force-resolutions": "^0.0.10",
     "nx": "23.0.0",
     "postcss": "^8.5.10",

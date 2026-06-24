@@ -290,9 +290,9 @@ export class ActivityFeed implements OnInit {
             const parts = String(meta['due_at']).split('-');
             let formattedDate = String(meta['due_at']);
             if (parts.length === 3) {
-              const year = parseInt(parts[0], 10);
-              const month = parseInt(parts[1], 10) - 1;
-              const day = parseInt(parts[2], 10);
+              const year = parseInt(parts[0]!, 10);
+              const month = parseInt(parts[1]!, 10) - 1;
+              const day = parseInt(parts[2]!, 10);
               const dateVal = new Date(year, month, day);
               formattedDate = dateVal.toLocaleDateString(undefined, {
                 month: 'short',

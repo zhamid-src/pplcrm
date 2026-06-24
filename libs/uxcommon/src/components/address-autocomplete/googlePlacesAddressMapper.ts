@@ -1,4 +1,4 @@
-import { AddressType } from '../../../../common/src/lib/kysely.models';
+import type { AddressType } from '../../../../common/src/lib/kysely.models';
 
 type AddressTypeMapInterface = {
   [key in keyof AddressType]: string[];
@@ -16,7 +16,7 @@ export function parseAddress(place: google.maps.places.PlaceResult): AddressType
   address_components.forEach((component) => {
     for (const mapKey in googleAddressToAddressTypeMap) {
       const key = mapKey as keyof typeof googleAddressToAddressTypeMap;
-      if (googleAddressToAddressTypeMap[key]?.indexOf(component.types[0]) !== -1) {
+      if (googleAddressToAddressTypeMap[key]?.indexOf(component.types[0]!) !== -1) {
         (address[key] as string) = key === 'country' ? component.short_name : component.long_name;
       }
     }

@@ -1,7 +1,9 @@
-import { SelectQueryBuilder, Transaction, sql } from 'kysely';
+import type { SelectQueryBuilder, Transaction} from 'kysely';
+import { sql } from 'kysely';
 
-import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class ListsRepo extends BaseRepository<'lists'> {
   constructor() {
@@ -165,7 +167,10 @@ export class ListsRepo extends BaseRepository<'lists'> {
       .where('lists.tenant_id', '=', input.tenant_id)
       .where('lists.id', '=', input.list_id);
 
-    const [{ total }] = await qb.select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')]).execute();
+    const countResult = await qb
+      .select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')])
+      .executeTakeFirst();
+    const total = countResult?.total;
 
     const rows = await qb
       .select([
@@ -200,7 +205,10 @@ export class ListsRepo extends BaseRepository<'lists'> {
       .where('lists.tenant_id', '=', input.tenant_id)
       .where('lists.id', '=', input.list_id);
 
-    const [{ total }] = await qb.select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')]).execute();
+    const countResult2 = await qb
+      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
+      .executeTakeFirst();
+    const total = countResult2?.total;
 
     const rows = await qb
       .select([

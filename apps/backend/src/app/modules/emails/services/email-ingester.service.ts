@@ -1,5 +1,5 @@
-import { Kysely } from 'kysely';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { StorageService } from '../../../lib/storage.service';
 import { env } from '../../../../env';
 import crypto from 'crypto';
@@ -266,8 +266,7 @@ export class EmailIngesterService {
         .execute();
 
       // 3. Insert files and email_attachments metadata
-      for (let i = 0; i < uploadedFiles.length; i++) {
-        const file = uploadedFiles[i];
+      for (const [i, file] of uploadedFiles.entries()) {
         let fileId: string;
 
         const existingFile = await trx

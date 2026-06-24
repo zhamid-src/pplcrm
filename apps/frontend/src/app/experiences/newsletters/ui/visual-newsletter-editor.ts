@@ -225,7 +225,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
     const filtered = this.blocks().filter((b) => b.id !== id);
     this.blocks.set(filtered);
     if (this.selectedBlockId() === id) {
-      this.selectedBlockId.set(filtered.length > 0 ? filtered[0].id : null);
+      this.selectedBlockId.set(filtered.length > 0 ? filtered[0]!.id : null);
     }
     this.updateBlocks();
   }
@@ -254,8 +254,8 @@ export class VisualNewsletterEditorComponent implements OnInit {
     }
     if (idx <= 0) return;
     const list = [...this.blocks()];
-    const temp = list[idx];
-    list[idx] = list[idx - 1];
+    const temp = list[idx]!;
+    list[idx] = list[idx - 1]!;
     list[idx - 1] = temp;
     this.blocks.set(list);
     this.updateBlocks();
@@ -267,8 +267,8 @@ export class VisualNewsletterEditorComponent implements OnInit {
     }
     if (idx >= this.blocks().length - 1) return;
     const list = [...this.blocks()];
-    const temp = list[idx];
-    list[idx] = list[idx + 1];
+    const temp = list[idx]!;
+    list[idx] = list[idx + 1]!;
     list[idx + 1] = temp;
     this.blocks.set(list);
     this.updateBlocks();

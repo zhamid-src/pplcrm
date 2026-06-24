@@ -60,12 +60,7 @@ export class DataGridFiltersService {
       if (entry && typeof entry === 'object') {
         const obj = entry as Record<string, unknown>;
         const value = 'value' in obj ? obj['value'] : entry;
-        const labelCandidate =
-          'label' in obj
-            ? obj['label']
-            : 'name' in obj
-              ? obj['name']
-              : fallbackLabel;
+        const labelCandidate = 'label' in obj ? obj['label'] : 'name' in obj ? obj['name'] : fallbackLabel;
         const valueStr = value != null ? String(value) : '';
         const labelStr = labelCandidate != null ? String(labelCandidate) : valueStr;
         choices.push({ value: valueStr, label: labelStr });
@@ -105,7 +100,7 @@ export class DataGridFiltersService {
   inlineFilterLabel(filterValues: Record<string, any>, field: string): string {
     const arr = this.getFilterArray(filterValues, field);
     if (!arr.length) return 'All';
-    if (arr.length === 1) return arr[0];
+    if (arr.length === 1) return arr[0]!;
     return `${arr.length} selected`;
   }
 

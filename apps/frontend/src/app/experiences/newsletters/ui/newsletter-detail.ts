@@ -171,21 +171,21 @@ export class NewsletterDetailComponent {
 
     if (timeline.length > 0) {
       opensPath =
-        `M ${points[0].x} ${points[0].yOpens} ` +
+        `M ${points[0]!.x} ${points[0]!.yOpens} ` +
         points
           .slice(1)
           .map((p) => `L ${p.x} ${p.yOpens}`)
           .join(' ');
       clicksPath =
-        `M ${points[0].x} ${points[0].yClicks} ` +
+        `M ${points[0]!.x} ${points[0]!.yClicks} ` +
         points
           .slice(1)
           .map((p) => `L ${p.x} ${p.yClicks}`)
           .join(' ');
 
       const bottomY = height - paddingBottom;
-      opensArea = opensPath + ` L ${points[points.length - 1].x} ${bottomY} L ${points[0].x} ${bottomY} Z`;
-      clicksArea = clicksPath + ` L ${points[points.length - 1].x} ${bottomY} L ${points[0].x} ${bottomY} Z`;
+      opensArea = opensPath + ` L ${points[points.length - 1]!.x} ${bottomY} L ${points[0]!.x} ${bottomY} Z`;
+      clicksArea = clicksPath + ` L ${points[points.length - 1]!.x} ${bottomY} L ${points[0]!.x} ${bottomY} Z`;
     }
 
     const gridLines = [
@@ -260,9 +260,9 @@ export class NewsletterDetailComponent {
 
   private formatTimeBucket(timeStr: string): string {
     try {
-      const [datePart, hourPart] = timeStr.split(' ');
-      const [year, month, day] = datePart.split('-').map(Number);
-      const [hour] = hourPart.split(':').map(Number);
+      const [datePart = '', hourPart = ''] = timeStr.split(' ');
+      const [year = NaN, month = NaN, day = NaN] = datePart.split('-').map(Number);
+      const [hour = NaN] = hourPart.split(':').map(Number);
       const date = new Date(year, month - 1, day, hour);
       return new Intl.DateTimeFormat(undefined, { hour: 'numeric', hour12: true }).format(date);
     } catch {

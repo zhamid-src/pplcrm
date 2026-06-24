@@ -71,8 +71,10 @@ export class TagItem {
     if (!hex) return null;
     const rgb = this.hexToRgb(hex);
     if (!rgb) return '#f9fafb';
-    const [r, g, b] = rgb.map((v) => v / 255);
-    const [rLin, gLin, bLin] = [r, g, b].map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+    const [r = 0, g = 0, b = 0] = rgb.map((v) => v / 255);
+    const [rLin = 0, gLin = 0, bLin = 0] = [r, g, b].map((v) =>
+      v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4),
+    );
     const luminance = 0.2126 * rLin + 0.7152 * gLin + 0.0722 * bLin;
     return luminance > 0.5 ? '#111827' : '#f9fafb';
   }

@@ -222,7 +222,7 @@ export class DonationsSettingsComponent implements OnInit {
     try {
       const parts = token.split('.');
       if (parts.length === 3) {
-        const payload = JSON.parse(atob(parts[1]));
+        const payload = JSON.parse(atob(parts[1]!));
         return String(payload.tenant_id || '');
       }
     } catch (e) {
@@ -263,7 +263,7 @@ export class DonationsSettingsComponent implements OnInit {
     let previousLimit = 0;
 
     for (let i = 0; i < sorted.length; i++) {
-      const tier = sorted[i];
+      const tier = sorted[i]!;
       const ratePct = Math.round(tier.rate * 100);
 
       if (i === 0) {
@@ -299,12 +299,24 @@ export class DonationsSettingsComponent implements OnInit {
     const start = this.newPeriodStartDate().trim();
     const limit = Number(this.newPeriodLimit());
 
-    if (!name) { this.alerts.showError('Period name is required'); return; }
-    if (!start) { this.alerts.showError('Start date is required'); return; }
-    if (!limit || limit <= 0) { this.alerts.showError('Limit amount must be greater than 0'); return; }
+    if (!name) {
+      this.alerts.showError('Period name is required');
+      return;
+    }
+    if (!start) {
+      this.alerts.showError('Start date is required');
+      return;
+    }
+    if (!limit || limit <= 0) {
+      this.alerts.showError('Limit amount must be greater than 0');
+      return;
+    }
 
     const endDate = this.newPeriodEndDate().trim() || null;
-    if (endDate && endDate <= start) { this.alerts.showError('End date must be after start date'); return; }
+    if (endDate && endDate <= start) {
+      this.alerts.showError('End date must be after start date');
+      return;
+    }
 
     this.isSavingPeriod.set(true);
     try {
