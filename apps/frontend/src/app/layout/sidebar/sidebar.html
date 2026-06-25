@@ -9,10 +9,7 @@
     [class.font-bold]="pendingRoute() === nav.route"
   >
     <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span
-      class="indicator pl-2 group-hover:md:visible text-sm"
-      [class.invisible]="!this.isDrawerFull() && !this.isMobileOpen()"
-    >
+    <span class="indicator pl-2 group-hover:md:visible text-sm" [class.invisible]="isEffectivelyNarrow()">
       {{ nav.name }} @if (nav.indicator) {
       <span class="indicator-item status status-primary"></span>
       }
@@ -25,18 +22,18 @@
   (mouseleave)="onSidebarHover(false)"
   class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-44 transition-all duration-50"
   [class.hidden]="!this.isMobileOpen()"
-  [class.w-44]="this.isDrawerFull() || this.isMobileOpen()"
-  [class.w-18]="this.isDrawerHalf() && !this.isMobileOpen()"
+  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
+  [class.w-18]="isEffectivelyNarrow() && !this.isMobileOpen()"
 >
   <div
-    [class.hidden]="!this.isDrawerFull()"
+    [class.hidden]="isEffectivelyNarrow()"
     class="mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
   >
     <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
   </div>
 
   <div
-    [class.hidden]="this.isDrawerFull() || this.isMobileOpen()"
+    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
     class="avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
   >
     <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
@@ -49,13 +46,14 @@
       class="text-base-400 font-medium flex items-center justify-between pl-2 capitalize text-xs hover:cursor-pointer"
       (click)="toggleCollapse(item.name)"
     >
-      <span [class.text-[10px]]="isDrawerHalf() && !hoveringSidebar()">
-        @if (isDrawerHalf() && !hoveringSidebar()) { {{ item.short_name || item.name }} } @else { {{ item.name }} }
+      <span [class.text-[10px]]="isEffectivelyNarrow() && !hoveringSidebar()">
+        @if (isEffectivelyNarrow() && !hoveringSidebar()) { {{ item.short_name || item.name }} } @else { {{ item.name }}
+        }
       </span>
       @if (item.children?.length) {
       <pc-swap
         class="rotate-90 invisible mr-2"
-        [class.visible]="isDrawerFull() || isMobileOpen() || hoveringSidebar()"
+        [class.visible]="!isEffectivelyNarrow() || hoveringSidebar()"
         swapOnIcon="chevron-double-left"
         swapOffIcon="chevron-double-right"
         animation="rotate"
@@ -83,7 +81,7 @@
   <div class="hidden flex-auto grow flex-col sm:flex">
     <span class="min-h-full grow"></span>
     <pc-swap
-      class="hover:text-primary text-gray-400 group-hover:visible"
+      class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
       swapOffIcon="chevron-double-right"
       swapOnIcon="chevron-double-left"
       [checked]="isDrawerFull()"

@@ -1,12 +1,8 @@
-<aside
-  class="bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 hover:w-48 h-full"
-  [class.w-48]="!foldersCollapsed()"
-  [class.w-12]="foldersCollapsed()"
->
+<aside [class]="asideClass()">
   <!-- Header and expand / collapse icon -->
   <div class="flex items-center justify-between border-t border-base-300 pl-4 border-double border-b-4">
     <h2 class="text-xs font-semibold text-neutral-content">
-      <span class="group-hover:md:block" [class.hidden]="foldersCollapsed()">Filters</span>
+      <span [class]="labelClass()">Filters</span>
     </h2>
 
     <pc-swap
@@ -16,7 +12,7 @@
       [checked]="!foldersCollapsed()"
       (click)="toggleFolders()"
       [size]="4"
-      class="hover:text-primary"
+      class="hover:text-primary hidden xl:inline-flex"
     ></pc-swap>
   </div>
 
@@ -31,27 +27,16 @@
     >
       <div class="flex items-center gap-2">
         <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
-        <span class="group-hover:md:block" [class.hidden]="foldersCollapsed()">{{ folder.name }}</span>
+        <span [class]="labelClass()">{{ folder.name }}</span>
       </div>
 
-      <span class="text-xs tabular-nums group-hover:md:block font-normal" [class.hidden]="foldersCollapsed()">
-        {{ getEmailCount(folder) }}
-      </span>
+      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
     </li>
     } }
 
     <!-- Separator & Collapsible Header -->
-    <li
-      class="h-px bg-base-300 my-2"
-      [class.mx-3]="!foldersCollapsed()"
-      [class.mx-1]="foldersCollapsed()"
-      role="separator"
-    ></li>
-    <li
-      class="px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none group-hover:md:flex"
-      [class.hidden]="foldersCollapsed()"
-      (click)="toggleRealFolders()"
-    >
+    <li [class]="separatorClass()" role="separator"></li>
+    <li [class]="sectionHeaderClass()" (click)="toggleRealFolders()">
       <span>Folders</span>
       <pc-swap
         swapOffIcon="chevron-right"
@@ -73,12 +58,10 @@
     >
       <div class="flex items-center gap-2">
         <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
-        <span class="group-hover:md:block" [class.hidden]="foldersCollapsed()">{{ folder.name }}</span>
+        <span [class]="labelClass()">{{ folder.name }}</span>
       </div>
 
-      <span class="text-xs tabular-nums group-hover:md:block font-normal" [class.hidden]="foldersCollapsed()">
-        {{ getEmailCount(folder) }}
-      </span>
+      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
     </li>
     } } }
   </ul>
@@ -86,7 +69,7 @@
   <div class="p-2 border-t border-base-300 flex flex-col gap-2 shrink-0">
     <button class="btn btn-accent w-full" (click)="emitNewEmail()" title="New Email">
       <pc-icon name="pencil-square"></pc-icon>
-      <span class="group-hover:inline" [class.hidden]="foldersCollapsed()">New Email</span>
+      <span [class]="buttonLabelClass()">New Email</span>
     </button>
     <button
       class="btn btn-outline btn-primary w-full"
@@ -95,9 +78,7 @@
       title="Sync Emails"
     >
       <pc-icon name="arrow-path" [class.animate-spin]="store.isSyncing()"></pc-icon>
-      <span class="group-hover:inline" [class.hidden]="foldersCollapsed()">
-        {{ store.isSyncing() ? 'Syncing...' : 'Sync Emails' }}
-      </span>
+      <span [class]="buttonLabelClass()"> {{ store.isSyncing() ? 'Syncing...' : 'Sync Emails' }} </span>
     </button>
   </div>
 </aside>
