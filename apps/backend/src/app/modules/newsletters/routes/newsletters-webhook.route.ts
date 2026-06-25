@@ -1,12 +1,59 @@
-import { FastifyPluginCallback } from 'fastify';
+import { createPublicKey, createVerify } from 'crypto';
+import type { FastifyPluginCallback } from 'fastify';
 import { BaseRepository } from '../../../lib/base.repo';
+import { env } from '../../../../env';
 import { sql } from 'kysely';
 
 const db = new BaseRepository('newsletters').db;
 
+const SIGNATURE_HEADER = 'x-twilio-email-event-webhook-signature';
+const TIMESTAMP_HEADER = 'x-twilio-email-event-webhook-timestamp';
+
+/**
+ * Verifies a SendGrid Signed Event Webhook request.
+ * SendGrid signs `timestamp + rawBody` with an ECDSA (P-256) key; we verify it
+ * against the base64-DER public verification key configured in the dashboard.
+ */
+function verifySendGridSignature(rawBody: string, signature?: string, timestamp?: string): boolean {
+  const verificationKey = env.sendgridWebhookVerificationKey;
+  if (!verificationKey || !signature || !timestamp) {
+    return false;
+  }
+
+  try {
+    const publicKey = createPublicKey({
+      key: Buffer.from(verificationKey, 'base64'),
+      format: 'der',
+      type: 'spki',
+    });
+    const verifier = createVerify('sha256');
+    verifier.update(timestamp + rawBody);
+    verifier.end();
+    return verifier.verify(publicKey, Buffer.from(signature, 'base64'));
+  } catch {
+    return false;
+  }
+}
+
 const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
   fastify.post('/webhook', async (req: any, reply) => {
-    const events = Array.isArray(req.body) ? req.body : [req.body];
+    // req.body is the raw string (see content-type parser in fastify.server.ts)
+    const rawBody = typeof req.body === 'string' ? req.body : '';
+    const signature = req.headers[SIGNATURE_HEADER] as string | undefined;
+    const timestamp = req.headers[TIMESTAMP_HEADER] as string | undefined;
+
+    if (!verifySendGridSignature(rawBody, signature, timestamp)) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    let parsedBody: any;
+    try {
+      parsedBody = JSON.parse(rawBody);
+    } catch {
+      return reply.code(400).send({ error: 'Invalid payload' });
+    }
+
+    const events = Array.isArray(parsedBody) ? parsedBody : [parsedBody];
 
     try {
       const processedNewsletters = new Set<string>();
@@ -56,7 +103,7 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
       // Recompute aggregates for each processed newsletter
       for (const key of processedNewsletters) {
         const [tenantId, newsletterId] = key.split(':');
-        
+
         await db.transaction().execute(async (trx) => {
           // 1. Fetch aggregates
           const stats = await trx

@@ -100,8 +100,6 @@ const isAuthed = middleware(async (opts) => {
         verified: record.verified === true || String(record.verified) === 'true',
       };
     }
-  } else {
-    user = { role: (ctx.auth as any).role || 'owner', verified: true };
   }
 
   if (!user) {
