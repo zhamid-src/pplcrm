@@ -1,8 +1,17 @@
-import { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback } from 'fastify';
 import { WebFormsController } from '../controller';
 import formBody from '@fastify/formbody';
 
 const webFormsController = new WebFormsController();
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 const SUCCESS_HTML = `
 <!DOCTYPE html>
@@ -406,7 +415,7 @@ const errorHtml = (message: string) => `
       </svg>
     </div>
     <h1>Submission Failed</h1>
-    <p>${message}</p>
+    <p>${escapeHtml(message)}</p>
     <a href="javascript:history.back()" class="btn">Go Back</a>
   </div>
 </body>
@@ -535,7 +544,7 @@ const renderFormHtml = (
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${formName}</title>
+  <title>${escapeHtml(formName)}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
@@ -770,8 +779,8 @@ const renderFormHtml = (
 <body>
   <div class="card">
     <div class="header">
-      <h1>${formName}</h1>
-      <p class="description">${formDescription}</p>
+      <h1>${escapeHtml(formName)}</h1>
+      <p class="description">${escapeHtml(formDescription)}</p>
     </div>
 
     <form action="/api/forms/submit/${formId}" method="POST">

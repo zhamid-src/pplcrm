@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { createSigner, createVerifier } from 'fast-jwt';
 import type { QueryResult, Transaction } from 'kysely';
 
@@ -987,7 +987,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       user.two_factor_enabled && (await this.isNewDeviceOrLocation(String(user.id), ipAddress, userAgent));
 
     if (requires2FA) {
-      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpCode = randomInt(100000, 1000000).toString();
       await this.getRepo()
         .db.updateTable('authusers')
         .set({

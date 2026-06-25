@@ -17,14 +17,9 @@ import type {
   Selectable,
   Transaction,
   UpdateQueryBuilder,
-  UpdateResult} from 'kysely';
-import {
-  FileMigrationProvider,
-  Kysely,
-  Migrator,
-  PostgresDialect,
-  sql,
+  UpdateResult,
 } from 'kysely';
+import { FileMigrationProvider, Kysely, Migrator, PostgresDialect, sql } from 'kysely';
 import path from 'path';
 
 import type {
@@ -299,6 +294,7 @@ export class BaseRepository<T extends keyof Models> {
     // Map generic sortModel (from UI) to orderBy clauses when provided
     if (opts.sortModel && Array.isArray(opts.sortModel) && opts.sortModel.length > 0) {
       query = opts.sortModel.reduce((acc: any, sort: any) => {
+        const direction: 'asc' | 'desc' = sort.sort === 'desc' ? 'desc' : 'asc';
         let col = sort.colId;
         if (typeof col === 'string' && !col.includes('.')) {
           // Check standard columns first
@@ -347,7 +343,11 @@ export class BaseRepository<T extends keyof Models> {
             }
           }
         }
-        return acc.orderBy(col as ReferenceExpression<Models, T>, sort.sort);
+        // Skip dotted references that weren't resolved to a known table.column
+        if (typeof col === 'string' && col.includes('.') && !col.startsWith(`${String(this.table)}.`)) {
+          return acc;
+        }
+        return acc.orderBy(col as ReferenceExpression<Models, T>, direction);
       }, query);
     }
     query = options?.orderBy ? query.orderBy(options.orderBy) : query;
