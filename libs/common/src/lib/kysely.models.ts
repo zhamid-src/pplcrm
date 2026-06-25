@@ -355,6 +355,8 @@ interface Sessions extends Omit<RecordType, 'createdby_id' | 'updatedby_id' | 'u
   refresh_token: Generated<string>;
   status: string;
   user_agent: string;
+  expires_at: Timestamp | null;
+  last_used_at: Timestamp | null;
 }
 
 export interface Lists extends RecordType {

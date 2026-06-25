@@ -7,6 +7,9 @@ import { InternalError, ServerMisconfigError } from '../../errors/app-errors';
 
 const sessions = new SessionsRepo();
 
+const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 export async function createTokens(
   input: {
     user_id: string;
@@ -15,6 +18,8 @@ export async function createTokens(
     oldSession?: string;
     ipAddress?: string;
     userAgent?: string;
+    rememberMe?: boolean;
+    existingExpiresAt?: Date | null;
   },
   trx?: Transaction<Models>,
 ): Promise<{ auth_token: string; refresh_token: string }> {
@@ -22,6 +27,12 @@ export async function createTokens(
 
   const plainSessionId = generateToken();
   const plainRefreshToken = generateToken();
+
+  const now = new Date();
+  const expiresAt =
+    input.existingExpiresAt !== undefined
+      ? input.existingExpiresAt
+      : new Date(now.getTime() + (input.rememberMe ? REMEMBER_ME_EXPIRY_MS : SESSION_EXPIRY_MS));
 
   const row = {
     user_id: input.user_id,
@@ -31,6 +42,8 @@ export async function createTokens(
     status: 'active',
     session_id: hashToken(plainSessionId),
     refresh_token: hashToken(plainRefreshToken),
+    expires_at: expiresAt,
+    last_used_at: now,
   } as OperationDataType<'sessions', 'insert'>;
 
   const currentSession = await sessions.add({ row }, trx);

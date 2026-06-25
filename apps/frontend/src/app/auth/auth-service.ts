@@ -84,7 +84,7 @@ export class AuthService extends TRPCService<'authusers'> {
   }
 
   public async signIn(
-    input: signInInputType,
+    input: signInInputType & { rememberMe?: boolean },
   ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
     const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
       context: { skipErrorHandler: true },
@@ -103,7 +103,7 @@ export class AuthService extends TRPCService<'authusers'> {
     return { requires2FA: false, user };
   }
 
-  public async verify2FA(input: { email: string; code: string }) {
+  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
     const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
       context: { skipErrorHandler: true },
     });
@@ -148,7 +148,7 @@ export class AuthService extends TRPCService<'authusers'> {
     return this.api.auth.checkEmail.query({ email }) as Promise<{ hasPasskeys: boolean }>;
   }
 
-  public async signInWithPasskey(): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
+  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
     const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
     let response: any;
     try {
@@ -159,7 +159,7 @@ export class AuthService extends TRPCService<'authusers'> {
     }
     const token = await (
       this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
-    )({ response, nonce }, { context: { skipErrorHandler: true } });
+    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
     const user = await this.updateTokensAndGetCurrentUser(token);
     if (user?.tenant_deletion_scheduled_at) {
       this.router.navigate(['/cancel-deletion']);

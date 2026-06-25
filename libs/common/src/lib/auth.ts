@@ -95,6 +95,7 @@ export type signUpInputType = z.infer<typeof signUpInputObj>;
 export const signInInputObj = z.object({
   email: z.email(),
   password: z.string().min(8).max(72),
+  rememberMe: z.boolean().optional(),
 });
 
 export const signUpInputObj = z.object({

@@ -49,6 +49,10 @@ import { AuthUsersRepo } from './repositories/authusers.repo';
 import { SessionsRepo } from './repositories/sessions.repo';
 import { TenantsRepo } from './repositories/tenants.repo';
 
+const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+
 export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private static readonly AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
   private static readonly AVATAR_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -681,7 +685,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       // 3. Verify that the session is active and matches in the database
       const session = await this.sessions.db
         .selectFrom('sessions')
-        .select('id')
+        .select(['id', 'expires_at', 'last_used_at'])
         .where('session_id', '=', sessionHash)
         .where('refresh_token', '=', refreshHash)
         .where('user_id', '=', payload.user_id as any)
@@ -693,12 +697,26 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         throw new UnauthorizedError();
       }
 
+      const now = new Date();
+
+      if (session.expires_at && new Date(session.expires_at as any) < now) {
+        throw new UnauthorizedError('Session has expired. Please sign in again.');
+      }
+
+      if (session.last_used_at) {
+        const idleMs = now.getTime() - new Date(session.last_used_at as any).getTime();
+        if (idleMs > IDLE_TIMEOUT_MS) {
+          throw new UnauthorizedError('Session timed out due to inactivity. Please sign in again.');
+        }
+      }
+
       // 4. Generate a new set of tokens and delete the old session
       return this.createTokens({
         user_id: payload.user_id,
         tenant_id: payload.tenant_id,
         name: payload.name,
         oldSession: payload.session_id,
+        existingExpiresAt: session.expires_at ? new Date(session.expires_at as any) : null,
       });
     } catch (err) {
       if (err instanceof AppError) throw err;
@@ -1033,6 +1051,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       name: user.first_name,
       ipAddress,
       userAgent,
+      rememberMe: input.rememberMe,
     });
   }
 
@@ -1403,7 +1422,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return { file_id: finalFileId, avatar_url: `/api/files/download/${finalFileId}` };
   }
 
-  public async verify2FA(email: string, code: string, ipAddress?: string, userAgent?: string) {
+  public async verify2FA(email: string, code: string, ipAddress?: string, userAgent?: string, rememberMe?: boolean) {
     const user = await this.getUserByEmail(email.toLowerCase());
 
     // Use timing-safe comparison to eliminate OTP brute-force side-channel
@@ -1474,6 +1493,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       name: user.first_name,
       ipAddress,
       userAgent,
+      rememberMe,
     });
   }
 
@@ -1596,6 +1616,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       oldSession?: string;
       ipAddress?: string;
       userAgent?: string;
+      rememberMe?: boolean;
+      existingExpiresAt?: Date | null;
     },
     trx?: Transaction<Models>,
   ) {
@@ -1606,6 +1628,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const plainSessionId = generateToken();
     const plainRefreshToken = generateToken();
 
+    const now = new Date();
+    const expiresAt =
+      input.existingExpiresAt !== undefined
+        ? input.existingExpiresAt // renewal: preserve original absolute expiry
+        : new Date(now.getTime() + (input.rememberMe ? REMEMBER_ME_EXPIRY_MS : SESSION_EXPIRY_MS));
+
     const row = {
       user_id: input.user_id,
       tenant_id: input.tenant_id,
@@ -1614,6 +1642,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       status: 'active',
       session_id: hashToken(plainSessionId),
       refresh_token: hashToken(plainRefreshToken),
+      expires_at: expiresAt,
+      last_used_at: now,
     } as OperationDataType<'sessions', 'insert'>;
 
     const currentSession = await this.sessions.add({ row }, trx);
