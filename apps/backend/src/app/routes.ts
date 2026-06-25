@@ -1,9 +1,6 @@
-import { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback } from 'fastify';
 
-import authRoute from './modules/auth/routes/auth.route';
 import emailsApiRoute from './modules/emails/routes/emails-api.route';
-import householdsRoute from './modules/households/routes/households.route';
-import personsRoute from './modules/persons/routes/persons.route';
 import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
 import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
 import filesRoute from './modules/files/routes/files.route';
@@ -14,7 +11,6 @@ import eventsPublicRoute from './modules/events/routes/events-public.route';
 import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
 import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
 import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
-import { verifyAuthToken } from './lib/auth-util';
 
 export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
   // --- Public REST routes (No Auth required) ---
@@ -54,42 +50,6 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Root health check endpoint
   fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
-
-  // --- Protected REST routes (Enforce JWT & Tenant security) ---
-  fastify.register((protectedFastify, _, protectedDone) => {
-    protectedFastify.addHook('preHandler', async (req, reply) => {
-      const authHeader = req.headers.authorization;
-      if (!authHeader) {
-        return reply.status(401).send({ error: 'Unauthorized: Missing Authorization header' });
-      }
-      const token = authHeader.split(' ')[1];
-      if (!token) {
-        return reply.status(401).send({ error: 'Unauthorized: Invalid token format' });
-      }
-
-      try {
-        const payload = await verifyAuthToken(token);
-
-        // Propagate authenticated context to route handlers
-        req.headers['tenant-id'] = payload.tenant_id;
-        req.headers['user-id'] = payload.user_id;
-        (req as any).auth = payload;
-      } catch (err) {
-        return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
-      }
-    });
-
-    // Register versioned /v1/persons route module
-    protectedFastify.register(personsRoute, { prefix: '/v1/persons' });
-
-    // Register versioned /v1/households route module
-    protectedFastify.register(householdsRoute, { prefix: '/v1/households' });
-
-    // Register authentication routes under /auth
-    protectedFastify.register(authRoute, { prefix: '/auth/' });
-
-    protectedDone();
-  });
 
   done();
 };
