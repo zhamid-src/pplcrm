@@ -140,7 +140,7 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
         msConnected = true;
         msResult = await (
           this.api.msSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
-        )(undefined, { meta: { skipErrorHandler: true } });
+        )(undefined, { context: { skipErrorHandler: true } });
       }
     } catch (e) {
       console.error('MS sync failed:', e);
@@ -153,7 +153,7 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
         googleConnected = true;
         googleResult = await (
           this.api.googleSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
-        )(undefined, { meta: { skipErrorHandler: true } });
+        )(undefined, { context: { skipErrorHandler: true } });
       }
     } catch (e) {
       console.error('Google sync failed:', e);

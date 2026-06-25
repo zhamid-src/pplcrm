@@ -20,7 +20,6 @@
     [class.alert-error]="alert.type === 'error'"
     [class.error]="alert.type === 'error'"
     [class.animate-bounce]="isPositionBottom()"
-    [class.animate-flash]="alert.pulse()"
   >
     <pc-icon [name]="icon(alert.type!)" class="mr-2"></pc-icon>
     <div>
@@ -38,7 +37,6 @@
     >
       {{ alert.OKBtn }}
     </button>
-
   </div>
   }
 </div>

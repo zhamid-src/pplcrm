@@ -52,6 +52,13 @@ const trpc = initTRPC.context<Context>().create({
     if (isSignIn && (isZodOrBadRequest || isCredsProblem)) {
       return { ...finalShape, message: GENERIC_LOGIN_MSG };
     }
+
+    // Forward safe metadata from AppError (e.g. retryAfterSec for rate limits)
+    const causeData = (error.cause as any)?.data;
+    if (causeData && typeof causeData === 'object' && !Array.isArray(causeData)) {
+      return { ...finalShape, data: { ...finalShape.data, ...causeData } };
+    }
+
     return finalShape;
   },
 });

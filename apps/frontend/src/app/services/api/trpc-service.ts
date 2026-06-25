@@ -2,7 +2,14 @@ import { inject, Service } from '@angular/core';
 import { Router } from '@angular/router';
 import { getAllOptionsType } from '../../../../../../libs/common/src';
 import { ErrorService } from '../error.service';
-import { TRPCClient, TRPCClientError, TRPCLink, createTRPCClient, httpLink as trpcHttpLink, loggerLink } from '@trpc/client';
+import {
+  TRPCClient,
+  TRPCClientError,
+  TRPCLink,
+  createTRPCClient,
+  httpLink as trpcHttpLink,
+  loggerLink,
+} from '@trpc/client';
 import { observable } from '@trpc/server/observable';
 import superjson from 'superjson';
 
@@ -87,7 +94,7 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
         const unsubscribe = next(op).subscribe({
           next: (value) => observer.next(value),
           error: (err) => {
-            const meta = (op as unknown as { meta?: { skipErrorHandler?: boolean } }).meta;
+            const meta = op.context as { skipErrorHandler?: boolean } | undefined;
             let finalErr: any = err;
 
             if (err instanceof TRPCClientError) {

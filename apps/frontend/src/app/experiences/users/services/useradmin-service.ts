@@ -17,7 +17,7 @@ export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuth
 
   public add(row: InviteAuthUserType) {
     return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {
-      meta: { skipErrorHandler: true },
+      context: { skipErrorHandler: true },
     });
   }
 

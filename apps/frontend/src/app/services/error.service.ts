@@ -62,7 +62,7 @@ export class ErrorService {
   }
 
   private redirectFromCode(code?: string): boolean {
-    if (code === 'UNAUTHORIZED') {
+    if (code === 'UNAUTHORIZED' && !this.router.url.startsWith('/signin') && !this.router.url.startsWith('/signup')) {
       this.redirect();
       return true;
     }

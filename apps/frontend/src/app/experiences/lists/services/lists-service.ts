@@ -15,7 +15,7 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
 
   public add(row: AddListType) {
     return (this.api.lists.add.mutate as unknown as (input: any, opts: any) => Promise<any>)(row, {
-      meta: { skipErrorHandler: true },
+      context: { skipErrorHandler: true },
     });
   }
 

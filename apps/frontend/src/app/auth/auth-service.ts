@@ -87,7 +87,7 @@ export class AuthService extends TRPCService<'authusers'> {
     input: signInInputType,
   ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
     const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      meta: { skipErrorHandler: true },
+      context: { skipErrorHandler: true },
     });
 
     if (response && 'requires2FA' in response && response.requires2FA) {
@@ -105,7 +105,7 @@ export class AuthService extends TRPCService<'authusers'> {
 
   public async verify2FA(input: { email: string; code: string }) {
     const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      meta: { skipErrorHandler: true },
+      context: { skipErrorHandler: true },
     });
     const user = await this.updateTokensAndGetCurrentUser(token);
     if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
@@ -155,7 +155,7 @@ export class AuthService extends TRPCService<'authusers'> {
     }
     const token = await (
       this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
-    )({ response, nonce }, { meta: { skipErrorHandler: true } });
+    )({ response, nonce }, { context: { skipErrorHandler: true } });
     const user = await this.updateTokensAndGetCurrentUser(token);
     if (user?.tenant_deletion_scheduled_at) {
       this.router.navigate(['/cancel-deletion']);
