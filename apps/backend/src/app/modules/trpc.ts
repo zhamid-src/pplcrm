@@ -27,6 +27,7 @@ import { ExportsRouter } from './exports/trpc.router';
 import { UsersRouter } from './users/trpc.router';
 import { EventsRouter } from './events/trpc.router';
 import { PersonConnectionsRouter } from './person-connections/trpc.router';
+import { ZapierRouter } from './zapier/zapier.trpc.router';
 
 export type TRPCRouter = typeof trpcRouter;
 
@@ -60,6 +61,7 @@ export const trpcRouter = router({
   users: UsersRouter,
   events: EventsRouter,
   connections: PersonConnectionsRouter,
+  zapier: ZapierRouter,
 });
 
 // Re-export individual routers for convenience.

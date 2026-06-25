@@ -11,6 +11,7 @@ import eventsPublicRoute from './modules/events/routes/events-public.route';
 import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
 import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
 import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
+import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
 
 export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
   // --- Public REST routes (No Auth required) ---
@@ -32,6 +33,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Register SendGrid newsletters event webhook route
   fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
+
+  // Register Zapier inbound action routes (API key auth handled inside route)
+  fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });
 
   // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
   fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
