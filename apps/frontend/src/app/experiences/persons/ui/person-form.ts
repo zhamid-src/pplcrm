@@ -444,7 +444,7 @@ export class PersonForm implements OnInit {
     this.emailError.set(null);
     const end = this._loading.begin();
     this.personsSvc
-      .add(data, { meta: { skipErrorHandler: true } })
+      .add(data, { context: { skipErrorHandler: true } })
       .then(() => {
         this.alertSvc.showSuccess('Person added');
         this.personsSvc.triggerRefresh();
@@ -559,7 +559,7 @@ export class PersonForm implements OnInit {
     this.emailError.set(null);
     const end = this._loading.begin();
     this.personsSvc
-      .update(this.id()!, data, { meta: { skipErrorHandler: true } })
+      .update(this.id()!, data, { context: { skipErrorHandler: true } })
       .then(() => {
         this.alertSvc.showSuccess('Person updated successfully.');
         this.form().reset();

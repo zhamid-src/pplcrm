@@ -30,7 +30,7 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return this.api.persons.count.query();
   }
   public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
-    const opts = skipAlert ? { meta: { skipErrorHandler: true } } : undefined;
+    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
     if (force !== undefined) {
       return (await this.api.persons.delete.mutate({ id, force }, opts as any)) !== null;
     }
@@ -38,7 +38,7 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   }
 
   public override async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
-    const opts = skipAlert ? { meta: { skipErrorHandler: true } } : undefined;
+    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
     if (force !== undefined) {
       return await this.api.persons.deleteMany.mutate({ ids, force }, opts as any);
     }
@@ -125,12 +125,9 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     fileName?: string | null,
   ): Promise<RouterOutputs['persons']['import']> {
     // Opt-out of global error toast; importer UI shows a scoped summary instead
-    return this.api.persons.import.mutate(
-      { rows, tags, skipped, file_name: fileName ?? undefined },
-      {
-        meta: { skipErrorHandler: true },
-      } as any,
-    );
+    return this.api.persons.import.mutate({ rows, tags, skipped, file_name: fileName ?? undefined }, {
+      context: { skipErrorHandler: true },
+    } as any);
   }
 
   public async removeHousehold(id: string) {

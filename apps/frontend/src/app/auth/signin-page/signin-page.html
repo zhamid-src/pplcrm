@@ -1,6 +1,53 @@
 <!-- Template for user sign-in with email and password form. -->
 <pc-auth-layout>
-  @if (!requires2FA()) { @if (verificationPending()) {
+  @if (rateLimitSecondsLeft() > 0) {
+  <div class="alert alert-error text-sm mb-4">
+    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
+    <div>
+      <p class="font-semibold" i18n>Too many attempts</p>
+      <p class="text-xs mt-1 flex items-center gap-1">
+        <span i18n>Try again in</span>
+
+        <span class="countdown font-mono text-lg">
+          @if (rateLimitMins() > 0) {
+          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()">
+            {{rateLimitMins()}}
+          </span>
+          m }
+          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()">
+            {{rateLimitRemSecs()}}
+          </span>
+          s
+        </span>
+      </p>
+    </div>
+  </div>
+  } @if (offerPasskeySetup()) {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
+      <p class="text-sm text-white">
+        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
+        sign-ins.
+      </p>
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
+        @if (settingUpPasskey()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Set Up Passkey
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-neutral-400 hover:text-black" (click)="skipPasskeySetup()">
+        Skip for now
+      </button>
+    </div>
+  </div>
+  } @else if (!requires2FA()) { @if (verificationPending()) {
   <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
     <div class="flex flex-col gap-2 w-full">
       <div class="flex items-center gap-2 font-semibold">
@@ -52,7 +99,7 @@
         </div>
       </div>
       <div>
-        <button type="submit" class="btn btn-primary w-full">
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
           @if (isLoading()) {
           <span class="loading loading-dots loading-lg text-primary"></span>
           } @else { SIGN IN }
@@ -65,7 +112,7 @@
     type="button"
     class="btn btn-outline btn-neutral w-full gap-2"
     (click)="signInWithPasskey()"
-    [disabled]="isLoading()"
+    [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
   >
     <pc-icon name="lock-closed" [size]="4"></pc-icon>
     Sign in with a Passkey
@@ -89,7 +136,7 @@
       </label>
 
       <div>
-        <button type="submit" class="btn btn-primary w-full">
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
           @if (isLoading()) {
           <span class="loading loading-dots loading-lg text-primary"></span>
           } @else { VERIFY }

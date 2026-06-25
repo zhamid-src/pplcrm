@@ -2,23 +2,15 @@ import { Injectable, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 
 export class AlertMessage {
-  public readonly pulse = signal(false);
-
   public readonly visible = signal(true);
 
   public OKBtn: string;
-
   public OKBtnCallback?: () => void;
-
   public duration = 3000;
-
   public id: string;
-
   public text: string;
   public timeoutId: NodeJS.Timeout | undefined;
-
   public title?: string;
-
   public type?: ALERTTYPE;
 
   constructor(init?: Partial<AlertMessage>) {
@@ -35,9 +27,9 @@ export class AlertMessage {
 })
 export class AlertService {
   private readonly alertsSignal = signal<AlertMessage[]>([]);
-  public readonly alerts$ = toObservable(this.alertsSignal);
 
   public readonly alertList = this.alertsSignal.asReadonly();
+  public readonly alerts$ = toObservable(this.alertsSignal);
 
   public OKBtnCallback(id: string): void {
     const alert = this.findById(id);
@@ -71,12 +63,6 @@ export class AlertService {
     const existing = this.alertsSignal().find((m) => m.text === alert.text);
 
     if (existing) {
-      // Retrigger the pulse animation
-      existing.pulse.set(false); // ← reset first
-
-      // Re-set to true in next frame (or ~immediately)
-      setTimeout(() => existing.pulse.set(true), 0);
-
       // Extend dismissal timeout by 1 second
       clearTimeout(existing.timeoutId);
       existing.timeoutId = setTimeout(() => this.dismiss(existing.id), (existing.duration || 3000) + 1000);
