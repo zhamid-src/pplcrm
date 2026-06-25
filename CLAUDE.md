@@ -1,7 +1,7 @@
 <!-- nx configuration start-->
 <!-- Leave the start & end comments to automatically receive updates. -->
 
-# General Guidelines for working with Nx
+## General Guidelines for working with Nx
 
 - For navigating/exploring the workspace, invoke the `nx-workspace` skill first - it has patterns for querying projects, targets, and dependencies
 - When running tasks (for example build, lint, test, e2e, etc.), always prefer running the task through `nx` (i.e. `nx run`, `nx run-many`, `nx affected`) instead of using the underlying tooling directly
@@ -30,6 +30,7 @@
   - `apps/frontend/` – Angular single-page application.
   - `apps/backend/` – Fastify 5 + tRPC backend.
   - `libs/common/src/` – Shared types, database definitions, and Zod validation schemas.
+  - `libs/uxcommon` - Shared UI controls that are generic
 - **Path Aliases**: Never use relative paths across package boundaries. Use TypeScript compiler aliases (defined in `tsconfig.base.json`):
   - `@common` → `libs/common/src/index.ts` — shared models & schemas.
   - `@uxcommon/*` → `libs/uxcommon/src/*` — frontend shared assets, components, and directives.
@@ -39,19 +40,23 @@
 ## Backend Standards (Fastify 5 + tRPC + Kysely)
 
 ### API Endpoints
+
 - **tRPC First:** Expose all internal client-server endpoints via tRPC routers to maintain end-to-end type safety.
 - **Fastify REST:** Only use standard Fastify REST routes for external webhooks, file binary downloads/uploads, or when REST is explicitly required.
 - **Error Handling:** Throw standard `TRPCError` instances (e.g., `BAD_REQUEST`, `NOT_FOUND`) to return consistent error statuses to the client.
 
 ### Type-Safe Database Access (Kysely)
+
 - **Native Typing:** Leverage Kysely's built-in `Insertable<T>` and `Updateable<T>` utility types for payload operations to minimize type boilerplate.
 - **Intentional Retrieval:** Use `.returning('id')` or `.returningAll()` only when the immediate state retrieval is explicitly required by the subsequent business logic, avoiding unnecessary over-fetching.
 - **Transactions:** Execute multi-table updates within database transactions to maintain ACID compliance and prevent orphaned records.
 
 ### Background Jobs
-- **Transactional Outbox:** Offload heavy or long-running tasks (e.g., SMTP emails, syncs, file cleanups) to the background queue by inserting job payloads into the `background_jobs` table *inside* database transactions. This guarantees jobs are only queued if the core business logic commits successfully.
+
+- **Transactional Outbox:** Offload heavy or long-running tasks (e.g., SMTP emails, syncs, file cleanups) to the background queue by inserting job payloads into the `background_jobs` table _inside_ database transactions. This guarantees jobs are only queued if the core business logic commits successfully.
 
 ### Security, Hardening & Observability
+
 - **Input Validation:** Validate all inputs at the tRPC boundary using Zod to block malformed payloads and injection vulnerabilities.
 - **Error Sanitization & Traceability:** Sanitize and scrub frontend error messages to prevent leakage of database schemas or stack traces.
   - Generate a unique `correlationId` for unhandled exceptions.
@@ -78,7 +83,12 @@
   - To prevent FOUC, check data existence (e.g., `@if (!detail())`) for initial skeletons; use the `loading()` signal for disabling buttons and subsequent progress indicators.
 - **Activity & Audit Logs**: Every page or component that modifies data must display an integrated activity log at the bottom using `<pc-record-activities [entity]="..." [entityId]="...">`.
 - **Toasts & Notifications**: Trigger user feedback alerts using `AlertService` (`.showSuccess()` / `.showError()`). Do not use raw window alerts or custom dialogs.
-- **Dialogs**: Use the project dialog component for confirmation prompts, not the browser dialog.
+- **Dialogs**: Use the project dialog component for confirmation prompts, not the browser dialog or the alert toast.
+
+### Styling & Theming (Tailwind v4 + DaisyUI v5)
+
+- **No `tailwind.config.js`:** This project uses Tailwind v4. All configuration, custom utilities, and themes are declared via CSS variables using `@theme` directive blocks in your global CSS files. Do not attempt to modify or look for a JavaScript configuration file.
+- **DaisyUI v5 Semantic Classes:** Use modern DaisyUI v5 color semantic utility classes (e.g., `bg-primary`, `text-base-content`, `btn-secondary`). Do not invent custom color utility classes outside the theme.
 
 ## Database Migrations
 
@@ -96,3 +106,9 @@
   - `npx nx test frontend`
   - `npx nx test backend`
   - `npx nx e2e frontend-e2e`
+
+## Supplementary Codebase Maps
+
+- For a comprehensive file and interface map of the backend, reference: `apps/backend/STRUCTURE.md`
+- For a comprehensive file and interface map of the frontend, reference: `apps/frontend/STRUCTURE.md`
+- For a comprehensive file and interface map of the libs, reference: `apps/libs/STRUCTURE.md`
