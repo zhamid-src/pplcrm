@@ -6,7 +6,7 @@ import { Icon } from '@icons/icon';
   imports: [Icon],
   styleUrl: './tagitem.css',
   template: `<div
-    class="badge rounded-lg px-0 gap-1 pl-2 bordered animate-flash"
+    class="badge rounded-lg px-0 gap-1 pl-2 bordered"
     [class.badge-compact]="compact()"
     [style.background]="background() || null"
     [style.color]="textColor()"
@@ -31,40 +31,29 @@ import { Icon } from '@icons/icon';
   </div> `,
 })
 export class TagItem {
-  public readonly click = output<string>();
-  public readonly close = output<string>();
-
-  public compact = input<boolean>(false);
-  public canDelete = input<boolean>(true);
-  public invisible = input<Signal<boolean>>(signal(false));
-  public name = input.required<string>();
-  public color = input<string | null | undefined>(null);
-
+  protected readonly background = computed(() => this.normalizeColor(this.color()));
+  protected readonly borderColor = computed(() => this.background() ?? null);
   protected readonly displayName = computed(() => {
     const n = this.name();
     return n ? n.charAt(0).toUpperCase() + n.slice(1) : '';
   });
-
-  protected readonly background = computed(() => this.normalizeColor(this.color()));
   protected readonly textColor = computed(() => this.computeTextColor(this.background()));
-  protected readonly borderColor = computed(() => this.background() ?? null);
+
+  public readonly click = output<string>();
+  public readonly close = output<string>();
+
+  public canDelete = input<boolean>(true);
+  public color = input<string | null | undefined>(null);
+  public compact = input<boolean>(false);
+  public invisible = input<Signal<boolean>>(signal(false));
+  public name = input.required<string>();
 
   public emitClick() {
     this.click.emit(this.name());
   }
 
   public emitClose() {
-    // Destroy here sets the animation by adding the class 'destroy' to the tag
-    // It does mean that the tag should be removed from the array in the parent component
-    // after some delay, so that the animation can complete
     this.close.emit(this.name());
-  }
-
-  private normalizeColor(value: string | null | undefined): string | null {
-    if (!value) return null;
-    const trimmed = value.trim();
-    if (!/^#?[0-9a-fA-F]{6}$/.test(trimmed)) return null;
-    return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
   }
 
   private computeTextColor(hex: string | null): string | null {
@@ -84,5 +73,12 @@ export class TagItem {
     const int = parseInt(normalized, 16);
     if (Number.isNaN(int)) return null;
     return [(int >> 16) & 255, (int >> 8) & 255, int & 255];
+  }
+
+  private normalizeColor(value: string | null | undefined): string | null {
+    if (!value) return null;
+    const trimmed = value.trim();
+    if (!/^#?[0-9a-fA-F]{6}$/.test(trimmed)) return null;
+    return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
   }
 }
