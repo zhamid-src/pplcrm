@@ -36,4 +36,5 @@ export const UpdateAuthUserObj = z.object({
 export const Verify2FAObj = z.object({
   email: emailSchema,
   code: z.string().length(6),
+  rememberMe: z.boolean().optional(),
 });

@@ -79,7 +79,7 @@ function verify2FA() {
     const ip = ctx.req?.ip ?? 'unknown';
     checkRateLimit(`${ip}:verify2FA`, 5, MIN15);
     const ua = ctx.req?.headers?.['user-agent'] || '';
-    return controller.verify2FA(input.email, input.code, ip, ua);
+    return controller.verify2FA(input.email, input.code, ip, ua, input.rememberMe);
   });
 }
 
@@ -213,13 +213,14 @@ function verifyPasskeyAuthentication() {
       z.object({
         response: z.any().transform((v) => v as AuthenticationResponseJSON),
         nonce: z.string(),
+        rememberMe: z.boolean().optional(),
       }),
     )
     .mutation(({ input, ctx }) => {
       const ip = ctx.req?.ip ?? 'unknown';
       checkRateLimit(`${ip}:verifyPasskeyAuthentication`, 10, MIN15);
       const ua = ctx.req?.headers?.['user-agent'] ?? '';
-      return passkeyController.verifyAuthentication(input.response, input.nonce, ip, ua);
+      return passkeyController.verifyAuthentication(input.response, input.nonce, ip, ua, input.rememberMe);
     });
 }
 

@@ -135,6 +135,7 @@ export class PasskeyController {
     nonce: string,
     ipAddress?: string,
     userAgent?: string,
+    rememberMe?: boolean,
   ) {
     const challenge = consumeChallenge(`auth:${nonce}`);
     if (!challenge) throw new UnauthorizedError('Authentication challenge expired. Please try again.');
@@ -189,6 +190,7 @@ export class PasskeyController {
       name: user.first_name,
       ipAddress,
       userAgent,
+      rememberMe,
     });
   }
 
