@@ -34,7 +34,7 @@ The content is organized as follows:
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
 - Only files matching these patterns are included: libs/**/\*, apps/**/_, scriptis/\*\*/_, apps/backend/src/\*_/_
-- Files matching these patterns are excluded: **/\*.test.ts, **/_.spec.ts, **/dist/**, **/build/**, **/node_modules/**, **/.git/**, **/package-lock.json, **/yarn.lock, \*\*/_.picture, **/\*.png, **/_.jpg, \*\*/_.jpeg, **/\*.svg, **/_.ico, **/apps/frontend/**, **/\_migrations/schema_dump.sql, **/_.spec.ts
+- Files matching these patterns are excluded: **/\*.test.ts, **/_.spec.ts, **/dist/**, **/build/**, **/node_modules/**, **/.git/**, **/package-lock.json, **/yarn.lock, \*\*/_.picture, **/\*.png, **/_.jpg, \*\*/_.jpeg, **/\*.svg, **/_.ico, apps/frontend/**, apps/libs/**, libs/**, **/STRUCTURE.md, **/\_migrations/schema_dump.sql, **/_.spec.ts
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
@@ -59,6 +59,7 @@ apps/
           2026-06-29-add-passkeys.ts
           2026-06-29-session-expiry.ts
           2026-06-30-zapier-integration.ts
+          2026-07-01-add-email-attachment-file-id.ts
         config/
           email-folders.config.ts
         errors/
@@ -323,143 +324,66 @@ apps/
     playwright.config.ts
     project.json
     tsconfig.json
-libs/
-  common/
-    src/
-      lib/
-        schemas/
-          auth.schema.ts
-          companies.schema.ts
-          connections.schema.ts
-          core.schema.ts
-          emails.schema.ts
-          events.schema.ts
-          lists.schema.ts
-          marketing.schema.ts
-          persons.schema.ts
-          settings.schema.ts
-          tags.schema.ts
-          tasks.schema.ts
-          teams.schema.ts
-          volunteer.schema.ts
-          web-forms.schema.ts
-          workflows.schema.ts
-        auth.ts
-        emails.ts
-        jsend.ts
-        kysely.models.ts
-        models.ts
-        schema.ts
-        sla.ts
-        utils.ts
-      index.ts
-    eslint.config.cjs
-    project.json
-    tsconfig.json
-    tsconfig.lib.json
-  uxcommon/
-    src/
-      components/
-        address-autocomplete/
-          address-autocomplete.ts
-          googlePlacesAddressMapper.ts
-        address-form-group/
-          address-form-group.ts
-        alerts/
-          alert-service.ts
-          alerts.html
-          alerts.ts
-        autocomplete/
-          autocomplete.ts
-        card/
-          card.ts
-        csv-import/
-          csv-import.html
-          csv-import.ts
-          csv.worker.ts
-        detail-header/
-          detail-header.ts
-        detail-item/
-          detail-item.ts
-        detail-layout/
-          detail-layout.ts
-        detail-row/
-          detail-row.ts
-        entity-overview/
-          entity-overview.ts
-        fields-selector/
-          fields-selector.html
-          fields-selector.ts
-        form-actions/
-          form-actions.html
-          form-actions.ts
-        grid-header/
-          grid-header.ts
-        icons/
-          attachment-icon.ts
-          icon.ts
-          icons.index.ts
-        input/
-          input.ts
-        not-found/
-          not-found.ts
-        profile-card/
-          profile-card.ts
-        public-link-panel/
-          public-link-panel.html
-          public-link-panel.ts
-        select/
-          select.ts
-        side-drawer/
-          side-drawer.ts
-        stat-card/
-          stat-card.ts
-        status-badge/
-          status-badge.ts
-        swap/
-          swap.ts
-        system-metadata/
-          system-metadata.ts
-        tabs/
-          tabs.ts
-        tags/
-          tagitem.css
-          tagitem.ts
-        textarea/
-          textarea.ts
-        toggle/
-          toggle.ts
-        user-avatar/
-          user-avatar.ts
-        confirm-dialog-host.html
-        confirm-dialog-host.ts
-        confirm-dialog.service.ts
-      directives/
-        animate-if.directive.ts
-        spin-on-click.directive.ts
-      mentions/
-        mention-controller.ts
-      pipes/
-        file-icon.pipe.ts
-        file-icon.util.ts
-        filesize.pipe.ts
-        mention.pipe.ts
-        sanitize-html.pipe.ts
-        svg-html-pipe.ts
-        timeago.pipe.ts
-      index.ts
-      loading-gate.ts
-      test-setup.ts
-    eslint.config.cjs
-    project.json
-    README.md
-    tsconfig.json
-    tsconfig.lib.json
-    tsconfig.spec.json
-    vite.config.mts
 ```
 
 # Files
+
+## File: apps/backend/src/app/\_migrations/2026-07-01-add-email-attachment-file-id.ts
+
+```typescript
+import { Kysely, sql } from 'kysely';
+
+// email_attachments was missing the file_id link to the files table, even though
+// the download/inline-image endpoints (and the send/ingest code) reference it.
+// Without it, attachment metadata could never be resolved back to stored blobs,
+// so downloads always 404'd. Add the column + FK (SET NULL on file delete, matching
+// companies.file_id / profiles.avatar_file_id), and backfill existing rows by
+// matching on tenant_id + filename + size where unambiguous.
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE email_attachments ADD COLUMN IF NOT EXISTS file_id bigint`.execute(db);
+
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'fk_email_attachments_file'
+      ) THEN
+        ALTER TABLE email_attachments
+          ADD CONSTRAINT fk_email_attachments_file
+          FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL;
+      END IF;
+    END$$;
+  `.execute(db);
+
+  await sql`CREATE INDEX IF NOT EXISTS idx_email_attachments_file_id ON email_attachments USING btree (file_id)`.execute(
+    db,
+  );
+
+  // Best-effort backfill: link existing attachments to a matching file when the
+  // (tenant_id, filename, size) tuple resolves to exactly one file.
+  await sql`
+    UPDATE email_attachments ea
+    SET file_id = f.id
+    FROM files f
+    WHERE ea.file_id IS NULL
+      AND f.tenant_id = ea.tenant_id
+      AND f.filename = ea.filename
+      AND f.size_bytes = ea.size_bytes
+      AND (
+        SELECT count(*) FROM files f2
+        WHERE f2.tenant_id = ea.tenant_id
+          AND f2.filename = ea.filename
+          AND f2.size_bytes = ea.size_bytes
+      ) = 1
+  `.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE email_attachments DROP CONSTRAINT IF EXISTS fk_email_attachments_file`.execute(db);
+  await sql`DROP INDEX IF EXISTS idx_email_attachments_file_id`.execute(db);
+  await sql`ALTER TABLE email_attachments DROP COLUMN IF EXISTS file_id`.execute(db);
+}
+```
 
 ## File: apps/backend/src/app/lib/gis/boundaries.geojson
 
@@ -706,6 +630,672 @@ export const CompaniesRouter = router({
   mergeCompanies: authProcedure
     .input(z.object({ target_id: idSchema, source_id: idSchema }))
     .mutation(({ input, ctx }) => companies.mergeCompanies(input.target_id, input.source_id, ctx.auth)),
+});
+```
+
+## File: apps/backend/src/app/modules/dashboard/controller.ts
+
+```typescript
+import { BaseRepository } from '../../lib/base.repo';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import { sql } from 'kysely';
+import { calculateWorkingTimeMs } from '../../../../../../libs/common/src';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+
+export class DashboardController {
+  private get db() {
+    return (BaseRepository as any)['_db'];
+  }
+
+  public async getStats(auth: IAuthKeyPayload) {
+    const tenant_id = auth.tenant_id;
+
+    // Fetch SLA settings
+    const settingsRepo = new SettingsRepo();
+    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
+    const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    const workingDays = workingDaysStr
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => !isNaN(n));
+    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
+    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
+
+    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
+    const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
+
+    // 1. Fetch all users in the tenant
+    const users = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    // 2. Fetch all inbox emails for this tenant (folder_id '11' is Inbox)
+    const inboxEmails = await this.db
+      .selectFrom('emails')
+      .select(['id', 'from_email', 'subject', 'created_at', 'updated_at', 'status', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .where('folder_id', '=', '11')
+      .execute();
+
+    // 2.3 Fetch all tasks for this tenant
+    const tasks = await this.db
+      .selectFrom('tasks')
+      .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    // 2.5 Fetch all close activities for emails in this tenant to determine who closed them
+    const closeActivities = await this.db
+      .selectFrom('user_activity')
+      .select(['entity_id', 'user_id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('activity', '=', 'close')
+      .where('entity', 'in', ['email', 'emails'])
+      .orderBy('created_at', 'asc')
+      .execute();
+
+    const closerMap = new Map<string, string>();
+    for (const act of closeActivities) {
+      if (act.entity_id) {
+        closerMap.set(String(act.entity_id), String(act.user_id));
+      }
+    }
+
+    // 3. Fetch earliest comment times grouped by email_id
+    const earliestComments = await this.db
+      .selectFrom('email_comments')
+      .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('email_id')
+      .execute();
+    const commentMap = new Map<string, number>(
+      earliestComments
+        .filter((c: any) => c.email_id && c.earliest_comment_at)
+        .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
+    );
+
+    // 4. Fetch all sent emails for the tenant to match outbound replies in memory (folder_id '3' is Sent)
+    const sentEmails = await this.db
+      .selectFrom('emails')
+      .select(['to_email', 'created_at'])
+      .where('tenant_id', '=', tenant_id)
+      .where('folder_id', '=', '3')
+      .orderBy('created_at', 'asc')
+      .execute();
+
+    const sentMap = new Map<string, number[]>();
+    for (const sent of sentEmails) {
+      if (!sent.to_email) continue;
+      const emails = sent.to_email.toLowerCase().match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
+      for (const e of emails) {
+        let list = sentMap.get(e);
+        if (!list) {
+          list = [];
+          sentMap.set(e, list);
+        }
+        list.push(new Date(sent.created_at).getTime());
+      }
+    }
+
+    // Initialize user stats map
+    const userStatsMap: Record<
+      string,
+      {
+        user_id: string;
+        first_name: string;
+        last_name: string;
+        openCount: number;
+        closedCount: number;
+        totalResponseTimeMs: number;
+        responseCount: number;
+        totalTimeToCloseMs: number;
+        timeToCloseCount: number;
+        slaBreaches: number;
+        emailSlaBreaches: number;
+        taskSlaBreaches: number;
+      }
+    > = {};
+
+    for (const u of users) {
+      userStatsMap[u.id] = {
+        user_id: u.id,
+        first_name: u.first_name || '',
+        last_name: u.last_name || '',
+        openCount: 0,
+        closedCount: 0,
+        totalResponseTimeMs: 0,
+        responseCount: 0,
+        totalTimeToCloseMs: 0,
+        timeToCloseCount: 0,
+        slaBreaches: 0,
+        emailSlaBreaches: 0,
+        taskSlaBreaches: 0,
+      };
+    }
+
+    let globalTotalResponseTimeMs = 0;
+    let globalResponseCount = 0;
+    let globalTotalTimeToCloseMs = 0;
+    let globalTimeToCloseCount = 0;
+    let unassignedCount = 0;
+    let unassignedSlaBreaches = 0;
+    let unassignedEmailSlaBreaches = 0;
+    let unassignedTaskSlaBreaches = 0;
+
+    const breachedEmailsList: Array<{
+      id: string;
+      from_email: string | null;
+      subject: string | null;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
+    const breachedTasksList: Array<{
+      id: string;
+      name: string;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
+    const nowMs = Date.now();
+
+    for (const email of inboxEmails) {
+      const isAssigned = !!email.assigned_to && userStatsMap[email.assigned_to];
+      const assignedUser = isAssigned ? userStatsMap[email.assigned_to!] : null;
+
+      // Determine who closed the email (with fallback to assignee)
+      const closerId =
+        email.status === 'closed'
+          ? closerMap.get(String(email.id)) || (email.assigned_to != null ? String(email.assigned_to) : null)
+          : null;
+      const closerUser = closerId && userStatsMap[closerId] ? userStatsMap[closerId] : null;
+
+      // Track open/closed counts
+      if (email.status === 'open') {
+        if (assignedUser) {
+          assignedUser.openCount++;
+        } else {
+          unassignedCount++;
+        }
+      } else if (email.status === 'closed') {
+        if (closerUser) {
+          closerUser.closedCount++;
+        }
+      }
+
+      // Time to close calculation
+      if (email.status === 'closed') {
+        const closeDiff = new Date(email.updated_at).getTime() - new Date(email.created_at).getTime();
+        if (closeDiff > 0) {
+          globalTotalTimeToCloseMs += closeDiff;
+          globalTimeToCloseCount++;
+          if (closerUser) {
+            closerUser.totalTimeToCloseMs += closeDiff;
+            closerUser.timeToCloseCount++;
+          }
+        }
+      }
+
+      // First response calculation
+      const commentTime = commentMap.get(email.id) || null;
+      let outboundTime: number | null = null;
+      if (email.from_email) {
+        const fromEmailClean = email.from_email.toLowerCase().trim();
+        const sentTimes = sentMap.get(fromEmailClean);
+        if (sentTimes) {
+          const emailCreatedTime = new Date(email.created_at).getTime();
+          const firstSentAfter = sentTimes.find((t) => t > emailCreatedTime);
+          if (firstSentAfter) {
+            outboundTime = firstSentAfter;
+          }
+        }
+      }
+
+      let firstResponseTime: number | null = null;
+      if (commentTime && outboundTime) {
+        firstResponseTime = Math.min(commentTime, outboundTime);
+      } else if (commentTime) {
+        firstResponseTime = commentTime;
+      } else if (outboundTime) {
+        firstResponseTime = outboundTime;
+      }
+
+      if (firstResponseTime) {
+        const respDiff = firstResponseTime - new Date(email.created_at).getTime();
+        if (respDiff > 0) {
+          globalTotalResponseTimeMs += respDiff;
+          globalResponseCount++;
+          if (assignedUser) {
+            assignedUser.totalResponseTimeMs += respDiff;
+            assignedUser.responseCount++;
+          }
+        }
+      }
+
+      // SLA Breach calculation: Open inbox email older than target in working hours
+      if (email.status === 'open') {
+        const workingTimeMs = calculateWorkingTimeMs(
+          new Date(email.created_at),
+          new Date(nowMs),
+          workingDays,
+          workingHoursStart,
+          workingHoursEnd,
+        );
+        if (workingTimeMs > emailSlaMs && !firstResponseTime) {
+          if (assignedUser) {
+            assignedUser.emailSlaBreaches++;
+            assignedUser.slaBreaches++; // for backward compatibility
+          } else {
+            unassignedEmailSlaBreaches++;
+            unassignedSlaBreaches++; // for backward compatibility
+          }
+          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
+          breachedEmailsList.push({
+            id: String(email.id),
+            from_email: email.from_email,
+            subject: email.subject || null,
+            created_at: email.created_at,
+            assigned_to: email.assigned_to,
+            assignee_name: assigneeName,
+            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+          });
+        }
+      }
+    }
+
+    // Calculate Task SLA Breaches
+    for (const task of tasks) {
+      const isOpenTask = task.status && ['todo', 'in_progress', 'blocked'].includes(task.status);
+      if (isOpenTask) {
+        const workingTimeMs = calculateWorkingTimeMs(
+          new Date(task.created_at),
+          new Date(nowMs),
+          workingDays,
+          workingHoursStart,
+          workingHoursEnd,
+        );
+        if (workingTimeMs > taskSlaMs) {
+          const isAssigned = !!task.assigned_to && userStatsMap[task.assigned_to];
+          const assignedUser = isAssigned ? userStatsMap[task.assigned_to!] : null;
+          if (assignedUser) {
+            assignedUser.taskSlaBreaches++;
+          } else {
+            unassignedTaskSlaBreaches++;
+          }
+          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
+          breachedTasksList.push({
+            id: String(task.id),
+            name: task.name,
+            created_at: task.created_at,
+            assigned_to: task.assigned_to,
+            assignee_name: assigneeName,
+            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+          });
+        }
+      }
+    }
+
+    const avgFirstResponseHours =
+      globalResponseCount > 0 ? globalTotalResponseTimeMs / globalResponseCount / (1000 * 60 * 60) : 0;
+    const avgTimeToCloseHours =
+      globalTimeToCloseCount > 0 ? globalTotalTimeToCloseMs / globalTimeToCloseCount / (1000 * 60 * 60) : 0;
+
+    // 5. Contacts Growth (Last 30 days)
+    const growthRows = await this.db
+      .selectFrom('persons')
+      .select([sql<string>`date_trunc('day', created_at)`.as('day'), sql<number>`count(id)`.as('count')])
+      .where('tenant_id', '=', tenant_id)
+      .where('created_at', '>=', sql`now() - interval '30 days'`)
+      .groupBy(sql`date_trunc('day', created_at)`)
+      .orderBy(sql`date_trunc('day', created_at)`, 'asc')
+      .execute();
+
+    const contactsGrowth = growthRows.map((r: any) => ({
+      date: r.day ? new Date(r.day).toISOString().split('T')[0] : '',
+      count: Number(r.count || 0),
+    }));
+
+    // Build backward-compatible emailsAssigned
+    const emailsAssigned = Object.values(userStatsMap)
+      .filter((u) => u.openCount > 0)
+      .map((u) => ({
+        user_id: u.user_id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        count: u.openCount,
+      }));
+
+    // Build backward-compatible emailsClosed
+    const emailsClosed = Object.values(userStatsMap)
+      .filter((u) => u.closedCount > 0)
+      .map((u) => ({
+        user_id: u.user_id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        count: u.closedCount,
+      }));
+
+    // Map user stats for representative stats table
+    const userStats = Object.values(userStatsMap).map((u) => {
+      const totalHandled = u.openCount + u.closedCount;
+      const resolutionRate = totalHandled > 0 ? Math.round((u.closedCount / totalHandled) * 100) : 0;
+      const avgFirstResponse = u.responseCount > 0 ? u.totalResponseTimeMs / u.responseCount / (1000 * 60 * 60) : 0;
+      const avgTimeToClose = u.timeToCloseCount > 0 ? u.totalTimeToCloseMs / u.timeToCloseCount / (1000 * 60 * 60) : 0;
+
+      return {
+        user_id: u.user_id,
+        first_name: u.first_name,
+        last_name: u.last_name,
+        openCount: u.openCount,
+        closedCount: u.closedCount,
+        resolutionRate,
+        avgFirstResponseHours: avgFirstResponse,
+        avgTimeToCloseHours: avgTimeToClose,
+        slaBreaches: u.slaBreaches,
+        emailSlaBreaches: u.emailSlaBreaches,
+        taskSlaBreaches: u.taskSlaBreaches,
+      };
+    });
+
+    const totalOpenCount = unassignedCount + Object.values(userStatsMap).reduce((acc, cur) => acc + cur.openCount, 0);
+
+    return {
+      avgFirstResponseHours,
+      avgTimeToCloseHours,
+      emailsAssigned,
+      emailsClosed,
+      contactsGrowth,
+      unassignedCount,
+      totalOpenCount,
+      userStats,
+      unassignedSlaBreaches,
+      unassignedEmailSlaBreaches,
+      unassignedTaskSlaBreaches,
+      breachedEmailsList: [],
+      breachedTasksList: [],
+      taskSlaHours,
+      emailSlaHours,
+      emailSlaWarningThreshold: Number(settingsMap['sla.email_warning_threshold'] ?? 1),
+      emailSlaCriticalThreshold: Number(settingsMap['sla.email_critical_threshold'] ?? 4),
+      taskSlaWarningThreshold: Number(settingsMap['sla.task_warning_threshold'] ?? 1),
+      taskSlaCriticalThreshold: Number(settingsMap['sla.task_critical_threshold'] ?? 4),
+    };
+  }
+
+  public async getBreachedEmails(auth: IAuthKeyPayload, input: { page: number; limit: number }) {
+    const tenant_id = auth.tenant_id;
+    const { page, limit } = input;
+    const offset = (page - 1) * limit;
+
+    // Fetch SLA settings
+    const settingsRepo = new SettingsRepo();
+    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    const workingDays = workingDaysStr
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => !isNaN(n));
+    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
+    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
+
+    const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
+
+    // Fetch all users in the tenant
+    const users = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    const userMap = new Map<string, string>();
+    for (const u of users) {
+      userMap.set(u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim());
+    }
+
+    // Fetch all open inbox emails (folder_id '11' is Inbox, status 'open')
+    const openInboxEmails = await this.db
+      .selectFrom('emails')
+      .select(['id', 'from_email', 'subject', 'created_at', 'updated_at', 'status', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .where('folder_id', '=', '11')
+      .where('status', '=', 'open')
+      .execute();
+
+    // Fetch earliest comment times grouped by email_id
+    const earliestComments = await this.db
+      .selectFrom('email_comments')
+      .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('email_id')
+      .execute();
+    const commentMap = new Map<string, number>(
+      earliestComments
+        .filter((c: any) => c.email_id && c.earliest_comment_at)
+        .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
+    );
+
+    // Fetch all sent emails for the tenant to match outbound replies in memory (folder_id '3' is Sent)
+    const sentEmails = await this.db
+      .selectFrom('emails')
+      .select(['to_email', 'created_at'])
+      .where('tenant_id', '=', tenant_id)
+      .where('folder_id', '=', '3')
+      .orderBy('created_at', 'asc')
+      .execute();
+
+    const sentMap = new Map<string, number[]>();
+    for (const sent of sentEmails) {
+      if (!sent.to_email) continue;
+      const emails = sent.to_email.toLowerCase().match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
+      for (const e of emails) {
+        let list = sentMap.get(e);
+        if (!list) {
+          list = [];
+          sentMap.set(e, list);
+        }
+        list.push(new Date(sent.created_at).getTime());
+      }
+    }
+
+    const breachedEmailsList: Array<{
+      id: string;
+      from_email: string | null;
+      subject: string | null;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
+    const nowMs = Date.now();
+
+    for (const email of openInboxEmails) {
+      // First response calculation
+      const commentTime = commentMap.get(email.id) || null;
+      let outboundTime: number | null = null;
+      if (email.from_email) {
+        const fromEmailClean = email.from_email.toLowerCase().trim();
+        const sentTimes = sentMap.get(fromEmailClean);
+        if (sentTimes) {
+          const emailCreatedTime = new Date(email.created_at).getTime();
+          const firstSentAfter = sentTimes.find((t) => t > emailCreatedTime);
+          if (firstSentAfter) {
+            outboundTime = firstSentAfter;
+          }
+        }
+      }
+
+      let firstResponseTime: number | null = null;
+      if (commentTime && outboundTime) {
+        firstResponseTime = Math.min(commentTime, outboundTime);
+      } else if (commentTime) {
+        firstResponseTime = commentTime;
+      } else if (outboundTime) {
+        firstResponseTime = outboundTime;
+      }
+
+      const workingTimeMs = calculateWorkingTimeMs(
+        new Date(email.created_at),
+        new Date(nowMs),
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+
+      if (workingTimeMs > emailSlaMs && !firstResponseTime) {
+        const assigneeName = email.assigned_to ? userMap.get(email.assigned_to) || null : null;
+        breachedEmailsList.push({
+          id: String(email.id),
+          from_email: email.from_email,
+          subject: email.subject || null,
+          created_at: email.created_at,
+          assigned_to: email.assigned_to,
+          assignee_name: assigneeName,
+          working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+        });
+      }
+    }
+
+    breachedEmailsList.sort((a, b) => b.working_time_hours - a.working_time_hours);
+
+    const totalCount = breachedEmailsList.length;
+    const items = breachedEmailsList.slice(offset, offset + limit);
+
+    return {
+      items,
+      totalCount,
+      hasMore: offset + limit < totalCount,
+    };
+  }
+
+  public async getBreachedTasks(auth: IAuthKeyPayload, input: { page: number; limit: number }) {
+    const tenant_id = auth.tenant_id;
+    const { page, limit } = input;
+    const offset = (page - 1) * limit;
+
+    // Fetch SLA settings
+    const settingsRepo = new SettingsRepo();
+    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    const workingDays = workingDaysStr
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => !isNaN(n));
+    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
+    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
+
+    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
+
+    // Fetch all users in the tenant
+    const users = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    const userMap = new Map<string, string>();
+    for (const u of users) {
+      userMap.set(u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim());
+    }
+
+    // Fetch open tasks for this tenant
+    const openTasks = await this.db
+      .selectFrom('tasks')
+      .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', ['todo', 'in_progress', 'blocked'])
+      .execute();
+
+    const breachedTasksList: Array<{
+      id: string;
+      name: string;
+      created_at: Date | string;
+      assigned_to: string | null;
+      assignee_name: string | null;
+      working_time_hours: number;
+    }> = [];
+
+    const nowMs = Date.now();
+
+    for (const task of openTasks) {
+      const workingTimeMs = calculateWorkingTimeMs(
+        new Date(task.created_at),
+        new Date(nowMs),
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+      if (workingTimeMs > taskSlaMs) {
+        const assigneeName = task.assigned_to ? userMap.get(task.assigned_to) || null : null;
+        breachedTasksList.push({
+          id: String(task.id),
+          name: task.name,
+          created_at: task.created_at,
+          assigned_to: task.assigned_to,
+          assignee_name: assigneeName,
+          working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
+        });
+      }
+    }
+
+    breachedTasksList.sort((a, b) => b.working_time_hours - a.working_time_hours);
+
+    const totalCount = breachedTasksList.length;
+    const items = breachedTasksList.slice(offset, offset + limit);
+
+    return {
+      items,
+      totalCount,
+      hasMore: offset + limit < totalCount,
+    };
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/dashboard/trpc.router.ts
+
+```typescript
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { DashboardController } from './controller';
+
+const dashboard = new DashboardController();
+
+export const DashboardRouter = router({
+  getStats: authProcedure.query(({ ctx }) => dashboard.getStats(ctx.auth)),
+
+  getBreachedEmails: authProcedure
+    .input(z.object({ page: z.number().int().min(1), limit: z.number().int().min(1) }))
+    .query(({ input, ctx }) => dashboard.getBreachedEmails(ctx.auth, input)),
+
+  getBreachedTasks: authProcedure
+    .input(z.object({ page: z.number().int().min(1), limit: z.number().int().min(1) }))
+    .query(({ input, ctx }) => dashboard.getBreachedTasks(ctx.auth, input)),
 });
 ```
 
@@ -3908,2703 +4498,6 @@ export default defineConfig({
   },
   "include": ["src/**/*.ts", "playwright.config.ts"]
 }
-```
-
-## File: libs/common/src/lib/schemas/companies.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const CompanyInputObj = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(200, 'Name too long'),
-  description: z.string().trim().max(1000).optional().nullable(),
-  website: z.string().trim().max(255).optional().nullable().or(z.literal('')),
-  email: z.string().trim().max(255).optional().nullable().or(z.literal('')),
-  phone: z.string().trim().max(50).optional().nullable(),
-  industry: z.string().trim().max(100).optional().nullable(),
-  notes: z.string().trim().max(10000).optional().nullable(),
-});
-```
-
-## File: libs/common/src/lib/schemas/lists.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { getAllOptions, nameSchema, descriptionSchema, idSchema } from './core.schema';
-
-export const AddListObj = z.object({
-  name: nameSchema('List name', 100),
-  description: descriptionSchema(1000),
-  object: z.enum(['people', 'households']),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  member_ids: z.array(idSchema).optional(),
-});
-
-export const ListsObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  object: z.enum(['people', 'households']),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  last_refreshed_at: z.coerce.date().nullable().optional(),
-  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
-});
-
-export const UpdateListObj = z.object({
-  name: nameSchema('List name', 100).optional(),
-  description: descriptionSchema(1000).optional(),
-  object: z.enum(['people', 'households']).optional(),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  last_refreshed_at: z.coerce.date().nullable().optional(),
-  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
-});
-
-export const ImportListItemObj = z.object({
-  id: idSchema,
-  fileName: z.string(),
-  source: z.string(),
-  tagName: z.string().nullable(),
-  tagMissing: z.boolean(),
-  createdAt: z.coerce.date(),
-  processedAt: z.coerce.date(),
-  createdBy: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable(),
-  insertedCount: z.number().int().nonnegative(),
-  errorCount: z.number().int().nonnegative(),
-  skippedCount: z.number().int().nonnegative(),
-  rowCount: z.number().int().nonnegative(),
-  householdsCreated: z.number().int().nonnegative(),
-  contactCount: z.number().int().nonnegative(),
-  householdCount: z.number().int().nonnegative(),
-  companyCount: z.number().int().nonnegative(),
-  taskCount: z.number().int().nonnegative(),
-  status: z.string(),
-  errorMessage: z.string().nullable().optional(),
-  canDeleteContacts: z.boolean(),
-});
-```
-
-## File: libs/common/src/lib/schemas/marketing.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const marketingEmailTopLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-});
-
-export const MarketingEmailObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative(),
-  delivered_count: z.number().int().nonnegative(),
-  bounce_count: z.number().int().nonnegative(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unique_opens: z.number().int().nonnegative(),
-  unique_clicks: z.number().int().nonnegative(),
-  unsubscribe_count: z.number().int().nonnegative(),
-  spam_complaint_count: z.number().int().nonnegative(),
-  reply_count: z.number().int().nonnegative(),
-  send_date: z.coerce.date().nullable(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  attachments: z
-    .array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() }))
-    .nullable()
-    .optional(),
-  updated_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-});
-
-export const AddMarketingEmailObj = z.object({
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative().default(0).optional(),
-  delivered_count: z.number().int().nonnegative().default(0).optional(),
-  bounce_count: z.number().int().nonnegative().default(0).optional(),
-  open_rate: z.number().min(0).max(100).default(0).optional(),
-  click_rate: z.number().min(0).max(100).default(0).optional(),
-  unique_opens: z.number().int().nonnegative().default(0).optional(),
-  unique_clicks: z.number().int().nonnegative().default(0).optional(),
-  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
-  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
-  reply_count: z.number().int().nonnegative().default(0).optional(),
-  send_date: z.coerce.date().nullable().optional(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  attachments: z
-    .array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() }))
-    .nullable()
-    .optional(),
-});
-
-export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
-```
-
-## File: libs/common/src/lib/schemas/persons.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { phoneSchema, notesSchema, jsonSchema, idSchema, nullableEmailSchema, addressSchema } from './core.schema';
-
-export const PersonsObj = z.object({
-  id: z.string(),
-  household_id: z.string(),
-  email: z.string(),
-  email2: z.string(),
-  first_name: z.string(),
-  middle_names: z.string(),
-  last_name: z.string(),
-  home_phone: z.string(),
-  mobile: z.string(),
-  notes: z.string(),
-  json: z.string(),
-  linkedin: z.string().nullable().optional(),
-  twitter: z.string().nullable().optional(),
-  facebook: z.string().nullable().optional(),
-  instagram: z.string().nullable().optional(),
-  assigned_to: z.string().nullable().optional(),
-});
-
-export const UpdateHouseholdsObj = addressSchema.extend({
-  home_phone: phoneSchema('Home phone'),
-  notes: notesSchema,
-  json: jsonSchema,
-});
-
-export const UpdatePersonsObj = z.object({
-  campaign_id: idSchema.optional(),
-  household_id: idSchema.optional(),
-  company_id: idSchema.or(z.literal('')).nullable().optional(),
-  email: nullableEmailSchema,
-  email2: nullableEmailSchema,
-  first_name: z.string().trim().max(100, 'First name is too long').nullable().optional(),
-  middle_names: z.string().trim().max(100, 'Middle names are too long').nullable().optional(),
-  last_name: z.string().trim().max(100, 'Last name is too long').nullable().optional(),
-  home_phone: phoneSchema('Home phone'),
-  mobile: phoneSchema('Mobile phone'),
-  notes: notesSchema,
-  json: jsonSchema,
-  linkedin: z.string().trim().max(255, 'LinkedIn URL is too long').nullable().optional(),
-  twitter: z.string().trim().max(255, 'Twitter URL is too long').nullable().optional(),
-  facebook: z.string().trim().max(255, 'Facebook URL is too long').nullable().optional(),
-  instagram: z.string().trim().max(255, 'Instagram URL is too long').nullable().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-});
-```
-
-## File: libs/common/src/lib/schemas/settings.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const SettingsObj = z.object({
-  id: z.string().optional(),
-  tenant_id: z.string().optional(),
-  campaign_id: z.string().optional(),
-  createdby_id: z.string().optional(),
-  updatedby_id: z.string().optional(),
-  key: z.string().optional(),
-  value: z.unknown().optional(),
-});
-
-export const SettingsEntryObj = z.object({
-  key: z.string().min(1),
-  value: z.unknown(),
-});
-
-export const UpsertSettingsInputObj = z.object({
-  entries: z.array(SettingsEntryObj).min(1),
-});
-```
-
-## File: libs/common/src/lib/schemas/tags.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, descriptionSchema } from './core.schema';
-
-export const AddTagObj = z.object({
-  name: nameSchema('Tag name', 50),
-  description: descriptionSchema(500),
-  color: z
-    .string()
-    .trim()
-    .regex(/^#([0-9a-fA-F]{6})$/, 'Colour must be a hex value like #ff0000')
-    .nullable()
-    .optional(),
-  type: z.enum(['tag', 'issue']).default('tag').optional(),
-});
-
-export const UpdateTagObj = z.object({
-  name: nameSchema('Tag name', 50).optional(),
-  description: descriptionSchema(500).optional(),
-  color: z
-    .string()
-    .trim()
-    .regex(/^#([0-9a-fA-F]{6})$/, 'Colour must be a hex value like #ff0000')
-    .nullable()
-    .optional(),
-  type: z.enum(['tag', 'issue']).optional(),
-});
-```
-
-## File: libs/common/src/lib/schemas/tasks.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, notesSchema, idSchema } from './core.schema';
-
-export const AddTaskObj = z.object({
-  name: nameSchema('Task name', 200),
-  details: z.string().trim().max(10000, 'Details too long').optional(),
-  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).default('todo').optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
-  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  position: z.number().int().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  team_id: idSchema.or(z.literal('')).nullable().optional(),
-});
-
-export const TasksObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  details: z.string().optional(),
-  due_at: z.coerce.date().optional(),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).nullable().optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).nullable().optional(),
-  completed_at: z.coerce.date().optional(),
-  position: z.number().int().optional(),
-  assigned_to: z.string().nullable().optional(),
-  team_id: z.string().nullable().optional(),
-});
-
-export const UpdateTaskObj = z.object({
-  name: nameSchema('Task name', 200).optional(),
-  details: notesSchema,
-  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
-  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  position: z.number().int().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  team_id: idSchema.or(z.literal('')).nullable().optional(),
-});
-```
-
-## File: libs/common/src/lib/schemas/teams.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, descriptionSchema, idSchema } from './core.schema';
-
-export const AddTeamObj = z.object({
-  name: nameSchema('Name', 100),
-  description: descriptionSchema(1000),
-  team_captain_id: idSchema.or(z.literal('')).nullable().optional(),
-  team_lead_user_id: idSchema.or(z.literal('')).nullable().optional(),
-  volunteer_ids: z.array(idSchema).optional(),
-  list_ids: z.array(idSchema).optional(),
-});
-
-export const UpdateTeamObj = z.object({
-  name: nameSchema('Name', 100).nullable(),
-  description: descriptionSchema(1000),
-  team_captain_id: idSchema.or(z.literal('')).nullable().optional(),
-  team_lead_user_id: idSchema.or(z.literal('')).nullable().optional(),
-  volunteer_ids: z.array(idSchema).optional(),
-  list_ids: z.array(idSchema).optional(),
-});
-```
-
-## File: libs/common/src/lib/schemas/workflows.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const WorkflowObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  trigger_type: z
-    .enum([
-      'volunteer_signup',
-      'manual',
-      'tag_added',
-      'web_form_submitted',
-      'volunteer_shift_status',
-      'contact_created',
-      'list_joined',
-      'payment_event',
-      'new_subscriber',
-      'new_unsubscriber',
-    ])
-    .default('manual'),
-  trigger_event_id: z.string().nullable().optional(),
-  status: z.enum(['draft', 'active', 'paused']).default('draft'),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-export const AddWorkflowObj = z.object({
-  name: z.string().min(1, 'Name is required').max(100),
-  description: z.string().nullable().optional(),
-  trigger_type: z
-    .enum([
-      'volunteer_signup',
-      'manual',
-      'tag_added',
-      'web_form_submitted',
-      'volunteer_shift_status',
-      'contact_created',
-      'list_joined',
-      'payment_event',
-      'new_subscriber',
-      'new_unsubscriber',
-    ])
-    .default('manual'),
-  trigger_event_id: z.string().nullable().optional(),
-  status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
-});
-
-export const UpdateWorkflowObj = AddWorkflowObj.partial();
-
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-
-export const WorkflowStepObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  step_number: z.number().int().positive(),
-  delay_days: z.number().int().nonnegative(),
-  delay_unit: z.enum(['days', 'hours']).default('days'),
-  subject: z.string().min(1, 'Subject is required'),
-  preview_text: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-export const AddWorkflowStepObj = z.object({
-  step_number: z.number().int().positive(),
-  delay_days: z.number().int().nonnegative(),
-  delay_unit: z.enum(['days', 'hours']).default('days').optional(),
-  subject: z.string().min(1, 'Subject is required'),
-  preview_text: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-});
-
-export const UpdateWorkflowStepObj = AddWorkflowStepObj.partial();
-
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-
-export const WorkflowEnrollmentObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  person_id: z.string(),
-  status: z.enum(['active', 'completed', 'cancelled']).default('active'),
-  current_step_number: z.number().int().nonnegative(),
-  next_run_at: z.coerce.date().nullable().optional(),
-  enrolled_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-```
-
-## File: libs/common/src/lib/utils.ts
-
-```typescript
-export function debounce<F extends (...args: any[]) => void>(fn: F, delay = 300) {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<F>) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => fn(...args), delay);
-  };
-}
-
-export function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-```
-
-## File: libs/common/eslint.config.cjs
-
-```javascript
-/* ---------------------------------------------------------------
- *  libs/common/eslint.config.cjs
- *  Universal shared library rules (used by frontend + backend)
- * -------------------------------------------------------------- */
-
-const { FlatCompat } = require('@eslint/eslintrc');
-const js = require('@eslint/js');
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-});
-
-/** @type {import('eslint').Linter.FlatConfig[]} */
-module.exports = [
-  /* JavaScript/TypeScript base rules */
-  ...compat
-    .config({
-      extends: [
-        'plugin:@nx/javascript',
-        'plugin:@typescript-eslint/recommended',
-        'plugin:@typescript-eslint/stylistic',
-      ],
-      parserOptions: {
-        project: [
-          require('path').resolve(__dirname, 'tsconfig.lib.json'),
-          require('path').resolve(__dirname, '../../tsconfig.base.json'),
-        ],
-        sourceType: 'module',
-      },
-    })
-    .map((cfg) => ({
-      ...cfg,
-      files: ['**/*.{ts,tsx,js,jsx}'],
-      rules: {
-        /* Shared TypeScript rules */
-        '@typescript-eslint/consistent-type-imports': 'warn',
-        '@typescript-eslint/no-explicit-any': 'warn',
-        '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-        '@typescript-eslint/no-inferrable-types': 'off',
-        '@typescript-eslint/explicit-function-return-type': 'off',
-
-        /* General JS/TS best practices */
-        'no-console': ['warn', { allow: ['warn', 'error'] }],
-        'prefer-const': 'error',
-        'no-var': 'error',
-        'no-empty': ['warn', { allowEmptyCatch: true }],
-      },
-    })),
-];
-```
-
-## File: libs/common/project.json
-
-```json
-{
-  "name": "common",
-  "$schema": "../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "common/src",
-  "projectType": "library",
-  "targets": {
-    "lint": {
-      "executor": "@nx/eslint:lint",
-      "outputs": ["{options.outputFile}"],
-      "options": {
-        "lintFilePatterns": ["common/**/*.ts"]
-      }
-    }
-  },
-  "tags": []
-}
-```
-
-## File: libs/common/tsconfig.json
-
-```json
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "module": "es2022",
-    "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true
-  },
-  "files": [],
-  "include": [],
-  "references": [
-    {
-      "path": "./tsconfig.lib.json"
-    }
-  ]
-}
-```
-
-## File: libs/common/tsconfig.lib.json
-
-```json
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../dist/out-tsc",
-    "declaration": true,
-    "types": ["node"]
-  },
-  "include": ["src/**/*.ts"],
-  "exclude": ["jest.config.ts", "src/**/*.spec.ts", "src/**/*.test.ts"]
-}
-```
-
-## File: libs/uxcommon/src/components/address-autocomplete/address-autocomplete.ts
-
-```typescript
-import { Component, ElementRef, OnInit, ViewChild, inject, input, output } from '@angular/core';
-import { Loader } from '@googlemaps/js-api-loader';
-import { parseAddress } from './googlePlacesAddressMapper';
-import { AddressType } from '../../../../common/src/lib/kysely.models';
-
-@Component({
-  selector: 'pc-address-autocomplete',
-  standalone: true,
-  template: `
-    <div class="relative w-full">
-      <input
-        #inputEl
-        type="text"
-        class="input w-full"
-        [placeholder]="placeholder()"
-        [disabled]="disabled()"
-        autocomplete="one-time-code"
-      />
-    </div>
-  `,
-})
-export class AddressAutocomplete implements OnInit {
-  private readonly loader = inject(Loader);
-
-  public readonly disabled = input<boolean>(false);
-  public readonly placeholder = input<string>('Start typing an address…');
-  public readonly regionCodes = input<string[]>(['ca']);
-
-  public readonly addressSelected = output<AddressType>();
-
-  private inputElement: HTMLInputElement | null = null;
-  private isLibraryLoaded = false;
-  private isAutocompleteInitialized = false;
-
-  @ViewChild('inputEl')
-  set inputEl(elRef: ElementRef | undefined) {
-    if (elRef) {
-      this.inputElement = elRef.nativeElement;
-      this.tryInitAutocomplete();
-    }
-  }
-
-  public async ngOnInit() {
-    try {
-      await this.loader.importLibrary('places');
-      this.isLibraryLoaded = true;
-      this.tryInitAutocomplete();
-    } catch (err) {
-      console.error('Failed to load Google Maps Places library', err);
-    }
-  }
-
-  private tryInitAutocomplete() {
-    if (
-      this.isAutocompleteInitialized ||
-      !this.inputElement ||
-      !this.isLibraryLoaded ||
-      typeof google === 'undefined' ||
-      !google.maps ||
-      !google.maps.places
-    ) {
-      return;
-    }
-
-    const options: google.maps.places.AutocompleteOptions = {
-      componentRestrictions: { country: this.regionCodes() },
-      types: ['geocode'],
-    };
-
-    const autocomplete = new google.maps.places.Autocomplete(this.inputElement, options);
-    this.isAutocompleteInitialized = true;
-
-    autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      if (place) {
-        const address = parseAddress(place);
-        this.addressSelected.emit(address);
-      }
-    });
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/address-form-group/address-form-group.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { Input as PcInput } from '../input/input';
-
-@Component({
-  selector: 'pc-address-form-group',
-  imports: [PcInput],
-  template: `
-    <div class="flex flex-col gap-4">
-      <div class="flex flex-col md:flex-row gap-3">
-        <pc-input class="flex-1" placeholder="Unit / Apt" [formField]="form().apt"></pc-input>
-        <pc-input class="flex-1" placeholder="Street Number" [formField]="form().street_num"></pc-input>
-        <pc-input class="flex-2" placeholder="Street Name" [formField]="form().street1"></pc-input>
-      </div>
-      <div class="flex flex-col md:flex-row gap-3">
-        <pc-input class="flex-1" placeholder="City" [formField]="form().city"></pc-input>
-        <pc-input class="flex-1" placeholder="State / Province" [formField]="form().state"></pc-input>
-        <pc-input class="flex-1" placeholder="Country" [formField]="form().country"></pc-input>
-      </div>
-      <div class="flex flex-col md:flex-row gap-3">
-        <pc-input class="flex-1" placeholder="Zip / Postal Code" [formField]="form().zip"></pc-input>
-        <pc-input class="flex-1" type="tel" placeholder="Home Phone" [formField]="form().home_phone"></pc-input>
-        <div class="flex-1"></div>
-      </div>
-    </div>
-  `,
-})
-export class AddressFormGroup {
-  public form = input.required<any>();
-}
-```
-
-## File: libs/uxcommon/src/components/card/card.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-card',
-  imports: [Icon],
-  template: `
-    <div class="card bg-base-100 border border-base-300 shadow-md overflow-hidden w-full">
-      <div class="card-body p-6 space-y-4">
-        @if (title() || icon() || subtitle()) {
-          <div class="flex items-start justify-between gap-4 pb-2">
-            <div class="flex items-start gap-2.5">
-              @if (icon()) {
-                <pc-icon [name]="icon()!" class="text-primary mt-0.5" [size]="5"></pc-icon>
-              }
-              <div>
-                @if (title()) {
-                  <h3 class="font-bold text-lg text-base-content leading-tight">{{ title() }}</h3>
-                }
-                @if (subtitle()) {
-                  <p class="text-xs text-base-content/60 mt-0.5 leading-normal">{{ subtitle() }}</p>
-                }
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <ng-content select="[pc-card-actions]"></ng-content>
-            </div>
-          </div>
-          <div class="border-b border-base-200 -mt-2"></div>
-        }
-
-        <div class="space-y-4">
-          <ng-content></ng-content>
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class Card {
-  public title = input<string>();
-  public subtitle = input<string>();
-  public icon = input<PcIconNameType>();
-}
-```
-
-## File: libs/uxcommon/src/components/csv-import/csv-import.html
-
-```html
-<dialog class="modal" [open]="open()" (close)="onCloseDialog()">
-  <div class="modal-box max-w-5xl">
-    <h3 class="text-lg font-bold mb-3">{{ title() }}</h3>
-    <div class="grid gap-4">
-      <div class="grid gap-2">
-        <label class="font-semibold">1) Choose CSV file</label>
-        <input
-          type="file"
-          accept=".csv,text/csv"
-          (change)="onFileSelected($event)"
-          class="file-input file-input-bordered"
-        />
-        <p class="text-xs opacity-70">First row should contain headers. UTF-8 CSV supported.</p>
-      </div>
-
-      @if (parsing()) {
-      <div class="grid gap-2">
-        <progress class="progress w-full"></progress>
-        <span class="text-xs opacity-70" aria-live="polite">Reading and parsing the file...</span>
-      </div>
-      } @if (csvHeaders().length) {
-      <div class="grid gap-2">
-        <label class="font-semibold">2) Map CSV columns</label>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-          @for (hdr of csvHeaders(); track hdr; let idx = $index) {
-          <div class="grid grid-cols-2 gap-2 items-center">
-            <div class="truncate" [title]="hdr">{{ hdr }}</div>
-            <select
-              class="select select-bordered select-sm"
-              [ngModel]="mapping()[idx]"
-              (ngModelChange)="setMappingAt(idx, $event)"
-            >
-              <option value="">Skip</option>
-              @for (f of mappableFields(); track f) {
-              <option [value]="f">{{ f }}</option>
-              }
-            </select>
-          </div>
-          }
-        </div>
-      </div>
-      }
-
-      <!-- Optional extras slot provided by parent (e.g., tags) -->
-      <ng-content select="[pc-import-extras]"></ng-content>
-
-      @if (csvRows().length) {
-      <div class="grid gap-2">
-        <label class="font-semibold">Preview</label>
-        <div class="overflow-auto border rounded relative">
-          @if (parsing()) {
-          <div class="absolute inset-0 bg-base-100/70 grid place-items-center z-10">
-            <progress class="progress w-64"></progress>
-          </div>
-          }
-          <table class="table table-zebra table-xs">
-            <thead>
-              <tr>
-                @for (h of csvHeaders(); track h) {
-                <th>{{ h }}</th>
-                }
-              </tr>
-            </thead>
-            <tbody>
-              @for (r of previewRows(); track r) {
-              <tr>
-                @for (h of csvHeaders(); track h) {
-                <td>{{ r[h] }}</td>
-                }
-              </tr>
-              }
-            </tbody>
-          </table>
-          <div class="flex items-center justify-end gap-2 p-2">
-            <button class="btn btn-xs" [disabled]="!canPrev()" (click)="prevPage()">Prev</button>
-            <span class="text-xs opacity-70">Page {{ pageIndex() + 1 }} of {{ totalPages() }}</span>
-            <button class="btn btn-xs" [disabled]="!canNext()" (click)="nextPage()">Next</button>
-          </div>
-        </div>
-      </div>
-      }
-
-      <div class="flex justify-end gap-2 mt-2">
-        <button class="btn" (click)="closeDialog()">Cancel</button>
-        <button class="btn btn-primary" [disabled]="!csvRows().length" (click)="onSubmit()">
-          <pc-icon name="cloud-arrow-up" />
-          Import
-        </button>
-      </div>
-    </div>
-  </div>
-</dialog>
-
-<!-- Summary Modal controlled by parent-provided summary input -->
-<dialog id="csvImportSummary" class="modal" [open]="submitted() && !!summary()" (close)="onSummaryClosed()">
-  <div class="modal-box">
-    @if (!!summary() && !summary()!.failed) {
-    <h3 class="text-lg font-bold mb-2">Import Summary</h3>
-    <ul class="menu bg-base-100 rounded-box p-2">
-      @if (!summary()!.queued) {
-      <li class="opacity-90"><span>Inserted: {{ summary()!.inserted }}</span></li>
-      <li class="opacity-90"><span>Errors: {{ summary()!.errors }}</span></li>
-      <li class="opacity-90"><span>Skipped: {{ summary()!.skipped }}</span></li>
-      } @if (summary()!.tag) {
-      <li class="opacity-90"><span>Applied tag: {{ summary()!.tag }}</span></li>
-      } @if (summary()!.message) {
-      <li class="opacity-90 whitespace-pre-wrap text-xs"><span>{{ summary()!.message }}</span></li>
-      }
-    </ul>
-    } @else if (!!summary()) {
-    <h3 class="text-lg font-bold mb-2">Import Failed</h3>
-    <p class="py-2 font-light">{{ summary()!.message }}</p>
-    <ul class="menu bg-base-100 rounded-box p-2">
-      <li class="opacity-90"><span>Skipped: {{ summary()!.skipped }}</span></li>
-    </ul>
-    }
-    <div class="modal-action">
-      <form method="dialog">
-        <button class="btn" type="submit">OK</button>
-      </form>
-    </div>
-  </div>
-</dialog>
-```
-
-## File: libs/uxcommon/src/components/csv-import/csv-import.ts
-
-```typescript
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-export type CsvImportSummary = {
-  inserted: number;
-  errors: number;
-  skipped: number;
-  failed?: boolean;
-  queued?: boolean;
-  message?: string;
-  tag?: string;
-};
-
-@Component({
-  selector: 'pc-csv-importer',
-  imports: [FormsModule, Icon],
-  templateUrl: './csv-import.html',
-})
-export class CsvImportComponent {
-  private readonly alerts = inject(AlertService);
-
-  // Inputs
-  public readonly title = input<string>('Import Data from CSV');
-  public readonly open = input<boolean>(false);
-  public readonly mappableFields = input<string[]>([]);
-  public readonly autoMapHeader = input<(h: string) => string>(() => '');
-  public readonly previewPageSize = input<number>(5);
-  public readonly summary = input<CsvImportSummary | null>(null);
-
-  // Outputs
-  public readonly submit = output<{ rows: Array<Record<string, string>>; skipped: number; fileName?: string | null }>();
-  public readonly close = output<void>();
-  public readonly closeSummary = output<void>();
-
-  // State signals
-  protected readonly parsing = signal(false);
-  protected readonly csvHeaders = signal<string[]>([]);
-  protected readonly csvRows = signal<Array<Record<string, string>>>([]);
-  protected readonly mapping = signal<string[]>([]);
-  protected readonly pageIndex = signal(0);
-  protected readonly submitted = signal(false);
-  protected readonly fileName = signal<string | null>(null);
-
-  private getNonEmptyMappedRows() {
-    const map = this.mapping();
-    const headers = this.csvHeaders();
-    const rows = this.csvRows();
-    const mapped = rows.map((row) => {
-      const result: Record<string, string> = {};
-      headers.forEach((h, idx) => {
-        const field = map[idx];
-        if (!field) return;
-        const raw = (row[h] ?? '').toString();
-        if (raw && !(field in result) && raw.trim().length > 0) result[field] = raw;
-      });
-      return result;
-    });
-    const nonEmpty = mapped.filter((r) => Object.keys(r).length > 0);
-    return { nonEmpty, skipped: mapped.length - nonEmpty.length };
-  }
-
-  protected readonly totalPages = computed(() => {
-    const total = Math.ceil((this.csvRows().length || 0) / this.previewPageSize());
-    return total || 1;
-  });
-  protected readonly canNext = computed(() => (this.pageIndex() + 1) * this.previewPageSize() < this.csvRows().length);
-  protected readonly canPrev = computed(() => this.pageIndex() > 0);
-
-  constructor() {
-    // Auto-map when headers first arrive
-    effect(() => {
-      const headers = this.csvHeaders();
-      if (!headers.length) return;
-      const auto = this.autoMapHeader();
-      const mapped = headers.map((h) => (typeof auto === 'function' ? auto(h) : ''));
-      this.mapping.set(mapped);
-    });
-    // Reset submitted flag whenever dialog is opened anew
-    effect(() => {
-      if (this.open()) {
-        this.submitted.set(false);
-      }
-    });
-  }
-
-  protected previewRows() {
-    const start = this.pageIndex() * this.previewPageSize();
-    const end = start + this.previewPageSize();
-    return this.csvRows().slice(start, end);
-  }
-
-  protected nextPage() {
-    if (this.canNext()) this.pageIndex.update((v) => v + 1);
-  }
-
-  protected prevPage() {
-    if (this.canPrev()) this.pageIndex.update((v) => v - 1);
-  }
-
-  protected setMappingAt(index: number, value: string) {
-    const m = [...this.mapping()];
-    m[index] = value;
-    this.mapping.set(m);
-  }
-
-  protected onFileSelected(ev: Event) {
-    const input = ev.target as HTMLInputElement;
-    const file = input?.files?.[0];
-    if (!file) return;
-
-    this.parsing.set(true);
-    this.fileName.set(file.name || null);
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = (reader.result as string) || '';
-      try {
-        const worker = new Worker(new URL('./csv.worker.ts', import.meta.url), { type: 'module' });
-        const handle = (e: MessageEvent) => {
-          const data: any = e.data || {};
-          if (data.type === 'result') {
-            this.csvHeaders.set(data.headers || []);
-            this.csvRows.set(data.rows || []);
-            this.pageIndex.set(0);
-            this.parsing.set(false);
-            worker.onmessage = null;
-            worker.terminate();
-          } else if (data.type === 'error') {
-            this.alerts.showError(data.message || 'Failed to parse CSV');
-            this.parsing.set(false);
-            worker.onmessage = null;
-            worker.terminate();
-          }
-        };
-        worker.onmessage = handle;
-        worker.postMessage({ type: 'parse', text });
-      } catch {
-        this.alerts.showError('Failed to parse CSV');
-        this.parsing.set(false);
-      }
-    };
-    reader.onerror = () => this.parsing.set(false);
-    reader.readAsText(file);
-  }
-
-  protected onSubmit() {
-    const { nonEmpty, skipped } = this.getNonEmptyMappedRows();
-    if (!nonEmpty.length) {
-      this.alerts.showError('Nothing to import. Please map at least one column.');
-      return;
-    }
-    this.submitted.set(true);
-    this.submit.emit({ rows: nonEmpty, skipped, fileName: this.fileName() });
-  }
-
-  protected requestClose() {
-    this.close.emit();
-  }
-
-  protected onCloseDialog() {
-    // Soft reset local state when dialog closes via native controls
-    this.csvHeaders.set([]);
-    this.csvRows.set([]);
-    this.mapping.set([]);
-    this.pageIndex.set(0);
-    this.parsing.set(false);
-    this.submitted.set(false);
-    this.fileName.set(null);
-    // Propagate close so parent can clear any summary state
-    this.close.emit();
-  }
-
-  protected onSummaryClosed() {
-    this.submitted.set(false);
-    this.closeSummary.emit();
-  }
-
-  protected closeDialog() {
-    // Close the hosting dialog element programmatically
-    const active = document.activeElement as HTMLElement | null;
-    const dlg = active?.closest('dialog') as HTMLDialogElement | null;
-    if (dlg) {
-      dlg.close();
-      return;
-    }
-    // Fallback: just emit close
-    this.close.emit();
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/csv-import/csv.worker.ts
-
-```typescript
-// CSV/TSV parsing web worker (shared)
-// Receives: { type: 'parse', text: string }
-// Posts: { type: 'result', headers: string[], rows: Array<Record<string,string>> } or { type: 'error', message }
-
-// eslint-disable-next-line no-restricted-globals
-function detectDelimiter(sample: string[]) {
-  const candidates = [',', '\t', ';'];
-  let best: { ch: string; score: number } = { ch: ',', score: -1 };
-  for (const ch of candidates) {
-    let score = 0;
-    for (let i = 0; i < Math.min(sample.length, 5); i++) {
-      const line = sample[i] ?? '';
-      if (/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(line)) continue;
-      score += line.split(ch).length - 1 || 0;
-    }
-    if (score > best.score) best = { ch, score };
-  }
-  return best.ch;
-}
-
-function splitLine(line: string, delimiter: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === delimiter && !inQuotes) {
-      result.push(current);
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  result.push(current);
-  return result.map((s) => s.trim());
-}
-
-const ctx: any = self as unknown;
-
-ctx.onmessage = (e: MessageEvent) => {
-  try {
-    const { type, text } = e.data || {};
-    if (type !== 'parse' || typeof text !== 'string') return;
-
-    const lines = text.replace(/\r\n?/g, '\n').split('\n');
-    const delimiter = detectDelimiter(lines);
-    const headerLine = lines.find((l) => !!l && !/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(l)) || '';
-    const headers = splitLine(headerLine, delimiter);
-    const rows: Array<Record<string, string>> = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const rawLine = lines[i];
-      if (!rawLine) continue;
-      if (rawLine === headerLine) continue;
-      if (/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(rawLine)) continue;
-      const cols = splitLine(rawLine, delimiter);
-      if (cols.every((c) => !c || c.trim().length === 0)) continue;
-      const row: Record<string, string> = {};
-      headers.forEach((h, idx) => (row[h] = cols[idx] ?? ''));
-      rows.push(row);
-    }
-
-    ctx.postMessage({ type: 'result', headers, rows });
-  } catch (err: any) {
-    ctx.postMessage({ type: 'error', message: err?.message || 'Parse failed' });
-  }
-};
-```
-
-## File: libs/uxcommon/src/components/detail-header/detail-header.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { FormActions } from '../form-actions/form-actions';
-
-@Component({
-  selector: 'pc-detail-header',
-  imports: [Icon, FormActions],
-  template: `
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-base-200 pb-4 mb-6">
-      <div class="flex items-center gap-3">
-        @if (icon()) {
-          <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
-        }
-        <div>
-          <h1 class="text-xl font-bold">{{ title() }}</h1>
-          @if (subtitle()) {
-            <p class="text-sm text-base-content/60 mt-0.5">{{ subtitle() }}</p>
-          }
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2">
-        <ng-content select="[pc-actions-prefix]"></ng-content>
-        @if (showActions()) {
-          <pc-form-actions
-            [isLoading]="isLoading()"
-            [signalForm]="form()"
-            [disabled]="disabled()"
-            [buttonsToShow]="buttonsToShow()"
-            [btn1Text]="btn1Text()"
-            [btn1Icon]="btn1Icon()"
-            [showDelete]="showDelete()"
-            [deleteText]="deleteText()"
-            (btn1Clicked)="save.emit($event)"
-            (deleteClicked)="delete.emit()"
-          ></pc-form-actions>
-        }
-        <ng-content select="[pc-actions-suffix]"></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class DetailHeader {
-  public title = input.required<string>();
-  public subtitle = input<string | null | undefined>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(5);
-  public form = input<any>();
-  public isLoading = input.required<boolean>();
-  public disabled = input<boolean>(false);
-  public buttonsToShow = input<'two' | 'three'>('three');
-  public btn1Text = input<string>('SAVE');
-  public btn1Icon = input<PcIconNameType>('save');
-  public showDelete = input<boolean>(false);
-  public deleteText = input<string>('DELETE');
-  public showActions = input<boolean>(true);
-
-  public readonly save = output<any>();
-  public readonly delete = output<void>();
-}
-```
-
-## File: libs/uxcommon/src/components/detail-item/detail-item.ts
-
-```typescript
-import { Component, inject, input } from '@angular/core';
-import { AlertService } from '../alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-detail-item',
-  imports: [Icon],
-  template: `
-    <div class="flex flex-col gap-1 mb-4">
-      <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">
-        {{ label() }}
-      </span>
-      <div class="flex items-center gap-2">
-        @if (icon()) {
-          <pc-icon [name]="icon()!" [size]="4" class="text-base-content/40 flex-shrink-0"></pc-icon>
-        }
-        <span class="text-sm font-medium text-base-content break-words">
-          @if (value()) {
-            {{ value() }}
-          } @else {
-            <span class="italic text-base-content/30">Not provided</span>
-          }
-        </span>
-        @if (value() && copyable()) {
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
-            [attr.data-tip]="'Copy ' + label()"
-            (click)="copyToClipboard($event)"
-          >
-            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-          </button>
-        }
-      </div>
-    </div>
-  `,
-})
-export class DetailItem {
-  public label = input.required<string>();
-  public value = input<string | null | undefined>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public copyable = input<boolean>(false);
-
-  private readonly alertSvc = inject(AlertService);
-
-  protected copyToClipboard(event: MouseEvent): void {
-    event.stopPropagation();
-    event.preventDefault();
-    const val = this.value();
-    if (!val) return;
-
-    navigator.clipboard
-      .writeText(val)
-      .then(() => {
-        this.alertSvc.showSuccess(`${this.label()} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${this.label()}`);
-      });
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/detail-layout/detail-layout.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { DetailHeader } from '../detail-header/detail-header';
-
-@Component({
-  selector: 'pc-detail-layout',
-  imports: [Icon, DetailHeader],
-  template: `
-    <div class="flex min-h-full flex-col bg-base-200/50 p-6">
-      <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
-        <!-- Header -->
-        <pc-detail-header
-          [title]="title()"
-          [subtitle]="subtitle()"
-          [icon]="icon()"
-          [iconSize]="iconSize()"
-          [isLoading]="isLoading()"
-          [disabled]="disabled()"
-          [showActions]="showActions()"
-          [showDelete]="showDelete()"
-          [deleteText]="deleteText()"
-          [btn1Text]="btn1Text()"
-          [btn1Icon]="btn1Icon()"
-          (save)="save.emit($event)"
-          (delete)="delete.emit()"
-        >
-          <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
-          <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
-        </pc-detail-header>
-
-        <!-- Body/Content Area -->
-        @if (isLoading()) {
-          <div class="flex justify-center items-center py-20">
-            <progress class="progress w-56"></progress>
-          </div>
-        } @else if (error()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ error() }}</span>
-          </div>
-        } @else if (!hasRecord()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ notFoundText() }}</span>
-          </div>
-        } @else {
-          <!-- Main Content Slot -->
-          <ng-content></ng-content>
-        }
-      </div>
-    </div>
-  `,
-})
-export class DetailLayout {
-  public title = input.required<string>();
-  public subtitle = input<string | null | undefined>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(6);
-  public isLoading = input.required<boolean>();
-  public error = input<string | null | undefined>();
-  public hasRecord = input<boolean>(true);
-  public notFoundText = input<string>('Record not found or failed to load.');
-
-  public showActions = input<boolean>(true);
-  public showDelete = input<boolean>(false);
-  public deleteText = input<string>('Delete');
-  public btn1Text = input<string>('Edit');
-  public btn1Icon = input<PcIconNameType>('pencil-square');
-  public disabled = input<boolean>(false);
-
-  public readonly save = output<any>();
-  public readonly delete = output<void>();
-}
-```
-
-## File: libs/uxcommon/src/components/detail-row/detail-row.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-detail-row',
-  imports: [Icon],
-  template: `
-    <div
-      class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors text-sm w-full min-w-0 gap-3"
-    >
-      <div class="flex items-center gap-2 overflow-hidden min-w-0">
-        @if (icon()) {
-          <pc-icon [name]="icon()!" [size]="4" [class]="iconClass() + ' flex-shrink-0'"></pc-icon>
-        }
-        <div class="truncate text-base-content min-w-0">
-          <ng-content></ng-content>
-        </div>
-      </div>
-
-      @if (actionIcon()) {
-        <button
-          class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
-          [attr.data-tip]="actionTip()"
-          (click)="onActionClick($event)"
-        >
-          <pc-icon [name]="actionIcon()!" [size]="4"></pc-icon>
-        </button>
-      } @else {
-        <ng-content select="[pc-row-action]"></ng-content>
-      }
-    </div>
-  `,
-})
-export class DetailRow {
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconClass = input<string | null | undefined>('');
-  public actionIcon = input<PcIconNameType | null | undefined>();
-  public actionTip = input<string | null | undefined>('');
-
-  public actionClick = output<MouseEvent>();
-
-  protected onActionClick(event: MouseEvent): void {
-    event.stopPropagation();
-    event.preventDefault();
-    this.actionClick.emit(event);
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/entity-overview/entity-overview.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { DatePipe } from '@angular/common';
-
-@Component({
-  selector: 'pc-entity-overview',
-  imports: [DatePipe],
-  template: `
-    <div class="card bg-base-200/50 border border-base-300 shadow-md">
-      <div class="card-body p-5 space-y-3">
-        <h4 class="font-bold text-sm text-base-content uppercase tracking-wider">{{ title() }}</h4>
-        <div class="text-xs text-base-content/75 space-y-2">
-          <ng-content select="[pc-overview-prefix]"></ng-content>
-
-          @if (createdAt()) {
-            <div class="flex justify-between">
-              <span>Created:</span>
-              <span class="font-semibold">{{ createdAt() | date: 'medium' }}</span>
-            </div>
-          }
-          @if (updatedAt()) {
-            <div class="flex justify-between">
-              <span>Last Updated:</span>
-              <span class="font-semibold">{{ updatedAt() | date: 'medium' }}</span>
-            </div>
-          }
-          @if (createdBy()) {
-            <div class="flex justify-between">
-              <span>Created By:</span>
-              <span class="font-semibold">{{ createdBy() }}</span>
-            </div>
-          }
-
-          <ng-content select="[pc-overview-suffix]"></ng-content>
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class EntityOverview {
-  public title = input<string>('Overview');
-  public createdAt = input<any>();
-  public updatedAt = input<any>();
-  public createdBy = input<string | null | undefined>();
-}
-```
-
-## File: libs/uxcommon/src/components/form-actions/form-actions.html
-
-```html
-<div class="flex flex-col sm:flex-row gap-2 justify-end items-center">
-  <button type="button" class="btn btn-primary btn-sm gap-2" (click)="handleBtn1Clicked()" [disabled]="isSaveDisabled">
-    @if (isLoading()) {
-    <span class="loading loading-spinner loading-xs text-primary-content"></span>
-    } @else {
-    <pc-icon [name]="btn1Icon()" [size]="4" />
-    } {{ btn1Text() }}
-  </button>
-
-  @if (showDelete()) {
-  <button
-    type="button"
-    class="btn btn-error btn-outline btn-sm gap-2"
-    (click)="handleDeleteClicked()"
-    [disabled]="isLoading()"
-  >
-    <pc-icon name="trash" [size]="4" />
-    {{ deleteText() }}
-  </button>
-  } @if (buttonsToShow() === 'three' && !showDelete()) {
-  <button type="button" class="btn btn-primary btn-sm" (click)="handleBtn2Clicked()" [disabled]="isSaveDisabled">
-    @if (isLoading()) {
-    <span class="loading loading-spinner loading-xs text-primary-content"></span>
-    } @else { {{ btn2Text() }} }
-  </button>
-  }
-
-  <button type="button" class="btn btn-ghost btn-sm gap-2" (click)="cancel()" [disabled]="isLoading()">
-    <pc-icon name="x-mark" [size]="4" />
-    Cancel
-  </button>
-</div>
-```
-
-## File: libs/uxcommon/src/components/icons/attachment-icon.ts
-
-```typescript
-// attachment-icon.component.ts
-import { Component, computed, input } from '@angular/core';
-import { ICON_FOR_KEY, iconKeyForFilename } from '@uxcommon/pipes/file-icon.util';
-
-import { Icon } from './icon';
-
-@Component({
-  selector: 'pc-attachment-icon',
-  imports: [Icon],
-  template: ` <pc-icon [name]="icon()" [size]="size()" [class]="className()" [attr.title]="title()"></pc-icon> `,
-})
-export class AttachmentIconComponent {
-  public className = input<string>('');
-
-  // Inputs (signals API)
-  public filename = input.required<string>();
-  public icon = computed(() => {
-    const key = iconKeyForFilename(this.filename());
-    return ICON_FOR_KEY[key] ?? ICON_FOR_KEY.unknown;
-  });
-  public size = input<number>(6);
-  public title = input<string | undefined>(undefined);
-}
-```
-
-## File: libs/uxcommon/src/components/input/input.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
-
-@Component({
-  selector: 'pc-input',
-  imports: [FormField],
-  template: `
-    <div class="flex flex-col gap-1 w-full">
-      @if (label()) {
-        <label class="label py-0 pl-1">
-          <span class="label-text text-xs font-semibold text-base-content/70">{{ label() }}</span>
-        </label>
-      }
-
-      <label
-        class="input w-full flex items-center gap-2"
-        [class.input-error]="
-          hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))
-        "
-      >
-        <ng-content select="[pc-prefix]"></ng-content>
-        <input [type]="type()" [placeholder]="placeholder()" [formField]="formField()" class="grow" />
-        <ng-content select="[pc-suffix]"></ng-content>
-      </label>
-
-      @if ((hasError() || formField()().invalid()) && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
-  `,
-})
-export class Input {
-  public label = input<string>();
-  public type = input<string>('text');
-  public placeholder = input<string>('');
-  public formField = input.required<any>();
-  public hasError = input<boolean>(false);
-}
-```
-
-## File: libs/uxcommon/src/components/profile-card/profile-card.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-profile-card',
-  imports: [Icon],
-  template: `
-    <div class="card bg-base-100 shadow-xl overflow-hidden border border-base-300 w-full">
-      <!-- Decorative Card Header Gradient -->
-      <div class="h-24 bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
-
-      <div class="px-6 pb-6 relative flex flex-col items-center">
-        <!-- Avatar / Placeholder -->
-        @if (avatarUrl() || avatarText() || iconName()) {
-          <div class="avatar placeholder -mt-12 mb-3">
-            <div
-              class="bg-gradient-to-tr from-primary to-secondary text-primary-content rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg overflow-hidden"
-            >
-              @if (avatarUrl()) {
-                <img [src]="avatarUrl()!" alt="Avatar" class="w-full h-full object-cover" />
-              } @else if (avatarText()) {
-                {{ avatarText() }}
-              } @else if (iconName()) {
-                <pc-icon [name]="iconName()!" [size]="10"></pc-icon>
-              }
-            </div>
-          </div>
-        }
-
-        <ng-content></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class ProfileCard {
-  public avatarUrl = input<string | null | undefined>();
-  public avatarText = input<string | null | undefined>();
-  public iconName = input<PcIconNameType | null | undefined>();
-}
-```
-
-## File: libs/uxcommon/src/components/select/select.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
-
-@Component({
-  selector: 'pc-select',
-  imports: [FormField],
-  template: `
-    <div class="flex flex-col gap-1 w-full">
-      @if (label()) {
-        <label class="label py-0 pl-1">
-          <span class="label-text text-xs font-semibold text-base-content/70">{{ label() }}</span>
-        </label>
-      }
-
-      <select
-        [formField]="formField()"
-        class="select select-bordered w-full"
-        [class.select-error]="formField()().invalid() && (formField()().dirty() || formField()().touched())"
-      >
-        @if (placeholder()) {
-          <option value="">{{ placeholder() }}</option>
-        }
-        <ng-content></ng-content>
-      </select>
-
-      @if (formField()().invalid() && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
-  `,
-})
-export class Select {
-  public label = input<string>();
-  public placeholder = input<string>('');
-  public formField = input.required<any>();
-}
-```
-
-## File: libs/uxcommon/src/components/side-drawer/side-drawer.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-
-@Component({
-  selector: 'pc-side-drawer',
-  imports: [Icon],
-  template: `
-    @if (isOpen()) {
-      <div class="fixed inset-0 z-30 flex justify-end">
-        <!-- Backdrop -->
-        <div class="absolute inset-0 bg-black/30 transition-opacity duration-300" (click)="onClose()"></div>
-        <!-- Panel -->
-        <div
-          class="relative h-full w-full max-w-[90vw] bg-base-100 shadow-xl border-l border-base-300 flex flex-col z-10 transition-transform duration-300"
-          [class]="widthClass()"
-        >
-          <!-- Header -->
-          <div class="flex items-center justify-between p-4 border-b border-base-300">
-            <div class="font-semibold text-base-content text-lg">
-              {{ title() }}
-            </div>
-            <button class="btn btn-ghost btn-sm btn-circle" (click)="onClose()" aria-label="Close drawer">
-              <pc-icon name="x-mark" [size]="4"></pc-icon>
-            </button>
-          </div>
-          <!-- Body -->
-          <div class="p-4 flex flex-col gap-3 overflow-y-auto flex-grow">
-            <ng-content></ng-content>
-          </div>
-          <!-- Footer -->
-          <ng-content select="[pc-drawer-footer]"></ng-content>
-        </div>
-      </div>
-    }
-  `,
-})
-export class SideDrawer {
-  public isOpen = input.required<boolean>();
-  public title = input<string>('');
-  public size = input<'sm' | 'md' | 'lg'>('sm');
-  public close = output<void>();
-
-  protected onClose() {
-    this.close.emit();
-  }
-
-  protected widthClass() {
-    const s = this.size();
-    if (s === 'lg') return 'sm:w-[700px]';
-    if (s === 'md') return 'sm:w-[540px]';
-    return 'sm:w-[420px]';
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/stat-card/stat-card.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-stat-card',
-  imports: [Icon],
-  template: `
-    <div
-      class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4 rounded w-full"
-    >
-      <div class="stat p-0 leading-normal">
-        @if (title()) {
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            {{ title() }}
-          </div>
-        }
-        <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl" [class]="valueColorClass()">
-          {{ value() }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-          @if (description()) {
-            <span>{{ description() }}</span>
-          }
-          <ng-content select="[pc-stat-desc]"></ng-content>
-        </div>
-      </div>
-
-      <div class="flex-shrink-0 flex items-center justify-center gap-2">
-        @if (icon()) {
-          <div class="w-12 h-12 rounded-xl flex items-center justify-center" [class]="iconBgClass()">
-            <pc-icon [name]="icon()!" [size]="6" [class]="iconColorClass()"></pc-icon>
-          </div>
-        }
-        <ng-content select="[pc-stat-extra]"></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class StatCard {
-  public title = input<string>();
-  public value = input<string | number>();
-  public description = input<string>();
-  public icon = input<PcIconNameType>();
-  public valueColorClass = input<string>('text-base-content');
-  public iconBgClass = input<string>('bg-base-200/50');
-  public iconColorClass = input<string>('text-base-content/70');
-}
-```
-
-## File: libs/uxcommon/src/components/status-badge/status-badge.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-
-export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'ghost';
-
-@Component({
-  selector: 'pc-status-badge',
-  template: `
-    <span class="badge font-semibold uppercase" [class]="badgeClass()">
-      <ng-content></ng-content>
-    </span>
-  `,
-})
-export class StatusBadge {
-  public type = input<PcStatusType>('ghost');
-  public size = input<'sm' | 'md' | 'lg'>('sm');
-
-  protected badgeClass = computed(() => {
-    const t = this.type();
-    let cls = '';
-    if (this.size() === 'sm') cls += 'badge-sm ';
-    else if (this.size() === 'lg') cls += 'badge-lg ';
-
-    switch (t) {
-      case 'success':
-        return cls + 'badge-success text-success-content';
-      case 'warning':
-        return cls + 'badge-warning text-warning-content';
-      case 'error':
-        return cls + 'badge-error text-error-content';
-      case 'info':
-        return cls + 'badge-info text-info-content';
-      case 'neutral':
-        return cls + 'badge-neutral text-neutral-content';
-      default:
-        return cls + 'badge-ghost';
-    }
-  });
-}
-```
-
-## File: libs/uxcommon/src/components/system-metadata/system-metadata.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { DatePipe } from '@angular/common';
-
-@Component({
-  selector: 'pc-system-metadata',
-  imports: [DatePipe],
-  template: `
-    <div
-      class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex gap-4 leading-normal"
-      [class.justify-between]="layout() === 'row'"
-      [class.flex-col]="layout() === 'col'"
-      [class.gap-1]="layout() === 'col'"
-    >
-      @if (createdAt()) {
-        <span
-          >Created
-          @if (createdBy() && createdBy() !== '?') {
-            by {{ createdBy() }}
-          }
-          on {{ createdAt() | date: dateFormat() }}</span
-        >
-      }
-      @if (updatedAt()) {
-        <span
-          >Updated {{ updatedAt() | date: dateFormat() }}
-          @if (updatedBy() && updatedBy() !== '?') {
-            by {{ updatedBy() }}
-          }
-        </span>
-      }
-    </div>
-  `,
-})
-export class SystemMetadata {
-  public createdAt = input<any>();
-  public updatedAt = input<any>();
-  public createdBy = input<string | null | undefined>();
-  public updatedBy = input<string | null | undefined>();
-  public layout = input<'row' | 'col'>('row');
-  public dateFormat = input<string>('M/d/yyyy');
-}
-```
-
-## File: libs/uxcommon/src/components/tabs/tabs.ts
-
-```typescript
-import { Component, computed, input, model } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-export interface PcTabOption {
-  id: string;
-  label: string;
-  icon?: PcIconNameType;
-  badge?: string | number;
-  disabled?: boolean;
-  tooltip?: string;
-}
-
-@Component({
-  selector: 'pc-tabs',
-  imports: [Icon],
-  template: `
-    <div class="card bg-base-100 shadow-xl border border-base-300 flex-grow">
-      <!-- Tabs Header -->
-      <div role="tablist" class="tabs tabs-lifted w-full pt-4 px-4">
-        @for (tab of tabs(); track tab.id) {
-          <a
-            role="tab"
-            class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-            [class.tab-active]="activeTab() === tab.id"
-            [class.opacity-50]="tab.disabled"
-            [class.cursor-not-allowed]="tab.disabled"
-            [class.tooltip]="tab.disabled && tab.tooltip"
-            [attr.data-tip]="tab.disabled && tab.tooltip ? tab.tooltip : null"
-            (click)="!tab.disabled && selectTab(tab.id)"
-          >
-            @if (tab.icon) {
-              <pc-icon [name]="tab.icon" [size]="4" class="flex-shrink-0"></pc-icon>
-            }
-            <span>{{ tab.label }}</span>
-            @if (tab.badge !== undefined && tab.badge !== null) {
-              <span class="badge badge-sm badge-neutral">{{ tab.badge }}</span>
-            }
-          </a>
-        }
-      </div>
-
-      <!-- Tab Panels -->
-      <div class="p-6">
-        <ng-content></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class Tabs {
-  public tabs = input.required<PcTabOption[]>();
-  public activeTab = model.required<string>();
-
-  public selectTab(id: string) {
-    this.activeTab.set(id);
-  }
-}
-
-@Component({
-  selector: 'pc-tab-panel',
-  template: `
-    @if (isActive()) {
-      <div class="space-y-4">
-        <ng-content></ng-content>
-      </div>
-    }
-  `,
-})
-export class TabPanel {
-  public id = input.required<string>();
-  public activeTab = input.required<string>();
-
-  protected isActive = computed(() => this.activeTab() === this.id());
-}
-```
-
-## File: libs/uxcommon/src/components/tags/tagitem.css
-
-```css
-:host {
-  display: inline-block;
-  max-width: 100%;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 0.25rem;
-  padding-top: 0.25rem;
-  padding-bottom: 0.25rem;
-  min-height: 1.5rem;
-  height: auto;
-  line-height: 1.2;
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-.tag-label {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  line-height: 1.2;
-}
-
-.tag-remove {
-  align-self: flex-start;
-  margin-top: 0.125rem;
-}
-
-.badge-compact {
-  font-size: 0.7rem !important;
-  font-weight: 500 !important;
-  min-height: 1.25rem !important;
-  height: auto !important;
-  align-items: center !important;
-  padding-top: 0.125rem !important;
-  padding-bottom: 0.125rem !important;
-  padding-left: 0.375rem !important;
-  padding-right: 0.375rem !important;
-}
-
-.badge-compact .tag-label {
-  font-size: 0.7rem !important;
-  line-height: 1.15 !important;
-  padding-right: 0 !important;
-}
-
-.badge-compact .tag-remove {
-  margin-top: 0 !important;
-  align-self: center !important;
-}
-```
-
-## File: libs/uxcommon/src/components/textarea/textarea.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
-
-@Component({
-  selector: 'pc-textarea',
-  imports: [FormField],
-  template: `
-    <div class="flex flex-col gap-1 w-full">
-      @if (label()) {
-        <label class="label py-0 pl-1">
-          <span class="label-text text-xs font-semibold text-base-content/70">{{ label() }}</span>
-        </label>
-      }
-
-      <textarea
-        [placeholder]="placeholder()"
-        [formField]="formField()"
-        [rows]="rows()"
-        class="textarea textarea-bordered w-full"
-        [class.textarea-error]="
-          hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))
-        "
-      ></textarea>
-
-      @if ((hasError() || formField()().invalid()) && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
-  `,
-})
-export class Textarea {
-  public label = input<string>();
-  public placeholder = input<string>('');
-  public rows = input<number>(3);
-  public formField = input.required<any>();
-  public hasError = input<boolean>(false);
-}
-```
-
-## File: libs/uxcommon/src/components/toggle/toggle.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
-
-@Component({
-  selector: 'pc-toggle',
-  imports: [FormField],
-  template: `
-    <div class="flex flex-col gap-1 w-full">
-      <label class="label cursor-pointer justify-between gap-4 py-1">
-        @if (label()) {
-          <span class="label-text text-sm font-medium text-base-content">{{ label() }}</span>
-        }
-        <input
-          type="checkbox"
-          class="toggle toggle-primary shrink-0"
-          [formField]="formField()"
-          [class.toggle-error]="formField()().invalid() && (formField()().dirty() || formField()().touched())"
-        />
-      </label>
-
-      @if (formField()().invalid() && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
-  `,
-})
-export class Toggle {
-  public label = input<string>();
-  public formField = input.required<any>();
-}
-```
-
-## File: libs/uxcommon/src/components/confirm-dialog-host.html
-
-```html
-<dialog #dlg class="modal">
-  @if (state()) {
-  <div class="modal-box">
-    <div class="flex items-center gap-2">
-      <pc-icon [name]="icon()" class="text-xl" />
-      <h3 class="text-lg font-bold">{{ state()!.title }}</h3>
-    </div>
-
-    @if (state()!.message) {
-    <p class="pt-4 pb-6 font-light whitespace-pre-line">{{ state()!.message }}</p>
-    } @if (state()!.type === 'prompt') {
-    <input
-      [placeholder]="state()!.inputPlaceholder || ''"
-      class="input input-bordered w-full mb-4"
-      [value]="promptValue()"
-      (input)="promptValue.set($any($event.target).value)"
-    />
-    } @if (state()!.type === 'choose') {
-    <div class="flex flex-col gap-2 w-full mt-4">
-      @for (choice of state()!.choices; track choice.label) {
-      <button class="btn w-full" [class]="choiceBtnClass(choice.variant)" (click)="onChoice(choice.value)">
-        {{ choice.label }}
-      </button>
-      } @if (showCancel()) {
-      <button class="btn w-full font-normal" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-    </div>
-    } @else {
-    <div class="flex justify-end gap-2">
-      @if (showCancel()) {
-      <button class="btn" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-      <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">{{ state()!.confirmText }}</button>
-    </div>
-    }
-  </div>
-
-  <form method="dialog" class="modal-backdrop" (submit)="onBackdrop()">
-    <button>close</button>
-  </form>
-  }
-</dialog>
-```
-
-## File: libs/uxcommon/src/components/confirm-dialog-host.ts
-
-```typescript
-import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
-
-@Component({
-  selector: 'pc-dialog-host',
-  imports: [Icon],
-  templateUrl: './confirm-dialog-host.html',
-})
-export class ConfirmDialogHost {
-  private readonly svc = inject(ConfirmDialogService);
-
-  public readonly promptValue = signal(''); // signal instead of ngModel
-
-  private readonly stateSignal = this.svc.stateSignal;
-  private readonly openSignal = this.svc.isOpenSignal;
-  public state = this.stateSignal;
-  public confirmBtnClass = computed(() => {
-    const v = (this.state()?.variant ?? 'neutral') as DialogVariant;
-    switch (v) {
-      case 'danger':
-        return 'btn-error';
-      case 'warning':
-        return 'btn-warning';
-      case 'info':
-        return 'btn-info';
-      case 'success':
-        return 'btn-success';
-      default:
-        return '';
-    }
-  });
-
-  public choiceBtnClass(v?: DialogVariant): string {
-    if (!v) return '';
-    switch (v) {
-      case 'danger':
-        return 'btn-error';
-      case 'warning':
-        return 'btn-warning';
-      case 'info':
-        return 'btn-info';
-      case 'success':
-        return 'btn-success';
-      default:
-        return '';
-    }
-  }
-
-  public readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
-  public icon = computed(() => this.state()?.icon ?? this.svc.defaultIconFor('neutral'));
-  public showCancel = computed(() => {
-    const st = this.state();
-    if (!st) return false;
-    if (st.type === 'choose') {
-      return !!st.cancelText;
-    }
-    return !!st.cancelText && st.type !== 'alert';
-  });
-
-  constructor() {
-    effect(() => {
-      const open = this.openSignal();
-      const dlg = this.dlgRef()?.nativeElement;
-      if (!dlg) return;
-
-      if (open) {
-        this.promptValue.set(this.stateSignal()?.defaultValue ?? '');
-        if (!dlg.open) {
-          try {
-            dlg.showModal();
-          } catch {}
-        }
-      } else if (dlg.open) {
-        try {
-          dlg.close();
-        } catch {}
-      }
-    });
-  }
-
-  public onBackdrop(): void {
-    const st = this.state();
-    if (st?.allowBackdropClose) this.svc.cancel();
-  }
-
-  public onCancel(): void {
-    this.svc.cancel();
-  }
-
-  public onConfirm(): void {
-    const st = this.state();
-    if (!st) return;
-    if (st.type === 'prompt') this.svc.ok(this.promptValue());
-    else if (st.type === 'alert') this.svc.ok();
-    else this.svc.ok(true);
-  }
-
-  public onChoice(value: unknown): void {
-    this.svc.ok(value);
-  }
-}
-```
-
-## File: libs/uxcommon/src/pipes/file-icon.pipe.ts
-
-```typescript
-// file-icon.pipe.ts
-import { Pipe, PipeTransform } from '@angular/core';
-
-import { ICON_FOR_KEY, iconKeyForFilename } from './file-icon.util';
-
-@Pipe({
-  name: 'fileIcon',
-})
-export class FileIconPipe implements PipeTransform {
-  public transform(filename: string | null | undefined): string {
-    const key = iconKeyForFilename(filename ?? '');
-    return ICON_FOR_KEY[key] ?? ICON_FOR_KEY.unknown;
-  }
-}
-```
-
-## File: libs/uxcommon/src/pipes/filesize.pipe.ts
-
-```typescript
-import { Pipe, PipeTransform } from '@angular/core';
-
-@Pipe({
-  name: 'fileSize',
-})
-export class FileSizePipe implements PipeTransform {
-  public transform(bytes: number, decimals: number = 2): string {
-    if (bytes === 0) return '0 Bytes';
-
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-  }
-}
-```
-
-## File: libs/uxcommon/src/pipes/sanitize-html.pipe.ts
-
-```typescript
-// sanitize-html.pipe.ts
-import { Pipe, PipeTransform, inject } from '@angular/core';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-
-import DOMPurify from 'dompurify';
-
-@Pipe({ name: 'sanitizeHtml' })
-export class SanitizeHtmlPipe implements PipeTransform {
-  private readonly sanitizer = inject(DomSanitizer);
-
-  public transform(value: string | null | undefined): SafeHtml {
-    if (!value) return '';
-    const clean = DOMPurify.sanitize(value, {
-      ALLOWED_TAGS: [
-        'a',
-        'p',
-        'br',
-        'strong',
-        'em',
-        'ul',
-        'ol',
-        'li',
-        'img',
-        'table',
-        'thead',
-        'tbody',
-        'tfoot',
-        'tr',
-        'td',
-        'th',
-        'colgroup',
-        'col',
-        'span',
-        'div',
-        'hr',
-        'h1',
-        'h2',
-        'h3',
-        'h4',
-        'h5',
-        'h6',
-        'blockquote',
-        'pre',
-        'code',
-        'sub',
-        'sup',
-        'b',
-        'i',
-        'u',
-      ],
-      ALLOWED_ATTR: [
-        'href',
-        'target',
-        'rel',
-        'src',
-        'alt',
-        'title',
-        'style',
-        'class',
-        'data-mention',
-        'width',
-        'height',
-        'colspan',
-        'rowspan',
-        'align',
-        'valign',
-        'cellpadding',
-        'cellspacing',
-        'border',
-      ],
-      RETURN_TRUSTED_TYPE: false,
-    });
-    return this.sanitizer.bypassSecurityTrustHtml(clean);
-  }
-}
-```
-
-## File: libs/uxcommon/src/pipes/timeago.pipe.ts
-
-```typescript
-import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform } from '@angular/core';
-
-export interface TimeAgoOptions {
-  thresholdDays?: number;
-  style?: 'long' | 'short' | 'compact' | string;
-  compact?: boolean;
-  hideSuffix?: boolean;
-  // Index signature ensures any other existing options in your codebase are accepted
-  [key: string]: any;
-}
-
-@Pipe({
-  name: 'timeAgo', // Matched to your template casing
-  pure: false, // Must be false to update the UI over time
-})
-export class TimeAgoPipe implements PipeTransform, OnDestroy {
-  private timerId: ReturnType<typeof setTimeout> | null = null;
-  private lastValue?: string | number | Date | null;
-  private lastOptsJson?: string;
-  private lastResult = '';
-
-  constructor(private cdr: ChangeDetectorRef) {}
-
-  public transform(value: string | number | Date | null | undefined, opts?: TimeAgoOptions): string {
-    // Stringify options to avoid pure:false memory reference loops
-    const optsJson = opts ? JSON.stringify(opts) : '';
-
-    // Only recalculate if the date OR the options have actually changed
-    if (this.lastValue === value && this.lastOptsJson === optsJson && this.timerId) {
-      return this.lastResult;
-    }
-
-    this.lastValue = value;
-    this.lastOptsJson = optsJson;
-    this.clearTimer();
-
-    if (!value) {
-      this.lastResult = '';
-      return this.lastResult;
-    }
-
-    const date = new Date(value);
-    if (isNaN(date.getTime())) {
-      this.lastResult = String(value);
-      return this.lastResult;
-    }
-
-    const diffMs = new Date().getTime() - date.getTime();
-
-    // Calculate and cache the result
-    this.lastResult = this.formatTimeAgo(date, diffMs, opts);
-    this.setupTimer(diffMs);
-
-    return this.lastResult;
-  }
-
-  private formatTimeAgo(date: Date, diffMs: number, opts?: TimeAgoOptions): string {
-    const seconds = Math.floor(Math.abs(diffMs) / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-
-    // If a threshold is set and exceeded, fallback to a standard date string
-    if (opts?.thresholdDays !== undefined && days >= opts.thresholdDays) {
-      return date.toLocaleDateString(undefined, {
-        month: opts.style === 'short' ? 'short' : 'long',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    }
-
-    const suffix = opts?.hideSuffix ? '' : ' ago';
-
-    // Handle compact/short styles
-    if (opts?.compact || opts?.style === 'compact' || opts?.style === 'short') {
-      if (seconds < 60) return 'now';
-      if (minutes < 60) return `${minutes}m`;
-      if (hours < 24) return `${hours}h`;
-      return `${days}d`;
-    }
-
-    // Default long style
-    if (seconds < 60) return 'just now';
-    if (minutes === 1) return `a minute${suffix}`;
-    if (minutes < 60) return `${minutes} minutes${suffix}`;
-    if (hours === 1) return `an hour${suffix}`;
-    if (hours < 24) return `${hours} hours${suffix}`;
-    if (days === 1) return 'yesterday';
-    if (days < 30) return `${days} days${suffix}`;
-
-    const months = Math.floor(days / 30);
-    if (months === 1) return `a month${suffix}`;
-    if (months < 12) return `${months} months${suffix}`;
-
-    const years = Math.floor(days / 365);
-    if (years === 1) return `a year${suffix}`;
-    return `${years} years${suffix}`;
-  }
-
-  private setupTimer(diffMs: number): void {
-    const seconds = Math.floor(Math.abs(diffMs) / 1000);
-    const minutes = Math.floor(seconds / 60);
-
-    let timeoutMs = 60000;
-
-    // Scale update frequency based on age to save CPU
-    if (seconds < 60) {
-      timeoutMs = 10000; // 10 seconds
-    } else if (minutes < 60) {
-      timeoutMs = 60000; // 1 minute
-    } else if (minutes < 1440) {
-      timeoutMs = 3600000; // 1 hour
-    } else {
-      timeoutMs = 86400000; // 1 day
-    }
-
-    // Native setTimeout triggers Angular's zoneless scheduler internally
-    // when markForCheck is called inside it.
-    this.timerId = setTimeout(() => {
-      this.cdr.markForCheck();
-    }, timeoutMs);
-  }
-
-  private clearTimer(): void {
-    if (this.timerId) {
-      clearTimeout(this.timerId);
-      this.timerId = null;
-    }
-  }
-
-  public ngOnDestroy(): void {
-    this.clearTimer();
-  }
-}
-```
-
-## File: libs/uxcommon/src/test-setup.ts
-
-```typescript
-import '@angular/compiler';
-import '@analogjs/vitest-angular/setup-zone';
-
-import { BrowserTestingModule, platformBrowserTesting } from '@angular/platform-browser/testing';
-import { getTestBed } from '@angular/core/testing';
-import { vi } from 'vitest';
-
-getTestBed().initTestEnvironment(BrowserTestingModule, platformBrowserTesting());
-
-(globalThis as any).jest = vi;
-(globalThis as any).fetch = vi.fn().mockResolvedValue({
-  ok: true,
-  text: () => Promise.resolve('<svg></svg>'),
-});
-```
-
-## File: libs/uxcommon/eslint.config.cjs
-
-```javascript
-const { FlatCompat } = require('@eslint/eslintrc');
-const path = require('path');
-
-const compat = new FlatCompat({ baseDirectory: __dirname });
-
-module.exports = [
-  ...compat
-    .config({
-      extends: ['plugin:@nx/angular', 'plugin:@angular-eslint/template/process-inline-templates'],
-      parserOptions: {
-        project: [
-          path.resolve(__dirname, 'tsconfig.lib.json'),
-          path.resolve(__dirname, 'tsconfig.spec.json'),
-          path.resolve(__dirname, '../../tsconfig.base.json'),
-        ],
-        sourceType: 'module',
-      },
-    })
-    .map((cfg) => ({
-      ...cfg,
-      files: ['**/*.ts'],
-      rules: {
-        '@angular-eslint/directive-selector': ['error', { type: 'attribute', prefix: 'pc', style: 'camelCase' }],
-        '@angular-eslint/component-selector': ['error', { type: 'element', prefix: 'pc', style: 'kebab-case' }],
-      },
-    })),
-
-  ...compat
-    .config({
-      extends: ['plugin:@nx/angular-template', 'plugin:@angular-eslint/template/recommended'],
-    })
-    .map((cfg) => ({
-      ...cfg,
-      files: ['**/*.html'],
-      rules: {},
-    })),
-];
-```
-
-## File: libs/uxcommon/README.md
-
-```markdown
-# uxcommon
-
-This library was generated with [Nx](https://nx.dev).
-
-## Running unit tests
-
-Run `nx test uxcommon` to execute the unit tests.
-```
-
-## File: libs/uxcommon/tsconfig.json
-
-```json
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "module": "preserve"
-  },
-  "angularCompilerOptions": {
-    "enableI18nLegacyMessageIdFormat": false,
-    "strictInjectionParameters": true,
-    "strictInputAccessModifiers": true,
-    "typeCheckHostBindings": true,
-    "strictTemplates": true
-  },
-  "files": [],
-  "include": [],
-  "references": [
-    {
-      "path": "./tsconfig.lib.json"
-    },
-    {
-      "path": "./tsconfig.spec.json"
-    }
-  ]
-}
-```
-
-## File: libs/uxcommon/tsconfig.lib.json
-
-```json
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../../dist/out-tsc",
-    "declaration": true,
-    "declarationMap": true,
-    "inlineSources": true,
-    "types": []
-  },
-  "exclude": [
-    "src/**/*.spec.ts",
-    "src/test-setup.ts",
-    "jest.config.ts",
-    "src/**/*.test.ts",
-    "vite.config.ts",
-    "vite.config.mts",
-    "vitest.config.ts",
-    "vitest.config.mts",
-    "src/**/*.test.tsx",
-    "src/**/*.spec.tsx",
-    "src/**/*.test.js",
-    "src/**/*.spec.js",
-    "src/**/*.test.jsx",
-    "src/**/*.spec.jsx"
-  ],
-  "include": ["src/**/*.ts"]
-}
-```
-
-## File: libs/uxcommon/tsconfig.spec.json
-
-```json
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../../dist/out-tsc",
-    "types": ["vitest/globals", "vitest/importMeta", "vite/client", "node", "vitest"]
-  },
-  "include": [
-    "vite.config.ts",
-    "vite.config.mts",
-    "vitest.config.ts",
-    "vitest.config.mts",
-    "src/**/*.test.ts",
-    "src/**/*.spec.ts",
-    "src/**/*.test.tsx",
-    "src/**/*.spec.tsx",
-    "src/**/*.test.js",
-    "src/**/*.spec.js",
-    "src/**/*.test.jsx",
-    "src/**/*.spec.jsx",
-    "src/**/*.d.ts"
-  ],
-  "files": ["src/test-setup.ts"]
-}
-```
-
-## File: libs/uxcommon/vite.config.mts
-
-```typescript
-/// <reference types='vitest' />
-import { defineConfig } from 'vite';
-import angular from '@analogjs/vite-plugin-angular';
-import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
-import { nxCopyAssetsPlugin } from '@nx/vite/plugins/nx-copy-assets.plugin';
-
-export default defineConfig(() => ({
-  root: __dirname,
-  cacheDir: '../../node_modules/.vite/libs/uxcommon',
-  plugins: [angular(), nxViteTsPaths(), nxCopyAssetsPlugin(['*.md'])],
-  // Uncomment this if you are using workers.
-  // worker: {
-  //  plugins: [ nxViteTsPaths() ],
-  // },
-  test: {
-    name: 'uxcommon',
-    watch: false,
-    globals: true,
-    environment: 'jsdom',
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    setupFiles: ['src/test-setup.ts'],
-    reporters: ['default'],
-    coverage: {
-      reportsDirectory: '../../coverage/libs/uxcommon',
-      provider: 'v8' as const,
-    },
-  },
-}));
 ```
 
 ## File: apps/backend/src/app/\_migrations/2026-06-21-add-tenant-suspended-at.ts
@@ -10871,672 +8764,6 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
 }
 ```
 
-## File: apps/backend/src/app/modules/dashboard/controller.ts
-
-```typescript
-import { BaseRepository } from '../../lib/base.repo';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import { sql } from 'kysely';
-import { calculateWorkingTimeMs } from '../../../../../../libs/common/src';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
-
-export class DashboardController {
-  private get db() {
-    return (BaseRepository as any)['_db'];
-  }
-
-  public async getStats(auth: IAuthKeyPayload) {
-    const tenant_id = auth.tenant_id;
-
-    // Fetch SLA settings
-    const settingsRepo = new SettingsRepo();
-    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-
-    const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
-    const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
-    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
-    const workingDays = workingDaysStr
-      .split(',')
-      .map((s) => Number(s.trim()))
-      .filter((n) => !isNaN(n));
-    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
-    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
-
-    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
-    const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
-
-    // 1. Fetch all users in the tenant
-    const users = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    // 2. Fetch all inbox emails for this tenant (folder_id '11' is Inbox)
-    const inboxEmails = await this.db
-      .selectFrom('emails')
-      .select(['id', 'from_email', 'subject', 'created_at', 'updated_at', 'status', 'assigned_to'])
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '11')
-      .execute();
-
-    // 2.3 Fetch all tasks for this tenant
-    const tasks = await this.db
-      .selectFrom('tasks')
-      .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    // 2.5 Fetch all close activities for emails in this tenant to determine who closed them
-    const closeActivities = await this.db
-      .selectFrom('user_activity')
-      .select(['entity_id', 'user_id'])
-      .where('tenant_id', '=', tenant_id)
-      .where('activity', '=', 'close')
-      .where('entity', 'in', ['email', 'emails'])
-      .orderBy('created_at', 'asc')
-      .execute();
-
-    const closerMap = new Map<string, string>();
-    for (const act of closeActivities) {
-      if (act.entity_id) {
-        closerMap.set(String(act.entity_id), String(act.user_id));
-      }
-    }
-
-    // 3. Fetch earliest comment times grouped by email_id
-    const earliestComments = await this.db
-      .selectFrom('email_comments')
-      .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('email_id')
-      .execute();
-    const commentMap = new Map<string, number>(
-      earliestComments
-        .filter((c: any) => c.email_id && c.earliest_comment_at)
-        .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
-    );
-
-    // 4. Fetch all sent emails for the tenant to match outbound replies in memory (folder_id '3' is Sent)
-    const sentEmails = await this.db
-      .selectFrom('emails')
-      .select(['to_email', 'created_at'])
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '3')
-      .orderBy('created_at', 'asc')
-      .execute();
-
-    const sentMap = new Map<string, number[]>();
-    for (const sent of sentEmails) {
-      if (!sent.to_email) continue;
-      const emails = sent.to_email.toLowerCase().match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
-      for (const e of emails) {
-        let list = sentMap.get(e);
-        if (!list) {
-          list = [];
-          sentMap.set(e, list);
-        }
-        list.push(new Date(sent.created_at).getTime());
-      }
-    }
-
-    // Initialize user stats map
-    const userStatsMap: Record<
-      string,
-      {
-        user_id: string;
-        first_name: string;
-        last_name: string;
-        openCount: number;
-        closedCount: number;
-        totalResponseTimeMs: number;
-        responseCount: number;
-        totalTimeToCloseMs: number;
-        timeToCloseCount: number;
-        slaBreaches: number;
-        emailSlaBreaches: number;
-        taskSlaBreaches: number;
-      }
-    > = {};
-
-    for (const u of users) {
-      userStatsMap[u.id] = {
-        user_id: u.id,
-        first_name: u.first_name || '',
-        last_name: u.last_name || '',
-        openCount: 0,
-        closedCount: 0,
-        totalResponseTimeMs: 0,
-        responseCount: 0,
-        totalTimeToCloseMs: 0,
-        timeToCloseCount: 0,
-        slaBreaches: 0,
-        emailSlaBreaches: 0,
-        taskSlaBreaches: 0,
-      };
-    }
-
-    let globalTotalResponseTimeMs = 0;
-    let globalResponseCount = 0;
-    let globalTotalTimeToCloseMs = 0;
-    let globalTimeToCloseCount = 0;
-    let unassignedCount = 0;
-    let unassignedSlaBreaches = 0;
-    let unassignedEmailSlaBreaches = 0;
-    let unassignedTaskSlaBreaches = 0;
-
-    const breachedEmailsList: Array<{
-      id: string;
-      from_email: string | null;
-      subject: string | null;
-      created_at: Date | string;
-      assigned_to: string | null;
-      assignee_name: string | null;
-      working_time_hours: number;
-    }> = [];
-
-    const breachedTasksList: Array<{
-      id: string;
-      name: string;
-      created_at: Date | string;
-      assigned_to: string | null;
-      assignee_name: string | null;
-      working_time_hours: number;
-    }> = [];
-
-    const nowMs = Date.now();
-
-    for (const email of inboxEmails) {
-      const isAssigned = !!email.assigned_to && userStatsMap[email.assigned_to];
-      const assignedUser = isAssigned ? userStatsMap[email.assigned_to!] : null;
-
-      // Determine who closed the email (with fallback to assignee)
-      const closerId =
-        email.status === 'closed'
-          ? closerMap.get(String(email.id)) || (email.assigned_to != null ? String(email.assigned_to) : null)
-          : null;
-      const closerUser = closerId && userStatsMap[closerId] ? userStatsMap[closerId] : null;
-
-      // Track open/closed counts
-      if (email.status === 'open') {
-        if (assignedUser) {
-          assignedUser.openCount++;
-        } else {
-          unassignedCount++;
-        }
-      } else if (email.status === 'closed') {
-        if (closerUser) {
-          closerUser.closedCount++;
-        }
-      }
-
-      // Time to close calculation
-      if (email.status === 'closed') {
-        const closeDiff = new Date(email.updated_at).getTime() - new Date(email.created_at).getTime();
-        if (closeDiff > 0) {
-          globalTotalTimeToCloseMs += closeDiff;
-          globalTimeToCloseCount++;
-          if (closerUser) {
-            closerUser.totalTimeToCloseMs += closeDiff;
-            closerUser.timeToCloseCount++;
-          }
-        }
-      }
-
-      // First response calculation
-      const commentTime = commentMap.get(email.id) || null;
-      let outboundTime: number | null = null;
-      if (email.from_email) {
-        const fromEmailClean = email.from_email.toLowerCase().trim();
-        const sentTimes = sentMap.get(fromEmailClean);
-        if (sentTimes) {
-          const emailCreatedTime = new Date(email.created_at).getTime();
-          const firstSentAfter = sentTimes.find((t) => t > emailCreatedTime);
-          if (firstSentAfter) {
-            outboundTime = firstSentAfter;
-          }
-        }
-      }
-
-      let firstResponseTime: number | null = null;
-      if (commentTime && outboundTime) {
-        firstResponseTime = Math.min(commentTime, outboundTime);
-      } else if (commentTime) {
-        firstResponseTime = commentTime;
-      } else if (outboundTime) {
-        firstResponseTime = outboundTime;
-      }
-
-      if (firstResponseTime) {
-        const respDiff = firstResponseTime - new Date(email.created_at).getTime();
-        if (respDiff > 0) {
-          globalTotalResponseTimeMs += respDiff;
-          globalResponseCount++;
-          if (assignedUser) {
-            assignedUser.totalResponseTimeMs += respDiff;
-            assignedUser.responseCount++;
-          }
-        }
-      }
-
-      // SLA Breach calculation: Open inbox email older than target in working hours
-      if (email.status === 'open') {
-        const workingTimeMs = calculateWorkingTimeMs(
-          new Date(email.created_at),
-          new Date(nowMs),
-          workingDays,
-          workingHoursStart,
-          workingHoursEnd,
-        );
-        if (workingTimeMs > emailSlaMs && !firstResponseTime) {
-          if (assignedUser) {
-            assignedUser.emailSlaBreaches++;
-            assignedUser.slaBreaches++; // for backward compatibility
-          } else {
-            unassignedEmailSlaBreaches++;
-            unassignedSlaBreaches++; // for backward compatibility
-          }
-          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
-          breachedEmailsList.push({
-            id: String(email.id),
-            from_email: email.from_email,
-            subject: email.subject || null,
-            created_at: email.created_at,
-            assigned_to: email.assigned_to,
-            assignee_name: assigneeName,
-            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
-          });
-        }
-      }
-    }
-
-    // Calculate Task SLA Breaches
-    for (const task of tasks) {
-      const isOpenTask = task.status && ['todo', 'in_progress', 'blocked'].includes(task.status);
-      if (isOpenTask) {
-        const workingTimeMs = calculateWorkingTimeMs(
-          new Date(task.created_at),
-          new Date(nowMs),
-          workingDays,
-          workingHoursStart,
-          workingHoursEnd,
-        );
-        if (workingTimeMs > taskSlaMs) {
-          const isAssigned = !!task.assigned_to && userStatsMap[task.assigned_to];
-          const assignedUser = isAssigned ? userStatsMap[task.assigned_to!] : null;
-          if (assignedUser) {
-            assignedUser.taskSlaBreaches++;
-          } else {
-            unassignedTaskSlaBreaches++;
-          }
-          const assigneeName = assignedUser ? `${assignedUser.first_name} ${assignedUser.last_name}`.trim() : null;
-          breachedTasksList.push({
-            id: String(task.id),
-            name: task.name,
-            created_at: task.created_at,
-            assigned_to: task.assigned_to,
-            assignee_name: assigneeName,
-            working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
-          });
-        }
-      }
-    }
-
-    const avgFirstResponseHours =
-      globalResponseCount > 0 ? globalTotalResponseTimeMs / globalResponseCount / (1000 * 60 * 60) : 0;
-    const avgTimeToCloseHours =
-      globalTimeToCloseCount > 0 ? globalTotalTimeToCloseMs / globalTimeToCloseCount / (1000 * 60 * 60) : 0;
-
-    // 5. Contacts Growth (Last 30 days)
-    const growthRows = await this.db
-      .selectFrom('persons')
-      .select([sql<string>`date_trunc('day', created_at)`.as('day'), sql<number>`count(id)`.as('count')])
-      .where('tenant_id', '=', tenant_id)
-      .where('created_at', '>=', sql`now() - interval '30 days'`)
-      .groupBy(sql`date_trunc('day', created_at)`)
-      .orderBy(sql`date_trunc('day', created_at)`, 'asc')
-      .execute();
-
-    const contactsGrowth = growthRows.map((r: any) => ({
-      date: r.day ? new Date(r.day).toISOString().split('T')[0] : '',
-      count: Number(r.count || 0),
-    }));
-
-    // Build backward-compatible emailsAssigned
-    const emailsAssigned = Object.values(userStatsMap)
-      .filter((u) => u.openCount > 0)
-      .map((u) => ({
-        user_id: u.user_id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        count: u.openCount,
-      }));
-
-    // Build backward-compatible emailsClosed
-    const emailsClosed = Object.values(userStatsMap)
-      .filter((u) => u.closedCount > 0)
-      .map((u) => ({
-        user_id: u.user_id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        count: u.closedCount,
-      }));
-
-    // Map user stats for representative stats table
-    const userStats = Object.values(userStatsMap).map((u) => {
-      const totalHandled = u.openCount + u.closedCount;
-      const resolutionRate = totalHandled > 0 ? Math.round((u.closedCount / totalHandled) * 100) : 0;
-      const avgFirstResponse = u.responseCount > 0 ? u.totalResponseTimeMs / u.responseCount / (1000 * 60 * 60) : 0;
-      const avgTimeToClose = u.timeToCloseCount > 0 ? u.totalTimeToCloseMs / u.timeToCloseCount / (1000 * 60 * 60) : 0;
-
-      return {
-        user_id: u.user_id,
-        first_name: u.first_name,
-        last_name: u.last_name,
-        openCount: u.openCount,
-        closedCount: u.closedCount,
-        resolutionRate,
-        avgFirstResponseHours: avgFirstResponse,
-        avgTimeToCloseHours: avgTimeToClose,
-        slaBreaches: u.slaBreaches,
-        emailSlaBreaches: u.emailSlaBreaches,
-        taskSlaBreaches: u.taskSlaBreaches,
-      };
-    });
-
-    const totalOpenCount = unassignedCount + Object.values(userStatsMap).reduce((acc, cur) => acc + cur.openCount, 0);
-
-    return {
-      avgFirstResponseHours,
-      avgTimeToCloseHours,
-      emailsAssigned,
-      emailsClosed,
-      contactsGrowth,
-      unassignedCount,
-      totalOpenCount,
-      userStats,
-      unassignedSlaBreaches,
-      unassignedEmailSlaBreaches,
-      unassignedTaskSlaBreaches,
-      breachedEmailsList: [],
-      breachedTasksList: [],
-      taskSlaHours,
-      emailSlaHours,
-      emailSlaWarningThreshold: Number(settingsMap['sla.email_warning_threshold'] ?? 1),
-      emailSlaCriticalThreshold: Number(settingsMap['sla.email_critical_threshold'] ?? 4),
-      taskSlaWarningThreshold: Number(settingsMap['sla.task_warning_threshold'] ?? 1),
-      taskSlaCriticalThreshold: Number(settingsMap['sla.task_critical_threshold'] ?? 4),
-    };
-  }
-
-  public async getBreachedEmails(auth: IAuthKeyPayload, input: { page: number; limit: number }) {
-    const tenant_id = auth.tenant_id;
-    const { page, limit } = input;
-    const offset = (page - 1) * limit;
-
-    // Fetch SLA settings
-    const settingsRepo = new SettingsRepo();
-    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-
-    const emailSlaHours = Number(settingsMap['sla.emails_hours'] ?? 24);
-    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
-    const workingDays = workingDaysStr
-      .split(',')
-      .map((s) => Number(s.trim()))
-      .filter((n) => !isNaN(n));
-    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
-    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
-
-    const emailSlaMs = emailSlaHours * 60 * 60 * 1000;
-
-    // Fetch all users in the tenant
-    const users = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    const userMap = new Map<string, string>();
-    for (const u of users) {
-      userMap.set(u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim());
-    }
-
-    // Fetch all open inbox emails (folder_id '11' is Inbox, status 'open')
-    const openInboxEmails = await this.db
-      .selectFrom('emails')
-      .select(['id', 'from_email', 'subject', 'created_at', 'updated_at', 'status', 'assigned_to'])
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '11')
-      .where('status', '=', 'open')
-      .execute();
-
-    // Fetch earliest comment times grouped by email_id
-    const earliestComments = await this.db
-      .selectFrom('email_comments')
-      .select(['email_id', sql<string>`min(created_at)`.as('earliest_comment_at')])
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('email_id')
-      .execute();
-    const commentMap = new Map<string, number>(
-      earliestComments
-        .filter((c: any) => c.email_id && c.earliest_comment_at)
-        .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
-    );
-
-    // Fetch all sent emails for the tenant to match outbound replies in memory (folder_id '3' is Sent)
-    const sentEmails = await this.db
-      .selectFrom('emails')
-      .select(['to_email', 'created_at'])
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '3')
-      .orderBy('created_at', 'asc')
-      .execute();
-
-    const sentMap = new Map<string, number[]>();
-    for (const sent of sentEmails) {
-      if (!sent.to_email) continue;
-      const emails = sent.to_email.toLowerCase().match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
-      for (const e of emails) {
-        let list = sentMap.get(e);
-        if (!list) {
-          list = [];
-          sentMap.set(e, list);
-        }
-        list.push(new Date(sent.created_at).getTime());
-      }
-    }
-
-    const breachedEmailsList: Array<{
-      id: string;
-      from_email: string | null;
-      subject: string | null;
-      created_at: Date | string;
-      assigned_to: string | null;
-      assignee_name: string | null;
-      working_time_hours: number;
-    }> = [];
-
-    const nowMs = Date.now();
-
-    for (const email of openInboxEmails) {
-      // First response calculation
-      const commentTime = commentMap.get(email.id) || null;
-      let outboundTime: number | null = null;
-      if (email.from_email) {
-        const fromEmailClean = email.from_email.toLowerCase().trim();
-        const sentTimes = sentMap.get(fromEmailClean);
-        if (sentTimes) {
-          const emailCreatedTime = new Date(email.created_at).getTime();
-          const firstSentAfter = sentTimes.find((t) => t > emailCreatedTime);
-          if (firstSentAfter) {
-            outboundTime = firstSentAfter;
-          }
-        }
-      }
-
-      let firstResponseTime: number | null = null;
-      if (commentTime && outboundTime) {
-        firstResponseTime = Math.min(commentTime, outboundTime);
-      } else if (commentTime) {
-        firstResponseTime = commentTime;
-      } else if (outboundTime) {
-        firstResponseTime = outboundTime;
-      }
-
-      const workingTimeMs = calculateWorkingTimeMs(
-        new Date(email.created_at),
-        new Date(nowMs),
-        workingDays,
-        workingHoursStart,
-        workingHoursEnd,
-      );
-
-      if (workingTimeMs > emailSlaMs && !firstResponseTime) {
-        const assigneeName = email.assigned_to ? userMap.get(email.assigned_to) || null : null;
-        breachedEmailsList.push({
-          id: String(email.id),
-          from_email: email.from_email,
-          subject: email.subject || null,
-          created_at: email.created_at,
-          assigned_to: email.assigned_to,
-          assignee_name: assigneeName,
-          working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
-        });
-      }
-    }
-
-    breachedEmailsList.sort((a, b) => b.working_time_hours - a.working_time_hours);
-
-    const totalCount = breachedEmailsList.length;
-    const items = breachedEmailsList.slice(offset, offset + limit);
-
-    return {
-      items,
-      totalCount,
-      hasMore: offset + limit < totalCount,
-    };
-  }
-
-  public async getBreachedTasks(auth: IAuthKeyPayload, input: { page: number; limit: number }) {
-    const tenant_id = auth.tenant_id;
-    const { page, limit } = input;
-    const offset = (page - 1) * limit;
-
-    // Fetch SLA settings
-    const settingsRepo = new SettingsRepo();
-    const settingsRows = await settingsRepo.getAllForTenant(tenant_id);
-    const settingsMap = settingsRows.reduce<Record<string, any>>((acc, row) => {
-      acc[row.key] = row.value;
-      return acc;
-    }, {});
-
-    const taskSlaHours = Number(settingsMap['sla.tasks_hours'] ?? 24);
-    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
-    const workingDays = workingDaysStr
-      .split(',')
-      .map((s) => Number(s.trim()))
-      .filter((n) => !isNaN(n));
-    const workingHoursStart = String(settingsMap['sla.working_hours_start'] ?? '09:00');
-    const workingHoursEnd = String(settingsMap['sla.working_hours_end'] ?? '17:00');
-
-    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
-
-    // Fetch all users in the tenant
-    const users = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    const userMap = new Map<string, string>();
-    for (const u of users) {
-      userMap.set(u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim());
-    }
-
-    // Fetch open tasks for this tenant
-    const openTasks = await this.db
-      .selectFrom('tasks')
-      .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
-      .where('tenant_id', '=', tenant_id)
-      .where('status', 'in', ['todo', 'in_progress', 'blocked'])
-      .execute();
-
-    const breachedTasksList: Array<{
-      id: string;
-      name: string;
-      created_at: Date | string;
-      assigned_to: string | null;
-      assignee_name: string | null;
-      working_time_hours: number;
-    }> = [];
-
-    const nowMs = Date.now();
-
-    for (const task of openTasks) {
-      const workingTimeMs = calculateWorkingTimeMs(
-        new Date(task.created_at),
-        new Date(nowMs),
-        workingDays,
-        workingHoursStart,
-        workingHoursEnd,
-      );
-      if (workingTimeMs > taskSlaMs) {
-        const assigneeName = task.assigned_to ? userMap.get(task.assigned_to) || null : null;
-        breachedTasksList.push({
-          id: String(task.id),
-          name: task.name,
-          created_at: task.created_at,
-          assigned_to: task.assigned_to,
-          assignee_name: assigneeName,
-          working_time_hours: Math.round(workingTimeMs / (1000 * 60 * 60)),
-        });
-      }
-    }
-
-    breachedTasksList.sort((a, b) => b.working_time_hours - a.working_time_hours);
-
-    const totalCount = breachedTasksList.length;
-    const items = breachedTasksList.slice(offset, offset + limit);
-
-    return {
-      items,
-      totalCount,
-      hasMore: offset + limit < totalCount,
-    };
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/dashboard/trpc.router.ts
-
-```typescript
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { DashboardController } from './controller';
-
-const dashboard = new DashboardController();
-
-export const DashboardRouter = router({
-  getStats: authProcedure.query(({ ctx }) => dashboard.getStats(ctx.auth)),
-
-  getBreachedEmails: authProcedure
-    .input(z.object({ page: z.number().int().min(1), limit: z.number().int().min(1) }))
-    .query(({ input, ctx }) => dashboard.getBreachedEmails(ctx.auth, input)),
-
-  getBreachedTasks: authProcedure
-    .input(z.object({ page: z.number().int().min(1), limit: z.number().int().min(1) }))
-    .query(({ input, ctx }) => dashboard.getBreachedTasks(ctx.auth, input)),
-});
-```
-
 ## File: apps/backend/src/app/modules/donations/repositories/periods.repo.ts
 
 ```typescript
@@ -11967,7 +9194,7 @@ function getOAuthService(db: any) {
   return _oauthSvc;
 }
 
-async function saveLocalEmail(
+export async function saveLocalEmail(
   db: any,
   tenantId: string,
   userId: string,
@@ -11982,13 +9209,12 @@ async function saveLocalEmail(
   previewKey: string,
 ) {
   return db.transaction().execute(async (trx: any) => {
-    // Ensure Outbox folder exists in email_folders
-    const existingOutbox = await trx
-      .selectFrom('email_folders')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', '10')
-      .executeTakeFirst();
+    // Ensure the Outbox folder row exists. email_folders uses global hardcoded
+    // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
+    // email_folders(id) — not tenant_id — so the existence check must be by id
+    // alone. onConflict guards against a concurrent/global row already present.
+    // eslint-disable-next-line local/no-unscoped-db-query -- email_folders uses global hardcoded IDs (not tenant-scoped)
+    const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
 
     if (!existingOutbox) {
       await trx
@@ -12003,6 +9229,7 @@ async function saveLocalEmail(
           sort_order: 10,
           is_default: false,
         })
+        .onConflict((oc: any) => oc.column('id').doNothing())
         .execute();
     }
 
@@ -12045,6 +9272,8 @@ async function saveLocalEmail(
       const uFile = uploadedFiles[i];
       let fileId: string;
 
+      // Persist (or reuse, via sha256 dedup) the file row, then link the
+      // attachment to it so downloads can resolve the stored blob.
       const existingFile = await trx
         .selectFrom('files')
         .select('id')
@@ -12068,7 +9297,6 @@ async function saveLocalEmail(
           })
           .returning('id')
           .executeTakeFirstOrThrow();
-
         fileId = String(fileResult.id);
       }
 
@@ -12084,6 +9312,8 @@ async function saveLocalEmail(
           is_inline: uFile.is_inline,
           pos: i + 1,
           file_id: fileId,
+          createdby_id: userId,
+          updatedby_id: userId,
         })
         .execute();
     }
@@ -12115,6 +9345,8 @@ async function saveLocalEmail(
         name: null,
         email: emailAddr,
         pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
       });
     });
     ccList.forEach((emailAddr: string, idx: number) => {
@@ -12125,6 +9357,8 @@ async function saveLocalEmail(
         name: null,
         email: emailAddr,
         pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
       });
     });
     bccList.forEach((emailAddr: string, idx: number) => {
@@ -12135,6 +9369,8 @@ async function saveLocalEmail(
         name: null,
         email: emailAddr,
         pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
       });
     });
 
@@ -12273,20 +9509,26 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
         .replace(/<[^>]*>/g, '')
         .substring(0, 100)
         .trim() || '';
-    const emailRow = await saveLocalEmail(
-      db,
-      tenantId,
-      userId,
-      fromEmail,
-      fromName,
-      toList,
-      ccList,
-      bccList,
-      subject,
-      html,
-      uploadedFiles,
-      fallbackPreview,
-    );
+    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
+    try {
+      emailRow = await saveLocalEmail(
+        db,
+        tenantId,
+        userId,
+        fromEmail,
+        fromName,
+        toList,
+        ccList,
+        bccList,
+        subject,
+        html,
+        uploadedFiles,
+        fallbackPreview,
+      );
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to save outbound email to database');
+      return reply.jsendError(err.message || 'Failed to save email', 500);
+    }
 
     // Determine send method prioritizing matching address
     let sendMethod: 'ms' | 'google' = 'ms';
@@ -17310,1528 +14552,6 @@ console.log(query.compile().sql);
 console.log(query.compile().parameters);
 ```
 
-## File: apps/backend/project.json
-
-```json
-{
-  "name": "backend",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "apps/backend/src",
-  "projectType": "application",
-  "tags": [],
-  "targets": {
-    "build": {
-      "executor": "@nx/esbuild:esbuild",
-      "outputs": ["{options.outputPath}"],
-      "defaultConfiguration": "production",
-      "options": {
-        "platform": "node",
-        "outputPath": "dist/apps/backend",
-        "format": ["esm"],
-        "main": "apps/backend/src/main.ts",
-        "tsConfig": "apps/backend/tsconfig.app.json",
-        "assets": ["apps/backend/src/assets"],
-        "generatePackageJson": false,
-        "esbuildOptions": {
-          "packages": "external",
-          "external": ["aws-sdk", "nock", "mock-aws-s3"],
-          "loader": {
-            ".html": "text"
-          },
-          "sourcemap": "inline",
-          "outExtension": {
-            ".js": ".js"
-          }
-        }
-      },
-      "configurations": {
-        "development": {
-          "bundle": true
-        },
-        "production": {
-          "bundle": true,
-          "esbuildOptions": {
-            "sourcemap": false,
-            "external": ["aws-sdk", "nock", "mock-aws-s3"],
-            "loader": {
-              ".html": "text"
-            },
-            "outExtension": {
-              ".js": ".js"
-            }
-          }
-        }
-      }
-    },
-    "serve": {
-      "executor": "@nx/js:node",
-      "defaultConfiguration": "development",
-      "options": {
-        "buildTarget": "backend:build"
-      },
-      "configurations": {
-        "development": {
-          "buildTarget": "backend:build:development",
-          "runtimeArgs": ["--inspect=9229", "--enable-source-maps", "--env-file=.env.development"]
-        },
-        "production": {
-          "buildTarget": "backend:build:production",
-          "runtimeArgs": ["--enable-source-maps", "--env-file=.env.production"]
-        }
-      }
-    },
-    "lint": {
-      "executor": "@nx/eslint:lint",
-      "outputs": ["{options.outputFile}"],
-      "options": {
-        "lintFilePatterns": ["apps/backend/**/*.ts"]
-      }
-    },
-    "test": {
-      "executor": "@nx/vitest:test",
-      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
-      "options": {
-        "passWithNoTests": true,
-        "reportsDirectory": "../../coverage/apps/backend"
-      }
-    }
-  }
-}
-```
-
-## File: libs/common/src/lib/schemas/auth.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { emailSchema, nameSchema } from './core.schema';
-
-export const InviteAuthUserObj = z.object({
-  email: emailSchema,
-  first_name: nameSchema('First name'),
-  last_name: nameSchema('Last name').nullable().optional(),
-  role: z.string().max(100).nullable().optional(),
-});
-
-export const NotificationPreferencesObj = z.object({
-  mention_in_comment: z.boolean().default(true),
-  mention_in_comment_in_app: z.boolean().default(true),
-  task_assigned: z.boolean().default(true),
-  task_assigned_in_app: z.boolean().default(true),
-  task_due: z.boolean().default(true),
-  task_due_in_app: z.boolean().default(true),
-  person_assigned: z.boolean().default(true),
-  person_assigned_in_app: z.boolean().default(true),
-  export_ready: z.boolean().default(true),
-  export_ready_in_app: z.boolean().default(true),
-  import_summary: z.boolean().default(true),
-  import_summary_in_app: z.boolean().default(true),
-});
-
-export const UpdateAuthUserObj = z.object({
-  email: emailSchema.optional(),
-  first_name: nameSchema('First name').optional(),
-  last_name: nameSchema('Last name').nullable().optional(),
-  role: z.string().max(100).nullable().optional(),
-  verified: z.boolean().optional(),
-  two_factor_enabled: z.boolean().optional(),
-  notification_preferences: NotificationPreferencesObj.optional(),
-});
-
-export const Verify2FAObj = z.object({
-  email: emailSchema,
-  code: z.string().length(6),
-  rememberMe: z.boolean().optional(),
-});
-```
-
-## File: libs/common/src/lib/schemas/connections.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { idSchema, notesSchema } from './core.schema';
-
-export const RELATION_TYPES = [
-  'referred_by',
-  'referred_to',
-  'close_friend',
-  'family_member',
-  'spouse',
-  'colleague',
-  'org_affiliation',
-  'introduced_by',
-  'introduced_to',
-  'custom',
-] as const;
-
-export const RELATION_TYPE_LABELS: Record<(typeof RELATION_TYPES)[number], string> = {
-  referred_by: 'Referred By',
-  referred_to: 'Referred To',
-  close_friend: 'Close Friend',
-  family_member: 'Family Member',
-  spouse: 'Spouse / Partner',
-  colleague: 'Colleague',
-  org_affiliation: 'Org. Affiliation',
-  introduced_by: 'Introduced By',
-  introduced_to: 'Introduced To',
-  custom: 'Custom',
-};
-
-export const relationTypeSchema = z.enum(RELATION_TYPES);
-export type RelationTypeSchema = z.infer<typeof relationTypeSchema>;
-
-export const AddConnectionObj = z.object({
-  to_person_id: idSchema,
-  relation_type: relationTypeSchema,
-  custom_label: z.string().trim().min(1).max(100).nullable().optional(),
-  is_mutual: z.boolean().default(false).optional(),
-  notes: notesSchema,
-});
-
-export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-```
-
-## File: libs/common/src/lib/schemas/emails.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const EmailCommentObj = z.object({
-  id: z.string(),
-  email_id: z.string(),
-  author_id: z.string(),
-  comment: z.string(),
-  created_at: z.date(),
-});
-
-export const EmailDraftObj = z.object({
-  id: z.string(),
-  to_list: z.array(z.string()),
-  cc_list: z.array(z.string()),
-  bcc_list: z.array(z.string()),
-  subject: z.string().optional(),
-  body_html: z.string().optional(),
-  body_delta: z.unknown().optional(),
-  updated_at: z.date(),
-});
-
-export const EmailFolderObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  icon: z.string(),
-  sort_order: z.number(),
-  is_default: z.boolean(),
-  is_virtual: z.boolean(),
-});
-
-export const EmailObj = z.object({
-  id: z.string(),
-  folder_id: z.string(),
-  from_email: z.string().optional(),
-  from_name: z.string().optional(),
-  to_email: z.string().optional(),
-  subject: z.string().optional(),
-  preview: z.string().optional(),
-  assigned_to: z.string().optional(),
-  updated_at: z.date(),
-  date_sent: z.date().nullable().optional(),
-  is_favourite: z.boolean(),
-  attachment_count: z.number(),
-  has_attachment: z.boolean(),
-  status: z.enum(['open', 'closed']).nullable().default('open'),
-  is_read: z.boolean().optional(),
-  sender_first_name: z.string().nullish(),
-  sender_last_name: z.string().nullish(),
-});
-```
-
-## File: libs/common/src/lib/schemas/volunteer.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
-
-export const AddVolunteerEventObj = z.object({
-  name: nameSchema('Event name', 200),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'Start date & time is required' }),
-  ),
-  end_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'End date & time is required' }),
-  ),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  is_private: z.boolean().default(false).optional(),
-  send_reminder: z.boolean().default(true).optional(),
-  send_signup_confirmation: z.boolean().default(true).optional(),
-  send_volunteer_alert: z.boolean().default(true).optional(),
-  fields: z.array(z.string()).optional(),
-  slug: z
-    .string()
-    .trim()
-    .min(1)
-    .max(200)
-    .regex(
-      /^(?=.*[a-z])[a-z0-9-]+$/,
-      'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
-    ),
-});
-
-export const VolunteerEventsObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  location_address: z.string().nullable().optional(),
-  start_time: z.coerce.date(),
-  end_time: z.coerce.date(),
-  capacity: z.number().nullable().optional(),
-  contact_email: z.string().nullable().optional(),
-  contact_phone: z.string().nullable().optional(),
-  is_private: z.boolean(),
-  send_reminder: z.boolean(),
-  send_signup_confirmation: z.boolean().default(true),
-  send_volunteer_alert: z.boolean().default(true),
-  slug: z.string(),
-});
-
-export const UpdateVolunteerEventObj = z.object({
-  name: nameSchema('Event name', 200).optional(),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'Start date & time is required' }),
-    )
-    .optional(),
-  end_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'End date & time is required' }),
-    )
-    .optional(),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  is_private: z.boolean().optional(),
-  send_reminder: z.boolean().optional(),
-  send_signup_confirmation: z.boolean().optional(),
-  send_volunteer_alert: z.boolean().optional(),
-  fields: z.array(z.string()).optional(),
-  slug: z
-    .string()
-    .trim()
-    .min(1)
-    .max(200)
-    .regex(
-      /^(?=.*[a-z])[a-z0-9-]+$/,
-      'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
-    )
-    .optional(),
-});
-
-export const AddVolunteerShiftObj = z.object({
-  event_id: idSchema,
-  person_id: idSchema,
-  status: z.enum(['signed_up', 'attended', 'no_show', 'cancelled']).default('signed_up').optional(),
-  hours_worked: z.number().min(0).max(24).nullable().optional(),
-  notes: notesSchema,
-});
-
-export const VolunteerShiftsObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  person_id: z.string(),
-  status: z.enum(['signed_up', 'attended', 'no_show', 'cancelled']),
-  hours_worked: z.number().nullable().optional(),
-  notes: z.string().nullable().optional(),
-});
-
-export const UpdateVolunteerShiftObj = z.object({
-  status: z.enum(['signed_up', 'attended', 'no_show', 'cancelled']).optional(),
-  hours_worked: z.number().min(0).max(24).nullable().optional(),
-  notes: notesSchema,
-});
-```
-
-## File: libs/common/src/lib/jsend.ts
-
-```typescript
-export interface JSendErrorInterface {
-  code?: string | number;
-  message: string;
-  status: 'error';
-}
-
-export interface JSendFailInterface<E extends object = Record<string, unknown>> {
-  data: E;
-  status: 'fail';
-}
-
-export interface JSendSuccessInterface<T> {
-  data: T;
-  status: 'success';
-}
-
-export class JSendError extends Error {
-  public override name = 'JSendServerError';
-
-  constructor(
-    public readonly messageText: string,
-    public readonly code?: string | number,
-    public readonly statusCode: number = 500,
-  ) {
-    super(messageText || 'Server error');
-  }
-}
-
-export class JSendFail<E extends object = Record<string, unknown>> extends Error {
-  public override name = 'JSendFailError';
-
-  constructor(
-    public readonly data: E,
-    public readonly statusCode: number = 400,
-  ) {
-    super('Request failed');
-  }
-}
-
-export type JSend<T = unknown, E extends object = Record<string, unknown>> =
-  | JSendSuccessInterface<T>
-  | JSendFailInterface<E>
-  | JSendErrorInterface;
-
-export type JSendStatus = 'success' | 'fail' | 'error';
-
-// Helpful status mapping (useful in backend)
-export function httpStatusForJSend(obj: JSend): number {
-  if (jsend.isSuccess(obj)) return 200;
-  if (jsend.isFail(obj)) return 400; // choose per-case if needed
-  return 500;
-}
-
-export const jsend = {
-  success<T>(data: T): JSendSuccessInterface<T> {
-    return { status: 'success', data };
-  },
-  fail<E extends object = Record<string, unknown>>(data: E): JSendFailInterface<E> {
-    return { status: 'fail', data };
-  },
-  error(message: string, code?: string | number): JSendErrorInterface {
-    return {
-      status: 'error',
-      message,
-      ...(code !== undefined ? { code } : {}),
-    };
-  },
-
-  isSuccess<T = unknown>(x: unknown): x is JSendSuccessInterface<T> {
-    return (
-      typeof x === 'object' &&
-      x !== null &&
-      'status' in x &&
-      (x as Record<string, unknown>)['status'] === 'success' &&
-      'data' in x
-    );
-  },
-  isFail<E extends object = Record<string, unknown>>(x: unknown): x is JSendFailInterface<E> {
-    return (
-      typeof x === 'object' &&
-      x !== null &&
-      'status' in x &&
-      (x as Record<string, unknown>)['status'] === 'fail' &&
-      'data' in x
-    );
-  },
-  isError(x: unknown): x is JSendErrorInterface {
-    return (
-      typeof x === 'object' &&
-      x !== null &&
-      'status' in x &&
-      (x as Record<string, unknown>)['status'] === 'error' &&
-      'message' in x
-    );
-  },
-
-  unwrap<T>(res: JSend<T>): T {
-    if (res.status === 'success') return res.data;
-    if (res.status === 'fail') throw new JSendFail(res.data, 400);
-    if (res.status === 'error') throw new JSendError(res.message, res.code, 500);
-    throw new Error('Unknown JSend shape');
-  },
-};
-```
-
-## File: libs/uxcommon/src/components/fields-selector/fields-selector.html
-
-```html
-<div class="space-y-0.5">
-  <!-- Email is always required and locked -->
-  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
-    <label class="flex items-center gap-2.5 cursor-not-allowed select-none">
-      <input type="checkbox" checked disabled class="checkbox checkbox-sm checkbox-primary" />
-      <span class="text-sm font-bold text-primary">Email Address</span>
-    </label>
-    <span class="badge badge-sm badge-outline text-[10px] font-bold">Required</span>
-  </div>
-
-  @for (field of allFields; track field.key) {
-  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
-    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-      <input
-        type="checkbox"
-        [checked]="isEnabled(field.key)"
-        (change)="toggleField(field.key)"
-        class="checkbox checkbox-sm checkbox-primary"
-      />
-      <span class="text-sm font-medium text-base-content/85">{{ field.label }}</span>
-    </label>
-    @if (isEnabled(field.key)) {
-    <button
-      type="button"
-      (click)="toggleRequired(field.key)"
-      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-      [class.btn-primary]="isRequired(field.key)"
-      [class.btn-outline]="!isRequired(field.key)"
-    >
-      {{ isRequired(field.key) ? 'Required' : 'Optional' }}
-    </button>
-    }
-  </div>
-  }
-</div>
-```
-
-## File: libs/uxcommon/src/components/fields-selector/fields-selector.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-
-const ALL_FIELDS: { key: string; label: string }[] = [
-  { key: 'first_name', label: 'First Name' },
-  { key: 'last_name', label: 'Last Name' },
-  { key: 'mobile', label: 'Mobile / Phone' },
-  { key: 'notes', label: 'Notes' },
-  { key: 'street1', label: 'Street Address' },
-  { key: 'city', label: 'City' },
-  { key: 'state', label: 'State / Province' },
-  { key: 'zip', label: 'Zip / Postal Code' },
-  { key: 'country', label: 'Country' },
-];
-
-@Component({
-  selector: 'pc-fields-selector',
-  templateUrl: './fields-selector.html',
-})
-export class FieldsSelector {
-  readonly selectedFields = input.required<string[]>();
-  readonly fieldsChange = output<string[]>();
-
-  protected readonly allFields = ALL_FIELDS;
-
-  protected isEnabled(field: string): boolean {
-    const list = this.selectedFields();
-    return list.includes(field) || list.includes(`${field}:required`);
-  }
-
-  protected isRequired(field: string): boolean {
-    return this.selectedFields().includes(`${field}:required`);
-  }
-
-  protected toggleField(field: string): void {
-    const current = this.selectedFields();
-    const enabled = current.includes(field) || current.includes(`${field}:required`);
-    if (enabled) {
-      this.fieldsChange.emit(current.filter((f) => f !== field && f !== `${field}:required`));
-    } else {
-      this.fieldsChange.emit([...current, field]);
-    }
-  }
-
-  protected toggleRequired(field: string): void {
-    const current = this.selectedFields();
-    if (current.includes(field)) {
-      this.fieldsChange.emit([...current.filter((f) => f !== field), `${field}:required`]);
-    } else if (current.includes(`${field}:required`)) {
-      this.fieldsChange.emit([...current.filter((f) => f !== `${field}:required`), field]);
-    }
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/form-actions/form-actions.ts
-
-```typescript
-import { Component, OnInit, inject, input, output, ChangeDetectorRef, DestroyRef } from '@angular/core';
-import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { merge } from 'rxjs';
-
-@Component({
-  selector: 'pc-form-actions',
-  imports: [ReactiveFormsModule, Icon],
-  templateUrl: './form-actions.html',
-})
-export class FormActions implements OnInit {
-  private readonly rootFormGroup = inject(FormGroupDirective, { optional: true });
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly cdr = inject(ChangeDetectorRef);
-  private readonly destroyRef = inject(DestroyRef);
-
-  private stay = false;
-
-  protected form?: FormGroup;
-
-  public signalForm = input<any>();
-
-  public disabled = input<boolean>(false);
-
-  public showDelete = input<boolean>(false);
-
-  public deleteText = input<string>('DELETE');
-
-  public readonly deleteClicked = output<void>();
-
-  public readonly btn1Clicked = output<() => void>();
-
-  public btn1Icon = input<PcIconNameType>('save');
-
-  public btn1Text = input<string>('SAVE');
-
-  public btn2Text = input<string>('SAVE & ADD MORE');
-
-  public buttonsToShow = input<'two' | 'three'>('three');
-
-  public isLoading = input.required<boolean>();
-
-  protected get isSaveDisabled(): boolean {
-    if (this.isLoading()) return true;
-    if (this.disabled()) return true;
-    const sigF = this.signalForm();
-    if (sigF) {
-      return sigF().invalid() || !sigF().dirty();
-    }
-    if (this.form) {
-      return this.form.invalid || !this.form.dirty;
-    }
-    return false;
-  }
-
-  public cancel() {
-    this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  public handleDeleteClicked() {
-    this.deleteClicked.emit();
-  }
-
-  public handleBtn1Clicked() {
-    this.stay = false;
-    this.btn1Clicked.emit(this.stayOrCancel);
-  }
-
-  public handleBtn2Clicked() {
-    this.stay = true;
-    this.btn1Clicked.emit(this.stayOrCancel);
-  }
-
-  public ngOnInit() {
-    this.form = this.rootFormGroup?.control;
-    if (this.form) {
-      merge(this.form.valueChanges, this.form.statusChanges)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(() => {
-          this.cdr.markForCheck();
-        });
-    }
-  }
-
-  public stayOrCancel = () => {
-    if (this.stay) {
-      const sigF = this.signalForm();
-      if (sigF) {
-        sigF().reset();
-      } else if (this.form) {
-        this.form.reset();
-      }
-    } else {
-      this.cancel();
-    }
-  };
-}
-```
-
-## File: libs/uxcommon/src/components/grid-header/grid-header.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-
-@Component({
-  selector: 'pc-grid-header',
-  template: `
-    <details class="collapse collapse-arrow bg-base-100 border border-base-200 shadow-xs" [attr.open]="open() || null">
-      <summary
-        class="collapse-title px-4 py-2 m-0 cursor-pointer after:justify-self-center text-xl font-bold tracking-tight"
-      >
-        {{ title() }}
-      </summary>
-
-      <div class="collapse-content border-t border-base-200 px-4 pt-2 text-sm text-base-content/60 mt-1">
-        {{ description() }}
-      </div>
-    </details>
-  `,
-})
-export class GridHeaderComponent {
-  public readonly description = input.required<string>();
-  public readonly open = input<boolean>(false);
-  public readonly title = input.required<string>();
-}
-```
-
-## File: libs/uxcommon/src/components/icons/icon.ts
-
-```typescript
-import { Component, WritableSignal, effect, input, signal } from '@angular/core';
-import { BypassHtmlSanitizerPipe } from '@uxcommon/pipes/svg-html-pipe';
-
-import { PcIconNameType, loadIconSvg } from './icons.index';
-
-@Component({
-  selector: 'pc-icon',
-  imports: [BypassHtmlSanitizerPipe],
-  template: `
-    <div [class]="class()" (mouseenter)="hovering.set(true)" (mouseleave)="hovering.set(false)">
-      @if (!hover() || !hovering()) {
-        <div [innerHTML]="svgHtml() | bypassHtmlSanitizer"></div>
-      } @else {
-        <div [innerHTML]="hoverSvgHtml() | bypassHtmlSanitizer"></div>
-      }
-    </div>
-  `,
-})
-export class Icon {
-  private _hoverSvgHtml = signal<string>('');
-
-  private _svgHtml = signal<string>('');
-
-  public class = input<string>('');
-  public hover = input<PcIconNameType | null>();
-  public hoverSvgHtml = this._hoverSvgHtml.asReadonly();
-  public hovering = signal(false);
-
-  public name = input.required<PcIconNameType>();
-
-  public size = input<number>(6);
-  public svgHtml = this._svgHtml.asReadonly();
-
-  constructor() {
-    // Re-load whenever name or size changes
-    effect(() => {
-      void this.loadSvg(this.name(), this.size(), this._svgHtml);
-    });
-
-    effect(() => {
-      const hoverName = this.hover();
-      const size = this.size();
-      if (!hoverName) {
-        this._hoverSvgHtml.set('');
-        return;
-      }
-      void this.loadSvg(hoverName, size, this._hoverSvgHtml);
-    });
-  }
-
-  private injectClassOnSvg(svg: string, cls: string): string {
-    // Normalize whitespace on the opening tag
-    const openTagMatch = svg.match(/<svg\b[^>]*>/i);
-    if (!openTagMatch) return svg; // not an SVG? bail
-
-    const openTag = openTagMatch[0];
-
-    // If class already exists, merge; otherwise add new class attribute
-    if (/\bclass=/.test(openTag)) {
-      const merged = openTag.replace(/\bclass=(["'])(.*?)\1/i, (_m, q, existing) => {
-        // Remove existing sizing classes to prevent override conflicts (e.g. w-6, h-6, size-6)
-        const cleaned = existing
-          .split(/\s+/)
-          .filter((c: string) => !/^(w-\d+(\.\d+)?|h-\d+(\.\d+)?|size-\d+(\.\d+)?)$/.test(c))
-          .join(' ');
-        return `class=${q}${cleaned} ${cls}${q}`.trim();
-      });
-      return svg.replace(openTag, merged);
-    } else {
-      const augmented = openTag.replace(/^<svg\b/i, `<svg class="${cls}"`);
-      return svg.replace(openTag, augmented);
-    }
-  }
-
-  private async loadSvg(name: PcIconNameType, size: number, target: WritableSignal<string>) {
-    if (name === 'none') {
-      target.set('');
-    } else {
-      // Fetch raw SVG text from /assets
-      const raw = await loadIconSvg(name);
-      // Inject Tailwind classes into the <svg> element
-      const withClass = this.injectClassOnSvg(raw, `w-${size} h-${size}`);
-      target.set(withClass);
-    }
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/not-found/not-found.ts
-
-```typescript
-import { Component } from '@angular/core';
-
-@Component({
-  selector: 'pc-not-found',
-  imports: [],
-  template: `<section class="min-h-full">
-    <div class="md:px-12 lg:px-0">
-      <div class="max-auto w-full justify-center text-center lg:p-10">
-        <div class="mx-auto w-full justify-center">
-          <p class="text-5xl tracking-tight lg:text-9xl">404</p>
-          <p class="mx-auto mt-4 max-w-xl text-lg font-light">Please check the URL in the address bar and try again.</p>
-        </div>
-        <div class="mt-10 flex justify-center gap-3">
-          <a href="/" class="link link-hover">Home&nbsp; → </a>
-        </div>
-      </div>
-    </div>
-  </section>`,
-})
-export class NotFound {}
-```
-
-## File: libs/uxcommon/src/components/public-link-panel/public-link-panel.html
-
-```html
-<pc-card [title]="label()" [subtitle]="subtitle()">
-  <div class="space-y-3">
-    <div class="flex gap-2">
-      <input type="text" [value]="url()" readonly class="input input-bordered input-sm flex-1 font-mono text-xs" />
-      <a
-        [href]="url()"
-        target="_blank"
-        class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
-        title="Open public page"
-      >
-        <pc-icon name="arrow-top-right-on-square"></pc-icon>
-      </a>
-      <button type="button" class="btn btn-sm btn-outline btn-primary px-3" (click)="copyUrl()" title="Copy link">
-        <pc-icon name="document-duplicate"></pc-icon>
-      </button>
-    </div>
-  </div>
-</pc-card>
-```
-
-## File: libs/uxcommon/src/components/public-link-panel/public-link-panel.ts
-
-```typescript
-import { Component, input, inject } from '@angular/core';
-import { Icon } from '../icons/icon';
-import { AlertService } from '../alerts/alert-service';
-import { Card as PcCard } from '../card/card';
-
-@Component({
-  selector: 'pc-public-link-panel',
-  imports: [Icon, PcCard],
-  templateUrl: './public-link-panel.html',
-})
-export class PublicLinkPanel {
-  readonly url = input.required<string>();
-  readonly label = input<string>('Public Link');
-  readonly subtitle = input<string>('Share this link so people can sign up.');
-
-  private readonly alertSvc = inject(AlertService);
-
-  protected copyUrl(): void {
-    navigator.clipboard.writeText(this.url()).then(() => {
-      this.alertSvc.showSuccess('Link copied to clipboard!');
-    });
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/swap/swap.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { ReactiveFormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-swap',
-  imports: [ReactiveFormsModule, Icon],
-  template: `<label
-    class="swap ml-auto flex-none cursor-pointer p-2"
-    [class.swap-flip]="animation() === 'flip'"
-    [class.swap-rotate]="animation() === 'rotate'"
-    [class.swap-active]="checked()"
-    (click)="emitClick($event)"
-  >
-    <pc-icon [name]="swapOnIcon()!" class="swap-on" [size]="size()" />
-
-    <pc-icon [name]="swapOffIcon()!" [hover]="hoverIcon()" class="swap-off" [size]="size()" />
-  </label> `,
-})
-export class Swap {
-  public readonly click = output<void>();
-
-  public animation = input<'flip' | 'rotate'>('rotate');
-
-  public checked = input<boolean>(false);
-  public hoverIcon = input<PcIconNameType | null>(null);
-  public size = input(6);
-
-  public swapOffIcon = input.required<PcIconNameType>();
-
-  public swapOnIcon = input.required<PcIconNameType>();
-
-  public emitClick(event: Event) {
-    event.stopPropagation();
-    this.click.emit();
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/confirm-dialog.service.ts
-
-```typescript
-import { signal, computed, Service } from '@angular/core';
-import type { PcIconNameType } from '@icons/icons.index';
-
-export interface DialogChoice<T = any> {
-  label: string;
-  value: T;
-  variant?: DialogVariant;
-}
-
-export interface ChooseOptions<T = any> {
-  allowBackdropClose?: boolean;
-  cancelText?: string;
-  choices: DialogChoice<T>[];
-  icon?: PcIconNameType;
-  message?: string;
-  title: string;
-  variant?: DialogVariant;
-}
-
-export interface BaseDialogOptions {
-  allowBackdropClose?: boolean; // default true for alert/prompt, false for danger confirm
-  cancelText?: string; // default per type
-  confirmText?: string; // default per type
-  icon?: PcIconNameType; // optional icon name for <pc-icon>
-  message?: string;
-  title: string;
-  variant?: DialogVariant;
-}
-
-export interface DialogState {
-  allowBackdropClose: boolean;
-  cancelText: string;
-  confirmText: string;
-  defaultValue?: string;
-  icon?: PcIconNameType;
-
-  // prompt
-  inputPlaceholder?: string;
-  message?: string;
-  title: string;
-  type: DialogType;
-  variant: DialogVariant;
-
-  // choose
-  choices?: DialogChoice[];
-}
-
-export interface PromptOptions extends BaseDialogOptions {
-  defaultValue?: string;
-  inputPlaceholder?: string;
-}
-
-@Service()
-export class ConfirmDialogService {
-  private _resolve: ((value?: any) => void) | null = null;
-
-  public readonly stateSignal = signal<DialogState | null>(null);
-
-  public readonly isOpenSignal = computed(() => this.stateSignal() !== null);
-
-  public alert(opts: BaseDialogOptions): Promise<void> {
-    this.open({
-      type: 'alert',
-      title: opts.title,
-      message: opts.message,
-      variant: opts.variant ?? 'info',
-      icon: opts.icon ?? this.defaultIconFor(opts.variant ?? 'info'),
-      allowBackdropClose: opts.allowBackdropClose ?? true,
-      confirmText: 'OK',
-      cancelText: '',
-    });
-    return new Promise<void>((resolve) => (this._resolve = resolve));
-  }
-
-  public cancel(): void {
-    // Normalize cancel values per dialog type
-    const st = this.stateSignal();
-    if (st?.type === 'confirm') this._resolve?.(false);
-    else if (st?.type === 'alert') this._resolve?.();
-    else if (st?.type === 'prompt') this._resolve?.(null);
-    else if (st?.type === 'choose') this._resolve?.(null);
-    this.close();
-  }
-
-  public confirm(opts: BaseDialogOptions): Promise<boolean> {
-    const v = opts.variant ?? 'neutral';
-    const allowBackdropClose = opts.allowBackdropClose ?? v !== 'danger';
-    const confirmText = opts.confirmText ?? (v === 'danger' ? 'Delete' : 'OK');
-    const cancelText = opts.cancelText ?? 'Cancel';
-
-    this.open({
-      type: 'confirm',
-      title: opts.title,
-      message: opts.message,
-      variant: v,
-      icon: opts.icon ?? this.defaultIconFor(v),
-      allowBackdropClose,
-      confirmText,
-      cancelText,
-    });
-
-    return new Promise<boolean>((resolve) => (this._resolve = resolve));
-  }
-
-  public choose<T>(opts: ChooseOptions<T>): Promise<T | null> {
-    const v = opts.variant ?? 'neutral';
-    this.open({
-      type: 'choose',
-      title: opts.title,
-      message: opts.message,
-      variant: v,
-      icon: opts.icon ?? this.defaultIconFor(v),
-      allowBackdropClose: opts.allowBackdropClose ?? true,
-      confirmText: '',
-      cancelText: opts.cancelText ?? 'Cancel',
-      choices: opts.choices,
-    });
-
-    return new Promise<T | null>((resolve) => (this._resolve = resolve));
-  }
-
-  public defaultIconFor(variant: DialogVariant): PcIconNameType {
-    switch (variant) {
-      case 'danger':
-        return 'exclamation-triangle';
-      case 'warning':
-        return 'exclamation-circle';
-      case 'info':
-        return 'information-circle';
-      case 'success':
-        return 'check-circle';
-      default:
-        return 'x-mark';
-    }
-  }
-
-  public ok(payload?: unknown): void {
-    this._resolve?.(payload ?? true);
-    this.close();
-  }
-
-  public prompt(opts: PromptOptions): Promise<string | null> {
-    this.open({
-      type: 'prompt',
-      title: opts.title,
-      message: opts.message,
-      variant: opts.variant ?? 'neutral',
-      icon: opts.icon ?? ('pencil-square' as PcIconNameType),
-      allowBackdropClose: opts.allowBackdropClose ?? true,
-      confirmText: opts.confirmText ?? 'OK',
-      cancelText: opts.cancelText ?? 'Cancel',
-      inputPlaceholder: opts.inputPlaceholder,
-      defaultValue: opts.defaultValue,
-    });
-    return new Promise<string | null>((resolve) => (this._resolve = resolve));
-  }
-
-  private close(): void {
-    this.stateSignal.set(null);
-    this._resolve = null;
-  }
-
-  private open(st: DialogState): void {
-    this.stateSignal.set(st);
-  }
-}
-
-export type DialogType = 'confirm' | 'alert' | 'prompt' | 'choose';
-
-export type DialogVariant = 'danger' | 'warning' | 'info' | 'success' | 'neutral';
-```
-
-## File: libs/uxcommon/src/directives/animate-if.directive.ts
-
-```typescript
-import {
-  Directive,
-  DestroyRef,
-  EmbeddedViewRef,
-  Signal,
-  TemplateRef,
-  ViewContainerRef,
-  effect,
-  inject,
-  input,
-} from '@angular/core';
-
-@Directive({
-  selector: '[pcAnimateIf]',
-})
-export class AnimateIfDirective {
-  private readonly template = inject(TemplateRef<unknown>);
-  private readonly vcr = inject(ViewContainerRef);
-  private readonly destroyRef = inject(DestroyRef);
-
-  public readonly duration = input(300, { alias: 'pcAnimateIfDuration' });
-
-  public readonly pcAnimateIfEnter = input('animate-left');
-
-  public readonly pcAnimateIfExit = input('animate-exit-right');
-
-  public readonly pcAnimateIf = input.required<Signal<boolean>>();
-
-  private condition = false;
-  private timeoutId: NodeJS.Timeout | undefined;
-  private view: EmbeddedViewRef<unknown> | null = null;
-
-  constructor() {
-    effect(() => {
-      const conditionSignal = this.pcAnimateIf();
-      if (conditionSignal) {
-        this.toggle(conditionSignal());
-      }
-    });
-
-    this.destroyRef.onDestroy(() => {
-      clearTimeout(this.timeoutId);
-
-      if (this.view?.rootNodes[0]) {
-        const el = this.view.rootNodes[0] as HTMLElement;
-        el?.classList.remove(this.pcAnimateIfEnter(), this.pcAnimateIfExit());
-      }
-    });
-  }
-
-  private animatedEntry() {
-    this.vcr.clear();
-    this.view = this.vcr.createEmbeddedView(this.template);
-    const enterClass = this.pcAnimateIfEnter();
-    const el = this.view.rootNodes[0] as HTMLElement;
-    requestAnimationFrame(() => el?.classList.add(enterClass));
-  }
-
-  private animatedExit() {
-    if (!this.view?.rootNodes[0]) return;
-
-    const el = this.view.rootNodes[0] as HTMLElement;
-    const enterClass = this.pcAnimateIfEnter();
-    const exitClass = this.pcAnimateIfExit();
-
-    // Remove entry animation in case it's still applied
-    el.classList.remove(enterClass);
-
-    // If exit animation is 'animate-none', clear the view immediately without delay
-    if (exitClass === 'animate-none') {
-      this.vcr.clear();
-      this.view = null;
-      return;
-    }
-
-    // Add exit animation
-    el.classList.add(exitClass);
-
-    this.timeoutId = setTimeout(() => {
-      // Cleanup all animation classes before removal
-      el.classList.remove(enterClass, exitClass);
-      this.vcr.clear();
-      this.view = null;
-    }, this.duration());
-  }
-
-  private toggle(condition: boolean) {
-    if (condition === this.condition) return;
-
-    this.condition = condition;
-
-    if (condition) this.animatedEntry();
-    else if (this.view) this.animatedExit();
-  }
-}
-```
-
-## File: libs/uxcommon/src/directives/spin-on-click.directive.ts
-
-```typescript
-import { Directive, DestroyRef, ElementRef, HostListener, inject, input } from '@angular/core';
-
-@Directive({
-  selector: 'button[pcSpinOnClick]',
-  exportAs: 'pcSpinOnClick',
-})
-export class SpinOnClickDirective {
-  private readonly el = inject(ElementRef<HTMLButtonElement>);
-  private readonly destroyRef = inject(DestroyRef);
-
-  readonly minMs = input(700);
-
-  private timer: ReturnType<typeof setTimeout> | null = null;
-
-  constructor() {
-    this.destroyRef.onDestroy(() => this.clearTimer());
-  }
-
-  @HostListener('click')
-  protected onButtonClick(): void {
-    const icon = this.el.nativeElement.querySelector('pc-icon') as HTMLElement | null;
-    if (!icon) return;
-
-    icon.classList.add('animate-spin', 'inline-block');
-    this.clearTimer();
-
-    this.timer = setTimeout(() => {
-      icon.classList.remove('animate-spin', 'inline-block');
-      this.timer = null;
-    }, this.minMs());
-  }
-
-  private clearTimer(): void {
-    if (this.timer !== null) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-  }
-}
-```
-
-## File: libs/uxcommon/src/pipes/file-icon.util.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-// file-icon.util.ts
-export type FileIconKey =
-  | 'pdf'
-  | 'doc'
-  | 'sheet'
-  | 'slides'
-  | 'text'
-  | 'image'
-  | 'audio'
-  | 'video'
-  | 'archive'
-  | 'code'
-  | 'design'
-  | 'font'
-  | 'ebook'
-  | 'email'
-  | 'calendar'
-  | 'contact'
-  | 'db'
-  | 'disk'
-  | 'exe'
-  | 'unknown';
-
-function cleanName(name: string): string {
-  // strip query/hash (e.g., foo.pdf?dl=1#x)
-  return name.split('#')[0]!.split('?')[0]!.trim();
-}
-
-export function iconKeyForFilename(filename: string): FileIconKey {
-  if (!filename) return 'unknown';
-  const name = cleanName(filename.toLowerCase());
-
-  // multi-part extensions first (e.g., .tar.gz)
-  for (const mex of MULTI_EXT) {
-    if (name.endsWith(`.${mex}`)) return 'archive';
-  }
-
-  // single extension
-  const lastDot = name.lastIndexOf('.');
-  if (lastDot === -1 || lastDot === name.length - 1) return 'unknown';
-  const ext = name.slice(lastDot + 1);
-  return EXT_TO_KEY[ext] ?? 'unknown';
-}
-
-const EXT_MAP: Record<FileIconKey, string[]> = {
-  pdf: ['pdf'],
-  doc: ['doc', 'docx', 'rtf', 'odt', 'pages'],
-  sheet: ['xls', 'xlsx', 'csv', 'tsv', 'ods', 'numbers'],
-  slides: ['ppt', 'pptx', 'key', 'odp'],
-  text: ['txt', 'md', 'markdown', 'rst', 'log'],
-  image: ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'tiff', 'tif', 'heic', 'heif'],
-  audio: ['mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'oga'],
-  video: ['mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi', 'wmv'],
-  archive: ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz'],
-  code: [
-    'js',
-    'ts',
-    'jsx',
-    'tsx',
-    'json',
-    'jsonl',
-    'html',
-    'css',
-    'scss',
-    'xml',
-    'yml',
-    'yaml',
-    'sql',
-    'py',
-    'java',
-    'c',
-    'cpp',
-    'h',
-    'cs',
-    'go',
-    'rs',
-    'php',
-    'rb',
-    'kt',
-    'swift',
-    'sh',
-    'ps1',
-  ],
-  design: ['psd', 'ai', 'fig', 'xd', 'sketch'],
-  font: ['ttf', 'otf', 'woff', 'woff2'],
-  ebook: ['epub', 'mobi', 'azw', 'djvu'],
-  email: ['eml', 'msg'],
-  calendar: ['ics'],
-  contact: ['vcf'],
-  db: ['sqlite', 'sqlite3', 'db', 'mdb', 'accdb', 'parquet'],
-  disk: ['iso', 'dmg', 'img'],
-  exe: ['exe', 'msi', 'apk', 'pkg', 'appimage'],
-  unknown: [],
-};
-
-// reverse lookup
-const EXT_TO_KEY: Record<string, FileIconKey> = Object.entries(EXT_MAP).reduce(
-  (acc, [key, exts]) => {
-    for (const e of exts) acc[e] = key as FileIconKey;
-    return acc;
-  },
-  {} as Record<string, FileIconKey>,
-);
-const MULTI_EXT = ['tar.gz', 'tar.bz2', 'tar.xz', 'tgz'] as const;
-
-// Map to your <pc-icon> names (assume these exist in your icon set)
-export const ICON_FOR_KEY: Record<FileIconKey, PcIconNameType> = {
-  pdf: 'file-pdf',
-  doc: 'file-doc',
-  sheet: 'file-sheet',
-  slides: 'file-slides',
-  text: 'file-text',
-  image: 'file-image',
-  audio: 'file-audio',
-  video: 'file-video',
-  archive: 'file-archive',
-  code: 'file-code',
-  design: 'file-design',
-  font: 'file-font',
-  ebook: 'file-ebook',
-  email: 'file-email',
-  calendar: 'file-calendar',
-  contact: 'file-contact',
-  db: 'file-db',
-  disk: 'file-disk',
-  exe: 'file-exe',
-  unknown: 'unknown',
-};
-```
-
-## File: libs/uxcommon/src/pipes/svg-html-pipe.ts
-
-```typescript
-import { Pipe, PipeTransform, inject } from '@angular/core';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-
-@Pipe({ standalone: true, name: 'bypassHtmlSanitizer' })
-export class BypassHtmlSanitizerPipe implements PipeTransform {
-  private sanitizer = inject(DomSanitizer);
-
-  public transform(html: string): SafeHtml {
-    return this.sanitizer.bypassSecurityTrustHtml(html);
-  }
-}
-```
-
-## File: libs/uxcommon/src/index.ts
-
-```typescript
-export * from './loading-gate';
-
-// Components
-export * from './components/alerts/alert-service';
-export * from './components/alerts/alerts';
-export * from './components/icons/icon';
-export * from './components/icons/icons.index';
-export * from './components/confirm-dialog-host';
-export * from './components/confirm-dialog.service';
-export * from './components/user-avatar/user-avatar';
-export * from './components/tags/tagitem';
-export * from './components/input/input';
-export * from './components/textarea/textarea';
-export * from './components/select/select';
-export * from './components/toggle/toggle';
-export * from './components/detail-header/detail-header';
-export * from './components/detail-layout/detail-layout';
-export * from './components/entity-overview/entity-overview';
-export * from './components/address-form-group/address-form-group';
-export * from './components/card/card';
-export * from './components/stat-card/stat-card';
-export * from './components/side-drawer/side-drawer';
-export * from './components/tabs/tabs';
-export * from './components/status-badge/status-badge';
-export * from './components/profile-card/profile-card';
-export * from './components/detail-row/detail-row';
-export * from './components/detail-item/detail-item';
-export * from './components/system-metadata/system-metadata';
-export * from './components/fields-selector/fields-selector';
-export * from './components/public-link-panel/public-link-panel';
-
-// Directives
-export * from './directives/animate-if.directive';
-export * from './directives/spin-on-click.directive';
-
-// Pipes
-export * from './pipes/file-icon.pipe';
-export * from './pipes/filesize.pipe';
-export * from './pipes/sanitize-html.pipe';
-export * from './pipes/svg-html-pipe';
-export * from './pipes/timeago.pipe';
-```
-
-## File: libs/uxcommon/src/loading-gate.ts
-
-```typescript
-// _loading-gate.ts
-import { signal } from '@angular/core';
-
-export type loadingGate = {
-  visible: ReturnType<typeof signal<boolean>>;
-
-  begin(): () => void;
-};
-
-export function createLoadingGate(options?: { delay?: number; minDuration?: number }): loadingGate {
-  const delay = options?.delay ?? 300; // ms before showing
-  const minDuration = options?.minDuration ?? 300; // ms the _loading stays once visible
-
-  const visible = signal(false);
-  let pendingCount = 0;
-  let showTimer: any = null;
-  let hideTimer: any = null;
-  let shownAt = 0;
-
-  const clearShowTimer = () => {
-    if (showTimer) {
-      clearTimeout(showTimer);
-      showTimer = null;
-    }
-  };
-  const clearHideTimer = () => {
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-  };
-
-  function scheduleShow() {
-    clearShowTimer();
-    showTimer = setTimeout(() => {
-      showTimer = null;
-      if (pendingCount > 0 && !visible()) {
-        visible.set(true);
-        shownAt = performance.now();
-      }
-    }, delay);
-  }
-
-  function scheduleHide() {
-    clearHideTimer();
-    if (!visible()) return; // never shown → nothing to hide
-
-    const remaining = Math.max(0, minDuration - (performance.now() - shownAt));
-    hideTimer = setTimeout(() => {
-      if (pendingCount === 0) visible.set(false);
-    }, remaining);
-  }
-
-  function begin() {
-    pendingCount++;
-    if (pendingCount === 1) {
-      // First operation: start the delayed show
-      scheduleShow();
-    }
-    // Return disposer
-    let done = false;
-    return () => {
-      if (done) return;
-      done = true;
-      pendingCount--;
-      if (pendingCount <= 0) {
-        pendingCount = 0;
-        // If we never showed, cancel the show timer so _loading never appears
-        clearShowTimer();
-        scheduleHide(); // hides now or after minDuration
-      }
-    };
-  }
-
-  return { begin, visible };
-}
-```
-
-## File: libs/uxcommon/project.json
-
-```json
-{
-  "name": "uxcommon",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "libs/uxcommon/src",
-  "prefix": "lib",
-  "projectType": "library",
-  "tags": [],
-  "targets": {
-    "test": {
-      "executor": "@nx/vitest:test",
-      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
-      "options": {
-        "passWithNoTests": true,
-        "reportsDirectory": "../../coverage/libs/uxcommon"
-      }
-    },
-    "lint": {
-      "executor": "@nx/eslint:lint"
-    }
-  }
-}
-```
-
 ## File: apps/backend/src/app/\_migrations/0001_baseline.ts
 
 ```typescript
@@ -20045,6 +15765,7 @@ import { NotificationsRepo } from '../notifications/repositories/notifications.r
 import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { processMentions } from '../../lib/mail/mentions-util';
 import { sanitizeHtml } from '../../lib/mail/sanitize-util';
+import { StorageService } from '../../lib/storage.service';
 import { sql } from 'kysely';
 
 export class EmailsController extends BaseController<'emails', EmailRepo> {
@@ -20053,6 +15774,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   private commentsRepo = new EmailCommentsRepo();
   private draftsRepo = new EmailDraftsRepo();
   private activityRepo = new UserActivityRepo();
+  private storageService = new StorageService();
 
   constructor() {
     super(new EmailRepo());
@@ -20189,8 +15911,77 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
     const numTrashed =
       idsNotInTrash.length > 0 ? await this.getRepo().moveToTrash(tenant_id as string, idsNotInTrash) : 0;
-    const numDeleted = idsInTrash.length > 0 && (await super.deleteMany(tenant_id, idsInTrash));
+
+    let numDeleted: number | boolean = false;
+    if (idsInTrash.length > 0) {
+      // Capture the attachment file references BEFORE the cascade removes the
+      // email_attachments rows, so we can clean up storage afterwards.
+      const fileIds = await this.getAttachmentFileIds(tenant_id as string, idsInTrash);
+      numDeleted = await super.deleteMany(tenant_id, idsInTrash);
+      // Hard delete is permanent — purge orphaned attachment blobs + file rows.
+      await this.purgeOrphanedFiles(tenant_id as string, fileIds);
+    }
+
     return numTrashed !== 0 || numDeleted;
+  }
+
+  /** Distinct, non-null file_ids referenced by the given emails' attachments. */
+  private async getAttachmentFileIds(tenant_id: string, emailIds: string[]): Promise<string[]> {
+    if (emailIds.length === 0) return [];
+    const rows = await this.attachmentsRepo.db
+      .selectFrom('email_attachments')
+      .select('file_id')
+      .distinct()
+      .where('tenant_id', '=', tenant_id)
+      .where('email_id', 'in', emailIds)
+      .where('file_id', 'is not', null)
+      .execute();
+    return rows.map((r) => String(r.file_id)).filter((id) => id !== 'null');
+  }
+
+  /**
+   * Delete file rows + storage blobs for files that are no longer referenced by
+   * any remaining email attachment (files are sha256-deduped and can be shared).
+   * Storage deletion is best-effort: a failed blob delete must not abort the txn.
+   */
+  private async purgeOrphanedFiles(tenant_id: string, fileIds: string[]): Promise<void> {
+    if (fileIds.length === 0) return;
+
+    const db = this.attachmentsRepo.db;
+    for (const fileId of fileIds) {
+      try {
+        const stillReferenced = await db
+          .selectFrom('email_attachments')
+          .select('id')
+          .where('tenant_id', '=', tenant_id)
+          .where('file_id', '=', fileId)
+          .limit(1)
+          .executeTakeFirst();
+
+        if (stillReferenced) continue;
+
+        const file = await db
+          .selectFrom('files')
+          .select(['id', 'storage_key'])
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', fileId)
+          .executeTakeFirst();
+
+        if (!file) continue;
+
+        await db.deleteFrom('files').where('tenant_id', '=', tenant_id).where('id', '=', fileId).execute();
+
+        if (file.storage_key) {
+          try {
+            await this.storageService.delete(file.storage_key);
+          } catch (err) {
+            console.error(`Failed to delete storage blob ${file.storage_key} for file ${fileId}`, err);
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to purge orphaned file ${fileId}`, err);
+      }
+    }
   }
 
   public async getAllAttachments(tenant_id: string, email_id: string, options?: { includeInline: boolean }) {
@@ -24453,1305 +20244,98 @@ export const env = {
 };
 ```
 
-## File: libs/common/src/lib/schemas/core.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const sortModelItem = z
-  .object({
-    colId: z.string(),
-    sort: z.enum(['asc', 'desc']),
-  })
-  .optional();
-
-export interface QueryBuilderRuleNode {
-  kind: 'rule';
-  id: string;
-  field: string;
-  op: string;
-  value?: any;
-}
-
-export interface QueryBuilderGroupNode {
-  kind: 'group';
-  id: string;
-  conjunction: 'AND' | 'OR';
-  rules: QueryBuilderNode[];
-}
-
-export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
-
-export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
-  if (node.kind === 'rule') {
-    return { ...node };
-  } else {
-    return {
-      ...node,
-      rules: node.rules.map(cloneQueryBuilderNode),
-    };
-  }
-}
-
-export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
-  z.discriminatedUnion('kind', [
-    z.object({
-      kind: z.literal('rule'),
-      id: z.string(),
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown().optional(),
-    }),
-    z.object({
-      kind: z.literal('group'),
-      id: z.string(),
-      conjunction: z.enum(['AND', 'OR']),
-      rules: z.array(queryBuilderNodeSchema),
-    }),
-  ]),
-);
-
-export const oldAdvancedFilterModelSchema = z.object({
-  conjunction: z.enum(['AND', 'OR']),
-  rules: z.array(
-    z.object({
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown(),
-    }),
-  ),
-});
-
-export const getAllOptions = z
-  .object({
-    searchStr: z.string().optional(),
-    startRow: z.number().optional(),
-    endRow: z.number().optional(),
-    sortModel: z.array(sortModelItem).optional(),
-    filterModel: z.record(z.string(), z.unknown()).optional(),
-    includeArchived: z.boolean().optional(),
-    columns: z.array(z.string()).optional(),
-    limit: z.number().optional(),
-    offset: z.number().optional(),
-    orderBy: z.array(z.string()).optional(),
-    groupBy: z.array(z.string()).optional(),
-    tags: z.array(z.string()).optional(),
-    issues: z.array(z.string()).optional(),
-    type: z.enum(['tag', 'issue']).optional(),
-    userId: z.string().optional(),
-    entity: z.string().optional(),
-    activity: z.string().optional(),
-    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
-    listId: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvInput = z
-  .object({
-    options: getAllOptions,
-    columns: z.array(z.string()).optional(),
-    fileName: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvResponse = z.union([
-  z.object({
-    status: z.literal('processing'),
-  }),
-  z.object({
-    csv: z.string(),
-    fileName: z.string(),
-    columns: z.array(z.string()),
-    rowCount: z.number(),
-    status: z.literal('completed').optional(),
-  }),
-]);
-
-export const queueExportInput = z.object({
-  entity: z.enum([
-    'persons',
-    'households',
-    'companies',
-    'tags',
-    'issues',
-    'tasks',
-    'lists',
-    'newsletters',
-    'teams',
-    'users',
-    'volunteer',
-    'forms',
-    'workflows',
-  ]),
-  options: getAllOptions,
-  columns: z.array(z.string()).optional(),
-  fileName: z.string().optional(),
-});
-
-export const dataExportRecord = z.object({
-  id: z.string(),
-  entity: z.string(),
-  file_name: z.string(),
-  status: z.enum(['pending', 'processing', 'completed', 'failed']),
-  row_count: z.number().nullable(),
-  error: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  createdBy: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable()
-    .optional(),
-});
-
-export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
-export const uuidSchema = z.string().uuid('Invalid UUID format');
-export const idSchema = dbIdSchema;
-
-export const addressSchema = z.object({
-  lat: z.number().nullable().optional(),
-  lng: z.number().nullable().optional(),
-  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
-  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
-  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
-  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
-  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
-  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
-  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
-  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
-  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
-  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
-});
-
-export const nameSchema = (fieldName: string, maxLen = 100) =>
-  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
-
-export const descriptionSchema = (maxLen = 1000) =>
-  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
-
-export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
-
-export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
-export const phoneSchema = (fieldName: string) =>
-  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
-
-export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
-export const jsonSchema = z.string().trim().max(50000, 'JSON is too long').nullable().optional();
-```
-
-## File: libs/common/src/lib/schemas/events.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
-
-const slugSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .regex(
-    /^(?=.*[a-z])[a-z0-9-]+$/,
-    'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
-  );
-
-export const AddEventObj = z.object({
-  name: nameSchema('Event name', 200),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'Start date & time is required' }),
-  ),
-  end_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'End date & time is required' }),
-  ),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema,
-  is_published: z.boolean().default(false).optional(),
-  send_reminder: z.boolean().default(true).optional(),
-  send_registration_confirmation: z.boolean().default(true).optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const EventObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  location_address: z.string().nullable().optional(),
-  start_time: z.coerce.date(),
-  end_time: z.coerce.date(),
-  capacity: z.number().nullable().optional(),
-  contact_email: z.string().nullable().optional(),
-  contact_phone: z.string().nullable().optional(),
-  slug: z.string(),
-  is_published: z.boolean(),
-  send_reminder: z.boolean(),
-  send_registration_confirmation: z.boolean(),
-});
-
-export const UpdateEventObj = z.object({
-  name: nameSchema('Event name', 200).optional(),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'Start date & time is required' }),
-    )
-    .optional(),
-  end_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'End date & time is required' }),
-    )
-    .optional(),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema.optional(),
-  is_published: z.boolean().optional(),
-  send_reminder: z.boolean().optional(),
-  send_registration_confirmation: z.boolean().optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const AddTicketTypeObj = z.object({
-  event_id: idSchema,
-  name: nameSchema('Ticket type name', 100),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').default(0),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).default(0).optional(),
-});
-
-export const TicketTypeObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  price_cents: z.number(),
-  capacity: z.number().nullable().optional(),
-  sort_order: z.number(),
-});
-
-export const UpdateTicketTypeObj = z.object({
-  name: nameSchema('Ticket type name', 100).optional(),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').optional(),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).optional(),
-});
-
-const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
-
-export const AddRegistrationObj = z.object({
-  event_id: idSchema,
-  person_id: idSchema,
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.default('registered').optional(),
-  notes: notesSchema,
-});
-
-export const RegistrationObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  person_id: z.string(),
-  ticket_type_id: z.string().nullable().optional(),
-  status: registrationStatusEnum,
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: z.string().nullable().optional(),
-});
-
-export const UpdateRegistrationObj = z.object({
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.optional(),
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: notesSchema,
-});
-```
-
-## File: libs/common/src/lib/emails.ts
-
-```typescript
-// ---------- Public compatibility interface (loose) ----------
-// ---------- Strict types for compile-time guarantees ----------
-interface EmailFolderBase {
-  icon: string;
-  id: string;
-  is_default: boolean;
-  name: string;
-  sort_order: number;
-  is_hidden?: boolean;
-}
-
-export interface EmailFolderConfig {
-  code?: string; // optional/loose for compatibility
-  icon: string;
-  id: string;
-  is_default: boolean;
-  is_virtual: boolean;
-  name: string;
-  sort_order: number;
-  is_hidden?: boolean;
-}
-
-export interface RealEmailFolder extends EmailFolderBase {
-  code?: never; // forbidden on real folders
-  is_virtual: false;
-}
-
-export interface VirtualEmailFolder extends EmailFolderBase {
-  code: string; // required when virtual
-  is_virtual: true;
-}
-
-// ---------- Derived types ----------
-type Folder = (typeof EMAIL_FOLDERS)[number];
-
-type OnlyReal = Extract<Folder, { is_virtual: false }>;
-
-type OnlyVirtual = Extract<Folder, { is_virtual: true }>;
-
-// All folders (merged, exact keys/ids)
-export type AllFolderKey = keyof typeof SPECIAL_FOLDERS | keyof typeof REGULAR_FOLDERS;
-
-export type AllFoldersMap = typeof SPECIAL_FOLDERS & typeof REGULAR_FOLDERS;
-
-export type EmailStatus = 'open' | 'closed';
-
-export type HasRow = {
-  email_id: string;
-  has: boolean;
-};
-
-export type RegularFolderId = OnlyReal['id']; // '7' | '3' | '4' | '5'
-
-export type RegularFolderKey = Uppercase<RegularFolderName>; // 'DRAFTS' | 'SENT' | 'SPAM' | 'TRASH'
-
-export type RegularFolderName = OnlyReal['name']; // 'Drafts' | 'Sent' | 'Spam' | 'Trash'
-
-export type ServerEmail = {
-  assigned_to?: string | null;
-  attachment_count?: number | string | bigint | null;
-  folder_id: string | number;
-  from_email?: string | null;
-  is_read?: boolean;
-
-  // any of these might be present depending on endpoint:
-  has_attachment?: boolean | null;
-  id: string | number;
-  is_favourite: boolean;
-  preview?: string | null;
-  status?: string;
-  subject?: string | null;
-  to_email?: string | null;
-  updated_at: string | Date;
-  date_sent?: string | Date | null;
-  sender_first_name?: string | null;
-  sender_last_name?: string | null;
-};
-
-export type SpecialFolderId = OnlyVirtual['id'];
-
-export type SpecialFolderKey = OnlyVirtual['code'];
-
-export type StrictEmailFolderConfig = VirtualEmailFolder | RealEmailFolder;
-
-function createRegularFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
-  type RegularFolder = Extract<F[number], { is_virtual: false }>;
-  type FolderKey = Uppercase<RegularFolder['name'] & string>;
-  type FolderId<K extends FolderKey> = Extract<RegularFolder, { name: Capitalize<Lowercase<K>> }>['id'];
-
-  const entries = folders
-    .filter((f): f is RegularFolder => !f.is_virtual)
-    .map((f) => [f.name.toUpperCase() as FolderKey, f.id] as const);
-
-  return Object.freeze(Object.fromEntries(entries)) as { readonly [K in FolderKey]: FolderId<K> };
-}
-
-function createSpecialFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
-  type VirtualFolder = Extract<F[number], { is_virtual: true }>;
-  type FolderCode = VirtualFolder extends { code: infer C extends string } ? C : never;
-  type FolderId<Code extends string> = Extract<VirtualFolder, { code: Code }>['id'];
-
-  const entries = folders.filter((f): f is VirtualFolder => f.is_virtual).map((f) => [f.code, f.id] as const);
-
-  return Object.freeze(Object.fromEntries(entries)) as { readonly [P in FolderCode]: FolderId<P> };
-}
-
-export const isRegularFolderId = (id: string): id is RegularFolderId =>
-  Object.values(REGULAR_FOLDERS).includes(id as RegularFolderId);
-
-// Optional runtime type guards
-export const isSpecialFolderId = (id: string): id is SpecialFolderId =>
-  Object.values(SPECIAL_FOLDERS).includes(id as SpecialFolderId);
-
-// ---------- Configuration (validated against STRICT type) ----------
-export const EMAIL_FOLDERS = [
-  // Virtual
-  {
-    id: '8',
-    name: 'Unassigned',
-    icon: 'inbox',
-    sort_order: 1,
-    is_default: false,
-    is_virtual: true,
-    code: 'UNASSIGNED',
-  },
-  {
-    id: '6',
-    name: 'Assigned to me',
-    icon: 'user-circle',
-    sort_order: 2,
-    is_default: true,
-    is_virtual: true,
-    code: 'ASSIGNED_TO_ME',
-  },
-  { id: '9', name: 'Favourites', icon: 'star', sort_order: 3, is_default: false, is_virtual: true, code: 'FAVOURITES' },
-  {
-    id: '1',
-    name: 'All Open',
-    icon: 'document-duplicate',
-    sort_order: 4,
-    is_default: false,
-    is_virtual: true,
-    code: 'ALL_OPEN',
-  },
-  {
-    id: '2',
-    name: 'Completed',
-    icon: 'document-check',
-    sort_order: 5,
-    is_default: false,
-    is_virtual: true,
-    code: 'CLOSED',
-  },
-
-  // Real
-  { id: '11', name: 'Inbox', icon: 'inbox', sort_order: 6, is_default: false, is_virtual: false },
-  { id: '7', name: 'Drafts', icon: 'document', sort_order: 7, is_default: false, is_virtual: false },
-  { id: '10', name: 'Outbox', icon: 'clock', sort_order: 8, is_default: false, is_virtual: false },
-  { id: '3', name: 'Sent', icon: 'paper-airplane', sort_order: 9, is_default: false, is_virtual: false },
-  { id: '5', name: 'Trash', icon: 'trash', sort_order: 10, is_default: false, is_virtual: false },
-  { id: '4', name: 'Spam', icon: 'exclamation-triangle', sort_order: 11, is_default: false, is_virtual: false },
-] as const satisfies StrictEmailFolderConfig[];
-
-// Real-only (exact keys/ids)
-export const REGULAR_FOLDERS = createRegularFolders(EMAIL_FOLDERS);
-
-// ---------- Exposed constants ----------
-
-// Virtual-only (exact keys/ids)
-export const SPECIAL_FOLDERS = createSpecialFolders(EMAIL_FOLDERS);
-export const ALL_FOLDERS: AllFoldersMap = { ...SPECIAL_FOLDERS, ...REGULAR_FOLDERS } as const;
-
-// Useful helpers
-export const ALL_FOLDER_IDS = EMAIL_FOLDERS.map((f) => f.id) as ReadonlyArray<Folder['id']>;
-export const FOLDER_BY_ID = Object.freeze(Object.fromEntries(EMAIL_FOLDERS.map((f) => [f.id, f]))) as Readonly<
-  Record<Folder['id'], Folder>
->;
-```
-
-## File: libs/common/src/lib/schema.ts
-
-```typescript
-export * from './schemas/core.schema';
-export * from './schemas/auth.schema';
-export * from './schemas/tags.schema';
-export * from './schemas/lists.schema';
-export * from './schemas/teams.schema';
-export * from './schemas/emails.schema';
-export * from './schemas/marketing.schema';
-export * from './schemas/persons.schema';
-export * from './schemas/settings.schema';
-export * from './schemas/tasks.schema';
-export * from './schemas/volunteer.schema';
-export * from './schemas/web-forms.schema';
-export * from './schemas/workflows.schema';
-export * from './schemas/companies.schema';
-export * from './schemas/events.schema';
-export * from './schemas/connections.schema';
-```
-
-## File: libs/common/src/lib/sla.ts
-
-```typescript
-export function calculateWorkingTimeMs(
-  startDate: Date,
-  endDate: Date,
-  workingDays: number[],
-  workingHoursStart: string,
-  workingHoursEnd: string,
-): number {
-  if (startDate.getTime() >= endDate.getTime()) {
-    return 0;
-  }
-
-  // Parse start hour/minute
-  const [startHour = NaN, startMin = NaN] = workingHoursStart.split(':').map(Number);
-  // Parse end hour/minute
-  const [endHour = NaN, endMin = NaN] = workingHoursEnd.split(':').map(Number);
-
-  if (isNaN(startHour) || isNaN(startMin) || isNaN(endHour) || isNaN(endMin) || workingDays.length === 0) {
-    // Return standard elapsed time as fallback if settings are malformed
-    return endDate.getTime() - startDate.getTime();
-  }
-
-  const current = new Date(startDate);
-  current.setHours(0, 0, 0, 0);
-
-  const endLimit = new Date(endDate);
-  endLimit.setHours(23, 59, 59, 999);
-
-  let totalMs = 0;
-
-  while (current.getTime() <= endLimit.getTime()) {
-    const dayOfWeek = current.getDay();
-
-    if (workingDays.includes(dayOfWeek)) {
-      const workStart = new Date(current);
-      workStart.setHours(startHour, startMin, 0, 0);
-
-      const workEnd = new Date(current);
-      workEnd.setHours(endHour, endMin, 0, 0);
-
-      const actualStart = Math.max(startDate.getTime(), workStart.getTime());
-      const actualEnd = Math.min(endDate.getTime(), workEnd.getTime());
-
-      const overlap = actualEnd - actualStart;
-      if (overlap > 0) {
-        totalMs += overlap;
+## File: apps/backend/project.json
+
+```json
+{
+  "name": "backend",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/backend/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "generate-context": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx repomix --output apps/backend/STRUCTURE.md --include \"apps/backend/src/**/*\" --ignore \"apps/frontend/**,apps/libs/**,libs/**,**/STRUCTURE.md,**/_migrations/schema_dump.sql,**/*.spec.ts\""
       }
-    }
-
-    // Step to the next day
-    current.setDate(current.getDate() + 1);
-  }
-
-  return totalMs;
-}
-```
-
-## File: libs/common/src/index.ts
-
-```typescript
-export type {
-  IAuthKeyPayload,
-  IAuthUser,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  IUserStatsSnapshot,
-  IToken,
-  signInInputType,
-  signUpInputType,
-} from './lib/auth';
-
-export { signInInputObj, signUpInputObj } from './lib/auth';
-
-export type {
-  INow,
-  AddTagType,
-  AddListType,
-  AddMarketingEmailType,
-  AddTaskType,
-  AddTeamType,
-  InviteAuthUserType,
-  Verify2FAType,
-  PERSONINHOUSEHOLDTYPE,
-  PersonsType,
-  MarketingEmailType,
-  MarketingEmailTopLinkType,
-  TasksType,
-  ListsType,
-  SettingsType,
-  SettingsEntryType,
-  UpsertSettingsInputType,
-  SortModelType,
-  UpdateHouseholdsType,
-  UpdatePersonsType,
-  UpdateTagType,
-  UpdateListType,
-  UpdateTeamType,
-  UpdateAuthUserType,
-  UpdateMarketingEmailType,
-  UpdateTaskType,
-  getAllOptionsType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  QueueExportInputType,
-  DataExportRecordType,
-  ImportListItem,
-  AddVolunteerEventType,
-  VolunteerEventsType,
-  UpdateVolunteerEventType,
-  AddVolunteerShiftType,
-  VolunteerShiftsType,
-  UpdateVolunteerShiftType,
-  AddWebFormType,
-  UpdateWebFormType,
-  WebFormsType,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowsType,
-  AddWorkflowType,
-  UpdateWorkflowType,
-  WorkflowStepsType,
-  AddWorkflowStepType,
-  UpdateWorkflowStepType,
-  WorkflowEnrollmentsType,
-  AddEventType,
-  EventType,
-  UpdateEventType,
-  AddTicketTypeType,
-  TicketTypeType,
-  UpdateTicketTypeType,
-  AddRegistrationType,
-  RegistrationType,
-  UpdateRegistrationType,
-  AddConnectionType,
-} from './lib/models';
-
-export {
-  cloneQueryBuilderNode,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  AddTeamObj,
-  InviteAuthUserObj,
-  Verify2FAObj,
-  PersonsObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  TasksObj,
-  ListsObj,
-  SettingsObj,
-  SettingsEntryObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  UpdateListObj,
-  UpdateTeamObj,
-  UpdateAuthUserObj,
-  NotificationPreferencesObj,
-  UpdateMarketingEmailObj,
-  UpdateTaskObj,
-  sortModelItem,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  dataExportRecord,
-  ImportListItemObj,
-  dbIdSchema,
-  uuidSchema,
-  addressSchema,
-  idSchema,
-  nameSchema,
-  descriptionSchema,
-  emailSchema,
-  phoneSchema,
-  notesSchema,
-  jsonSchema,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  CompanyInputObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-  RELATION_TYPES,
-  RELATION_TYPE_LABELS,
-  relationTypeSchema,
-} from './lib/schema';
-
-export { debounce, sleep } from './lib/utils';
-export { calculateWorkingTimeMs } from './lib/sla';
-
-export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
-
-export type { EmailStatus, EmailFolderConfig } from './lib/emails';
-
-export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
-
-export type {
-  JSend,
-  JSendSuccessInterface as JSendSuccess,
-  JSendFailInterface as JSendFail,
-  JSendStatus,
-  JSendErrorInterface as JSendError,
-} from './lib/jsend';
-```
-
-## File: libs/uxcommon/src/components/address-autocomplete/googlePlacesAddressMapper.ts
-
-```typescript
-import type { AddressType } from '../../../../common/src/lib/kysely.models';
-
-type AddressTypeMapInterface = {
-  [key in keyof AddressType]: string[];
-};
-
-export function parseAddress(place: google.maps.places.PlaceResult): AddressType {
-  const address: AddressType = {};
-
-  if (!place.address_components || place.address_components.length === 0) {
-    return address;
-  }
-
-  const address_components: google.maps.GeocoderAddressComponent[] = place.address_components;
-
-  address_components.forEach((component) => {
-    for (const mapKey in googleAddressToAddressTypeMap) {
-      const key = mapKey as keyof typeof googleAddressToAddressTypeMap;
-      if (googleAddressToAddressTypeMap[key]?.indexOf(component.types[0]!) !== -1) {
-        (address[key] as string) = key === 'country' ? component.short_name : component.long_name;
-      }
-    }
-  });
-
-  address.formatted_address = place.formatted_address;
-  address.lat = place.geometry?.location?.lat();
-  address.lng = place.geometry?.location?.lng();
-  address.type = place.types && place.types[0];
-
-  return address;
-}
-
-export function parsePlace(place: google.maps.places.Place): AddressType {
-  const address: AddressType = {};
-
-  const addressComponents = place.addressComponents;
-  if (!addressComponents || addressComponents.length === 0) {
-    return address;
-  }
-
-  addressComponents.forEach((component: any) => {
-    for (const mapKey in googleAddressToAddressTypeMap) {
-      const key = mapKey as keyof typeof googleAddressToAddressTypeMap;
-      if (component.types && googleAddressToAddressTypeMap[key]?.indexOf(component.types[0]) !== -1) {
-        (address[key] as string) = key === 'country' ? component.shortText : component.longText;
-      }
-    }
-  });
-
-  address.formatted_address = place.formattedAddress ?? undefined;
-  address.lat = place.location?.lat() ?? undefined;
-  address.lng = place.location?.lng() ?? undefined;
-  address.type = (place.types && place.types[0]) ?? undefined;
-
-  return address;
-}
-
-const googleAddressToAddressTypeMap: Partial<AddressTypeMapInterface> = {
-  apt: ['subpremise'],
-  street_num: ['street_number'],
-  zip: ['postal_code'],
-  street1: ['street_address', 'route'],
-  city: [
-    'locality',
-    'sublocality',
-    'sublocality_level_1',
-    'sublocality_level_2',
-    'sublocality_level_3',
-    'sublocality_level_4',
-  ],
-  state: [
-    'administrative_area_level_1',
-    'administrative_area_level_2',
-    'administrative_area_level_3',
-    'administrative_area_level_4',
-    'administrative_area_level_5',
-  ],
-  country: ['country'],
-};
-```
-
-## File: libs/uxcommon/src/components/alerts/alerts.html
-
-```html
-<div
-  class="z-50 top-0 absolute w-full left-0"
-  [class.absolute]="!isPositionRelative()"
-  [class.top-0]="isPositionTop()"
-  [class.bottom-0]="isPositionBottom()"
->
-  @for (alert of alerts(); track alert.id) {
-
-  <div
-    class="alert rounded-none"
-    role="alert"
-    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: 'animate-exit-down'"
-    [class.only-of-type:rounded-b-2xl]="isPositionTop()"
-    [class.last-of-type:rounded-b-2xl]="isPositionTop()"
-    [class.only-of-type:rounded-t-2xl]="isPositionBottom()"
-    [class.first-of-type:rounded-t-2xl]="isPositionBottom()"
-    [class.alert-info]="alert.type === 'info'"
-    [class.alert-warning]="alert.type === 'warning'"
-    [class.alert-success]="alert.type === 'success'"
-    [class.alert-error]="alert.type === 'error'"
-    [class.error]="alert.type === 'error'"
-    [class.animate-bounce]="isPositionBottom()"
-  >
-    <pc-icon [name]="icon(alert.type!)" class="mr-2"></pc-icon>
-    <div>
-      <h4 class="text-base font-normal" [class.hidden]="!alert.title">{{ alert.title }}</h4>
-      <div class="font-light" [class.text-sm]="!!alert.title" [innerHTML]="alert.text"></div>
-    </div>
-    <button
-      class="btn btn-sm"
-      [class.hidden]="!alert.OKBtn"
-      [class.btn-info]="alert.type === 'info'"
-      [class.btn-warning]="alert.type === 'warning'"
-      [class.btn-success]="alert.type === 'success'"
-      [class.btn-error]="alert.type === 'error'"
-      (click)="OKBtnClick(alert.id)"
-    >
-      {{ alert.OKBtn }}
-    </button>
-  </div>
-  }
-</div>
-```
-
-## File: libs/uxcommon/src/components/alerts/alerts.ts
-
-```typescript
-import { Component, computed, inject, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-
-import { ALERTTYPE, AlertService } from './alert-service';
-
-@Component({
-  selector: 'pc-alerts',
-  imports: [Icon, AnimateIfDirective],
-  templateUrl: './alerts.html',
-})
-export class Alerts {
-  protected alertSvc = inject(AlertService);
-
-  public position = input<'top' | 'bottom' | 'relative'>('bottom');
-
-  protected OKBtnClick(id: string): void {
-    this.alertSvc.OKBtnCallback(id);
-    this.alertSvc.dismiss(id);
-  }
-
-  protected readonly alerts = computed(() => {
-    const list = this.alertSvc.alertList();
-    return this.position() === 'top' ? list.slice().reverse() : list;
-  });
-
-  protected getEnterAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
-  }
-
-  protected getExitAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
-  }
-
-  protected icon(type: ALERTTYPE) {
-    return type === 'success'
-      ? 'check-circle'
-      : type === 'warning'
-        ? 'exclamation-triangle'
-        : type === 'error'
-          ? 'x-circle'
-          : 'exclamation-circle';
-  }
-
-  protected isPositionBottom() {
-    return this.position() === 'bottom';
-  }
-
-  protected isPositionRelative() {
-    return this.position() === 'relative';
-  }
-
-  protected isPositionTop() {
-    return this.position() === 'top';
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/autocomplete/autocomplete.ts
-
-```typescript
-import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
-import { debounce } from '../../../../common/src';
-
-@Component({
-  selector: 'pc-autocomplete',
-  template: ` <input
-      #inputEl
-      type="text"
-      class="input w-full"
-      [placeholder]="placeholder()"
-      (keyup)="onKey($event)"
-      (input)="onInput($event)"
-      (focus)="showAutoCompleteList()"
-      (blur)="hideAutoCompleteList()"
-    />
-    @if (matches().length && !hideAutoComplete()) {
-      <ul class="w-full rounded-none bordered card shadow-lg text-gray-500 font-light">
-        @for (match of matches(); track match) {
-          <li class="tet-xs cursor-pointer hover:bg-gray-200 pl-4" (click)="reset(match)">
-            {{ match.charAt(0).toUpperCase() + match.slice(1) }}
-          </li>
+    },
+    "build": {
+      "executor": "@nx/esbuild:esbuild",
+      "dependsOn": ["generate-context"],
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "platform": "node",
+        "outputPath": "dist/apps/backend",
+        "format": ["esm"],
+        "main": "apps/backend/src/main.ts",
+        "tsConfig": "apps/backend/tsconfig.app.json",
+        "assets": ["apps/backend/src/assets"],
+        "generatePackageJson": false,
+        "esbuildOptions": {
+          "packages": "external",
+          "external": ["aws-sdk", "nock", "mock-aws-s3"],
+          "loader": {
+            ".html": "text"
+          },
+          "sourcemap": "inline",
+          "outExtension": {
+            ".js": ".js"
+          }
         }
-      </ul>
-    }`,
-})
-export class AutoComplete {
-  protected readonly matches = signal<string[]>([]);
-
-  protected hideAutoComplete = signal(true);
-
-  public readonly valueChange = output<string>();
-
-  public filterSvc = input<TFILTER | null>(null);
-  public readonly inputRef = viewChild.required<ElementRef<HTMLInputElement>>('inputEl');
-
-  public placeholder = input('');
-
-  private readonly debouncedFilter = debounce(async (key: string) => {
-    const filterSvc = this.filterSvc();
-    if (!filterSvc || !key?.length) {
-      this.matches.set([]);
-      return;
-    }
-    const matches = await filterSvc.filter(key);
-    this.matches.set(matches);
-  }, 250);
-
-  protected onInput(event: Event) {
-    const target = event.target as HTMLInputElement;
-    this.debouncedFilter(target.value || '');
-  }
-
-  protected hideAutoCompleteList() {
-    setTimeout(() => this.hideAutoComplete.set(true), 200);
-  }
-
-  protected onKey(event: KeyboardEvent) {
-    const target = event.target as HTMLInputElement;
-    if (event.key === 'Enter' || event.key === ',') {
-      this.reset(target.value);
-    }
-  }
-
-  protected reset(key: string) {
-    this.valueChange.emit(key);
-    this.matches.set([]);
-    if (this.inputRef()?.nativeElement) {
-      this.inputRef().nativeElement.value = '';
-    }
-  }
-
-  protected showAutoCompleteList() {
-    this.hideAutoComplete.set(false);
-  }
-}
-
-type TFILTER = {
-  filter: (arg0: string) => Promise<string[]>;
-};
-```
-
-## File: libs/uxcommon/src/components/user-avatar/user-avatar.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-import { NgClass } from '@angular/common';
-
-@Component({
-  selector: 'pc-user-avatar',
-  template: `
-    <div class="avatar" [class.placeholder]="!avatarUrl()">
-      @if (avatarUrl()) {
-        <div
-          class="rounded-full overflow-hidden ring ring-base-100 ring-offset-1"
-          [style.width.rem]="sizeRem()"
-          [style.height.rem]="sizeRem()"
-        >
-          <img
-            [src]="avatarUrl()!"
-            [alt]="name() + ' avatar'"
-            class="w-full h-full object-cover"
-            referrerpolicy="no-referrer"
-          />
-        </div>
-      } @else {
-        <div
-          class="rounded-full grid place-items-center font-bold ring ring-base-100 ring-offset-1"
-          [style.width.rem]="sizeRem()"
-          [style.height.rem]="sizeRem()"
-          [style.font-size.rem]="fontSizeRem()"
-          [ngClass]="colorClass()"
-        >
-          <span>{{ initials() }}</span>
-        </div>
+      },
+      "configurations": {
+        "development": {
+          "bundle": true
+        },
+        "production": {
+          "bundle": true,
+          "esbuildOptions": {
+            "sourcemap": false,
+            "external": ["aws-sdk", "nock", "mock-aws-s3"],
+            "loader": {
+              ".html": "text"
+            },
+            "outExtension": {
+              ".js": ".js"
+            }
+          }
+        }
       }
-    </div>
-  `,
-  imports: [NgClass],
-  host: { class: 'contents' },
-})
-export class UserAvatarComponent {
-  readonly avatarUrl = input<string | null | undefined>(null);
-
-  readonly name = input.required<string>();
-
-  readonly size = input<number>(8);
-
-  protected readonly sizeRem = computed(() => this.size() * 0.25);
-  protected readonly fontSizeRem = computed(() => Math.max(0.5, this.size() * 0.25 * 0.4));
-
-  protected readonly initials = computed(() => {
-    const n = (this.name() ?? '').trim();
-    if (!n) return '?';
-    const parts = n.split(/\s+/);
-    if (parts.length >= 2) {
-      return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
-    }
-    return n[0]!.toUpperCase();
-  });
-
-  protected readonly colorClass = computed(() => {
-    const PALETTES = [
-      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
-      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
-      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
-      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
-      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
-      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
-      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
-      'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300',
-    ];
-    const n = this.name() ?? '';
-    let sum = 0;
-    for (let i = 0; i < n.length; i++) sum += n.charCodeAt(i);
-    return PALETTES[sum % PALETTES.length];
-  });
-}
-```
-
-## File: libs/uxcommon/src/mentions/mention-controller.ts
-
-```typescript
-import { computed, signal } from '@angular/core';
-import type { IAuthUser } from '../../../common/src/lib/auth';
-
-export class MentionController {
-  private getUsers: () => IAuthUser[];
-
-  // reactive state
-  public readonly open = signal(false);
-  public readonly index = signal(0);
-  public readonly query = signal('');
-
-  // ephemeral caret/selection details
-  private start = -1; // position of '@'
-  private caretPos = 0;
-
-  public readonly candidates = computed<IAuthUser[]>(() => {
-    const q = this.query().toLowerCase();
-    if (!this.open() || !q) return [];
-    const users = this.getUsers() || [];
-    const uniq = new Map<string, IAuthUser>();
-    for (const u of users) {
-      if (!u) continue;
-      const name = (u.first_name || '').toLowerCase();
-      const email = (u.email || '').toLowerCase();
-      const local = email.split('@')[0] || '';
-      if ((name && name.includes(q)) || (local && local.includes(q)) || (email && email.includes(q))) {
-        if (!uniq.has(u.id)) uniq.set(u.id, u);
+    },
+    "serve": {
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "backend:build"
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "backend:build:development",
+          "runtimeArgs": ["--inspect=9229", "--enable-source-maps", "--env-file=.env.development"]
+        },
+        "production": {
+          "buildTarget": "backend:build:production",
+          "runtimeArgs": ["--enable-source-maps", "--env-file=.env.production"]
+        }
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint",
+      "outputs": ["{options.outputFile}"],
+      "options": {
+        "lintFilePatterns": ["apps/backend/**/*.ts"]
+      }
+    },
+    "test": {
+      "executor": "@nx/vitest:test",
+      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
+      "options": {
+        "passWithNoTests": true,
+        "reportsDirectory": "../../coverage/apps/backend"
       }
     }
-    return Array.from(uniq.values()).slice(0, 8);
-  });
-
-  constructor(getUsers: () => IAuthUser[]) {
-    this.getUsers = getUsers;
-  }
-
-  public updateFromInput(text: string, caretPos: number): void {
-    this.caretPos = caretPos;
-    const res = this.findMentionAt(text, caretPos);
-    if (!res) {
-      this.open.set(false);
-      this.query.set('');
-      this.start = -1;
-    } else {
-      this.start = res.start;
-      this.query.set(res.token);
-      this.open.set(true);
-      this.index.set(0);
-    }
-  }
-
-  public handleKeydown(ev: KeyboardEvent, onSelect: (u: IAuthUser) => void): void {
-    if (!this.open()) return;
-    const list = this.candidates();
-    if (!list.length) return;
-    if (ev.key === 'ArrowDown') {
-      ev.preventDefault();
-      this.index.set((this.index() + 1) % list.length);
-    } else if (ev.key === 'ArrowUp') {
-      ev.preventDefault();
-      this.index.set((this.index() - 1 + list.length) % list.length);
-    } else if (ev.key === 'Enter' || ev.key === 'Tab') {
-      ev.preventDefault();
-      onSelect(list[this.index()]!);
-    } else if (ev.key === 'Escape') {
-      this.open.set(false);
-    }
-  }
-
-  public select(user: IAuthUser, text: string): { text: string; caret: number } {
-    if (this.start < 0) return { text, caret: this.caretPos };
-    const display = user.first_name || user.email.split('@')[0]!;
-    let before = text.slice(0, this.start);
-    // Collapse any trailing whitespace/newlines immediately before '@' into a single space to keep inline
-    before = before.replace(/\s+$/g, ' ');
-    const after = text.slice(this.caretPos);
-    const inserted = `@${display} `;
-    const newText = before + inserted + after;
-    const newCaret = before.length + inserted.length;
-    this.open.set(false);
-    this.index.set(0);
-    return { text: newText, caret: newCaret };
-  }
-
-  public getStartIndex(): number {
-    return this.start;
-  }
-
-  public getCaretIndex(): number {
-    return this.caretPos;
-  }
-
-  private findMentionAt(text: string, pos: number): { start: number; token: string } | null {
-    let i = pos - 1;
-    while (i >= 0) {
-      const ch = text[i]!;
-      if (ch === '@') break;
-      if (!/[-A-Za-z0-9_.]/.test(ch)) return null; // hit a separator before '@'
-      i--;
-    }
-    if (i < 0 || text[i]! !== '@') return null;
-    const start = i;
-    if (start > 0) {
-      const prev = text[start - 1]!;
-      if (/[@A-Za-z0-9_]/.test(prev)) return null;
-    }
-    const token = text.slice(start + 1, pos);
-    if (!token) return null;
-    return { start, token };
-  }
-}
-
-export function userDisplay(u: IAuthUser): string {
-  return u.first_name || u.email.split('@')[0]!;
-}
-```
-
-## File: libs/uxcommon/src/pipes/mention.pipe.ts
-
-```typescript
-import { Pipe, PipeTransform } from '@angular/core';
-
-import type { IAuthUser } from '../../../common/src/lib/auth';
-
-@Pipe({ name: 'mentionify', standalone: true })
-export class MentionifyPipe implements PipeTransform {
-  public transform(text: string | null | undefined, users: IAuthUser[] | null | undefined): string {
-    if (!text) return '';
-    const list = users ?? [];
-
-    const byFirst = new Map<string, IAuthUser>();
-    const byEmail = new Map<string, IAuthUser>();
-    const byLocal = new Map<string, IAuthUser>();
-
-    for (const u of list) {
-      if (!u) continue;
-      if (u.first_name) byFirst.set(u.first_name.toLowerCase(), u);
-      if (u.email) {
-        const em = u.email.toLowerCase();
-        byEmail.set(em, u);
-        const local = em.split('@')[0] ?? '';
-        if (local) byLocal.set(local, u);
-      }
-    }
-
-    // Normalize Windows newlines and collapse any whitespace/newlines immediately before a mention into a single space
-    // This prevents mentions from starting on a new line when users select from autocomplete
-    const normalized = text
-      .replace(/\r\n?/g, '\n')
-      // collapse runs like "  \n   @john" -> " @john"
-      .replace(/[^\S\r\n]*\n+[^\S\r\n]*(?=@[A-Za-z0-9._-]+)/g, ' ')
-      // also collapse leading newlines before a mention at the very start
-      .replace(/^\s*\n+\s*(?=@[A-Za-z0-9._-]+)/, '');
-
-    // Replace @mentions while preserving preceding character (so we don't match email domains)
-    const replaced = normalized.replace(/(^|[^\w@])@([A-Za-z0-9._-]+)/g, (_m, pre: string, token: string) => {
-      const key = token.toLowerCase();
-      const u = byFirst.get(key) || byEmail.get(key) || byLocal.get(key);
-      if (!u) return `${pre}@${token}`; // leave as-is if no match
-
-      // Display prefers first_name; fallback to email local part
-      const display = u.first_name || u.email.split('@')[0]!;
-      // Use utility classes for styling; sanitized later by sanitizeHtml pipe
-      // Mark with data-mention for CSS targeting to enforce inline layout
-      return `${pre}<span data-mention="1" class="inline font-bold hover:cursor-pointer">@${this.escapeHtml(display)}</span>`;
-    });
-
-    // Convert newlines to <br>
-    return replaced.replace(/\n/g, '<br>');
-  }
-
-  private escapeHtml(s: string): string {
-    return s
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
   }
 }
 ```
@@ -26249,6 +20833,9 @@ export class EmailIngesterService {
     if (matchedEmails.length === 0) return;
     const emailIds = matchedEmails.map((e) => String(e.id));
 
+    // Capture attachment file references before the rows are deleted.
+    const fileIds = await this.getAttachmentFileIds(tenantId, emailIds);
+
     await this.db.transaction().execute(async (trx) => {
       // Delete from dependent tables sequentially to prevent foreign key constraint issues
       await trx
@@ -26285,6 +20872,8 @@ export class EmailIngesterService {
       // Delete from emails table
       await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', 'in', emailIds).execute();
     });
+
+    await this.purgeOrphanedFiles(tenantId, fileIds);
   }
 
   public async deleteMessage(tenantId: string, remoteId: string): Promise<void> {
@@ -26298,6 +20887,9 @@ export class EmailIngesterService {
 
     if (!existing) return;
     const emailId = String(existing.id);
+
+    // Capture attachment file references before the rows are deleted.
+    const fileIds = await this.getAttachmentFileIds(tenantId, [emailId]);
 
     await this.db.transaction().execute(async (trx) => {
       // Delete from dependent tables sequentially to prevent foreign key constraint issues
@@ -26327,6 +20919,64 @@ export class EmailIngesterService {
       // Delete from emails table
       await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', emailId).execute();
     });
+
+    await this.purgeOrphanedFiles(tenantId, fileIds);
+  }
+
+  /** Distinct, non-null file_ids referenced by the given emails' attachments. */
+  private async getAttachmentFileIds(tenantId: string, emailIds: string[]): Promise<string[]> {
+    if (emailIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom('email_attachments')
+      .select('file_id')
+      .distinct()
+      .where('tenant_id', '=', tenantId)
+      .where('email_id', 'in', emailIds)
+      .where('file_id', 'is not', null)
+      .execute();
+    return rows.map((r) => String(r.file_id)).filter((id) => id !== 'null');
+  }
+
+  /**
+   * Delete file rows + storage blobs for files no longer referenced by any
+   * remaining attachment (files are sha256-deduped and can be shared). Storage
+   * deletion is best-effort and must not throw.
+   */
+  private async purgeOrphanedFiles(tenantId: string, fileIds: string[]): Promise<void> {
+    for (const fileId of fileIds) {
+      try {
+        const stillReferenced = await this.db
+          .selectFrom('email_attachments')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('file_id', '=', fileId)
+          .limit(1)
+          .executeTakeFirst();
+
+        if (stillReferenced) continue;
+
+        const file = await this.db
+          .selectFrom('files')
+          .select(['id', 'storage_key'])
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', fileId)
+          .executeTakeFirst();
+
+        if (!file) continue;
+
+        await this.db.deleteFrom('files').where('tenant_id', '=', tenantId).where('id', '=', fileId).execute();
+
+        if (file.storage_key) {
+          try {
+            await this.storageService.delete(file.storage_key);
+          } catch (err) {
+            console.error(`Failed to delete storage blob ${file.storage_key} for file ${fileId}`, err);
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to purge orphaned file ${fileId}`, err);
+      }
+    }
   }
 
   public async ingestEmail(
@@ -26347,48 +20997,54 @@ export class EmailIngesterService {
 
     if (existing) return false;
 
-    // Try finding by internetMessageId in email_headers to match locally composed & sent emails.
-    // Only applies to emails with no provider prefix in preview (locally composed).
-    // If the matched email already has a provider prefix, it's a cross-folder duplicate
-    // (e.g. send-to-self appearing in both Sent and Inbox) — insert as a separate record.
+    // Try finding by internetMessageId in email_headers to match locally composed
+    // & sent emails. The provider may reassign a message's ID when it moves
+    // between folders (e.g. MS Graph changes the ID on Drafts -> Sent), so the
+    // preview-based dedup above can miss the local copy. The Message-ID header is
+    // stable across that move, so use it as a folder-aware fallback.
     if (email.internetMessageId) {
-      const headerRow = await this.db
-        .selectFrom('email_headers')
-        .select('email_id')
-        .where('tenant_id', '=', tenantId)
-        .where('raw_headers', 'like', `%Message-ID: ${email.internetMessageId}%`)
-        .executeTakeFirst();
+      const matches = await this.db
+        .selectFrom('emails')
+        .innerJoin('email_headers', 'email_headers.email_id', 'emails.id')
+        .select(['emails.id as id', 'emails.folder_id as folder_id', 'emails.preview as preview'])
+        .where('emails.tenant_id', '=', tenantId)
+        .where('email_headers.tenant_id', '=', tenantId)
+        .where('email_headers.raw_headers', 'like', `%Message-ID: ${email.internetMessageId}%`)
+        .execute();
 
-      if (headerRow) {
-        const matchedEmail = await this.db
-          .selectFrom('emails')
-          .select(['id', 'folder_id', 'preview'])
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', String(headerRow.email_id))
-          .executeTakeFirst();
-
-        if (matchedEmail) {
-          const existingPreview = matchedEmail.preview as string | null;
-          const alreadyTaggedByProvider = existingPreview?.startsWith('ms:') || existingPreview?.startsWith('google:');
-
-          if (!alreadyTaggedByProvider) {
-            // Locally composed email — tag it with the provider ID and align folder
-            await this.db
-              .updateTable('emails')
-              .set({
-                preview: dedupeKey,
-                folder_id: folderId,
-                updated_at: new Date(),
-              })
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', String(matchedEmail.id))
-              .execute();
-
-            return false; // prevent duplicate insertion
-          }
-          // Already tagged by provider: fall through and insert as a fresh record in this folder
+      // 1. Same message already present in THIS folder. This is the same item
+      //    re-synced (possibly under a new provider ID) — refresh the dedupe key
+      //    so future syncs match by preview, and skip insertion.
+      const sameFolder = matches.find((m) => String(m.folder_id) === String(folderId));
+      if (sameFolder) {
+        if (sameFolder.preview !== dedupeKey) {
+          await this.db
+            .updateTable('emails')
+            .set({ preview: dedupeKey, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(sameFolder.id))
+            .execute();
         }
+        return false;
       }
+
+      // 2. An untagged (locally composed, not yet provider-tagged) copy exists in
+      //    another folder — claim it: tag with the provider ID and align its folder.
+      const untagged = matches.find((m) => !(m.preview?.startsWith('ms:') || m.preview?.startsWith('google:')));
+      if (untagged) {
+        await this.db
+          .updateTable('emails')
+          .set({ preview: dedupeKey, folder_id: folderId, updated_at: new Date() })
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', String(untagged.id))
+          .execute();
+
+        return false; // prevent duplicate insertion
+      }
+
+      // 3. Otherwise the message only exists in other folders and is already
+      //    provider-tagged — this is a genuine cross-folder copy (e.g.
+      //    send-to-self in both Sent and Inbox). Fall through and insert fresh.
     }
 
     // Upload attachment files to storage outside database transaction
@@ -26471,18 +21127,20 @@ export class EmailIngesterService {
       for (const [i, file] of uploadedFiles.entries()) {
         let fileId: string;
 
+        // Persist (or reuse, via sha256 dedup) the file row, then link the
+        // attachment to it so downloads can resolve the stored blob.
         const existingFile = await trx
-          .selectFrom('files' as any)
+          .selectFrom('files')
           .select('id')
           .where('tenant_id', '=', tenantId)
           .where('sha256_hex', '=', file.sha256_hex)
           .executeTakeFirst();
 
         if (existingFile) {
-          fileId = String((existingFile as any).id);
+          fileId = String(existingFile.id);
         } else {
           const fileResult = await trx
-            .insertInto('files' as any)
+            .insertInto('files')
             .values({
               tenant_id: tenantId,
               filename: file.filename,
@@ -26493,13 +21151,12 @@ export class EmailIngesterService {
               uploaded_by: requestedBy,
             })
             .returning('id')
-            .executeTakeFirst();
-
-          fileId = String((fileResult as any).id);
+            .executeTakeFirstOrThrow();
+          fileId = String(fileResult.id);
         }
 
         await trx
-          .insertInto('email_attachments' as any)
+          .insertInto('email_attachments')
           .values({
             tenant_id: tenantId,
             email_id: emailId,
@@ -26510,6 +21167,8 @@ export class EmailIngesterService {
             is_inline: file.is_inline,
             pos: i + 1,
             file_id: fileId,
+            createdby_id: requestedBy,
+            updatedby_id: requestedBy,
           })
           .execute();
       }
@@ -30181,343 +24840,6 @@ export const adminOrOwnerProcedure = authProcedure.use(async (opts) => {
   }
   return opts.next({ ctx });
 });
-```
-
-## File: libs/common/src/lib/schemas/web-forms.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, descriptionSchema } from './core.schema';
-
-export const AddWebFormObj = z.object({
-  name: nameSchema('Web Form name', 100),
-  description: descriptionSchema(500),
-  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
-  target_tags: z.array(z.string()).nullable().optional(),
-  target_lists: z.array(z.string()).nullable().optional(),
-  fields: z.array(z.string()).nullable().optional(),
-  status: z.enum(['active', 'archived']).default('active').optional(),
-  send_confirmation: z.boolean().default(true).optional(),
-  send_alert: z.boolean().default(true).optional(),
-  form_type: z.enum(['standard', 'donation', 'recurring_donation']).default('standard').optional(),
-});
-
-export const UpdateWebFormObj = z.object({
-  name: nameSchema('Web Form name', 100).optional(),
-  description: descriptionSchema(500).optional(),
-  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
-  target_tags: z.array(z.string()).nullable().optional(),
-  target_lists: z.array(z.string()).nullable().optional(),
-  fields: z.array(z.string()).nullable().optional(),
-  status: z.enum(['active', 'archived']).optional(),
-  send_confirmation: z.boolean().optional(),
-  send_alert: z.boolean().optional(),
-});
-
-export const WebFormsObj = z.object({
-  id: z.string().uuid(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable(),
-  redirect_url: z.string().nullable(),
-  target_tags: z.array(z.string()).nullable(),
-  target_lists: z.array(z.string()).nullable(),
-  fields: z.array(z.string()).nullable().optional(),
-  status: z.enum(['active', 'archived']),
-  send_confirmation: z.boolean().default(true),
-  send_alert: z.boolean().default(true),
-  form_type: z.string(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-  created_at: z.union([z.date(), z.string()]),
-  updated_at: z.union([z.date(), z.string()]),
-});
-```
-
-## File: libs/common/src/lib/models.ts
-
-```typescript
-import type { z } from 'zod';
-
-import type {
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  AddTeamObj,
-  EmailCommentObj,
-  EmailFolderObj,
-  EmailObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  EmailDraftObj,
-  PersonsObj,
-  SettingsEntryObj,
-  SettingsObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  ListsObj,
-  UpdateMarketingEmailObj,
-  UpdateListObj,
-  UpdateTaskObj,
-  UpdateTeamObj,
-  TasksObj,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  dataExportRecord,
-  sortModelItem,
-  InviteAuthUserObj,
-  UpdateAuthUserObj,
-  Verify2FAObj,
-  ImportListItemObj,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-} from './schema';
-
-export interface INow {
-  now: string;
-}
-
-export type AddTagType = z.infer<typeof AddTagObj>;
-
-export type EmailCommentType = z.infer<typeof EmailCommentObj>;
-
-export type EmailFolderType = z.infer<typeof EmailFolderObj>;
-
-export type EmailType = z.infer<typeof EmailObj>;
-
-export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
-
-export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
-
-export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
-
-export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
-
-export type EmailDraftType = z.infer<typeof EmailDraftObj>;
-
-export type ImportListItem = z.infer<typeof ImportListItemObj>;
-
-export type PERSONINHOUSEHOLDTYPE = {
-  first_name: string;
-  full_name: string;
-  id: string;
-  last_name: string;
-  middle_names: string;
-};
-
-export type PersonsType = z.infer<typeof PersonsObj>;
-
-export type SettingsType = z.infer<typeof SettingsObj>;
-
-export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
-
-export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
-
-export type SortModelType = z.infer<typeof sortModelItem>;
-
-export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
-
-export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
-
-export type UpdateTagType = z.infer<typeof UpdateTagObj>;
-
-export type getAllOptionsType = z.infer<typeof getAllOptions>;
-
-export type AddListType = z.infer<typeof AddListObj>;
-
-export type AddTeamType = z.infer<typeof AddTeamObj>;
-
-export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
-
-export type Verify2FAType = z.infer<typeof Verify2FAObj>;
-
-export type ListsType = z.infer<typeof ListsObj>;
-
-export type UpdateListType = z.infer<typeof UpdateListObj>;
-
-export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
-
-export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
-
-export type AddTaskType = z.infer<typeof AddTaskObj>;
-export type TasksType = z.infer<typeof TasksObj>;
-export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
-export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
-export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
-export type QueueExportInputType = z.infer<typeof queueExportInput>;
-export type DataExportRecordType = z.infer<typeof dataExportRecord>;
-
-export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
-export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
-export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
-
-export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
-export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
-export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
-
-export type AddWebFormType = z.infer<typeof AddWebFormObj>;
-export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
-export type WebFormsType = z.infer<typeof WebFormsObj>;
-
-export type WorkflowsType = z.infer<typeof WorkflowObj>;
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
-
-export type AddEventType = z.infer<typeof AddEventObj>;
-export type EventType = z.infer<typeof EventObj>;
-export type UpdateEventType = z.infer<typeof UpdateEventObj>;
-
-export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
-export type TicketTypeType = z.infer<typeof TicketTypeObj>;
-export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
-
-export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
-export type RegistrationType = z.infer<typeof RegistrationObj>;
-export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
-
-export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-
-export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
-```
-
-## File: libs/uxcommon/src/components/alerts/alert-service.ts
-
-```typescript
-import { Injectable, signal } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
-
-export class AlertMessage {
-  public readonly visible = signal(true);
-
-  public OKBtn: string;
-  public OKBtnCallback?: () => void;
-  public duration = 3000;
-  public id: string;
-  public text: string;
-  public timeoutId: NodeJS.Timeout | undefined;
-  public title?: string;
-  public type?: ALERTTYPE;
-
-  constructor(init?: Partial<AlertMessage>) {
-    Object.assign(this, init);
-    this.id = init?.id ?? crypto.randomUUID();
-    this.OKBtn = init?.OKBtn ?? 'OK';
-    this.duration = init?.duration || 3000;
-    this.text = init?.text ?? 'Alert';
-  }
-}
-
-@Injectable({
-  providedIn: 'root',
-})
-export class AlertService {
-  private readonly alertsSignal = signal<AlertMessage[]>([]);
-
-  public readonly alertList = this.alertsSignal.asReadonly();
-  public readonly alerts$ = toObservable(this.alertsSignal);
-
-  public OKBtnCallback(id: string): void {
-    const alert = this.findById(id);
-    alert?.OKBtnCallback?.();
-  }
-
-  public dismiss(id: string): void {
-    const alert = this.findById(id);
-
-    if (!alert) return;
-
-    // Clear any pending removal timeout
-    clearTimeout(alert.timeoutId);
-    alert.timeoutId = undefined;
-
-    alert.visible.set(false);
-
-    // Have to let the animation do its thing first
-    setTimeout(() => {
-      const next = this.alertsSignal().filter((msg) => msg.id !== id);
-      this.alertsSignal.set(next);
-    }, 300);
-  }
-
-  public getAlerts(): AlertMessage[] {
-    return this.alertsSignal();
-  }
-
-  public show(alert: Partial<AlertMessage>): void {
-    // If the same text is shown then ignore it. // TODO: right behaviour?
-    const existing = this.alertsSignal().find((m) => m.text === alert.text);
-
-    if (existing) {
-      // Extend dismissal timeout by 1 second
-      clearTimeout(existing.timeoutId);
-      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), (existing.duration || 3000) + 1000);
-    } else {
-      const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
-      this.alertsSignal.update((list) => [messageWithMeta, ...list]);
-
-      const duration = messageWithMeta.duration || 3000;
-      messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), duration);
-    }
-  }
-
-  public showError(text: string): void {
-    this.show(new AlertMessage({ text, type: 'error' }));
-  }
-
-  public showInfo(text: string): void {
-    this.show(new AlertMessage({ text, type: 'info' }));
-  }
-
-  public showSuccess(text: string): void {
-    this.show(new AlertMessage({ text, type: 'success' }));
-  }
-
-  public showWarn(text: string): void {
-    this.show(new AlertMessage({ text, type: 'warning' }));
-  }
-
-  private findById(id: string) {
-    return this.alertsSignal().find((m) => m.id === id);
-  }
-}
-
-export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
 ```
 
 ## File: apps/backend/src/app/lib/jobs/webhook-worker.ts
@@ -34791,95 +29113,6 @@ const renderFormHtml = (
 };
 ```
 
-## File: libs/uxcommon/src/components/tags/tagitem.ts
-
-```typescript
-import { Component, Signal, computed, input, output, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-
-@Component({
-  selector: 'pc-tagitem',
-  imports: [Icon],
-  styleUrl: './tagitem.css',
-  template: `<div
-    class="badge rounded-lg px-0 gap-1 pl-2 bordered"
-    [class.badge-compact]="compact()"
-    [style.background]="background() || null"
-    [style.color]="textColor()"
-    [style.borderColor]="borderColor()"
-  >
-    <span
-      (click)="emitClick()"
-      class="tag-label cursor-pointer font-light pr-1"
-      [class.pr-2]="!canDelete()"
-      [style.color]="textColor()"
-    >
-      {{ displayName() }}</span
-    >
-    <pc-icon
-      name="x-mark"
-      [size]="3"
-      class="tag-remove hover:text-error cursor-pointer pr-1 mr-0"
-      [style.color]="textColor()"
-      [class.hidden]="!canDelete()"
-      (click)="emitClose()"
-    />
-  </div> `,
-})
-export class TagItem {
-  protected readonly background = computed(() => this.normalizeColor(this.color()));
-  protected readonly borderColor = computed(() => this.background() ?? null);
-  protected readonly displayName = computed(() => {
-    const n = this.name();
-    return n ? n.charAt(0).toUpperCase() + n.slice(1) : '';
-  });
-  protected readonly textColor = computed(() => this.computeTextColor(this.background()));
-
-  public readonly click = output<string>();
-  public readonly close = output<string>();
-
-  public canDelete = input<boolean>(true);
-  public color = input<string | null | undefined>(null);
-  public compact = input<boolean>(false);
-  public invisible = input<Signal<boolean>>(signal(false));
-  public name = input.required<string>();
-
-  public emitClick() {
-    this.click.emit(this.name());
-  }
-
-  public emitClose() {
-    this.close.emit(this.name());
-  }
-
-  private computeTextColor(hex: string | null): string | null {
-    if (!hex) return null;
-    const rgb = this.hexToRgb(hex);
-    if (!rgb) return '#f9fafb';
-    const [r = 0, g = 0, b = 0] = rgb.map((v) => v / 255);
-    const [rLin = 0, gLin = 0, bLin = 0] = [r, g, b].map((v) =>
-      v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4),
-    );
-    const luminance = 0.2126 * rLin + 0.7152 * gLin + 0.0722 * bLin;
-    return luminance > 0.5 ? '#111827' : '#f9fafb';
-  }
-
-  private hexToRgb(hex: string): [number, number, number] | null {
-    const normalized = hex.replace('#', '');
-    const int = parseInt(normalized, 16);
-    if (Number.isNaN(int)) return null;
-    return [(int >> 16) & 255, (int >> 8) & 255, int & 255];
-  }
-
-  private normalizeColor(value: string | null | undefined): string | null {
-    if (!value) return null;
-    const trimmed = value.trim();
-    if (!/^#?[0-9a-fA-F]{6}$/.test(trimmed)) return null;
-    return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
-  }
-}
-```
-
 ## File: apps/backend/src/app/modules/donations/repositories/donations.repo.ts
 
 ```typescript
@@ -36088,119 +30321,6 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 ```
 
-## File: libs/common/src/lib/auth.ts
-
-```typescript
-import { z } from 'zod';
-
-export interface IAuthKeyPayload {
-  name: string;
-
-  session_id: string;
-
-  tenant_id: string;
-
-  user_id: string;
-
-  role?: string | null;
-
-  source?: string;
-}
-
-export interface IAuthUser {
-  email: string;
-
-  first_name: string;
-
-  last_name?: string;
-
-  id: string;
-
-  role?: string | null;
-
-  avatar_url?: string | null;
-
-  tenant_deletion_scheduled_at?: Date | null;
-
-  tenant_paused_at?: Date | null;
-}
-
-export interface IUserStatsSnapshot {
-  emails_assigned: {
-    total: number;
-    open: number;
-    closed: number;
-  };
-  contacts_added: {
-    total: number;
-    last_created_at: Date | null;
-  };
-  files_imported: {
-    count: number;
-    total_rows: number;
-    last_activity_at: Date | null;
-  };
-  files_exported: {
-    count: number;
-    total_rows: number;
-    last_activity_at: Date | null;
-  };
-}
-
-export interface IAuthUserRecord extends IAuthUser {
-  last_name: string;
-  role: string | null;
-  verified: boolean;
-  two_factor_enabled: boolean;
-  deletion_scheduled_at: Date | null;
-  created_at: Date | null;
-  updated_at: Date | null;
-  previous_email?: string | null;
-  previous_role?: string | null;
-  avatar_url?: string | null;
-  notification_preferences?: {
-    mention_in_comment: boolean;
-    mention_in_comment_in_app: boolean;
-    task_assigned: boolean;
-    task_assigned_in_app: boolean;
-    task_due: boolean;
-    task_due_in_app: boolean;
-    person_assigned: boolean;
-    person_assigned_in_app: boolean;
-    export_ready: boolean;
-    export_ready_in_app: boolean;
-    import_summary: boolean;
-    import_summary_in_app: boolean;
-  };
-}
-
-export interface IAuthUserDetail extends IAuthUserRecord {
-  stats: IUserStatsSnapshot;
-}
-
-export interface IToken {
-  auth_token: string | null;
-  refresh_token: string | null;
-}
-
-export type signInInputType = z.infer<typeof signInInputObj>;
-
-export type signUpInputType = z.infer<typeof signUpInputObj>;
-
-export const signInInputObj = z.object({
-  email: z.email(),
-  password: z.string().min(8).max(72),
-  rememberMe: z.boolean().optional(),
-});
-
-export const signUpInputObj = z.object({
-  organization: z.string(),
-  email: z.string().max(100),
-  password: z.string().min(8).max(72),
-  first_name: z.string().max(100),
-});
-```
-
 ## File: apps/backend/src/app/modules/auth/trpc.router.ts
 
 ```typescript
@@ -37142,208 +31262,6 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     return Number(res?.total ?? 0);
   }
 }
-```
-
-## File: libs/uxcommon/src/components/icons/icons.index.ts
-
-```typescript
-/****************************************************** */
-/*
-/* Look at https://heroicons.com for icons. Most of these
-/* are from the Heroicons set, some are custom.
-/*
-/****************************************************** */
-export type PcIconNameType = keyof typeof icons;
-
-export async function loadIconSvg(name: PcIconNameType): Promise<string> {
-  if (!_cache.has(name)) {
-    _cache.set(
-      name,
-      fetch(icons[name])
-        .then((r) => {
-          if (!r.ok) throw new Error(`Failed to fetch ${name}`);
-          return r.text();
-        })
-        .catch(async () => {
-          // last-resort: fetch the unknown icon (cached too)
-          if (!_cache.has(UNKNOWN)) {
-            _cache.set(
-              UNKNOWN,
-              fetch(icons[UNKNOWN]).then((r) => r.text()),
-            );
-          }
-          return _cache.get(UNKNOWN)!;
-        }),
-    );
-  }
-  return _cache.get(name)!;
-}
-
-const UNKNOWN: PcIconNameType = 'unknown';
-
-/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
-const _cache = new Map<PcIconNameType, Promise<string>>();
-
-export const icons = {
-  none: 'none',
-  'add-company': 'assets/icons/add-company.svg',
-  'add-form': 'assets/icons/add-form.svg',
-  'add-group': 'assets/icons/add-group.svg',
-  'add-home': 'assets/icons/add-home.svg',
-  'add-issue': 'assets/icons/add-issue.svg',
-  'add-label': 'assets/icons/add-label.svg',
-  'add-list': 'assets/icons/add-list.svg',
-  'add-newsletter': 'assets/icons/add-newsletter.svg',
-  'add-notes': 'assets/icons/add-notes.svg',
-  'add-schedule': 'assets/icons/add-schedule.svg',
-  'add-task': 'assets/icons/add-task.svg',
-  'add-ticket': 'assets/icons/add-ticket.svg',
-  'add-users': 'assets/icons/add-users.svg',
-  'add-volunteer': 'assets/icons/add-volunteer.svg',
-  'add-fundraising': 'assets/icons/add-fundraising.svg',
-  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
-  'archive-box': 'assets/icons/archive-box.svg',
-  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
-  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
-  'arrow-left': 'assets/icons/arrow-left.svg',
-  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
-  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
-  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
-  'arrow-path': 'assets/icons/arrow-path.svg',
-  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
-  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
-  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
-  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
-  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
-  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
-  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
-  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
-  'at-symbol': 'assets/icons/at-symbol.svg',
-  'attach-fat': 'assets/icons/attach-fat.svg',
-  'attach-file-off': 'assets/icons/attach-file-off.svg',
-  banknotes: 'assets/icons/banknotes.svg',
-  'bars-3': 'assets/icons/bars-3.svg',
-  'bars-4': 'assets/icons/bars-4.svg',
-  bell: 'assets/icons/bell.svg',
-  bookmark: 'assets/icons/bookmark.svg',
-  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
-  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
-  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
-  briefcase: 'assets/icons/briefcase.svg',
-  calendar: 'assets/icons/calendar.svg',
-  'chart-pie': 'assets/icons/chart-pie.svg',
-  'check-circle': 'assets/icons/check-circle.svg',
-  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
-  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
-  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
-  'chevron-down': 'assets/icons/chevron-down.svg',
-  'chevron-left': 'assets/icons/chevron-left.svg',
-  'chevron-right': 'assets/icons/chevron-right.svg',
-  'chevron-up': 'assets/icons/chevron-up.svg',
-  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
-  clock: 'assets/icons/clock.svg',
-  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
-  cog: 'assets/icons/cog.svg',
-  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
-  'collapse-content': 'assets/icons/collapse-content.svg',
-  'credit-card': 'assets/icons/credit-card.svg',
-  'currency-dollar': 'assets/icons/currency-dollar.svg',
-  document: 'assets/icons/document.svg',
-  'document-check': 'assets/icons/document-check.svg',
-  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
-  'document-duplicate': 'assets/icons/document-duplicate.svg',
-  'document-text': 'assets/icons/document-text.svg',
-  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
-  envelope: 'assets/icons/envelope.svg',
-  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
-  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
-  'expand-content': 'assets/icons/expand-content.svg',
-  eye: 'assets/icons/eye.svg',
-  'eye-slash': 'assets/icons/eye-slash.svg',
-  facebook: 'assets/icons/facebook.svg',
-  file: 'assets/icons/file.svg',
-  'file-archive': 'assets/icons/file-archive.svg',
-  'file-audio': 'assets/icons/file-audio.svg',
-  'file-calendar': 'assets/icons/file-calendar.svg',
-  'file-code': 'assets/icons/file-code.svg',
-  'file-contact': 'assets/icons/file-contact.svg',
-  'file-db': 'assets/icons/file-db.svg',
-  'file-design': 'assets/icons/file-design.svg',
-  'file-disk': 'assets/icons/file-disk.svg',
-  'file-doc': 'assets/icons/file-doc.svg',
-  'file-ebook': 'assets/icons/file-ebook.svg',
-  'file-email': 'assets/icons/file-email.svg',
-  'file-exe': 'assets/icons/file-exe.svg',
-  'file-font': 'assets/icons/file-font.svg',
-  'file-image': 'assets/icons/file-image.svg',
-  'file-pdf': 'assets/icons/file-pdf.svg',
-  'file-sheet': 'assets/icons/file-sheet.svg',
-  'file-slides': 'assets/icons/file-slides.svg',
-  'file-text': 'assets/icons/file-text.svg',
-  'file-video': 'assets/icons/file-video.svg',
-  filter: 'assets/icons/funnel.svg',
-  forward: 'assets/icons/forward.svg',
-  funnel: 'assets/icons/funnel.svg',
-  'globe-americas': 'assets/icons/globe-americas.svg',
-  hashtag: 'assets/icons/hashtag.svg',
-  home: 'assets/icons/home.svg',
-  'house-modern': 'assets/icons/house-modern.svg',
-  identification: 'assets/icons/identification.svg',
-  inbox: 'assets/icons/inbox.svg',
-  'inbox-stack': 'assets/icons/inbox-stack.svg',
-  'information-circle': 'assets/icons/information-circle.svg',
-  instagram: 'assets/icons/instagram.svg',
-  label: 'assets/icons/label.svg',
-  linkedin: 'assets/icons/linkedin.svg',
-  'lock-closed': 'assets/icons/lock-closed.svg',
-  loading: 'assets/icons/loading.svg',
-  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
-  map: 'assets/icons/map.svg',
-  'map-pin': 'assets/icons/map-pin.svg',
-  megaphone: 'assets/icons/megaphone.svg',
-  'menu-open': 'assets/icons/menu-open.svg',
-  merge: 'assets/icons/merge.svg',
-  moon: 'assets/icons/moon.svg',
-  notification: 'assets/icons/notification.svg',
-  'paper-airplane': 'assets/icons/paper-airplane.svg',
-  'paper-clip': 'assets/icons/paper-clip.svg',
-  'pencil-square': 'assets/icons/pencil-square.svg',
-  plus: 'assets/icons/plus.svg',
-  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
-  print: 'assets/icons/print.svg',
-  'queue-list': 'assets/icons/queue-list.svg',
-  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
-  'redo-fat': 'assets/icons/redo-fat.svg',
-  reply: 'assets/icons/reply.svg',
-  'reply-all': 'assets/icons/reply-all.svg',
-  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
-  save: 'assets/icons/save.svg',
-  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
-  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
-  star: 'assets/icons/star.svg',
-  'star-filled': 'assets/icons/star-filled.svg',
-  sun: 'assets/icons/sun.svg',
-  'table-cells': 'assets/icons/table-cells.svg',
-  phone: 'assets/icons/phone.svg',
-  tag: 'assets/icons/tag.svg',
-  task: 'assets/icons/task.svg',
-  ticket: 'assets/icons/ticket.svg',
-  trash: 'assets/icons/trash.svg',
-  'trash-forever': 'assets/icons/trash-forever.svg',
-  'undo-fat': 'assets/icons/undo-fat.svg',
-  unknown: 'assets/icons/unknown.svg',
-  'user-circle': 'assets/icons/user-circle.svg',
-  'user-group': 'assets/icons/user-group.svg',
-  'user-plus': 'assets/icons/user-plus.svg',
-  users: 'assets/icons/users.svg',
-  'view-column': 'assets/icons/view-column.svg',
-  'view-kanban': 'assets/icons/view-kanban.svg',
-  volunteer: 'assets/icons/volunteer.svg',
-  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
-  'x-circle': 'assets/icons/x-circle.svg',
-  x: 'assets/icons/x.svg',
-  'x-mark': 'assets/icons/x-mark.svg',
-} as const;
 ```
 
 ## File: apps/backend/src/app/modules/donations/controller.ts
@@ -41614,870 +35532,4 @@ const renewalVerifier = createVerifier({
   key: env.sharedSecret,
   ignoreExpiration: true,
 });
-```
-
-## File: libs/common/src/lib/kysely.models.ts
-
-```typescript
-// tsco:ignore
-/* eslint-disable @typescript-eslint/no-explicit-any */
-//
-// ====================================================================
-// When adding a new table, you have to  :-
-// 1. Add a model and add it to the interface Models
-
-// ====================================================================
-import type {
-  ColumnType,
-  Insertable,
-  OperandValueExpressionOrList,
-  SelectExpression,
-  Selectable,
-  Updateable,
-} from 'kysely';
-import type { EmailStatus } from './emails';
-import type { z } from 'zod';
-import type { addressSchema } from './schema';
-
-export type Keys<T> = keyof T;
-type Json = ColumnType<JsonValue, string, string>;
-type JsonArray = JsonValue[];
-type JsonObject = { [K in string]?: JsonValue };
-type JsonPrimitive = boolean | number | string | null;
-type JsonValue = JsonArray | JsonObject | JsonPrimitive;
-type Timestamp = ColumnType<Date, Date | string, Date | string>;
-type Generated<T> =
-  T extends ColumnType<infer S, infer I, infer U> ? ColumnType<S, I | undefined, U> : ColumnType<T, T | undefined, T>;
-
-export interface Models {
-  authusers: AuthUsers;
-  campaigns: Campaigns;
-  households: Households;
-  map_campaigns_users: MapCampaignsUsers;
-  map_households_tags: MapHouseholdsTags;
-  map_peoples_tags: MapPeoplesTags;
-  map_roles_users: MapRolesUsers;
-  lists: Lists;
-  map_lists_persons: MapListsPersons;
-  map_lists_households: MapListsHouseholds;
-  teams: Teams;
-  map_teams_persons: MapTeamsPersons;
-  map_teams_lists: MapTeamsLists;
-  tasks: Tasks;
-  persons: Persons;
-  profiles: Profiles;
-  roles: Roles;
-  sessions: Sessions;
-  tags: Tags;
-  tenants: Tenants;
-  settings: Settings;
-  donations: Donations;
-  donation_periods: DonationPeriods;
-  donation_pledges: DonationPledges;
-  emails: Emails;
-  newsletters: Newsletters;
-  newsletter_events: NewsletterEvents;
-  email_comments: EmailComments;
-  email_bodies: EmailBodies;
-  email_headers: EmailHeaders;
-  email_recipients: EmailRecipients;
-  email_attachments: EmailAttachments;
-  email_drafts: EmailDrafts;
-  email_trash: EmailTrash;
-  email_read_states: EmailReadStates;
-  task_comments: TaskComments;
-  task_subtasks: TaskSubtasks;
-  task_attachments: TaskAttachments;
-  user_activity: UserActivity;
-  ms_oauth_tokens: MsOauthTokens;
-  google_oauth_tokens: GoogleOauthTokens;
-  data_imports: DataImports;
-  companies: Companies;
-  files: Files;
-  notifications: Notifications;
-  volunteer_events: VolunteerEvents;
-  volunteer_shifts: VolunteerShifts;
-  events: Events;
-  event_ticket_types: EventTicketTypes;
-  event_registrations: EventRegistrations;
-  web_forms: WebForms;
-  background_jobs: BackgroundJobs;
-  webhook_events: WebhookEvents;
-  data_exports: DataExports;
-  potential_duplicates: PotentialDuplicates;
-  workflows: Workflows;
-  workflow_steps: WorkflowSteps;
-  workflow_enrollments: WorkflowEnrollments;
-  person_connections: PersonConnections;
-  passkeys: Passkeys;
-}
-
-export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
-
-export type GetOperandType<
-  T extends Keys<TablesOperationMap>,
-  Op extends Keys<TablesOperationMap[T]>,
-  Key extends Keys<TablesOperationMap[T][Op]>,
-> = unknown extends TablesOperationMap[T][Op][Key]
-  ? never
-  : TablesOperationMap[T][Op][Key] extends never
-    ? never
-    : TablesOperationMap[T][Op][Key];
-
-export type OperationDataType<
-  T extends Keys<Models>,
-  Op extends 'select' | 'update' | 'insert',
-> = TablesOperationMap[T][Op];
-
-export type TypeId<T extends keyof Models> = string & { _table?: T };
-export type TypeTenantId<T extends keyof Models> = string & { _table?: T };
-
-type ExtractTableAlias<DB, TE> = TE extends `${string} as ${infer TA}`
-  ? TA extends keyof DB
-    ? TA
-    : never
-  : TE extends keyof DB
-    ? TE
-    : never;
-
-export type TypeColumn<T extends keyof Models, U> = OperandValueExpressionOrList<
-  Models,
-  ExtractTableAlias<Models, T>,
-  U
->;
-export type TypeTableColumns<T extends keyof Models> = T extends keyof Models
-  ? SelectExpression<Models, ExtractTableAlias<Models, T>>
-  : never;
-
-export type TablesOperationMap = {
-  [K in Keys<Models>]: {
-    select: Selectable<Models[K]>;
-    insert: Insertable<Models[K]> & { tenant_id: string };
-    update: Updateable<Models[K]>;
-  };
-};
-
-export type TypeColumnValue<TTable extends keyof Models, TColumn extends keyof Models[TTable]> = UnwrapSelect<
-  Models[TTable][TColumn]
->;
-
-/*
-type TableType = {
-  [K in Keys<Models>]: K;
-};
-*/
-
-// ====================================================================
-// The following are the type definitions for the database schema
-// Since I use a base controller to handle the CRUD operations, I don't
-// know the exact type of the table until runtime. So I use the following
-// type definitions to help me out.
-// ====================================================================
-interface RecordType {
-  id: Generated<string>;
-  tenant_id: string;
-  createdby_id: string;
-  updatedby_id: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-interface JunctionRecordType {
-  tenant_id: string;
-  createdby_id: string;
-  updatedby_id: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-export type AddressType = z.infer<typeof addressSchema>;
-
-interface AuthUsers extends RecordType {
-  email: string;
-  first_name: string;
-  last_name: string;
-  password: string;
-  password_reset_code: string | null;
-  // TODO: move to Sessions
-  password_reset_code_created_at: Timestamp | null;
-  role: string | null;
-  verified: boolean;
-  two_factor_enabled: boolean;
-  two_factor_code: string | null;
-  two_factor_expires_at: Timestamp | null;
-  deletion_scheduled_at: Timestamp | null;
-  previous_email: string | null;
-  previous_role: string | null;
-}
-
-interface Campaigns extends Omit<RecordType, 'createdby_id'> {
-  admin_id: string;
-  createdby_id: string;
-  description: string | null;
-  startdate: string | null;
-  enddate: string | null;
-  name: string;
-  json: Json | null;
-  notes: string | null;
-}
-
-export interface Households extends Omit<RecordType, 'createdby_id'>, AddressType {
-  campaign_id: string;
-  createdby_id: string;
-  file_id: string | null;
-  home_phone: string | null;
-  json: Json | null;
-  notes: string | null;
-  address_fp_street: string | null;
-  address_fp_full: string | null;
-  is_placeholder?: boolean;
-  district: string | null;
-  precinct: string | null;
-  ward: string | null;
-  geocoding_status: string | null;
-}
-
-interface MapCampaignsUsers extends Omit<JunctionRecordType, 'createdby_id' | 'updatedby_id'> {
-  campaign_id: string;
-  user_id: string;
-}
-
-interface MapHouseholdsTags extends JunctionRecordType {
-  household_id: string;
-  tag_id: string;
-}
-
-export interface MapPeoplesTags extends JunctionRecordType {
-  person_id: string;
-  tag_id: string;
-  deletable: Generated<boolean>;
-}
-
-interface MapRolesUsers extends JunctionRecordType {
-  role_id: string;
-  user_id: string;
-}
-
-interface Teams extends RecordType {
-  name: string;
-  description: string | null;
-  team_captain_id: string | null;
-  team_lead_user_id: string | null;
-}
-
-interface MapTeamsPersons extends JunctionRecordType {
-  team_id: string;
-  person_id: string;
-}
-
-interface MapTeamsLists extends JunctionRecordType {
-  team_id: string;
-  list_id: string;
-}
-
-export interface MapListsPersons extends JunctionRecordType {
-  list_id: string;
-  person_id: string;
-}
-
-interface MapListsHouseholds extends JunctionRecordType {
-  list_id: string;
-  household_id: string;
-}
-
-export interface Persons extends Omit<RecordType, 'createdby_id'> {
-  campaign_id: string;
-  household_id: string | null;
-  createdby_id: string;
-  first_name: string | null;
-  middle_names: string | null;
-  last_name: string | null;
-  email: string | null;
-  email2: string | null;
-  mobile: string | null;
-  home_phone: string | null;
-  file_id: string | null;
-  company_id: string | null;
-  json: Json | null;
-  notes: string | null;
-  linkedin: string | null;
-  twitter: string | null;
-  facebook: string | null;
-  instagram: string | null;
-  assigned_to: string | null;
-}
-
-interface Profiles extends RecordType, AddressType {
-  auth_id: string;
-  avatar_file_id: string | null;
-  email: string | null;
-  email2: string | null;
-  mobile: string | null;
-  home_phone: string | null;
-  json: Json | null;
-}
-
-interface Settings extends RecordType {
-  key: string;
-  value: JsonValue;
-}
-
-export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
-  person_id: string | null;
-  amount: number;
-  status: Generated<string>;
-  stripe_session_id: string | null;
-  pledge_id: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  email: string | null;
-  street: string | null;
-  apt: string | null;
-  city: string | null;
-  state: string | null;
-  zip: string | null;
-  country: string | null;
-}
-
-export interface DonationPeriods extends RecordType {
-  name: string;
-  start_date: ColumnType<Date, Date | string, Date | string>;
-  end_date: ColumnType<Date, Date | string, Date | string> | null;
-  limit_amount: number;
-  is_active: Generated<boolean>;
-}
-
-export interface DonationPledges extends RecordType {
-  person_id: string | null;
-  stripe_subscription_id: string | null;
-  stripe_customer_id: string | null;
-  monthly_amount: number;
-  status: Generated<string>;
-  started_at: Generated<Timestamp>;
-  cancelled_at: Timestamp | null;
-  next_billing_date: ColumnType<Date, Date | string, Date | string> | null;
-  first_name: string | null;
-  last_name: string | null;
-  email: string | null;
-  state: string | null;
-  country: string | null;
-}
-
-interface Roles extends RecordType {
-  name: string;
-  description: string | null;
-  permissions: Json | null;
-}
-
-interface Sessions extends Omit<RecordType, 'createdby_id' | 'updatedby_id' | 'updated_at'> {
-  session_id: Generated<string>;
-  user_id: string;
-  ip_address: string;
-  last_accessed: Generated<Timestamp>;
-  other_properties: Json | null;
-  refresh_token: Generated<string>;
-  status: string;
-  user_agent: string;
-  expires_at: Timestamp | null;
-  last_used_at: Timestamp | null;
-}
-
-export interface Lists extends RecordType {
-  name: string;
-  description: string | null;
-  object: 'people' | 'households';
-  is_dynamic: boolean;
-  definition: Json | null;
-  last_refreshed_at: Timestamp | null;
-  status: Generated<'idle' | 'refreshing' | 'failed'>;
-}
-
-export interface Tags extends RecordType {
-  name: string;
-  description: string | null;
-  color: string | null;
-  deletable: boolean;
-  type: Generated<'tag' | 'issue'>;
-}
-
-export interface Tasks extends RecordType {
-  name: string;
-  details?: string;
-  due_at: Timestamp | null;
-  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived' | null;
-  priority: 'low' | 'medium' | 'high' | 'urgent' | null;
-  completed_at: Timestamp | null;
-  position: number | null;
-  assigned_to: string | null;
-  team_id: string | null;
-  file_id: string | null;
-}
-
-interface Tenants extends RecordType, AddressType {
-  name: string;
-  admin_id: string | null;
-  email: string | null;
-  email2: string | null;
-  mobile: string | null;
-  json: Json | null;
-  notes: string | null;
-  placeholder_household_id: string | null;
-  stripe_customer_id: string | null;
-  stripe_subscription_id: string | null;
-  subscription_plan: string | null;
-  subscription_status: string | null;
-  subscription_ends_at: Timestamp | null;
-  deletion_scheduled_at: Timestamp | null;
-  suspended_at: Timestamp | null;
-  paused_at: Timestamp | null;
-}
-
-interface Emails extends RecordType {
-  folder_id: string;
-  from_email: string | null;
-  to_email: string | null;
-  subject: string | null;
-  body: string | null;
-  preview: string | null;
-  assigned_to: string | null;
-  is_favourite: boolean;
-  deleted_at: Timestamp | null;
-  status: EmailStatus | null;
-}
-
-interface Newsletters extends RecordType {
-  name: string;
-  status: string;
-  subject: string | null;
-  preview_text: string | null;
-  audience_description: string | null;
-  target_lists: Json | null;
-  segments: Json | null;
-  total_recipients: number;
-  delivered_count: number;
-  bounce_count: number;
-  open_rate: number;
-  click_rate: number;
-  unique_opens: number;
-  unique_clicks: number;
-  unsubscribe_count: number;
-  spam_complaint_count: number;
-  reply_count: number;
-  send_date: Timestamp | null;
-  last_engagement_at: Timestamp | null;
-  summary: string | null;
-  html_content: string | null;
-  plain_text_content: string | null;
-  top_links: Json | null;
-  attachments: Json | null;
-}
-
-export interface NewsletterEvents {
-  id: Generated<string>;
-  tenant_id: string;
-  newsletter_id: string;
-  email: string;
-  event_type: string;
-  sg_event_id: string;
-  sg_message_id: string | null;
-  url: string | null;
-  ip: string | null;
-  user_agent: string | null;
-  timestamp: Timestamp;
-  created_at: Generated<Timestamp>;
-}
-
-interface WebForms extends RecordType {
-  name: string;
-  description: string | null;
-  redirect_url: string | null;
-  target_tags: Json | null;
-  target_lists: Json | null;
-  status: 'active' | 'archived';
-  fields: Json | null;
-  send_confirmation: boolean;
-  send_alert: boolean;
-  form_type: string;
-}
-
-interface EmailComments extends RecordType {
-  email_id: string;
-  author_id: string;
-  comment: string;
-}
-
-interface EmailBodies extends RecordType {
-  email_id: string;
-  body_html: string;
-}
-
-interface EmailHeaders extends RecordType {
-  email_id: string;
-  headers_json: Json | null;
-  raw_headers: string | null;
-  date_sent: Timestamp | null;
-}
-
-interface EmailRecipients extends RecordType {
-  email_id: string;
-  kind: 'to' | 'cc' | 'bcc';
-  name: string | null;
-  email: string;
-  pos: number;
-}
-
-interface EmailAttachments extends RecordType {
-  email_id: string;
-  filename: string;
-  content_type: string;
-  size_bytes: number;
-  cid: string | null;
-  is_inline: boolean;
-  pos: number;
-}
-
-interface EmailDrafts extends RecordType {
-  user_id: string;
-  thread_id: string | null;
-  to_list: JsonValue | null;
-  cc_list: JsonValue | null;
-  bcc_list: JsonValue | null;
-  subject: string | null;
-  body_html: string | null;
-  body_delta: JsonValue | null;
-  meta: JsonValue | null;
-  is_locked: boolean;
-}
-
-interface EmailTrash extends RecordType {
-  email_id: string;
-  from_folder_id: string;
-  trashed_at: Timestamp;
-}
-
-export interface EmailReadStates {
-  tenant_id: string;
-  user_id: string;
-  email_id: string;
-  is_read: boolean;
-  created_at: Generated<Timestamp>;
-}
-
-interface UserActivity extends RecordType {
-  user_id: string;
-  activity: string;
-  entity: string;
-  entity_id: string | null;
-  quantity: number;
-  metadata: Json | null;
-}
-
-interface DataImports extends RecordType {
-  file_name: string;
-  source: string;
-  tag_name: string | null;
-  tag_id: string | null;
-  row_count: number;
-  inserted_count: number;
-  error_count: number;
-  skipped_count: number;
-  households_created: number;
-  metadata: Json | null;
-  processed_at: Timestamp;
-  status: Generated<string>;
-  error_message: string | null;
-}
-
-export interface DataExports {
-  id: Generated<string>;
-  tenant_id: string;
-  user_id: string;
-  entity: string;
-  file_name: string;
-  status: Generated<'pending' | 'processing' | 'completed' | 'failed'>;
-  row_count: number | null;
-  storage_key: string | null;
-  columns: ColumnType<string[] | null, string | null, string | null>;
-  error: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface BackgroundJobs {
-  id: Generated<string>;
-  tenant_id: string | null;
-  queue: Generated<string>;
-  status: Generated<string>;
-  payload: Json;
-  attempts: Generated<number>;
-  max_attempts: Generated<number>;
-  error: string | null;
-  run_at: Generated<Timestamp>;
-  locked_at: Timestamp | null;
-  locked_by: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface WebhookEvents {
-  id: Generated<string>;
-  tenant_id: string | null;
-  stripe_event_id: string;
-  type: string;
-  payload: Json;
-  status: Generated<string>;
-  attempts: Generated<number>;
-  max_attempts: Generated<number>;
-  error: string | null;
-  run_at: Generated<Timestamp>;
-  locked_at: Timestamp | null;
-  locked_by: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-  processed_at: Timestamp | null;
-}
-
-export interface PotentialDuplicates {
-  id: Generated<string>;
-  tenant_id: string;
-  group_key: string;
-  person_id: string | null;
-  household_id?: string | null;
-  company_id?: string | null;
-  reason: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-interface MsOauthTokens {
-  id: Generated<string>;
-  tenant_id: string;
-  user_id: string;
-  access_token: string;
-  refresh_token: string;
-  expires_at: Timestamp;
-  ms_email: string | null;
-  delta_link: string | null;
-  synced_at: Timestamp | null;
-  last_sync_error: string | null;
-  last_sync_error_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface GoogleOauthTokens {
-  id: Generated<string>;
-  tenant_id: string;
-  user_id: string;
-  access_token: string;
-  refresh_token: string;
-  expires_at: Timestamp;
-  google_email: string | null;
-  delta_link: string | null;
-  synced_at: Timestamp | null;
-  last_sync_error: string | null;
-  last_sync_error_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface TaskComments extends RecordType {
-  task_id: string;
-  author_id: string;
-  comment: string;
-}
-
-export interface TaskSubtasks extends RecordType {
-  task_id: string;
-  name: string;
-  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | null;
-  position: number | null;
-}
-
-export interface TaskAttachments extends RecordType {
-  task_id: string;
-  filename: string;
-  content_type: string | null;
-  size_bytes: number | null;
-  url: string | null;
-}
-
-export interface Companies extends RecordType {
-  name: string;
-  description: string | null;
-  website: string | null;
-  email: string | null;
-  phone: string | null;
-  industry: string | null;
-  notes: string | null;
-  json: Json | null;
-  file_id: string | null;
-}
-
-export interface Files {
-  id: Generated<string>;
-  tenant_id: string;
-  filename: string;
-  mime_type: string | null;
-  size_bytes: number | null;
-  storage_key: string;
-  sha256_hex: string | null;
-  uploaded_by: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface Notifications {
-  id: Generated<string>;
-  tenant_id: string;
-  user_id: string;
-  title: string;
-  message: string;
-  type: string;
-  read: boolean;
-  link: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface VolunteerEvents extends RecordType {
-  name: string;
-  description: string | null;
-  location_address: string | null;
-  start_time: Timestamp;
-  end_time: Timestamp;
-  capacity: number | null;
-  contact_email: string | null;
-  contact_phone: string | null;
-  is_private: boolean;
-  send_reminder: boolean;
-  slug: string;
-  send_signup_confirmation: boolean;
-  send_volunteer_alert: boolean;
-  fields: Generated<string[]>;
-}
-
-export interface VolunteerShifts extends RecordType {
-  event_id: string;
-  person_id: string;
-  status: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
-  hours_worked: number | null;
-  notes: string | null;
-}
-
-export interface Events extends RecordType {
-  name: string;
-  description: string | null;
-  location_address: string | null;
-  start_time: Timestamp;
-  end_time: Timestamp;
-  capacity: number | null;
-  contact_email: string | null;
-  contact_phone: string | null;
-  slug: string;
-  is_published: Generated<boolean>;
-  send_reminder: Generated<boolean>;
-  send_registration_confirmation: Generated<boolean>;
-  fields: Generated<string[]>;
-}
-
-export interface EventTicketTypes extends RecordType {
-  event_id: string;
-  name: string;
-  description: string | null;
-  price_cents: Generated<number>;
-  capacity: number | null;
-  sort_order: Generated<number>;
-}
-
-export interface EventRegistrations extends RecordType {
-  event_id: string;
-  person_id: string;
-  ticket_type_id: string | null;
-  status: Generated<'registered' | 'attended' | 'no_show' | 'cancelled'>;
-  checked_in_at: Timestamp | null;
-  notes: string | null;
-}
-
-export interface Workflows extends RecordType {
-  name: string;
-  description: string | null;
-  trigger_type: string;
-  status: string;
-  trigger_event_id: string | null;
-}
-
-export interface WorkflowSteps {
-  id: Generated<string>;
-  tenant_id: string;
-  workflow_id: string;
-  step_number: number;
-  delay_days: number;
-  delay_unit: 'days' | 'hours';
-  subject: string;
-  preview_text: string | null;
-  html_content: string | null;
-  plain_text_content: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface WorkflowEnrollments {
-  id: Generated<string>;
-  tenant_id: string;
-  workflow_id: string;
-  person_id: string;
-  status: string;
-  current_step_number: number;
-  next_run_at: Timestamp | null;
-  enrolled_at: Generated<Timestamp>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export type RelationType =
-  | 'referred_by'
-  | 'referred_to'
-  | 'close_friend'
-  | 'family_member'
-  | 'spouse'
-  | 'colleague'
-  | 'org_affiliation'
-  | 'introduced_by'
-  | 'introduced_to'
-  | 'custom';
-
-export interface PersonConnections extends RecordType {
-  from_person_id: string;
-  to_person_id: string;
-  relation_type: RelationType;
-  custom_label: string | null;
-  is_mutual: Generated<boolean>;
-  notes: string | null;
-}
-
-interface Passkeys {
-  id: Generated<bigint>;
-  user_id: string;
-  tenant_id: string;
-  credential_id: string;
-  public_key: string;
-  counter: Generated<bigint>;
-  device_type: string;
-  backed_up: Generated<boolean>;
-  transports: string[] | null;
-  aaguid: string | null;
-  friendly_name: string | null;
-  created_at: Generated<Timestamp>;
-}
-
-type UnwrapSelect<T> = T extends ColumnType<infer S, any, any> ? S : T;
-
-type SelectShape<T> = { [K in keyof T]: UnwrapSelect<T[K]> };
-
-export type HouseholdCol = keyof Models['households'];
-export type PersonsdCol = keyof Models['persons'];
-
-export type HouseholdWithExtras = SelectShape<Models['households']> & {
-  persons_count: number;
-  tags: string[] | null;
-};
 ```

@@ -1,4 +1,4 @@
-import { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback } from 'fastify';
 import { StorageService } from '../../../lib/storage.service';
 import { BaseRepository } from '../../../lib/base.repo';
 import { verifyAuthToken } from '../../../lib/auth-util';
@@ -82,7 +82,7 @@ function getOAuthService(db: any) {
   return _oauthSvc;
 }
 
-async function saveLocalEmail(
+export async function saveLocalEmail(
   db: any,
   tenantId: string,
   userId: string,
@@ -97,11 +97,14 @@ async function saveLocalEmail(
   previewKey: string,
 ) {
   return db.transaction().execute(async (trx: any) => {
-    // Ensure Outbox folder exists in email_folders
+    // Ensure the Outbox folder row exists. email_folders uses global hardcoded
+    // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
+    // email_folders(id) — not tenant_id — so the existence check must be by id
+    // alone. onConflict guards against a concurrent/global row already present.
+     
     const existingOutbox = await trx
       .selectFrom('email_folders')
       .select('id')
-      .where('tenant_id', '=', tenantId)
       .where('id', '=', '10')
       .executeTakeFirst();
 
@@ -118,6 +121,7 @@ async function saveLocalEmail(
           sort_order: 10,
           is_default: false,
         })
+        .onConflict((oc: any) => oc.column('id').doNothing())
         .execute();
     }
 
@@ -160,6 +164,8 @@ async function saveLocalEmail(
       const uFile = uploadedFiles[i];
       let fileId: string;
 
+      // Persist (or reuse, via sha256 dedup) the file row, then link the
+      // attachment to it so downloads can resolve the stored blob.
       const existingFile = await trx
         .selectFrom('files')
         .select('id')
@@ -183,7 +189,6 @@ async function saveLocalEmail(
           })
           .returning('id')
           .executeTakeFirstOrThrow();
-
         fileId = String(fileResult.id);
       }
 
@@ -199,6 +204,8 @@ async function saveLocalEmail(
           is_inline: uFile.is_inline,
           pos: i + 1,
           file_id: fileId,
+          createdby_id: userId,
+          updatedby_id: userId,
         })
         .execute();
     }
@@ -230,6 +237,8 @@ async function saveLocalEmail(
         name: null,
         email: emailAddr,
         pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
       });
     });
     ccList.forEach((emailAddr: string, idx: number) => {
@@ -240,6 +249,8 @@ async function saveLocalEmail(
         name: null,
         email: emailAddr,
         pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
       });
     });
     bccList.forEach((emailAddr: string, idx: number) => {
@@ -250,6 +261,8 @@ async function saveLocalEmail(
         name: null,
         email: emailAddr,
         pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
       });
     });
 
@@ -388,20 +401,26 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
         .replace(/<[^>]*>/g, '')
         .substring(0, 100)
         .trim() || '';
-    const emailRow = await saveLocalEmail(
-      db,
-      tenantId,
-      userId,
-      fromEmail,
-      fromName,
-      toList,
-      ccList,
-      bccList,
-      subject,
-      html,
-      uploadedFiles,
-      fallbackPreview,
-    );
+    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
+    try {
+      emailRow = await saveLocalEmail(
+        db,
+        tenantId,
+        userId,
+        fromEmail,
+        fromName,
+        toList,
+        ccList,
+        bccList,
+        subject,
+        html,
+        uploadedFiles,
+        fallbackPreview,
+      );
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to save outbound email to database');
+      return reply.jsendError(err.message || 'Failed to save email', 500);
+    }
 
     // Determine send method prioritizing matching address
     let sendMethod: 'ms' | 'google' = 'ms';
