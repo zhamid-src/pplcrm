@@ -449,7 +449,8 @@ CREATE TABLE public.email_attachments (
     createdby_id bigint NOT NULL,
     updatedby_id bigint NOT NULL,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    file_id bigint
 );
 
 
@@ -3184,6 +3185,13 @@ CREATE INDEX idx_email_attachments_email_id ON public.email_attachments USING bt
 
 
 --
+-- Name: idx_email_attachments_file_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_email_attachments_file_id ON public.email_attachments USING btree (file_id);
+
+
+--
 -- Name: idx_email_bodies_email_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4329,6 +4337,14 @@ ALTER TABLE ONLY public.donations
 
 ALTER TABLE ONLY public.email_attachments
     ADD CONSTRAINT fk_email_attachments_email FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_attachments fk_email_attachments_file; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_attachments
+    ADD CONSTRAINT fk_email_attachments_file FOREIGN KEY (file_id) REFERENCES public.files(id) ON DELETE SET NULL;
 
 
 --

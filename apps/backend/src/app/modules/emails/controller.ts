@@ -7,13 +7,15 @@ import { EmailCommentsRepo } from './repositories/email-comments.repo';
 import { EmailDraftsRepo } from './repositories/email-drafts.repo';
 import { EmailRepo } from './repositories/email.repo';
 import { BaseController } from '../../lib/base.controller';
-import { ALL_FOLDERS, EmailStatus } from '../../../../../../libs/common/src/lib/emails';
-import { TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
-import { EmailDraftType } from '../../../../../../libs/common/src/lib/models';
+import type { EmailStatus } from '../../../../../../libs/common/src/lib/emails';
+import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
+import type { TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { EmailDraftType } from '../../../../../../libs/common/src/lib/models';
 import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { processMentions } from '../../lib/mail/mentions-util';
 import { sanitizeHtml } from '../../lib/mail/sanitize-util';
+import { StorageService } from '../../lib/storage.service';
 import { sql } from 'kysely';
 
 export class EmailsController extends BaseController<'emails', EmailRepo> {
@@ -22,6 +24,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
   private commentsRepo = new EmailCommentsRepo();
   private draftsRepo = new EmailDraftsRepo();
   private activityRepo = new UserActivityRepo();
+  private storageService = new StorageService();
 
   constructor() {
     super(new EmailRepo());
@@ -158,8 +161,77 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
     const numTrashed =
       idsNotInTrash.length > 0 ? await this.getRepo().moveToTrash(tenant_id as string, idsNotInTrash) : 0;
-    const numDeleted = idsInTrash.length > 0 && (await super.deleteMany(tenant_id, idsInTrash));
+
+    let numDeleted: number | boolean = false;
+    if (idsInTrash.length > 0) {
+      // Capture the attachment file references BEFORE the cascade removes the
+      // email_attachments rows, so we can clean up storage afterwards.
+      const fileIds = await this.getAttachmentFileIds(tenant_id as string, idsInTrash);
+      numDeleted = await super.deleteMany(tenant_id, idsInTrash);
+      // Hard delete is permanent — purge orphaned attachment blobs + file rows.
+      await this.purgeOrphanedFiles(tenant_id as string, fileIds);
+    }
+
     return numTrashed !== 0 || numDeleted;
+  }
+
+  /** Distinct, non-null file_ids referenced by the given emails' attachments. */
+  private async getAttachmentFileIds(tenant_id: string, emailIds: string[]): Promise<string[]> {
+    if (emailIds.length === 0) return [];
+    const rows = await this.attachmentsRepo.db
+      .selectFrom('email_attachments')
+      .select('file_id')
+      .distinct()
+      .where('tenant_id', '=', tenant_id)
+      .where('email_id', 'in', emailIds)
+      .where('file_id', 'is not', null)
+      .execute();
+    return rows.map((r) => String(r.file_id)).filter((id) => id !== 'null');
+  }
+
+  /**
+   * Delete file rows + storage blobs for files that are no longer referenced by
+   * any remaining email attachment (files are sha256-deduped and can be shared).
+   * Storage deletion is best-effort: a failed blob delete must not abort the txn.
+   */
+  private async purgeOrphanedFiles(tenant_id: string, fileIds: string[]): Promise<void> {
+    if (fileIds.length === 0) return;
+
+    const db = this.attachmentsRepo.db;
+    for (const fileId of fileIds) {
+      try {
+        const stillReferenced = await db
+          .selectFrom('email_attachments')
+          .select('id')
+          .where('tenant_id', '=', tenant_id)
+          .where('file_id', '=', fileId)
+          .limit(1)
+          .executeTakeFirst();
+
+        if (stillReferenced) continue;
+
+        const file = await db
+          .selectFrom('files')
+          .select(['id', 'storage_key'])
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', fileId)
+          .executeTakeFirst();
+
+        if (!file) continue;
+
+        await db.deleteFrom('files').where('tenant_id', '=', tenant_id).where('id', '=', fileId).execute();
+
+        if (file.storage_key) {
+          try {
+            await this.storageService.delete(file.storage_key);
+          } catch (err) {
+            console.error(`Failed to delete storage blob ${file.storage_key} for file ${fileId}`, err);
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to purge orphaned file ${fileId}`, err);
+      }
+    }
   }
 
   public async getAllAttachments(tenant_id: string, email_id: string, options?: { includeInline: boolean }) {

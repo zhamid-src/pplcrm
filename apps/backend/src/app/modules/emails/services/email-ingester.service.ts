@@ -47,6 +47,9 @@ export class EmailIngesterService {
     if (matchedEmails.length === 0) return;
     const emailIds = matchedEmails.map((e) => String(e.id));
 
+    // Capture attachment file references before the rows are deleted.
+    const fileIds = await this.getAttachmentFileIds(tenantId, emailIds);
+
     await this.db.transaction().execute(async (trx) => {
       // Delete from dependent tables sequentially to prevent foreign key constraint issues
       await trx
@@ -83,6 +86,8 @@ export class EmailIngesterService {
       // Delete from emails table
       await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', 'in', emailIds).execute();
     });
+
+    await this.purgeOrphanedFiles(tenantId, fileIds);
   }
 
   public async deleteMessage(tenantId: string, remoteId: string): Promise<void> {
@@ -96,6 +101,9 @@ export class EmailIngesterService {
 
     if (!existing) return;
     const emailId = String(existing.id);
+
+    // Capture attachment file references before the rows are deleted.
+    const fileIds = await this.getAttachmentFileIds(tenantId, [emailId]);
 
     await this.db.transaction().execute(async (trx) => {
       // Delete from dependent tables sequentially to prevent foreign key constraint issues
@@ -125,6 +133,64 @@ export class EmailIngesterService {
       // Delete from emails table
       await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', emailId).execute();
     });
+
+    await this.purgeOrphanedFiles(tenantId, fileIds);
+  }
+
+  /** Distinct, non-null file_ids referenced by the given emails' attachments. */
+  private async getAttachmentFileIds(tenantId: string, emailIds: string[]): Promise<string[]> {
+    if (emailIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom('email_attachments')
+      .select('file_id')
+      .distinct()
+      .where('tenant_id', '=', tenantId)
+      .where('email_id', 'in', emailIds)
+      .where('file_id', 'is not', null)
+      .execute();
+    return rows.map((r) => String(r.file_id)).filter((id) => id !== 'null');
+  }
+
+  /**
+   * Delete file rows + storage blobs for files no longer referenced by any
+   * remaining attachment (files are sha256-deduped and can be shared). Storage
+   * deletion is best-effort and must not throw.
+   */
+  private async purgeOrphanedFiles(tenantId: string, fileIds: string[]): Promise<void> {
+    for (const fileId of fileIds) {
+      try {
+        const stillReferenced = await this.db
+          .selectFrom('email_attachments')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('file_id', '=', fileId)
+          .limit(1)
+          .executeTakeFirst();
+
+        if (stillReferenced) continue;
+
+        const file = await this.db
+          .selectFrom('files')
+          .select(['id', 'storage_key'])
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', fileId)
+          .executeTakeFirst();
+
+        if (!file) continue;
+
+        await this.db.deleteFrom('files').where('tenant_id', '=', tenantId).where('id', '=', fileId).execute();
+
+        if (file.storage_key) {
+          try {
+            await this.storageService.delete(file.storage_key);
+          } catch (err) {
+            console.error(`Failed to delete storage blob ${file.storage_key} for file ${fileId}`, err);
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to purge orphaned file ${fileId}`, err);
+      }
+    }
   }
 
   public async ingestEmail(
@@ -145,48 +211,54 @@ export class EmailIngesterService {
 
     if (existing) return false;
 
-    // Try finding by internetMessageId in email_headers to match locally composed & sent emails.
-    // Only applies to emails with no provider prefix in preview (locally composed).
-    // If the matched email already has a provider prefix, it's a cross-folder duplicate
-    // (e.g. send-to-self appearing in both Sent and Inbox) — insert as a separate record.
+    // Try finding by internetMessageId in email_headers to match locally composed
+    // & sent emails. The provider may reassign a message's ID when it moves
+    // between folders (e.g. MS Graph changes the ID on Drafts -> Sent), so the
+    // preview-based dedup above can miss the local copy. The Message-ID header is
+    // stable across that move, so use it as a folder-aware fallback.
     if (email.internetMessageId) {
-      const headerRow = await this.db
-        .selectFrom('email_headers')
-        .select('email_id')
-        .where('tenant_id', '=', tenantId)
-        .where('raw_headers', 'like', `%Message-ID: ${email.internetMessageId}%`)
-        .executeTakeFirst();
+      const matches = await this.db
+        .selectFrom('emails')
+        .innerJoin('email_headers', 'email_headers.email_id', 'emails.id')
+        .select(['emails.id as id', 'emails.folder_id as folder_id', 'emails.preview as preview'])
+        .where('emails.tenant_id', '=', tenantId)
+        .where('email_headers.tenant_id', '=', tenantId)
+        .where('email_headers.raw_headers', 'like', `%Message-ID: ${email.internetMessageId}%`)
+        .execute();
 
-      if (headerRow) {
-        const matchedEmail = await this.db
-          .selectFrom('emails')
-          .select(['id', 'folder_id', 'preview'])
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', String(headerRow.email_id))
-          .executeTakeFirst();
-
-        if (matchedEmail) {
-          const existingPreview = matchedEmail.preview as string | null;
-          const alreadyTaggedByProvider = existingPreview?.startsWith('ms:') || existingPreview?.startsWith('google:');
-
-          if (!alreadyTaggedByProvider) {
-            // Locally composed email — tag it with the provider ID and align folder
-            await this.db
-              .updateTable('emails')
-              .set({
-                preview: dedupeKey,
-                folder_id: folderId,
-                updated_at: new Date(),
-              })
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', String(matchedEmail.id))
-              .execute();
-
-            return false; // prevent duplicate insertion
-          }
-          // Already tagged by provider: fall through and insert as a fresh record in this folder
+      // 1. Same message already present in THIS folder. This is the same item
+      //    re-synced (possibly under a new provider ID) — refresh the dedupe key
+      //    so future syncs match by preview, and skip insertion.
+      const sameFolder = matches.find((m) => String(m.folder_id) === String(folderId));
+      if (sameFolder) {
+        if (sameFolder.preview !== dedupeKey) {
+          await this.db
+            .updateTable('emails')
+            .set({ preview: dedupeKey, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(sameFolder.id))
+            .execute();
         }
+        return false;
       }
+
+      // 2. An untagged (locally composed, not yet provider-tagged) copy exists in
+      //    another folder — claim it: tag with the provider ID and align its folder.
+      const untagged = matches.find((m) => !(m.preview?.startsWith('ms:') || m.preview?.startsWith('google:')));
+      if (untagged) {
+        await this.db
+          .updateTable('emails')
+          .set({ preview: dedupeKey, folder_id: folderId, updated_at: new Date() })
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', String(untagged.id))
+          .execute();
+
+        return false; // prevent duplicate insertion
+      }
+
+      // 3. Otherwise the message only exists in other folders and is already
+      //    provider-tagged — this is a genuine cross-folder copy (e.g.
+      //    send-to-self in both Sent and Inbox). Fall through and insert fresh.
     }
 
     // Upload attachment files to storage outside database transaction
@@ -269,18 +341,20 @@ export class EmailIngesterService {
       for (const [i, file] of uploadedFiles.entries()) {
         let fileId: string;
 
+        // Persist (or reuse, via sha256 dedup) the file row, then link the
+        // attachment to it so downloads can resolve the stored blob.
         const existingFile = await trx
-          .selectFrom('files' as any)
+          .selectFrom('files')
           .select('id')
           .where('tenant_id', '=', tenantId)
           .where('sha256_hex', '=', file.sha256_hex)
           .executeTakeFirst();
 
         if (existingFile) {
-          fileId = String((existingFile as any).id);
+          fileId = String(existingFile.id);
         } else {
           const fileResult = await trx
-            .insertInto('files' as any)
+            .insertInto('files')
             .values({
               tenant_id: tenantId,
               filename: file.filename,
@@ -291,13 +365,12 @@ export class EmailIngesterService {
               uploaded_by: requestedBy,
             })
             .returning('id')
-            .executeTakeFirst();
-
-          fileId = String((fileResult as any).id);
+            .executeTakeFirstOrThrow();
+          fileId = String(fileResult.id);
         }
 
         await trx
-          .insertInto('email_attachments' as any)
+          .insertInto('email_attachments')
           .values({
             tenant_id: tenantId,
             email_id: emailId,
@@ -308,6 +381,8 @@ export class EmailIngesterService {
             is_inline: file.is_inline,
             pos: i + 1,
             file_id: fileId,
+            createdby_id: requestedBy,
+            updatedby_id: requestedBy,
           })
           .execute();
       }

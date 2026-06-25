@@ -511,6 +511,7 @@ interface EmailAttachments extends RecordType {
   cid: string | null;
   is_inline: boolean;
   pos: number;
+  file_id: string | null;
 }
 
 interface EmailDrafts extends RecordType {
