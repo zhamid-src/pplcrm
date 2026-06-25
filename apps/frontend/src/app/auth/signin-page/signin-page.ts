@@ -10,6 +10,8 @@ import { TokenService } from '../../services/api/token-service';
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
+type SignInStep = 'email' | 'passkey' | 'password' | '2fa' | 'passkey-setup';
+
 @Component({
   selector: 'pc-login',
   imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
@@ -26,20 +28,15 @@ export class SignInPage implements OnInit, OnDestroy {
   private _countdownInterval: ReturnType<typeof setInterval> | null = null;
   private _loading = createLoadingGate();
 
-  protected readonly credentials = signal({
-    email: '',
-    password: '',
-  });
+  protected readonly step = signal<SignInStep>('email');
+  protected readonly emailData = signal({ email: '' });
+  protected readonly passwordData = signal({ password: '' });
+  protected readonly otpData = signal({ code: '' });
   protected readonly emailFor2FA = signal<string>('');
-  protected readonly offerPasskeySetup = signal<boolean>(false);
-  protected readonly otpData = signal({
-    code: '',
-  });
   protected readonly pendingEmail = signal<string>('');
   protected readonly rateLimitSecondsLeft = signal<number>(0);
   protected readonly rateLimitMins = computed(() => Math.floor(this.rateLimitSecondsLeft() / 60));
   protected readonly rateLimitRemSecs = computed(() => this.rateLimitSecondsLeft() % 60);
-  protected readonly requires2FA = signal<boolean>(false);
   protected readonly resending = signal<boolean>(false);
   protected readonly settingUpPasskey = signal<boolean>(false);
   protected readonly verificationPending = signal<boolean>(false);
@@ -47,12 +44,16 @@ export class SignInPage implements OnInit, OnDestroy {
   protected isLoading = this._loading.visible;
   protected persistence = this.tokenService.getPersistence();
 
-  public readonly form = form(this.credentials, (p) => {
+  public readonly emailForm = form(this.emailData, (p) => {
     required(p.email);
     email(p.email);
+  });
+
+  public readonly passwordForm = form(this.passwordData, (p) => {
     required(p.password);
     minLength(p.password, 8);
   });
+
   public readonly otpForm = form(this.otpData, (p) => {
     required(p.code);
     pattern(p.code, /^\d{6}$/);
@@ -65,26 +66,16 @@ export class SignInPage implements OnInit, OnDestroy {
     });
   }
 
-  public get code() {
-    return this.otpForm.code();
-  }
-
-  public get email() {
-    return this.form.email();
+  public get emailField() {
+    return this.emailForm.email();
   }
 
   public get password() {
-    return this.form.password();
+    return this.passwordForm.password();
   }
 
-  public cancel2FA() {
-    this.requires2FA.set(false);
-    this.emailFor2FA.set('');
-    this.otpData.update((o) => ({ ...o, code: '' }));
-  }
-
-  public ngOnDestroy() {
-    this.clearCountdown();
+  public get code() {
+    return this.otpForm.code();
   }
 
   public ngOnInit() {
@@ -96,61 +87,94 @@ export class SignInPage implements OnInit, OnDestroy {
     }
   }
 
-  public async resendVerification() {
-    const emailVal = this.pendingEmail().trim();
-    if (!emailVal) return;
-    this.resending.set(true);
-    try {
-      await this.authService.resendVerificationEmail(emailVal);
-      this.alertSvc.showSuccess('Verification email sent successfully!');
-    } catch (err: any) {
-      this.alertSvc.showError(err.message || 'Failed to resend verification email.');
-    } finally {
-      this.resending.set(false);
-    }
+  public ngOnDestroy() {
+    this.clearCountdown();
   }
 
-  public async setupPasskey() {
-    this.settingUpPasskey.set(true);
+  public goBackToEmail() {
+    this.step.set('email');
+    this.verificationPending.set(false);
+    this.passwordData.update((p) => ({ ...p, password: '' }));
+    this.otpData.update((o) => ({ ...o, code: '' }));
+  }
+
+  public usePasswordInstead() {
+    this.step.set('password');
+  }
+
+  public async continueWithEmail(event?: Event) {
+    event?.preventDefault();
+
+    const rawEmail = this.emailData().email;
+    const emailVal = rawEmail.trim().toLowerCase();
+
+    if (rawEmail !== emailVal) {
+      this.emailForm.email().value.set(emailVal);
+    }
+
+    this.emailForm().markAsTouched();
+
+    await submit(this.emailForm, {
+      action: async () => {
+        let hasPasskeys = false;
+        const end = this._loading.begin();
+        try {
+          ({ hasPasskeys } = await this.authService.checkEmail(emailVal));
+        } catch {
+          // network error — fall through to password
+        } finally {
+          end();
+        }
+
+        if (hasPasskeys) {
+          this.step.set('passkey');
+          await this.signInWithPasskey();
+        } else {
+          this.step.set('password');
+        }
+
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.emailForm.email();
+        const hasRequired = f.errors().some((e) => e.kind === 'required');
+        this.alertSvc.showError(hasRequired ? 'Email is required.' : 'Please enter a valid email address.');
+      },
+    });
+  }
+
+  public async signInWithPasskey() {
+    const end = this._loading.begin();
     try {
-      const result = await this.authService.registerPasskey();
-      if (result.verified) {
-        this.alertSvc.showSuccess('Passkey set up successfully!');
+      const result = await this.authService.signInWithPasskey();
+      if (result.cancelled) {
+        this.step.set('password');
+        return;
       }
+      if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
     } catch (err: any) {
-      if (err?.name !== 'NotAllowedError') {
-        this.alertSvc.showError(err.message || 'Failed to set up passkey.');
+      if (err?.name === 'NotAllowedError') {
+        this.step.set('password');
+        return;
       }
+      this.handleError(err);
     } finally {
-      this.settingUpPasskey.set(false);
-      this.offerPasskeySetup.set(false);
-      this.suppressNavigation.set(false);
+      end();
     }
   }
 
   public async signIn(event?: Event) {
     event?.preventDefault();
 
-    // clear any stale auth
     this.tokenService.clearAll();
 
-    // normalize inputs
-    const rawEmail = this.credentials().email;
-    const emailVal = rawEmail.trim().toLowerCase();
-    const passwordVal = this.credentials().password;
+    const emailVal = this.emailData().email.trim().toLowerCase();
+    const passwordVal = this.passwordData().password;
 
-    // write back the normalized email (no revalidate spam)
-    if (rawEmail !== emailVal) {
-      this.form.email().value.set(emailVal);
-    }
-
-    // clear previous pending states
     this.verificationPending.set(false);
+    this.passwordForm().markAsTouched();
 
-    // force validation messages to appear
-    this.form().markAsTouched();
-
-    await submit(this.form, {
+    await submit(this.passwordForm, {
       action: async () => {
         const end = this._loading.begin();
         try {
@@ -158,13 +182,13 @@ export class SignInPage implements OnInit, OnDestroy {
           const res = await this.authService.signIn({ email: emailVal, password: passwordVal });
           if (res.requires2FA) {
             this.suppressNavigation.set(false);
-            this.requires2FA.set(true);
+            this.step.set('2fa');
             this.emailFor2FA.set(res.email || emailVal);
             this.otpData.update((o) => ({ ...o, code: '' }));
           } else {
             const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
             if (passkeys.length === 0) {
-              this.offerPasskeySetup.set(true);
+              this.step.set('passkey-setup');
             } else {
               this.suppressNavigation.set(false);
             }
@@ -178,46 +202,13 @@ export class SignInPage implements OnInit, OnDestroy {
         return null;
       },
       onInvalid: () => {
-        const emailField = this.form.email();
-        const passwordField = this.form.password();
-
-        const hasEmailRequired = emailField.errors().some((e) => e.kind === 'required');
-        const hasEmailFormat = emailField.errors().some((e) => e.kind === 'email');
-        const hasPasswordMinLength = passwordField.errors().some((e) => e.kind === 'minLength');
-
-        const msg = hasEmailRequired
-          ? 'Email is required.'
-          : hasEmailFormat
-            ? 'Please enter a valid email address.'
-            : hasPasswordMinLength
-              ? 'Password must be at least 8 characters.'
-              : 'Please enter a valid email and password.';
-        this.alertSvc.showError(msg);
+        const f = this.passwordForm.password();
+        const hasMinLength = f.errors().some((e) => e.kind === 'minLength');
+        this.alertSvc.showError(
+          hasMinLength ? 'Password must be at least 8 characters.' : 'Please enter your password.',
+        );
       },
     });
-  }
-
-  public async signInWithPasskey() {
-    const end = this._loading.begin();
-    try {
-      const result = await this.authService.signInWithPasskey();
-      if (result.cancelled) return;
-      if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
-    } catch (err: any) {
-      this.handleError(err);
-    } finally {
-      end();
-    }
-  }
-
-  public skipPasskeySetup() {
-    this.offerPasskeySetup.set(false);
-    this.suppressNavigation.set(false);
-  }
-
-  public togglePersistence(target: EventTarget | null) {
-    if (!target) return;
-    this.tokenService.setPersistence((target as HTMLInputElement).checked);
   }
 
   public async verify2FA(event?: Event) {
@@ -240,18 +231,57 @@ export class SignInPage implements OnInit, OnDestroy {
         return null;
       },
       onInvalid: () => {
-        const codeField = this.otpForm.code();
-        const hasCodeRequired = codeField.errors().some((e) => e.kind === 'required');
-        const hasCodePattern = codeField.errors().some((e) => e.kind === 'pattern');
-
-        const msg = hasCodeRequired
+        const f = this.otpForm.code();
+        const hasRequired = f.errors().some((e) => e.kind === 'required');
+        const hasPattern = f.errors().some((e) => e.kind === 'pattern');
+        const msg = hasRequired
           ? 'Verification code is required.'
-          : hasCodePattern
+          : hasPattern
             ? 'Verification code must be exactly 6 digits.'
             : 'Please enter a valid verification code.';
         this.alertSvc.showError(msg);
       },
     });
+  }
+
+  public async setupPasskey() {
+    this.settingUpPasskey.set(true);
+    try {
+      const result = await this.authService.registerPasskey();
+      if (result.verified) {
+        this.alertSvc.showSuccess('Passkey set up successfully!');
+      }
+    } catch (err: any) {
+      if (err?.name !== 'NotAllowedError') {
+        this.alertSvc.showError(err.message || 'Failed to set up passkey.');
+      }
+    } finally {
+      this.settingUpPasskey.set(false);
+      this.suppressNavigation.set(false);
+    }
+  }
+
+  public skipPasskeySetup() {
+    this.suppressNavigation.set(false);
+  }
+
+  public togglePersistence(target: EventTarget | null) {
+    if (!target) return;
+    this.tokenService.setPersistence((target as HTMLInputElement).checked);
+  }
+
+  public async resendVerification() {
+    const emailVal = this.pendingEmail().trim();
+    if (!emailVal) return;
+    this.resending.set(true);
+    try {
+      await this.authService.resendVerificationEmail(emailVal);
+      this.alertSvc.showSuccess('Verification email sent successfully!');
+    } catch (err: any) {
+      this.alertSvc.showError(err.message || 'Failed to resend verification email.');
+    } finally {
+      this.resending.set(false);
+    }
   }
 
   private clearCountdown() {
@@ -262,7 +292,6 @@ export class SignInPage implements OnInit, OnDestroy {
   }
 
   private handleError(err: any, emailVal?: string) {
-    // errorLink wraps TRPCClientError in ApiError; tRPC data lives on originalError
     const tRPCData = err?.originalError?.data ?? err?.data;
     const message = err.message || String(err);
     const retryAfterSec = (tRPCData?.retryAfterSec as number | undefined) ?? this.parseRetryAfterSec(message);

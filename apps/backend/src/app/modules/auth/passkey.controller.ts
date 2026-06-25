@@ -192,6 +192,26 @@ export class PasskeyController {
     });
   }
 
+  // ── Email Check ──────────────────────────────────────────────────────────
+
+  async checkEmailPasskeys(email: string): Promise<{ hasPasskeys: boolean }> {
+    const user = await this.db
+      .selectFrom('authusers')
+      .select('id')
+      .where('email', '=', email.trim().toLowerCase())
+      .executeTakeFirst();
+
+    if (!user) return { hasPasskeys: false };
+
+    const row = await this.db
+      .selectFrom('passkeys')
+      .select(this.db.fn.countAll<string>().as('count'))
+      .where('user_id', '=', user.id as any)
+      .executeTakeFirst();
+
+    return { hasPasskeys: Number(row?.count ?? 0) > 0 };
+  }
+
   // ── Management ────────────────────────────────────────────────────────────
 
   async listPasskeys(auth: IAuthKeyPayload) {

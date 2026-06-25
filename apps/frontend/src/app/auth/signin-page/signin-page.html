@@ -1,4 +1,3 @@
-<!-- Template for user sign-in with email and password form. -->
 <pc-auth-layout>
   @if (rateLimitSecondsLeft() > 0) {
   <div class="alert alert-error text-sm mb-4">
@@ -7,47 +6,90 @@
       <p class="font-semibold" i18n>Too many attempts</p>
       <p class="text-xs mt-1 flex items-center gap-1">
         <span i18n>Try again in</span>
-
         <span class="countdown font-mono text-lg">
           @if (rateLimitMins() > 0) {
-          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()">
-            {{rateLimitMins()}}
-          </span>
+          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
+            >{{rateLimitMins()}}</span
+          >
           m }
-          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()">
-            {{rateLimitRemSecs()}}
-          </span>
+          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
+            >{{rateLimitRemSecs()}}</span
+          >
           s
         </span>
       </p>
     </div>
   </div>
-  } @if (offerPasskeySetup()) {
+  } @switch (step()) { @case ('email') {
+  <label class="label text-neutral-100">Enter your email to sign in</label>
+  <form (submit)="continueWithEmail($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="at-symbol" />
+        <input
+          type="email"
+          placeholder="Enter your email"
+          [formField]="emailForm.email"
+          aria-label="Email"
+          autocomplete="email"
+        />
+      </label>
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { Continue }
+        </button>
+      </div>
+    </div>
+  </form>
+  <div class="py-3 text-center">
+    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
+  </div>
+  } @case ('passkey') {
   <div class="flex flex-col items-center text-center gap-5 py-4">
     <div class="rounded-full bg-primary/10 p-5">
       <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
     </div>
-    <div class="space-y-2">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
-      <p class="text-sm text-white">
-        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
-        sign-ins.
-      </p>
+    <div class="space-y-1">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
+      <p class="text-sm text-white">{{ emailData().email }}</p>
+      @if (isLoading()) {
+      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
+      }
     </div>
     <div class="flex flex-col gap-3 w-full pt-2">
-      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
-        @if (settingUpPasskey()) {
+      <button
+        type="button"
+        class="btn btn-primary w-full"
+        (click)="signInWithPasskey()"
+        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
+      >
+        @if (isLoading()) {
         <span class="loading loading-spinner loading-sm"></span>
         } @else {
         <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Set Up Passkey
+        } Sign in with Passkey
       </button>
-      <button type="button" class="btn btn-ghost btn-sm text-neutral-400 hover:text-black" (click)="skipPasskeySetup()">
-        Skip for now
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="usePasswordInstead()"
+        [disabled]="isLoading()"
+      >
+        Use password instead
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="goBackToEmail()"
+        [disabled]="isLoading()"
+      >
+        Back
       </button>
     </div>
   </div>
-  } @else if (!requires2FA()) { @if (verificationPending()) {
+  } @case ('password') { @if (verificationPending()) {
   <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
     <div class="flex flex-col gap-2 w-full">
       <div class="flex items-center gap-2 font-semibold">
@@ -69,17 +111,27 @@
     </div>
   </div>
   }
-  <label class="label text-neutral-100">Enter your email and password to sign in</label>
+
+  <div class="flex items-center gap-2 text-sm mb-3">
+    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
+    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
+    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
+      Change
+    </button>
+  </div>
+
+  <label class="label text-neutral-100">Enter your password</label>
   <form (submit)="signIn($event)" novalidate>
     <div class="space-y-3">
       <label class="input w-full validator">
-        <pc-icon [size]="4" name="at-symbol" />
-        <input type="email" placeholder="Enter your email" [formField]="form.email" aria-label="Email" />
-      </label>
-
-      <label class="input w-full validator">
         <pc-icon [size]="4" name="lock-closed" />
-        <input type="password" placeholder="Enter your password" [formField]="form.password" aria-label="Password" />
+        <input
+          type="password"
+          placeholder="Enter your password"
+          [formField]="passwordForm.password"
+          aria-label="Password"
+          autocomplete="current-password"
+        />
       </label>
 
       <div class="flex items-center justify-between pt-2">
@@ -92,12 +144,13 @@
             [checked]="persistence"
             (change)="togglePersistence($event.target)"
           />
-          <label for="remember_me" class="ml-2 block text-sm text-neutral-100"> Remember me </label>
+          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
         </div>
         <div class="text-sm">
-          <a routerLink="/resetpassword" class="link link-hover text-neutral-100"> Forgot your password? </a>
+          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
         </div>
       </div>
+
       <div>
         <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
           @if (isLoading()) {
@@ -107,20 +160,7 @@
       </div>
     </div>
   </form>
-  <div class="divider text-neutral-400 text-xs my-2">OR</div>
-  <button
-    type="button"
-    class="btn btn-outline btn-neutral w-full gap-2"
-    (click)="signInWithPasskey()"
-    [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
-  >
-    <pc-icon name="lock-closed" [size]="4"></pc-icon>
-    Sign in with a Passkey
-  </button>
-  <div class="py-3 text-center">
-    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
-  </div>
-  } @else {
+  } @case ('2fa') {
   <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
   <form (submit)="verify2FA($event)" novalidate>
     <div class="space-y-3">
@@ -144,17 +184,43 @@
       </div>
 
       <div class="text-center pt-2">
-        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="cancel2FA()">
+        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
           Back to Sign In
         </button>
       </div>
     </div>
   </form>
-  }
+  } @case ('passkey-setup') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
+      <p class="text-sm text-white">
+        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
+        sign-ins.
+      </p>
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
+        @if (settingUpPasskey()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Set Up Passkey
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
+        Skip for now
+      </button>
+    </div>
+  </div>
+  } }
+
   <div class="text-neutral-200 text-center text-xs pt-4">
     <span>
       Copyright © 2024
-      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a></span
-    >
+      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
+    </span>
   </div>
 </pc-auth-layout>

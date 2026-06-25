@@ -199,6 +199,14 @@ function passkeyAuthenticationOptions() {
   return publicProcedure.query(() => passkeyController.getAuthenticationOptions());
 }
 
+function checkEmail() {
+  return publicProcedure.input(z.object({ email: z.string().trim().email() })).query(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:checkEmail`, 20, MIN15);
+    return passkeyController.checkEmailPasskeys(input.email);
+  });
+}
+
 function verifyPasskeyAuthentication() {
   return publicProcedure
     .input(
@@ -263,6 +271,7 @@ export const AuthRouter = router({
   passkeyRegistrationOptions: passkeyRegistrationOptions(),
   verifyPasskeyRegistration: verifyPasskeyRegistration(),
   passkeyAuthenticationOptions: passkeyAuthenticationOptions(),
+  checkEmail: checkEmail(),
   verifyPasskeyAuthentication: verifyPasskeyAuthentication(),
   listPasskeys: listPasskeys(),
   deletePasskey: deletePasskey(),

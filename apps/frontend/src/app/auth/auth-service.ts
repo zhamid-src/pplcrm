@@ -144,6 +144,10 @@ export class AuthService extends TRPCService<'authusers'> {
     return this.api.auth.resendVerificationEmail.mutate({ email }) as Promise<{ success: boolean }>;
   }
 
+  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
+    return this.api.auth.checkEmail.query({ email }) as Promise<{ hasPasskeys: boolean }>;
+  }
+
   public async signInWithPasskey(): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
     const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
     let response: any;
