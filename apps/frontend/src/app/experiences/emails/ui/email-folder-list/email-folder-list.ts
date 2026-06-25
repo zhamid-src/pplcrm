@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, output, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
 import { Swap } from '@uxcommon/components/swap/swap';
@@ -26,8 +26,37 @@ export class EmailFolderList implements OnInit {
 
   public readonly newEmail = output<void>();
 
+  // Responsive Tailwind class strings — CSS handles breakpoint, signal handles manual toggle
+  protected readonly asideClass = computed(
+    () =>
+      'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 hover:w-48 h-full ' +
+      (this.foldersCollapsed() ? 'w-12' : 'w-12 xl:w-48'),
+  );
+
+  // Text labels: always hidden on narrow screens, visible at xl+ when not collapsed, visible on hover always
+  protected readonly labelClass = computed(
+    () => 'hidden group-hover:block' + (this.foldersCollapsed() ? '' : ' xl:block'),
+  );
+
+  protected readonly countClass = computed(
+    () => 'text-xs tabular-nums font-normal hidden group-hover:block' + (this.foldersCollapsed() ? '' : ' xl:block'),
+  );
+
+  protected readonly sectionHeaderClass = computed(
+    () =>
+      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none hidden group-hover:flex' +
+      (this.foldersCollapsed() ? '' : ' xl:flex'),
+  );
+
+  protected readonly buttonLabelClass = computed(
+    () => 'hidden group-hover:inline' + (this.foldersCollapsed() ? '' : ' xl:inline'),
+  );
+
+  protected readonly separatorClass = computed(
+    () => 'h-px bg-base-300 my-2' + (this.foldersCollapsed() ? ' mx-1' : ' mx-1 xl:mx-3'),
+  );
+
   public emitNewEmail() {
-    // Emit a new email event; parent component should handle this
     this.newEmail.emit();
   }
 

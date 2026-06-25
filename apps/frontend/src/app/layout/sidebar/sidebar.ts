@@ -1,7 +1,14 @@
-import { Component, WritableSignal, computed, effect, inject, signal } from '@angular/core';
+import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NgTemplateOutlet } from '@angular/common';
-import { NavigationCancel, NavigationError, NavigationStart, Router, RouterLink, RouterLinkActive } from '@angular/router';
+import {
+  NavigationCancel,
+  NavigationError,
+  NavigationStart,
+  Router,
+  RouterLink,
+  RouterLinkActive,
+} from '@angular/router';
 import { filter, map } from 'rxjs';
 import { Icon } from '@icons/icon';
 import { Swap } from '@uxcommon/components/swap/swap';
@@ -27,8 +34,18 @@ export class Sidebar {
   private readonly sidebarSvc = inject(SidebarService);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected hoveringSidebar = signal(false);
+
+  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
+  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
+  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
+
+  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
+  protected readonly isEffectivelyNarrow = computed(
+    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
+  );
 
   protected readonly pendingRoute = toSignal(
     this.router.events.pipe(
@@ -58,6 +75,12 @@ export class Sidebar {
   });
 
   constructor() {
+    if (this._mql) {
+      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
+      this._mql.addEventListener('change', handler);
+      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
+    }
+
     effect(() => {
       const flatItems = this.flattenItems(this.items());
       for (const item of flatItems) {
