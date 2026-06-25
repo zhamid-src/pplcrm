@@ -33,8 +33,8 @@ The content is organized as follows:
 
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Only files matching these patterns are included: libs/**/\*, apps/**/_, scriptis/\*\*/_, apps/libs/src/\*_/_
-- Files matching these patterns are excluded: **/\*.test.ts, **/_.spec.ts, **/dist/**, **/build/**, **/node_modules/**, **/.git/**, **/package-lock.json, **/yarn.lock, \*\*/_.picture, **/\*.png, **/_.jpg, \*\*/_.jpeg, **/\*.svg, **/_.ico, **/apps/frontend/**, **/apps/backend/**, **/\_migrations/schema_dump.sql, **/_.spec.ts
+- Only files matching these patterns are included: libs/**/\*, apps/**/_, scriptis/\*\*/_, libs/common/src/**/\*, libs/uxcommon/src/**/\*
+- Files matching these patterns are excluded: **/\*.test.ts, **/_.spec.ts, **/dist/**, **/build/**, **/node_modules/**, **/.git/**, **/package-lock.json, **/yarn.lock, \*\*/_.picture, **/\*.png, **/_.jpg, \*\*/_.jpeg, **/\*.svg, **/_.ico, apps/**, **/STRUCTURE.md, \*\*/_.spec.ts
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
@@ -42,11 +42,6 @@ The content is organized as follows:
 # Directory Structure
 
 ```
-apps/
-  frontend-e2e/
-    playwright.config.ts
-    project.json
-    tsconfig.json
 libs/
   common/
     src/
@@ -184,67 +179,6 @@ libs/
 ```
 
 # Files
-
-## File: apps/frontend-e2e/playwright.config.ts
-
-```typescript
-import { defineConfig, devices } from '@playwright/test';
-
-export default defineConfig({
-  testDir: './src',
-  fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: 0,
-  reporter: 'list',
-  use: {
-    baseURL: 'http://localhost:4200',
-  },
-  webServer: {
-    command: 'npx nx serve frontend',
-    url: 'http://localhost:4200',
-    reuseExistingServer: !process.env.CI,
-  },
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-  ],
-});
-```
-
-## File: apps/frontend-e2e/project.json
-
-```json
-{
-  "name": "frontend-e2e",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "projectType": "application",
-  "sourceRoot": "apps/frontend-e2e/src",
-  "targets": {
-    "e2e": {
-      "executor": "@nx/playwright:playwright",
-      "options": {
-        "config": "apps/frontend-e2e/playwright.config.ts"
-      }
-    }
-  }
-}
-```
-
-## File: apps/frontend-e2e/tsconfig.json
-
-```json
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "module": "commonjs",
-    "target": "es2016",
-    "types": ["node", "@playwright/test"]
-  },
-  "include": ["src/**/*.ts", "playwright.config.ts"]
-}
-```
 
 ## File: libs/common/src/lib/schemas/companies.schema.ts
 
