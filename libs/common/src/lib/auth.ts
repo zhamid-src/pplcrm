@@ -10,6 +10,8 @@ export interface IAuthKeyPayload {
   user_id: string;
 
   role?: string | null;
+
+  source?: string;
 }
 
 export interface IAuthUser {

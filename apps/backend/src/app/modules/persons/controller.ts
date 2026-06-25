@@ -1,4 +1,4 @@
-import {
+import type {
   ExportCsvInputType,
   ExportCsvResponseType,
   IAuthKeyPayload,
@@ -6,11 +6,12 @@ import {
 } from '../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 import { BaseController } from '../../lib/base.controller';
-import { QueryParams } from '../../lib/base.repo';
+import type { QueryParams } from '../../lib/base.repo';
 import { MapListsPersonsRepo } from '../lists/repositories/map-lists-persons.repo';
 import { MapPersonsTagRepo } from './repositories/map-persons-tags.repo';
 import { PersonsRepo } from './repositories/persons.repo';
 import { MapTeamsPersonsRepo } from '../teams/repositories/map-teams-persons.repo';
+import { queueZapierTrigger } from '../zapier/zapier.service';
 
 export class PersonsController extends BaseController<'persons', PersonsRepo> {
   private mapPersonsTagRepo = new MapPersonsTagRepo();
@@ -77,7 +78,20 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
 
   public override async deleteMany(tenant_id: string, idsToDelete: string[], force?: boolean): Promise<boolean> {
     if (!idsToDelete?.length) return false;
-    return await this.getRepo()
+
+    let personSnapshots: any[] = [];
+    try {
+      personSnapshots = await this.getRepo()
+        .db.selectFrom('persons')
+        .select(['id', 'email', 'first_name', 'last_name'])
+        .where('tenant_id', '=', tenant_id)
+        .where('id', 'in', idsToDelete)
+        .execute();
+    } catch {
+      /* ignore — snapshots are best-effort */
+    }
+
+    const result = await this.getRepo()
       .transaction()
       .execute(async (trx) => {
         // Check if any person is a team captain
@@ -124,6 +138,21 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
 
         return result;
       });
+
+    try {
+      for (const p of personSnapshots) {
+        await queueZapierTrigger(this.getRepo().db, tenant_id, 'person_deleted', {
+          id: String(p.id),
+          email: p.email,
+          first_name: p.first_name,
+          last_name: p.last_name,
+        });
+      }
+    } catch (e) {
+      console.error('[Zapier] Failed to queue person_deleted trigger(s)', e);
+    }
+
+    return result;
   }
 
   public override async delete(
@@ -158,7 +187,12 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     if (auth) {
       const result = await this.getAllWithAddress(auth, input?.options);
       const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as { csv: string; fileName: string; columns: string[]; rowCount: number };
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
       await this.userActivity.log({
         tenant_id: auth.tenant_id,
         user_id: auth.user_id,

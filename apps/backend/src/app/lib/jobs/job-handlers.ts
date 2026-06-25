@@ -382,7 +382,15 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
     const event = await db
       .selectFrom('events')
-      .select(['name', 'start_time', 'end_time', 'location_address', 'contact_email', 'contact_phone', 'send_registration_confirmation'])
+      .select([
+        'name',
+        'start_time',
+        'end_time',
+        'location_address',
+        'contact_email',
+        'contact_phone',
+        'send_registration_confirmation',
+      ])
       .where('id', '=', registration.event_id as any)
       .executeTakeFirst();
 
@@ -407,11 +415,15 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     const coordLine = [
       event.contact_email ? `Email: ${event.contact_email}` : '',
       event.contact_phone ? `Phone: ${event.contact_phone}` : '',
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
     const coordHtml = [
       event.contact_email ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
       event.contact_phone ? `Phone: ${event.contact_phone}` : '',
-    ].filter(Boolean).join('<br>');
+    ]
+      .filter(Boolean)
+      .join('<br>');
 
     await mailService.sendMail({
       to: person.email,
@@ -429,7 +441,9 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       .executeTakeFirst();
 
     if (!registration || registration.status !== 'registered') {
-      console.log(`Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`);
+      console.log(
+        `Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`,
+      );
       return;
     }
 
@@ -1031,6 +1045,10 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         await trx.deleteFrom('web_forms').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('background_jobs').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('webhook_events').where('tenant_id', '=', tid).execute();
+        await trx
+          .deleteFrom('zapier_subscriptions' as any)
+          .where('tenant_id', '=', tid)
+          .execute();
         await trx.deleteFrom('volunteer_shifts').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('volunteer_events').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('event_registrations').where('tenant_id', '=', tid).execute();
@@ -1105,6 +1123,10 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         max_attempts: 3,
       })
       .execute();
+  } else if (payload.type === 'zapier_trigger') {
+    const { ZapierService } = await import('../../modules/zapier/zapier.service');
+    const zapierService = new ZapierService();
+    await zapierService.fireTrigger(payload.tenant_id, payload.event_type, payload.data);
   } else if (payload.type === 'check_usage_limits') {
     const { checkTenantUsage } = await import('../../modules/billing/usage-limits');
     await checkTenantUsage(payload.tenant_id, db);

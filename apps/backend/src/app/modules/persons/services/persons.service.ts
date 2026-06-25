@@ -1,5 +1,5 @@
 import { env } from '../../../../env';
-import { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
+import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 
 import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
@@ -11,12 +11,13 @@ import { PersonsRepo } from '../repositories/persons.repo';
 import { CompaniesRepo } from '../../companies/repositories/companies.repo';
 import { MapTeamsPersonsRepo } from '../../teams/repositories/map-teams-persons.repo';
 import { TeamsRepo } from '../../teams/repositories/teams.repo';
-import { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { ImportsRepo } from '../../imports/repositories/imports.repo';
 import { UserActivityRepo } from '../../../lib/user-activity.repo';
 import { StorageService } from '../../../lib/storage.service';
 import { WorkflowsController } from '../../workflows/controller';
 import { TransactionalEmailService } from '../../../lib/mail/transactional-mail.service';
+import { queueZapierTrigger, pickPersonFields } from '../../zapier/zapier.service';
 
 export class PersonsService {
   private mapPersonsTagRepo = new MapPersonsTagRepo();
@@ -139,10 +140,16 @@ export class PersonsService {
         metadata: {
           id: result?.id,
           entity_label: `${result?.first_name || ''} ${result?.last_name || ''}`.trim() || 'Person',
+          ...(auth.source ? { source: auth.source } : {}),
         },
       });
     } catch (e) {
       console.error('Failed to log create person activity', e);
+    }
+    try {
+      await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_created', pickPersonFields(result as any));
+    } catch (e) {
+      console.error('[Zapier] Failed to queue person_created trigger', e);
     }
     return result;
   }
@@ -243,10 +250,16 @@ export class PersonsService {
             ? `${resultObj.first_name || ''} ${resultObj.last_name || ''}`.trim() || 'Person'
             : 'Person',
           changes,
+          ...(auth.source ? { source: auth.source } : {}),
         },
       });
     } catch (e) {
       console.error('Failed to log update person activity', e);
+    }
+    try {
+      await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_updated', pickPersonFields(result as any));
+    } catch (e) {
+      console.error('[Zapier] Failed to queue person_updated trigger', e);
     }
     return result;
   }
@@ -335,7 +348,11 @@ export class PersonsService {
   }
 
   public async attachTag(person_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
-    const randomHexColor = () => '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
+    const randomHexColor = () =>
+      '#' +
+      Math.floor(Math.random() * 0xffffff)
+        .toString(16)
+        .padStart(6, '0');
     const row = {
       name,
       color: randomHexColor(),
@@ -375,10 +392,19 @@ export class PersonsService {
         entity: 'persons',
         entity_id: person_id,
         quantity: 1,
-        metadata: { id: person_id, action: `attach_${type}`, name },
+        metadata: { id: person_id, action: `attach_${type}`, name, ...(auth.source ? { source: auth.source } : {}) },
       });
     } catch (e) {
       console.error('Failed to log attach tag activity', e);
+    }
+    try {
+      await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_tag_added', {
+        person_id,
+        tag_name: name,
+        tag_type: type,
+      });
+    } catch (e) {
+      console.error('[Zapier] Failed to queue person_tag_added trigger', e);
     }
 
     return result;
@@ -390,6 +416,7 @@ export class PersonsService {
     name: string;
     type?: 'tag' | 'issue';
     user_id?: string;
+    source?: string;
   }) {
     const tag = await this.tagsRepo.getIdByName({
       tenant_id: input.tenant_id,
@@ -414,11 +441,25 @@ export class PersonsService {
           entity: 'persons',
           entity_id: input.person_id,
           quantity: 1,
-          metadata: { id: input.person_id, action: `detach_${input.type ?? 'tag'}`, name: input.name },
+          metadata: {
+            id: input.person_id,
+            action: `detach_${input.type ?? 'tag'}`,
+            name: input.name,
+            ...(input.source ? { source: input.source } : {}),
+          },
         });
       }
     } catch (e) {
       console.error('Failed to log detach tag activity', e);
+    }
+    try {
+      await queueZapierTrigger(this.personsRepo.db, input.tenant_id, 'person_tag_removed', {
+        person_id: input.person_id,
+        tag_name: input.name,
+        tag_type: input.type ?? 'tag',
+      });
+    } catch (e) {
+      console.error('[Zapier] Failed to queue person_tag_removed trigger', e);
     }
 
     const isVolunteerTag = input.name.trim().toLowerCase() === 'volunteer';
