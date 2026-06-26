@@ -35,7 +35,7 @@ export class EmailClient {
   protected draftIdToLoad = signal<string | null>(null);
   protected isComposing = signal(false);
 
-  protected mobileView = signal<'folders' | 'list' | 'detail'>('folders');
+  protected mobileView = this.stateStore.mobilePanelView;
 
   protected folderPanelClass = computed(() =>
     this.mobileView() === 'folders' ? 'flex-1 lg:flex-none' : 'hidden lg:block',
