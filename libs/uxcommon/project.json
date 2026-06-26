@@ -7,11 +7,12 @@
   "tags": [],
   "targets": {
     "test": {
-      "executor": "@nx/vitest:test",
-      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
+      "executor": "nx:run-commands",
+      "cache": true,
+      "outputs": ["{workspaceRoot}/coverage/libs/uxcommon"],
       "options": {
-        "passWithNoTests": true,
-        "reportsDirectory": "../../coverage/libs/uxcommon"
+        "cwd": "libs/uxcommon",
+        "command": "vitest run"
       }
     },
     "lint": {

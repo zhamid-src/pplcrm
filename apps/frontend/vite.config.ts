@@ -1,16 +1,15 @@
 /// <reference types='vitest' />
 import { defineConfig } from 'vite';
-import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
-import { nxCopyAssetsPlugin } from '@nx/vite/plugins/nx-copy-assets.plugin';
 import angular from '@analogjs/vite-plugin-angular';
 
 export default defineConfig(() => ({
   root: __dirname,
   cacheDir: '../../node_modules/.vite/apps/frontend',
   resolve: {
+    tsconfigPaths: true,
     alias: {
       'apps/frontend/src': __dirname + '/src',
-    }
+    },
   },
   server: {
     watch: {
@@ -23,11 +22,12 @@ export default defineConfig(() => ({
       },
     },
   },
-  plugins: [angular(), nxViteTsPaths(), nxCopyAssetsPlugin(['*.md'])],
+  plugins: [angular()],
   test: {
     name: 'frontend',
     watch: false,
     globals: true,
+    passWithNoTests: true,
     environment: 'jsdom',
     setupFiles: ['src/test-setup.ts'],
     include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
