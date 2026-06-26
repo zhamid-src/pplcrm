@@ -92,7 +92,35 @@ describe('EmailsController Integration', () => {
       })
       .execute();
 
-    // 3. Email
+    // 3. Seed global email folders (hardcoded IDs, shared across tenants).
+    await db
+      .insertInto('email_folders')
+      .values([
+        {
+          id: '11',
+          tenant_id: tenantId,
+          name: 'Inbox',
+          icon: 'inbox',
+          sort_order: 6,
+          is_default: false,
+          createdby_id: userId,
+          updatedby_id: userId,
+        },
+        {
+          id: '5',
+          tenant_id: tenantId,
+          name: 'Trash',
+          icon: 'trash',
+          sort_order: 12,
+          is_default: false,
+          createdby_id: userId,
+          updatedby_id: userId,
+        },
+      ])
+      .onConflict((oc) => oc.column('id').doNothing())
+      .execute();
+
+    // 4. Email
     await db
       .insertInto('emails')
       .values({

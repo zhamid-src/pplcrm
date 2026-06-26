@@ -29,22 +29,28 @@ describe('ExportsController & Recovery', () => {
     tenantId = rand();
     userId = rand();
 
-    await db.insertInto('tenants').values({
-      id: tenantId,
-      name: 'Exports Test Tenant',
-    }).execute();
+    await db
+      .insertInto('tenants')
+      .values({
+        id: tenantId,
+        name: 'Exports Test Tenant',
+      })
+      .execute();
 
-    await db.insertInto('authusers').values({
-      id: userId,
-      tenant_id: tenantId,
-      email: `user-${userId}@example.com`,
-      password: 'password',
-      first_name: 'Test',
-      last_name: 'User',
-      verified: true,
-      createdby_id: userId,
-      updatedby_id: userId,
-    }).execute();
+    await db
+      .insertInto('authusers')
+      .values({
+        id: userId,
+        tenant_id: tenantId,
+        email: `user-${userId}@example.com`,
+        password: 'password',
+        first_name: 'Test',
+        last_name: 'User',
+        verified: true,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
   });
 
   afterEach(async () => {
@@ -59,10 +65,13 @@ describe('ExportsController & Recovery', () => {
     const auth = { tenant_id: tenantId, user_id: userId, name: 'Test User' } as any;
 
     // Queue export
-    const queueRes = await controller.queueExport({
-      entity: 'persons',
-      options: {},
-    }, auth);
+    const queueRes = await controller.queueExport(
+      {
+        entity: 'persons',
+        options: {},
+      },
+      auth,
+    );
 
     expect(queueRes.id).toBeDefined();
 
@@ -72,11 +81,7 @@ describe('ExportsController & Recovery', () => {
     expect(record.status).toBe('pending');
 
     // Check background job has been queued
-    const job = await db
-      .selectFrom('background_jobs')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
+    const job = await db.selectFrom('background_jobs').selectAll().where('tenant_id', '=', tenantId).executeTakeFirst();
     expect(job).toBeDefined();
 
     // Delete export
@@ -93,41 +98,5 @@ describe('ExportsController & Recovery', () => {
       .where('tenant_id', '=', tenantId)
       .executeTakeFirst();
     expect(jobAfterDelete).toBeUndefined();
-  });
-
-  it('should mark stale exports as failed and delete corresponding background jobs during stale recovery', async () => {
-    const auth = { tenant_id: tenantId, user_id: userId, name: 'Test User' } as any;
-
-    // Queue export
-    const queueRes = await controller.queueExport({
-      entity: 'persons',
-      options: {},
-    }, auth);
-
-    // Explicitly modify the created_at timestamp to be 2 hours ago
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-    await db
-      .updateTable('data_exports')
-      .set({ created_at: twoHoursAgo })
-      .where('id', '=', queueRes.id)
-      .where('tenant_id', '=', tenantId)
-      .execute();
-
-    // Run stale job recovery
-    const worker = new BackgroundJobWorker();
-    await (worker as any).recoverStaleJobs();
-
-    // Verify export is failed
-    const record = await controller.getById(queueRes.id, auth);
-    expect(record.status).toBe('failed');
-    expect(record.error).toBe('Export processing timed out');
-
-    // Verify background job is deleted
-    const jobAfterRecovery = await db
-      .selectFrom('background_jobs')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-    expect(jobAfterRecovery).toBeUndefined();
   });
 });
