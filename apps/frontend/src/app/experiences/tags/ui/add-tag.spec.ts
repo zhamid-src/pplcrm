@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture} from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { AddTag } from './add-tag';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -80,12 +81,10 @@ describe('AddTag', () => {
     expect(mockTagsSvc.triggerRefresh).toHaveBeenCalled();
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Tag added successfully.');
 
-    // Backing payload should reset to default
-    expect(component['payload']()).toEqual({
-      name: '',
-      description: '',
-      color: '#0ea5e9',
-    });
+    // Backing payload should reset (color is randomly generated, only check name and description)
+    expect(component['payload']().name).toBe('');
+    expect(component['payload']().description).toBe('');
+    expect(component['payload']().color).toMatch(/^#[0-9a-fA-F]{6}$/);
   });
 
   it('should handle service errors gracefully', async () => {

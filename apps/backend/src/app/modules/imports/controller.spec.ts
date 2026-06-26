@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ImportsController } from './controller';
 import { BaseRepository } from '../../lib/base.repo';
-import { IAuthKeyPayload } from '@common';
+import type { IAuthKeyPayload } from '@common';
 
 async function createTestSeed(db: any) {
   const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
@@ -294,6 +294,8 @@ describe('ImportsController Delete Import logic', () => {
         task_id: taskId,
         author_id: userId,
         comment: 'Comment',
+        createdby_id: userId,
+        updatedby_id: userId,
       })
       .execute();
 
@@ -330,7 +332,11 @@ describe('ImportsController Delete Import logic', () => {
     const personInDb = await db.selectFrom('persons').selectAll().where('id', '=', personId).executeTakeFirst();
     expect(personInDb).toBeUndefined();
 
-    const householdInDb = await db.selectFrom('households').selectAll().where('id', '=', importHouseholdId).executeTakeFirst();
+    const householdInDb = await db
+      .selectFrom('households')
+      .selectAll()
+      .where('id', '=', importHouseholdId)
+      .executeTakeFirst();
     expect(householdInDb).toBeUndefined();
 
     const companyInDb = await db.selectFrom('companies').selectAll().where('id', '=', companyId).executeTakeFirst();
@@ -340,7 +346,11 @@ describe('ImportsController Delete Import logic', () => {
     expect(taskInDb).toBeUndefined();
 
     // Verify subtasks, comments, attachments were cascades deleted
-    const subtaskInDb = await db.selectFrom('task_subtasks').selectAll().where('task_id', '=', taskId).executeTakeFirst();
+    const subtaskInDb = await db
+      .selectFrom('task_subtasks')
+      .selectAll()
+      .where('task_id', '=', taskId)
+      .executeTakeFirst();
     expect(subtaskInDb).toBeUndefined();
   });
 

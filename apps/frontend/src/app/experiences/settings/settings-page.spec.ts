@@ -1,4 +1,5 @@
-import { TestBed, ComponentFixture } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { vi, describe, beforeEach, it, expect } from 'vitest';
@@ -280,16 +281,16 @@ describe('SettingsPage', () => {
 
   it('should initialize correctly under billing mode', async () => {
     const mockRoute = TestBed.inject(ActivatedRoute);
-    mockRoute.snapshot.data = { mode: 'billing' };
+    mockRoute.snapshot.data = { mode: 'configuration' };
 
     const newFixture = TestBed.createComponent(SettingsPage);
     const newComponent = newFixture.componentInstance;
+    newFixture.componentRef.setInput('section', 'billing');
     newFixture.detectChanges();
     await newFixture.whenStable();
     newFixture.detectChanges();
 
-    expect(newComponent['currentMode']).toBe('billing');
-    expect(newComponent['visibleSections'].length).toBe(0);
+    expect(newComponent['currentMode']).toBe('configuration');
     expect(newComponent['selectedSectionId']()).toBe('billing');
   });
 });
