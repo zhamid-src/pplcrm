@@ -91,7 +91,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
     });
     const syncSvc = new GoogleSyncService(db, oauthSvc);
-    await syncSvc.syncUser(payload.userId, payload.tenantId, payload.requestedBy);
+    await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
   } else if (payload.type === 'ms_sync') {
     const oauthSvc = new MsOAuthService(db, {
       clientId: env.msClientId ?? '',
@@ -100,7 +100,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
     });
     const syncSvc = new MsSyncService(db, oauthSvc);
-    await syncSvc.syncUser(payload.userId, payload.tenantId, payload.requestedBy);
+    await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
   } else if (payload.type === 'recompute_all_duplicates') {
     const lastJob = await db
       .selectFrom('background_jobs' as any)
@@ -1589,24 +1589,23 @@ async function recomputeTenantAddressFingerprints(tenantId: string, db: any): Pr
 
 async function queueUserSyncJobs(db: any): Promise<void> {
   try {
-    // Find all connected Google accounts
-    const googleTokens = await db.selectFrom('google_oauth_tokens').select(['user_id', 'tenant_id']).execute();
+    // Find all tenants with a connected Google account
+    const googleTokens = await db.selectFrom('google_oauth_tokens').select('tenant_id').execute();
 
     for (const token of googleTokens) {
-      const userId = String(token.user_id);
-      const tenantId = token.tenant_id ? String(token.tenant_id) : null;
+      const tenantId = String(token.tenant_id);
 
-      // Check if there is already a pending or processing sync job for this user
+      // Check if there is already a pending or processing sync job for this tenant
       const existing = await db
         .selectFrom('background_jobs' as any)
         .select('id')
         .where('status', 'in', ['pending', 'processing'])
         .where(sql`payload->>'type'`, '=', 'google_sync')
-        .where(sql`payload->>'userId'`, '=', userId)
+        .where(sql`payload->>'tenantId'`, '=', tenantId)
         .executeTakeFirst();
 
       if (!existing) {
-        console.log(`Auto-scheduling Google sync job for user ${userId}`);
+        console.log(`Auto-scheduling Google sync job for tenant ${tenantId}`);
         await db
           .insertInto('background_jobs' as any)
           .values({
@@ -1615,7 +1614,6 @@ async function queueUserSyncJobs(db: any): Promise<void> {
             status: 'pending',
             payload: JSON.stringify({
               type: 'google_sync',
-              userId,
               tenantId,
               requestedBy: 'system',
             }),
@@ -1626,24 +1624,23 @@ async function queueUserSyncJobs(db: any): Promise<void> {
       }
     }
 
-    // Find all connected Microsoft accounts
-    const msTokens = await db.selectFrom('ms_oauth_tokens').select(['user_id', 'tenant_id']).execute();
+    // Find all tenants with a connected Microsoft account
+    const msTokens = await db.selectFrom('ms_oauth_tokens').select('tenant_id').execute();
 
     for (const token of msTokens) {
-      const userId = String(token.user_id);
-      const tenantId = token.tenant_id ? String(token.tenant_id) : null;
+      const tenantId = String(token.tenant_id);
 
-      // Check if there is already a pending or processing sync job for this user
+      // Check if there is already a pending or processing sync job for this tenant
       const existing = await db
         .selectFrom('background_jobs' as any)
         .select('id')
         .where('status', 'in', ['pending', 'processing'])
         .where(sql`payload->>'type'`, '=', 'ms_sync')
-        .where(sql`payload->>'userId'`, '=', userId)
+        .where(sql`payload->>'tenantId'`, '=', tenantId)
         .executeTakeFirst();
 
       if (!existing) {
-        console.log(`Auto-scheduling MS sync job for user ${userId}`);
+        console.log(`Auto-scheduling MS sync job for tenant ${tenantId}`);
         await db
           .insertInto('background_jobs' as any)
           .values({
@@ -1652,7 +1649,6 @@ async function queueUserSyncJobs(db: any): Promise<void> {
             status: 'pending',
             payload: JSON.stringify({
               type: 'ms_sync',
-              userId,
               tenantId,
               requestedBy: 'system',
             }),
@@ -1663,7 +1659,7 @@ async function queueUserSyncJobs(db: any): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('Failed to queue user sync jobs:', err);
+    console.error('Failed to queue tenant sync jobs:', err);
   }
 }
 

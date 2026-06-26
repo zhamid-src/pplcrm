@@ -42,7 +42,7 @@ export class SignInPage implements OnInit, OnDestroy {
   protected readonly verificationPending = signal<boolean>(false);
 
   protected isLoading = this._loading.visible;
-  protected persistence = this.tokenService.getPersistence();
+  protected persistence = signal(this.tokenService.getPersistence());
 
   public readonly emailForm = form(this.emailData, (p) => {
     required(p.email);
@@ -275,7 +275,9 @@ export class SignInPage implements OnInit, OnDestroy {
 
   public togglePersistence(target: EventTarget | null) {
     if (!target) return;
-    this.tokenService.setPersistence((target as HTMLInputElement).checked);
+    const checked = (target as HTMLInputElement).checked;
+    this.tokenService.setPersistence(checked);
+    this.persistence.set(checked);
   }
 
   public async resendVerification() {

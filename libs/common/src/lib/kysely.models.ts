@@ -648,7 +648,7 @@ export interface PotentialDuplicates {
 interface MsOauthTokens {
   id: Generated<string>;
   tenant_id: string;
-  user_id: string;
+  user_id: string | null;
   access_token: string;
   refresh_token: string;
   expires_at: Timestamp;
@@ -664,7 +664,7 @@ interface MsOauthTokens {
 export interface GoogleOauthTokens {
   id: Generated<string>;
   tenant_id: string;
-  user_id: string;
+  user_id: string | null;
   access_token: string;
   refresh_token: string;
   expires_at: Timestamp;

@@ -37,7 +37,7 @@ function getConnectionStatus() {
   return authProcedure.query(async ({ ctx }) => {
     const { oauthSvc } = getServices();
     const db = (BaseRepository as any)['_db'];
-    const status = await oauthSvc.getConnectionStatus(ctx.auth.user_id);
+    const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id);
 
     const activeJob = await db
       .selectFrom('background_jobs' as any)
@@ -45,7 +45,6 @@ function getConnectionStatus() {
       .where('status', 'in', ['pending', 'processing'])
       .where('tenant_id', '=', ctx.auth.tenant_id)
       .where(sql`payload->>'type'`, '=', 'google_sync')
-      .where(sql`payload->>'userId'`, '=', ctx.auth.user_id)
       .executeTakeFirst();
 
     return {
@@ -65,7 +64,6 @@ function syncNow() {
       .where('status', 'in', ['pending', 'processing'])
       .where('tenant_id', '=', ctx.auth.tenant_id)
       .where(sql`payload->>'type'`, '=', 'google_sync')
-      .where(sql`payload->>'userId'`, '=', ctx.auth.user_id)
       .executeTakeFirst();
 
     if (!existing) {
@@ -77,7 +75,6 @@ function syncNow() {
           status: 'pending',
           payload: JSON.stringify({
             type: 'google_sync',
-            userId: ctx.auth.user_id,
             tenantId: ctx.auth.tenant_id,
             requestedBy: ctx.auth.user_id,
           }),
@@ -103,12 +100,9 @@ function disconnect() {
 
       if (input.removeLocalEmails) {
         await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id);
-        // Signal all remaining connected users in this tenant to do a full resync next time,
-        // since their locally-stored emails were just deleted.
-        await oauthSvc.resetDeltaLinkForTenant(ctx.auth.tenant_id);
       }
 
-      await oauthSvc.disconnect(ctx.auth.user_id);
+      await oauthSvc.disconnect(ctx.auth.tenant_id);
       return { success: true };
     });
 }
@@ -116,7 +110,7 @@ function disconnect() {
 function resetSync() {
   return authProcedure.mutation(async ({ ctx }) => {
     const { oauthSvc } = getServices();
-    await oauthSvc.saveDeltaLink(ctx.auth.user_id, NEEDS_FULL_SYNC);
+    await oauthSvc.saveDeltaLink(ctx.auth.tenant_id, NEEDS_FULL_SYNC);
     return { success: true };
   });
 }

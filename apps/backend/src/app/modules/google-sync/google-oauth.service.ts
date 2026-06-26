@@ -1,5 +1,5 @@
-import { Kysely } from 'kysely';
-import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 
 export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
 
@@ -35,7 +35,7 @@ export class GoogleOAuthService {
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   }
 
-  public async handleCallback(code: string, userId: string, tenantId: string): Promise<void> {
+  public async handleCallback(code: string, connectedBy: string, tenantId: string): Promise<void> {
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -72,7 +72,7 @@ export class GoogleOAuthService {
 
     const insertObj: any = {
       tenant_id: tenantId,
-      user_id: userId,
+      user_id: connectedBy,
       access_token: accessToken,
       expires_at: expiresAt,
       google_email: googleEmail,
@@ -85,7 +85,7 @@ export class GoogleOAuthService {
       const existing = await this.db
         .selectFrom('google_oauth_tokens')
         .select('refresh_token')
-        .where('user_id', '=', userId)
+        .where('tenant_id', '=', tenantId)
         .executeTakeFirst();
       insertObj.refresh_token = existing?.refresh_token ?? '';
     } else {
@@ -102,7 +102,8 @@ export class GoogleOAuthService {
         .insertInto('google_oauth_tokens')
         .values(insertObj)
         .onConflict((oc) =>
-          oc.column('user_id').doUpdateSet({
+          oc.column('tenant_id').doUpdateSet({
+            user_id: connectedBy,
             access_token: insertObj.access_token,
             refresh_token: insertObj.refresh_token,
             expires_at: insertObj.expires_at,
@@ -122,7 +123,7 @@ export class GoogleOAuthService {
           tenant_id: tenantId,
           queue: 'default',
           status: 'pending',
-          payload: JSON.stringify({ type: 'google_sync', userId, tenantId, requestedBy: userId }),
+          payload: JSON.stringify({ type: 'google_sync', tenantId, requestedBy: connectedBy }),
           run_at: new Date(),
           max_attempts: 3,
         })
@@ -130,15 +131,15 @@ export class GoogleOAuthService {
     });
   }
 
-  public async getValidToken(userId: string): Promise<string> {
+  public async getValidToken(tenantId: string): Promise<string> {
     const row = await this.db
       .selectFrom('google_oauth_tokens')
       .selectAll()
-      .where('user_id', '=', userId)
+      .where('tenant_id', '=', tenantId)
       .executeTakeFirst();
 
     if (!row) {
-      throw new Error('No Google account connected for this user');
+      throw new Error('No Google account connected for this tenant');
     }
 
     const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
@@ -160,7 +161,7 @@ export class GoogleOAuthService {
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Token refresh failed: ${errorText} — user must reconnect their Google account`);
+      throw new Error(`Token refresh failed: ${errorText} — tenant must reconnect their Google account`);
     }
 
     const data: any = await res.json();
@@ -177,19 +178,25 @@ export class GoogleOAuthService {
         expires_at: newExpiry,
         updated_at: new Date(),
       })
-      .where('user_id', '=', userId)
+      .where('tenant_id', '=', tenantId)
       .execute();
 
     return newAccessToken;
   }
 
   public async getConnectionStatus(
-    userId: string,
-  ): Promise<{ connected: boolean; googleEmail: string | null; syncedAt: Date | null; lastSyncError: string | null; lastSyncErrorAt: Date | null }> {
+    tenantId: string,
+  ): Promise<{
+    connected: boolean;
+    googleEmail: string | null;
+    syncedAt: Date | null;
+    lastSyncError: string | null;
+    lastSyncErrorAt: Date | null;
+  }> {
     const row = await this.db
       .selectFrom('google_oauth_tokens')
       .select(['google_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
-      .where('user_id', '=', userId)
+      .where('tenant_id', '=', tenantId)
       .executeTakeFirst();
 
     return {
@@ -201,40 +208,46 @@ export class GoogleOAuthService {
     };
   }
 
-  public async disconnect(userId: string): Promise<void> {
-    await this.db.deleteFrom('google_oauth_tokens').where('user_id', '=', userId).execute();
+  public async disconnect(tenantId: string): Promise<void> {
+    await this.db.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tenantId).execute();
   }
 
-  public async resetDeltaLinkForTenant(tenantId: string): Promise<void> {
+  public async saveDeltaLink(tenantId: string, deltaLink: string): Promise<void> {
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({
+        delta_link: deltaLink,
+        synced_at: new Date(),
+        last_sync_error: null,
+        last_sync_error_at: null,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async recordSyncError(tenantId: string, error: string): Promise<void> {
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async getDeltaLink(tenantId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom('google_oauth_tokens')
+      .select('delta_link')
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+    return row?.delta_link ?? null;
+  }
+
+  public async resetDeltaLink(tenantId: string): Promise<void> {
     await this.db
       .updateTable('google_oauth_tokens')
       .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
       .where('tenant_id', '=', tenantId)
       .execute();
-  }
-
-  public async saveDeltaLink(userId: string, deltaLink: string): Promise<void> {
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({ delta_link: deltaLink, synced_at: new Date(), last_sync_error: null, last_sync_error_at: null, updated_at: new Date() })
-      .where('user_id', '=', userId)
-      .execute();
-  }
-
-  public async recordSyncError(userId: string, error: string): Promise<void> {
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
-      .where('user_id', '=', userId)
-      .execute();
-  }
-
-  public async getDeltaLink(userId: string): Promise<string | null> {
-    const row = await this.db
-      .selectFrom('google_oauth_tokens')
-      .select('delta_link')
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-    return row?.delta_link ?? null;
   }
 }
