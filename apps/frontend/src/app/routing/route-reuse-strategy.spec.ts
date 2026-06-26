@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRouteSnapshot, Router } from '@angular/router';
+import type { ActivatedRouteSnapshot} from '@angular/router';
+import { Router } from '@angular/router';
 import * as routerModule from '@angular/router';
 import { Subject } from 'rxjs';
 import { CustomRouteReuseStrategy } from './route-reuse-strategy';
@@ -51,7 +52,7 @@ describe('CustomRouteReuseStrategy', () => {
     expect(strategy.shouldDetach(route)).toBe(false);
     expect(strategy.shouldAttach(route)).toBe(false);
     expect(strategy.retrieve(route)).toBeNull();
-    expect(strategy.shouldReuseRoute(route)).toBe(false);
+    expect(strategy.shouldReuseRoute(route, { routeConfig: { path: 'other' } } as any)).toBe(false);
   });
 
   it('should handle store(route, null) by clearing that handle', () => {

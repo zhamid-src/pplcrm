@@ -1,5 +1,5 @@
-import { Transaction } from 'kysely';
-import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
 
 export async function seedOnboardingData(
@@ -208,7 +208,8 @@ export async function seedOnboardingData(
     .values({
       tenant_id: tenant_id as any,
       name: 'Supporters [SAMPLE]',
-      description: 'Sample list pre-populated with a supporter. Use lists to group contacts for newsletters or exports.',
+      description:
+        'Sample list pre-populated with a supporter. Use lists to group contacts for newsletters or exports.',
       object: 'people',
       is_dynamic: false,
       status: 'idle',
@@ -251,7 +252,7 @@ export async function seedOnboardingData(
       send_reminder: false,
       send_signup_confirmation: false,
       send_volunteer_alert: false,
-      slug: 'sample-community-kickoff',
+      slug: `sample-community-kickoff-${tenant_id.replace(/-/g, '').slice(0, 8)}`,
       createdby_id: user_id as any,
       updatedby_id: user_id as any,
     } as any)

@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture} from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { Sidebar } from './sidebar';
 import { SidebarService } from './sidebar-service';
 import { AuthService } from '../../auth/auth-service';
@@ -13,6 +14,14 @@ describe('Sidebar Component', () => {
   let mockAuthService: any;
 
   beforeEach(async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockReturnValue({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    });
     mockSidebarSvc = {
       getItems: vi.fn().mockReturnValue(signal([{ label: 'Test Item' }])),
       closeMobile: vi.fn(),
@@ -21,7 +30,7 @@ describe('Sidebar Component', () => {
       isHalf: vi.fn().mockReturnValue(false),
       isMobileOpen: vi.fn().mockReturnValue(true),
       toggleCollapsed: vi.fn(),
-      toggleDrawer: vi.fn()
+      toggleDrawer: vi.fn(),
     };
 
     mockAuthService = {
@@ -34,8 +43,8 @@ describe('Sidebar Component', () => {
       providers: [
         { provide: SidebarService, useValue: mockSidebarSvc },
         { provide: AuthService, useValue: mockAuthService },
-        provideRouter([]) // needed for RouterLink
-      ]
+        provideRouter([]), // needed for RouterLink
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(Sidebar);
@@ -48,7 +57,7 @@ describe('Sidebar Component', () => {
 
   it('should retrieve items from SidebarService', () => {
     fixture.detectChanges();
-    expect(component['items']).toEqual([{ label: 'Test Item' }]);
+    expect(component['items']()).toEqual([{ label: 'Test Item' }]);
     expect(mockSidebarSvc.getItems).toHaveBeenCalled();
   });
 

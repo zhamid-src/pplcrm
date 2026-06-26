@@ -1,7 +1,23 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { DonationsController } from './controller';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
 import { BaseRepository } from '../../lib/base.repo';
-import { TRPCError } from '@trpc/server';
+import { DonationsController } from './controller';
+
+async function cleanTenant(db: any, tenantId: string, personId: string) {
+  await db
+    .updateTable('tenants')
+    .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+    .where('id', '=', tenantId)
+    .execute();
+  await db.deleteFrom('donations').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('settings').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('persons').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('households').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('user_activity').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
+  await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
+}
 
 async function createTestSeed(db: any) {
   const rand = () => String(Math.floor(Math.random() * 100000000) + 1000000);
@@ -82,22 +98,6 @@ async function createTestSeed(db: any) {
   return { tenantId, userId, campaignId, householdId, personId };
 }
 
-async function cleanTenant(db: any, tenantId: string, personId: string) {
-  await db
-    .updateTable('tenants')
-    .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
-    .where('id', '=', tenantId)
-    .execute();
-  await db.deleteFrom('donations').where('tenant_id', '=', tenantId).execute();
-  await db.deleteFrom('settings').where('tenant_id', '=', tenantId).execute();
-  await db.deleteFrom('persons').where('tenant_id', '=', tenantId).execute();
-  await db.deleteFrom('households').where('tenant_id', '=', tenantId).execute();
-  await db.deleteFrom('campaigns').where('tenant_id', '=', tenantId).execute();
-  await db.deleteFrom('user_activity').where('tenant_id', '=', tenantId).execute();
-  await db.deleteFrom('authusers').where('tenant_id', '=', tenantId).execute();
-  await db.deleteFrom('tenants').where('id', '=', tenantId).execute();
-}
-
 describe('DonationsController Unit & Integration', () => {
   const controller = new DonationsController();
   const db = (BaseRepository as any)._db;
@@ -169,9 +169,6 @@ describe('DonationsController Unit & Integration', () => {
           person_id: personId,
           amount: 100000,
           status: 'succeeded',
-          tax_credit_amount: 50000,
-          createdby_id: userId,
-          updatedby_id: userId,
         })
         .execute();
 

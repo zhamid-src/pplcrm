@@ -2,18 +2,76 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { AuthRouter } from './trpc.router';
 import { AuthController } from './controller';
 import { generateToken, hashToken } from '../../lib/token-hash';
+import { BaseRepository } from '../../lib/base.repo';
+
+vi.mock('../../lib/hibp', () => ({
+  getPwnedCount: vi.fn().mockResolvedValue(0),
+}));
 
 beforeEach(() => {
   vi.restoreAllMocks();
 });
 
+function mockAuthDb() {
+  const mockQB: any = {
+    select: vi.fn().mockReturnThis(),
+    where: vi.fn().mockReturnThis(),
+    executeTakeFirst: vi.fn().mockResolvedValue({ role: 'owner', verified: true }),
+  };
+  vi.spyOn(BaseRepository, 'dbInstance', 'get').mockReturnValue({
+    selectFrom: vi.fn().mockReturnValue(mockQB),
+  } as any);
+}
+
+async function cleanup(db: any, user_id: any, tenant_id: any) {
+  await db
+    .updateTable('tenants')
+    .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
+    .where('admin_id', '=', user_id)
+    .execute();
+
+  await db.deleteFrom('map_lists_persons').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('map_teams_persons').where('tenant_id', '=', tenant_id).execute();
+
+  await db.deleteFrom('persons').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('households').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('campaigns').where('tenant_id', '=', tenant_id).execute();
+
+  // Cannot delete the user from auth without deleting all references
+  // Deleting the user should just cascade
+  await db.deleteFrom('profiles').where('auth_id', '=', user_id).execute();
+  await db.deleteFrom('tags').where('createdby_id', '=', user_id).execute();
+  await db.deleteFrom('lists').where('createdby_id', '=', user_id).execute();
+  await db.deleteFrom('tasks').where('createdby_id', '=', user_id).execute();
+  await db.deleteFrom('newsletters').where('createdby_id', '=', user_id).execute();
+  await db.deleteFrom('user_activity').where('createdby_id', '=', user_id).execute();
+  await db.deleteFrom('teams').where('createdby_id', '=', user_id).execute();
+  await db.deleteFrom('volunteer_events').where('createdby_id', '=', user_id).execute();
+  await db.deleteFrom('web_forms').where('createdby_id', '=', user_id).execute();
+
+  await db.deleteFrom('sessions').where('user_id', '=', user_id).execute();
+
+  await db.deleteFrom('authusers').where('id', '=', user_id).execute();
+
+  await db.deleteFrom('map_peoples_tags').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('map_households_tags').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('user_activity').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('settings').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('background_jobs').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('tenants').where('id', '=', tenant_id).execute();
+}
+
 describe('AuthRouter', () => {
+  beforeEach(() => {
+    mockAuthDb();
+  });
+
   it('should call currentUser on the controller', async () => {
     const mockUser = { id: '123', email: 'test@example.com' };
     const spy = vi.spyOn(AuthController.prototype, 'currentUser').mockResolvedValue(mockUser as any);
 
     const caller = AuthRouter.createCaller({
-      auth: { tenant_id: 't1', user_id: 'u1', session_id: 's1' } as any,
+      auth: { tenant_id: '1', user_id: '1', session_id: 's1' } as any,
     } as any);
     const result = await caller.currentUser();
 
@@ -95,23 +153,8 @@ describe('AuthController Integration', () => {
       }),
     ).rejects.toThrow(ConflictError);
 
-    // Clean up
     if (user) {
-      await db
-        .updateTable('tenants')
-        .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
-        .where('admin_id', '=', user.id)
-        .execute();
-      await db.deleteFrom('tags').where('createdby_id', '=', user.id).execute();
-      await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
-      await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
-      await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
-      await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
-      await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
-      await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
-      await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
-      await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
-      await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+      await cleanup(db, user.id, user.tenant_id);
     }
   });
 
@@ -150,23 +193,7 @@ describe('AuthController Integration', () => {
     expect(result.email).toBe(inviteEmail);
     expect(result.first_name).toBe('InvitedFirstName');
 
-    // Clean up
-    await db.deleteFrom('profiles').where('auth_id', '=', result.id).execute();
-    await db.deleteFrom('authusers').where('id', '=', result.id).execute();
-    await db
-      .updateTable('tenants')
-      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
-      .where('admin_id', '=', creator.id)
-      .execute();
-    await db.deleteFrom('tags').where('tenant_id', '=', creator.tenant_id).execute();
-    await db.deleteFrom('user_activity').where('tenant_id', '=', creator.tenant_id).execute();
-    await db.deleteFrom('settings').where('tenant_id', '=', creator.tenant_id).execute();
-    await db.deleteFrom('households').where('tenant_id', '=', creator.tenant_id).execute();
-    await db.deleteFrom('campaigns').where('tenant_id', '=', creator.tenant_id).execute();
-    await db.deleteFrom('profiles').where('auth_id', '=', creator.id).execute();
-    await db.deleteFrom('background_jobs').where('tenant_id', '=', creator.tenant_id).execute();
-    await db.deleteFrom('tenants').where('id', '=', creator.tenant_id).execute();
-    await db.deleteFrom('authusers').where('id', '=', creator.id).execute();
+    await cleanup(db, creator.id, creator.tenant_id);
   });
 
   it('should update a user, sync profile, and sanitize response without non-existent column errors', async () => {
@@ -203,21 +230,7 @@ describe('AuthController Integration', () => {
     expect(result.role).toBe('owner');
     expect(result.verified).toBe(false);
 
-    // Clean up
-    await db
-      .updateTable('tenants')
-      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
-      .where('admin_id', '=', user.id)
-      .execute();
-    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
-    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
-    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+    await cleanup(db, user.id, user.tenant_id);
   });
 
   it('should create a default campaign and default settings on sign-up', async () => {
@@ -270,21 +283,7 @@ describe('AuthController Integration', () => {
     expect(notificationsSetting?.createdby_id).toBe(user.id);
     expect(notificationsSetting?.updatedby_id).toBe(user.id);
 
-    // Clean up
-    await db
-      .updateTable('tenants')
-      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
-      .where('admin_id', '=', user.id)
-      .execute();
-    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
-    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
-    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+    await cleanup(db, user.id, user.tenant_id);
   });
 
   it('should generate valid JWT tokens during sign-up that can be verified by verifyAuthToken', async () => {
@@ -312,22 +311,7 @@ describe('AuthController Integration', () => {
 
     const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
 
-    // Clean up
-    await db
-      .updateTable('tenants')
-      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
-      .where('admin_id', '=', user.id)
-      .execute();
-    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
-    await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
-    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
-    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+    await cleanup(db, user.id, user.tenant_id);
   });
 
   it('should enqueue a send-transactional-email background job during signup and invite', async () => {
@@ -366,22 +350,7 @@ describe('AuthController Integration', () => {
     expect(payload.to).toBe(email);
     expect(payload.subject).toContain('Welcome to CampaignRaven');
 
-    // Clean up
-    await db
-      .updateTable('tenants')
-      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
-      .where('admin_id', '=', user.id)
-      .execute();
-    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
-    await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
-    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
-    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+    await cleanup(db, user.id, user.tenant_id);
   });
 
   it('should schedule and cancel account deletion, and automatically cancel on login', async () => {
@@ -461,22 +430,7 @@ describe('AuthController Integration', () => {
       .executeTakeFirstOrThrow();
     expect(signedInUser.deletion_scheduled_at).toBeNull();
 
-    // Clean up
-    await db
-      .updateTable('tenants')
-      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
-      .where('admin_id', '=', user.id)
-      .execute();
-    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
-    await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
-    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
-    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+    await cleanup(db, user.id, user.tenant_id);
   });
 
   it('should trigger 2FA login verification code and verify successfully', async () => {
@@ -519,22 +473,7 @@ describe('AuthController Integration', () => {
     expect(verifyResult.auth_token).toBeTypeOf('string');
     expect(verifyResult.refresh_token).toBeTypeOf('string');
 
-    // Clean up
-    await db
-      .updateTable('tenants')
-      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
-      .where('admin_id', '=', user.id)
-      .execute();
-    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
-    await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
-    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
-    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+    await cleanup(db, user.id, user.tenant_id);
   });
 
   it('should enforce role rules and owner constraints', async () => {
@@ -648,22 +587,7 @@ describe('AuthController Integration', () => {
     expect(ownerAfterLeave.role).toBe('admin');
     expect(adminAfterLeave.role).toBe('owner'); // Oldest user got promoted to owner!
 
-    // Clean up
-    await db.deleteFrom('profiles').where('tenant_id', '=', owner.tenant_id).execute();
-    await db
-      .updateTable('tenants')
-      .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })
-      .where('admin_id', '=', owner.id)
-      .execute();
-    await db.deleteFrom('tags').where('tenant_id', '=', owner.tenant_id).execute();
-    await db.deleteFrom('user_activity').where('tenant_id', '=', owner.tenant_id).execute();
-    await db.deleteFrom('settings').where('tenant_id', '=', owner.tenant_id).execute();
-    await db.deleteFrom('households').where('tenant_id', '=', owner.tenant_id).execute();
-    await db.deleteFrom('campaigns').where('tenant_id', '=', owner.tenant_id).execute();
-    await db.deleteFrom('sessions').where('tenant_id', '=', owner.tenant_id).execute();
-    await db.deleteFrom('background_jobs').where('tenant_id', '=', owner.tenant_id).execute();
-    await db.deleteFrom('tenants').where('id', '=', owner.tenant_id).execute();
-    await db.deleteFrom('authusers').where('tenant_id', '=', owner.tenant_id).execute();
+    await cleanup(db, owner.id, owner.tenant_id);
   });
 
   it('should enforce verification logic: block sign-in for unverified, reject manual changes, set verified false on email change, and clear sessions', async () => {
@@ -737,27 +661,14 @@ describe('AuthController Integration', () => {
     const session = await db.selectFrom('sessions').selectAll().where('user_id', '=', user.id).executeTakeFirst();
     expect(session).toBeUndefined();
 
-    // Clean up
-    await db
-      .updateTable('authusers')
-      .set({ updatedby_id: null, createdby_id: null })
-      .where('id', '=', user.id)
-      .execute();
+    await cleanup(db, user.id, user.tenant_id);
+
     await db
       .updateTable('authusers')
       .set({ updatedby_id: null, createdby_id: null })
       .where('id', '=', invitedUser.id)
       .execute();
     await db.deleteFrom('profiles').where('auth_id', '=', invitedUser.id).execute();
-    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
-    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
-    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
     await db.deleteFrom('authusers').where('id', '=', invitedUser.id).execute();
   });
 
@@ -842,7 +753,10 @@ describe('AuthController Integration', () => {
     const { AuthUsersRepo } = await import('./repositories/authusers.repo');
     let plaintextCode: string | undefined;
     const origAddCode = AuthUsersRepo.prototype.addPasswordResetCode;
-    const spy = vi.spyOn(AuthUsersRepo.prototype, 'addPasswordResetCode').mockImplementation(async function (this: any, ...args: any[]) {
+    const spy = vi.spyOn(AuthUsersRepo.prototype, 'addPasswordResetCode').mockImplementation(async function (
+      this: any,
+      ...args: any[]
+    ) {
       const result = await origAddCode.apply(this, args as any);
       plaintextCode = result?.password_reset_code;
       return result;
@@ -869,16 +783,6 @@ describe('AuthController Integration', () => {
     expect(userAfterVerify.previous_email).toBeNull();
     expect(userAfterVerify.previous_role).toBeNull();
 
-    // Clean up
-    await db.deleteFrom('profiles').where('auth_id', '=', user.id).execute();
-    await db.deleteFrom('tags').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('user_activity').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('settings').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('households').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('campaigns').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('sessions').where('user_id', '=', user.id).execute();
-    await db.deleteFrom('background_jobs').where('tenant_id', '=', user.tenant_id).execute();
-    await db.deleteFrom('tenants').where('id', '=', user.tenant_id).execute();
-    await db.deleteFrom('authusers').where('id', '=', user.id).execute();
+    await cleanup(db, user.id, user.tenant_id);
   });
 });
