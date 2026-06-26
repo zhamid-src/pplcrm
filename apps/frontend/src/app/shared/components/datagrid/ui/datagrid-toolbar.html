@@ -48,18 +48,13 @@
           ></pc-icon>
         </summary>
         <div class="pt-1 pb-2">
-          @for (opt of grid.narrowTypeOptions(); track opt.value) {
-          <label class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 rounded select-none">
-            <input
-              type="radio"
-              name="narrowTypeMobile"
-              class="radio radio-primary radio-xs shrink-0"
-              [checked]="grid.selectedNarrowType() === opt.value"
-              (change)="grid.selectNarrowType(opt.value)"
-            />
-            <span class="label-text text-xs">{{ opt.label }}</span>
-          </label>
-          }
+          <pc-singleselect-filter
+            [label]="'Type'"
+            [options]="narrowTypeOptions()"
+            [selected]="grid.selectedNarrowType()"
+            [radioName]="'narrowTypeMobile'"
+            (select)="grid.selectNarrowType($event)"
+          />
         </div>
       </details>
       } @if (grid.showTagFilter()) {
@@ -88,40 +83,17 @@
             ></pc-icon>
           </div>
         </summary>
-        <div class="pt-1 pb-2 flex flex-col gap-1">
-          <input
-            type="text"
-            placeholder="Search tags..."
-            class="input input-bordered input-xs w-full bg-base-100"
-            [value]="grid.tagSearchQuery()"
-            (input)="grid.tagSearchQuery.set($any($event.target).value)"
+        <div class="pt-1 pb-2">
+          <pc-multiselect-filter
+            [label]="'Tags'"
+            [options]="grid.filteredAvailableTags()"
+            [selected]="grid.selectedTags()"
+            [searchQuery]="grid.tagSearchQuery()"
+            (searchQueryChange)="grid.tagSearchQuery.set($event)"
+            (selectAll)="grid.selectAllTags()"
+            (clearVisible)="grid.clearAllTagsVisible()"
+            (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
           />
-          <div class="flex gap-2 text-[11px] text-primary px-1">
-            <button class="hover:underline cursor-pointer font-medium" (click)="grid.selectAllTags()">
-              Select all
-            </button>
-            <span class="text-base-300">|</span>
-            <button class="hover:underline cursor-pointer font-medium" (click)="grid.clearAllTagsVisible()">
-              Clear
-            </button>
-          </div>
-          <div class="max-h-36 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
-            @if (grid.filteredAvailableTags().length === 0) {
-            <div class="px-3 py-3 text-xs text-neutral-400 text-center">No tags found</div>
-            } @else { @for (tag of grid.filteredAvailableTags(); track tag) {
-            <label
-              class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none rounded"
-            >
-              <input
-                type="checkbox"
-                class="checkbox checkbox-primary checkbox-xs shrink-0"
-                [checked]="grid.selectedTags().includes(tag)"
-                (change)="grid.toggleTagFilter(tag, $any($event.target).checked)"
-              />
-              <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="tag">{{ tag }}</span>
-            </label>
-            } }
-          </div>
         </div>
       </details>
       } @if (grid.showIssueFilter()) {
@@ -150,40 +122,17 @@
             ></pc-icon>
           </div>
         </summary>
-        <div class="pt-1 pb-2 flex flex-col gap-1">
-          <input
-            type="text"
-            placeholder="Search issues..."
-            class="input input-bordered input-xs w-full bg-base-100"
-            [value]="grid.issueSearchQuery()"
-            (input)="grid.issueSearchQuery.set($any($event.target).value)"
+        <div class="pt-1 pb-2">
+          <pc-multiselect-filter
+            [label]="'Issues'"
+            [options]="grid.filteredAvailableIssues()"
+            [selected]="grid.selectedIssues()"
+            [searchQuery]="grid.issueSearchQuery()"
+            (searchQueryChange)="grid.issueSearchQuery.set($event)"
+            (selectAll)="grid.selectAllIssues()"
+            (clearVisible)="grid.clearAllIssuesVisible()"
+            (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
           />
-          <div class="flex gap-2 text-[11px] text-primary px-1">
-            <button class="hover:underline cursor-pointer font-medium" (click)="grid.selectAllIssues()">
-              Select all
-            </button>
-            <span class="text-base-300">|</span>
-            <button class="hover:underline cursor-pointer font-medium" (click)="grid.clearAllIssuesVisible()">
-              Clear
-            </button>
-          </div>
-          <div class="max-h-36 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
-            @if (grid.filteredAvailableIssues().length === 0) {
-            <div class="px-3 py-3 text-xs text-neutral-400 text-center">No issues found</div>
-            } @else { @for (issue of grid.filteredAvailableIssues(); track issue) {
-            <label
-              class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none rounded"
-            >
-              <input
-                type="checkbox"
-                class="checkbox checkbox-primary checkbox-xs shrink-0"
-                [checked]="grid.selectedIssues().includes(issue)"
-                (change)="grid.toggleIssueFilter(issue, $any($event.target).checked)"
-              />
-              <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="issue">{{ issue }}</span>
-            </label>
-            } }
-          </div>
         </div>
       </details>
       } @if (grid.showListFilter()) {
@@ -213,24 +162,13 @@
           </div>
         </summary>
         <div class="pt-1 pb-2">
-          <div class="max-h-36 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
-            @if (grid.availableLists().length === 0) {
-            <div class="px-3 py-3 text-xs text-neutral-400 text-center">No lists found</div>
-            } @else { @for (l of grid.availableLists(); track l.id) {
-            <label
-              class="label cursor-pointer justify-start gap-2 py-1 px-2 rounded-md hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
-            >
-              <input
-                type="radio"
-                name="selectedListMobile"
-                class="radio radio-primary radio-xs shrink-0"
-                [checked]="grid.selectedListId() === l.id"
-                (change)="grid.selectListFilter(l.id)"
-              />
-              <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="l.name">{{ l.name }}</span>
-            </label>
-            } }
-          </div>
+          <pc-singleselect-filter
+            [label]="'List'"
+            [options]="listOptions()"
+            [selected]="grid.selectedListId()"
+            [radioName]="'selectedListMobile'"
+            (select)="grid.selectListFilter($event)"
+          />
         </div>
       </details>
       } @if (grid.allowFilter()) {
@@ -343,14 +281,12 @@
     [hidden]="!grid.addRoute()"
     (action)="onClone()"
   />
-
   <pc-grid-tool-btn
     [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
     [tip]="'Deleted selected row(s)'"
     icon="trash"
     (action)="onDeleteSelected()"
   />
-
   @if (!grid.disableMerge()) {
   <pc-grid-tool-btn
     [enabled]="grid.getCountRowSelected() === 2"
@@ -380,7 +316,6 @@
     icon="arrow-up-tray"
     (action)="onImportCsv()"
   />
-
   <pc-grid-tool-btn
     [enabled]="!grid.disableExport()"
     [tip]="'Download as CSV'"
@@ -388,7 +323,6 @@
     (action)="onExportCsv()"
   />
 
-  <!-- Narrow by Type / Tag Filter Dropdown -->
   @if (grid.showNarrowTypeFilter() || grid.showTagFilter()) {
   <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
   } @if (grid.showNarrowTypeFilter()) {
@@ -398,22 +332,15 @@
     [active]="grid.selectedNarrowType() !== null"
     [hasDropdown]="true"
   >
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-48 p-2 shadow">
-      @for (opt of grid.narrowTypeOptions(); track opt.value) {
-      <li>
-        <label tabindex="-1" class="label cursor-pointer justify-start gap-2 py-1 px-2">
-          <input
-            type="radio"
-            name="narrowType"
-            class="radio radio-primary radio-xs shrink-0"
-            [checked]="grid.selectedNarrowType() === opt.value"
-            (change)="grid.selectNarrowType(opt.value)"
-          />
-          <span class="label-text text-xs">{{ opt.label }}</span>
-        </label>
-      </li>
-      }
-    </ul>
+    <div tabindex="0" class="dropdown-content bg-base-100 rounded-box z-[1] w-48 p-3 shadow-lg border border-base-200">
+      <pc-singleselect-filter
+        [label]="'Type'"
+        [options]="narrowTypeOptions()"
+        [selected]="grid.selectedNarrowType()"
+        [radioName]="'narrowType'"
+        (select)="grid.selectNarrowType($event)"
+      />
+    </div>
   </pc-grid-tool-btn>
   } @if (grid.showTagFilter()) {
   <pc-grid-tool-btn
@@ -438,48 +365,20 @@
         </button>
         }
       </div>
-      <div>
-        <input
-          type="text"
-          placeholder="Search tags..."
-          class="input input-bordered input-xs w-full bg-base-100"
-          [value]="grid.tagSearchQuery()"
-          (input)="grid.tagSearchQuery.set($any($event.target).value)"
-        />
-      </div>
-
-      <div class="flex gap-2 text-[11px] text-primary px-1">
-        <button class="hover:underline cursor-pointer font-medium" (click)="grid.selectAllTags()">Select all</button>
-        <span class="text-base-300">|</span>
-        <button class="hover:underline cursor-pointer font-medium" (click)="grid.clearAllTagsVisible()">Clear</button>
-      </div>
-
-      <div class="border-t border-base-200 my-0.5"></div>
-
-      <div class="max-h-56 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
-        @if (grid.filteredAvailableTags().length === 0) {
-        <div class="px-3 py-4 text-xs text-neutral-400 text-center">No tags found</div>
-        } @else { @for (tag of grid.filteredAvailableTags(); track tag) {
-        <label
-          tabindex="-1"
-          class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
-        >
-          <input
-            type="checkbox"
-            class="checkbox checkbox-primary checkbox-xs shrink-0"
-            [checked]="grid.selectedTags().includes(tag)"
-            (change)="grid.toggleTagFilter(tag, $any($event.target).checked)"
-          />
-          <span class="label-text truncate flex-1 min-w-0 text-left text-xs" [title]="tag">{{ tag }}</span>
-        </label>
-        } }
-      </div>
+      <pc-multiselect-filter
+        [label]="'Tags'"
+        [options]="grid.filteredAvailableTags()"
+        [selected]="grid.selectedTags()"
+        [searchQuery]="grid.tagSearchQuery()"
+        (searchQueryChange)="grid.tagSearchQuery.set($event)"
+        [maxHeight]="14"
+        (selectAll)="grid.selectAllTags()"
+        (clearVisible)="grid.clearAllTagsVisible()"
+        (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+      />
     </div>
   </pc-grid-tool-btn>
-  }
-
-  <!-- Issue Filter Dropdown -->
-  @if (grid.showIssueFilter()) {
+  } @if (grid.showIssueFilter()) {
   <pc-grid-tool-btn
     [icon]="'shield-exclamation'"
     [tip]="'Filter by Issues'"
@@ -502,48 +401,20 @@
         </button>
         }
       </div>
-      <div>
-        <input
-          type="text"
-          placeholder="Search issues..."
-          class="input input-bordered input-xs w-full bg-base-100"
-          [value]="grid.issueSearchQuery()"
-          (input)="grid.issueSearchQuery.set($any($event.target).value)"
-        />
-      </div>
-
-      <div class="flex gap-2 text-[11px] text-primary px-1">
-        <button class="hover:underline cursor-pointer font-medium" (click)="grid.selectAllIssues()">Select all</button>
-        <span class="text-base-300">|</span>
-        <button class="hover:underline cursor-pointer font-medium" (click)="grid.clearAllIssuesVisible()">Clear</button>
-      </div>
-
-      <div class="border-t border-base-200 my-0.5"></div>
-
-      <div class="max-h-56 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
-        @if (grid.filteredAvailableIssues().length === 0) {
-        <div class="px-3 py-4 text-xs text-neutral-400 text-center">No issues found</div>
-        } @else { @for (issue of grid.filteredAvailableIssues(); track issue) {
-        <label
-          tabindex="-1"
-          class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
-        >
-          <input
-            type="checkbox"
-            class="checkbox checkbox-primary checkbox-xs shrink-0"
-            [checked]="grid.selectedIssues().includes(issue)"
-            (change)="grid.toggleIssueFilter(issue, $any($event.target).checked)"
-          />
-          <span class="label-text truncate flex-1 min-w-0 text-left text-xs" [title]="issue">{{ issue }}</span>
-        </label>
-        } }
-      </div>
+      <pc-multiselect-filter
+        [label]="'Issues'"
+        [options]="grid.filteredAvailableIssues()"
+        [selected]="grid.selectedIssues()"
+        [searchQuery]="grid.issueSearchQuery()"
+        (searchQueryChange)="grid.issueSearchQuery.set($event)"
+        [maxHeight]="14"
+        (selectAll)="grid.selectAllIssues()"
+        (clearVisible)="grid.clearAllIssuesVisible()"
+        (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+      />
     </div>
   </pc-grid-tool-btn>
-  }
-
-  <!-- List Filter Dropdown -->
-  @if (grid.showListFilter()) {
+  } @if (grid.showListFilter()) {
   <pc-grid-tool-btn
     [icon]="'queue-list'"
     [tip]="'Filter by List'"
@@ -565,27 +436,14 @@
         </button>
         }
       </div>
-      <div class="border-t border-base-200 my-0.5"></div>
-
-      <div class="max-h-56 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
-        @if (grid.availableLists().length === 0) {
-        <div class="px-3 py-4 text-xs text-neutral-400 text-center">No lists found</div>
-        } @else { @for (l of grid.availableLists(); track l.id) {
-        <label
-          tabindex="-1"
-          class="label cursor-pointer justify-start gap-2 py-1 px-2 rounded-md hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
-        >
-          <input
-            type="radio"
-            name="selectedList"
-            class="radio radio-primary radio-xs shrink-0"
-            [checked]="grid.selectedListId() === l.id"
-            (change)="grid.selectListFilter(l.id)"
-          />
-          <span class="label-text truncate flex-1 min-w-0 text-left text-xs" [title]="l.name">{{ l.name }}</span>
-        </label>
-        } }
-      </div>
+      <pc-singleselect-filter
+        [label]="'List'"
+        [options]="listOptions()"
+        [selected]="grid.selectedListId()"
+        [radioName]="'selectedList'"
+        [maxHeight]="14"
+        (select)="grid.selectListFilter($event)"
+      />
     </div>
   </pc-grid-tool-btn>
   }
@@ -598,7 +456,6 @@
     [enabled]="!grid.hasActiveAdvancedFilters()"
     (action)="onToggleFilters()"
   />
-
   <pc-grid-tool-btn
     icon="adjustments-horizontal"
     tip="Advanced Query Builder"
