@@ -82,6 +82,15 @@
         }
       }
     },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "outputs": ["{workspaceRoot}/coverage/apps/frontend"],
+      "options": {
+        "cwd": "apps/frontend",
+        "command": "vitest run"
+      }
+    },
     "extract-i18n": {
       "executor": "@angular/build:extract-i18n",
       "options": {
@@ -93,14 +102,6 @@
       "outputs": ["{options.outputFile}"],
       "options": {
         "lintFilePatterns": ["apps/frontend/**/*.ts", "apps/frontend/**/*.html"]
-      }
-    },
-    "test": {
-      "executor": "@nx/vitest:test",
-      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
-      "options": {
-        "passWithNoTests": true,
-        "reportsDirectory": "../../coverage/apps/frontend"
       }
     }
   }

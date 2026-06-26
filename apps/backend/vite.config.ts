@@ -1,27 +1,18 @@
 /// <reference types='vitest' />
 import { defineConfig } from 'vite';
-import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
-import { nxCopyAssetsPlugin } from '@nx/vite/plugins/nx-copy-assets.plugin';
-
 export default defineConfig(() => ({
   root: __dirname,
   cacheDir: '../../node_modules/.vite/apps/backend',
-  plugins: [nxViteTsPaths(), nxCopyAssetsPlugin(['*.md'])],
-  // Uncomment this if you are using workers.
-  // worker: {
-  //  plugins: [ nxViteTsPaths() ],
-  // },
+  resolve: {
+    tsconfigPaths: true,
+  },
+  plugins: [],
   test: {
     name: 'backend',
     watch: false,
     globals: true,
-    
-  plugins: [nxViteTsPaths()],
+    passWithNoTests: true,
     environment: 'node',
-
-  
-
-
     env: {
       DB_USER: 'pplcrm',
       DB_NAME: 'pplcrm',
@@ -32,7 +23,6 @@ export default defineConfig(() => ({
       DB_HOST: 'localhost',
       DB_SSL: 'false',
     },
-
     include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     reporters: ['default'],
     coverage: {
