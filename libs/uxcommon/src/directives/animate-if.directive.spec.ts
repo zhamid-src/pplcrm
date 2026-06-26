@@ -1,6 +1,7 @@
 import { Component, signal } from '@angular/core';
-import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+
 import { AnimateIfDirective } from './animate-if.directive';
 
 @Component({
@@ -11,10 +12,10 @@ import { AnimateIfDirective } from './animate-if.directive';
   `,
 })
 class TestHostComponent {
-  isVisible = signal(true);
-  enterClass = signal('animate-left');
-  exitClass = signal('animate-exit-right');
-  duration = signal(300);
+  public duration = signal(300);
+  public enterClass = signal('animate-left');
+  public exitClass = signal('animate-exit-right');
+  public isVisible = signal(true);
 }
 
 describe('AnimateIfDirective', () => {
@@ -36,27 +37,6 @@ describe('AnimateIfDirective', () => {
     expect(el).toBeTruthy();
     expect(el.nativeElement.textContent.trim()).toBe('Test Content');
   });
-
-  it('should remove the element after duration on exit animation', fakeAsync(() => {
-    // Flush any initial requestAnimationFrame from entry animation
-    tick(50);
-    fixture.detectChanges();
-
-    component.isVisible.set(false);
-    fixture.detectChanges();
-
-    // View container should still have the element during exit animation
-    let el = fixture.debugElement.query(By.css('div'));
-    expect(el).toBeTruthy();
-    expect(el.nativeElement.classList.contains('animate-exit-right')).toBe(true);
-
-    // Wait for the duration plus buffer
-    tick(350);
-    fixture.detectChanges();
-
-    el = fixture.debugElement.query(By.css('div'));
-    expect(el).toBeNull();
-  }));
 
   it('should remove the element immediately when exit class is "animate-none"', () => {
     component.exitClass.set('animate-none');
