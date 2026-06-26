@@ -55,7 +55,7 @@ export class ComposeEmailComponent {
     history: { delay: 500, maxStack: 200, userOnly: true },
   };
   public sending = signal(false);
-  public showHeader = signal(true);
+  public showHeader = signal(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
   public showMore = signal(false);
   public totalSize = computed(() => Math.round(this.attachments().reduce((s, f) => s + f.size, 0)));
 
