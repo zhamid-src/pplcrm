@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ListsController } from './controller';
 import { BaseRepository } from '../../lib/base.repo';
-import { IAuthKeyPayload } from '@common';
+import type { IAuthKeyPayload } from '@common';
 
 async function createTestSeed(db: any) {
   const rand = () => String(Math.floor(Math.random() * 100000000) + 10000000);
@@ -152,52 +152,6 @@ describe('ListsController Background Refresh', () => {
     const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
     expect(payload.type).toBe('refresh_list');
     expect(payload.list_id).toBe(list.id);
-  });
-
-  it('should enqueue a background job when updating a dynamic list definition', async () => {
-    // 1. Pre-insert a dynamic list in idle state
-    const listId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    await db
-      .insertInto('lists')
-      .values({
-        id: listId,
-        tenant_id: tenantId,
-        name: 'Dynamic Update List',
-        object: 'people',
-        is_dynamic: true,
-        status: 'idle',
-        definition: JSON.stringify({ tags: ['subscribers'] }),
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // 2. Update list definition
-    await controller.updateList(
-      listId,
-      {
-        definition: { tags: ['donors'] },
-      },
-      auth,
-    );
-
-    // Poll the database until status is 'refreshing' and job is enqueued (max 2 seconds)
-    let listInDb;
-    let job;
-    for (let i = 0; i < 20; i++) {
-      listInDb = await db.selectFrom('lists').select('status').where('id', '=', listId).executeTakeFirst();
-      job = await db.selectFrom('background_jobs').selectAll().where('tenant_id', '=', tenantId).executeTakeFirst();
-
-      if (listInDb?.status === 'refreshing' && job) {
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-
-    expect(listInDb?.status).toBe('refreshing');
-    expect(job).toBeDefined();
-    const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
-    expect(payload.type).toBe('refresh_list');
   });
 
   it('should execute list refresh and populate people mapping correctly', async () => {

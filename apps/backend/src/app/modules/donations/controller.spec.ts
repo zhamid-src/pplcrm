@@ -175,7 +175,7 @@ describe('DonationsController Unit & Integration', () => {
       // Attempt $600 donation -> cumulative would be 1600 > 1500 limit
       const check = await controller.checkEligibility(tenantId, personId, 60000, {});
       expect(check.eligible).toBe(false);
-      expect(check.reason).toContain('exceeds maximum annual limit');
+      expect(check.reason).toContain('exceeds the maximum limit of');
     });
 
     it('should block donation if residency restrictions are violated', async () => {
