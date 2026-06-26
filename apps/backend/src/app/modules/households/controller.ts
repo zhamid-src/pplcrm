@@ -1,4 +1,4 @@
-import {
+import type {
   ExportCsvInputType,
   ExportCsvResponseType,
   IAuthKeyPayload,
@@ -8,7 +8,8 @@ import {
 import { TRPCError } from '@trpc/server';
 import { sql } from 'kysely';
 
-import { BaseRepository, QueryParams } from '../../lib/base.repo';
+import type { QueryParams } from '../../lib/base.repo';
+import { BaseRepository } from '../../lib/base.repo';
 import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
 import { HouseholdRepo } from './repositories/households.repo';
 import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
@@ -16,7 +17,7 @@ import { TagsRepo } from '../tags/repositories/tags.repo';
 import { matchCoordinatesToDistrict } from '../../lib/gis/geocoding';
 import { BaseController } from '../../lib/base.controller';
 import { SettingsController } from '../settings/controller';
-import { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 
 export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
   private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
@@ -33,7 +34,13 @@ export class HouseholdsController extends BaseController<'households', Household
     const safeIds = idsToDelete.filter((id) => !placeholders.has(id));
 
     if (safeIds.length === 0) return false;
-    return this.deleteMany(auth.tenant_id, safeIds);
+    // Members move to the tenant's placeholder household (persons.household_id is
+    // NOT NULL) rather than being cascade-deleted along with the household.
+    return this.getRepo().deleteManyReassigningPersons({
+      tenant_id: auth.tenant_id,
+      ids: safeIds,
+      user_id: auth.user_id,
+    });
   }
 
   public async addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
