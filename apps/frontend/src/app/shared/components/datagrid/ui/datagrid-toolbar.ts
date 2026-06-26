@@ -1,5 +1,6 @@
 import { Component, computed, inject } from '@angular/core';
 import { DataGrid } from '../datagrid';
+import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
 import { GridActionComponent } from '../tool-button';
 import { Icon } from '@icons/icon';
 import { MultiselectFilterComponent } from './multiselect-filter';
@@ -7,7 +8,13 @@ import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-
 
 @Component({
   selector: 'pc-dg-toolbar',
-  imports: [GridActionComponent, Icon, MultiselectFilterComponent, SingleselectFilterComponent],
+  imports: [
+    GridActionComponent,
+    Icon,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
+    DataGridColumnsDropdownComponent,
+  ],
   templateUrl: 'datagrid-toolbar.html',
 })
 export class DataGridToolbarComponent {
@@ -38,10 +45,6 @@ export class DataGridToolbarComponent {
     this.grid.doConfirmExport();
   }
 
-  public onHideAllCols() {
-    this.grid.hideAllColsPublic();
-  }
-
   public onImportCsv() {
     this.grid.doImportCSV();
   }
@@ -54,20 +57,8 @@ export class DataGridToolbarComponent {
     this.grid.doRefresh();
   }
 
-  public onResetAllWidths() {
-    this.grid.resetAllWidthsPublic();
-  }
-
-  public onShowAllCols() {
-    this.grid.showAllColsPublic();
-  }
-
   public onToggleArchive() {
     this.grid.toggleArchiveModePublic();
-  }
-
-  public onToggleCol(field: string, checked: boolean) {
-    this.grid.toggleColPublic(field, checked);
   }
 
   public onToggleFilters() {
