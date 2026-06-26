@@ -875,106 +875,6 @@ export class ResetPasswordPage {
 </pc-auth-layout>
 ```
 
-## File: apps/frontend/src/app/auth/signup-page/signup-page.ts
-
-```typescript
-import { DecimalPipe } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
-import { form, submit, required, email, minLength, FormField } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { IAuthUser, signUpInputType } from '../../../../../../libs/common/src';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
-
-@Component({
-  selector: 'pc-signup',
-  imports: [DecimalPipe, FormField, Icon, RouterModule, AuthLayoutComponent],
-  templateUrl: './signup-page.html',
-})
-export class SignUpPage {
-  private readonly alertSvc = inject(AlertService);
-  private readonly authService = inject(AuthService);
-  private readonly router = inject(Router);
-
-  private _loading = createLoadingGate();
-
-  protected readonly signUpData = signal({
-    organization: '',
-    email: '',
-    password: '',
-    first_name: '',
-    middle_names: '',
-    last_name: '',
-    terms: '',
-  });
-
-  public readonly form = form(this.signUpData, (p) => {
-    required(p.organization);
-    required(p.email);
-    email(p.email);
-    required(p.password);
-    minLength(p.password, 8);
-    required(p.first_name);
-  });
-
-  protected isLoading = this._loading.visible;
-
-  protected passwordBreachNumber = passwordBreachNumber;
-  protected passwordInBreach = passwordInBreach;
-
-  public get email() {
-    return this.form.email();
-  }
-
-  public get firstName() {
-    return this.form.first_name();
-  }
-
-  public get organization() {
-    return this.form.organization();
-  }
-
-  public get password() {
-    return this.form.password();
-  }
-
-  public async join(event?: Event) {
-    event?.preventDefault();
-    this.form().markAsTouched();
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const data = await this.authService.signUp(this.signUpData() as signUpInputType);
-          const user = data as IAuthUser;
-          if (user) {
-            await this.router.navigate(['/signin'], {
-              queryParams: { verificationPending: 'true', email: user.email },
-            });
-          } else {
-            this.alertSvc.showError('Unable to complete signup.');
-          }
-        } catch (err: any) {
-          this.alertSvc.showError(err.message);
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        this.alertSvc.showError('Please enter all information before continuing.');
-      },
-    });
-  }
-}
-```
-
 ## File: apps/frontend/src/app/auth/verify-email-page/verify-email-page.html
 
 ```html
@@ -3461,198 +3361,6 @@ function toNum(n: unknown): number | undefined {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/services/store/email-state.store.ts
-
-```typescript
-import { computed, signal, Service, linkedSignal } from '@angular/core';
-
-import { ServerEmail } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Service()
-export class EmailStateStore {
-  public readonly activeFolderId = signal<string | null>(null);
-
-  public readonly currentSelectedEmailId = linkedSignal<string | null, string | null>({
-    source: () => this.activeFolderId(),
-    computation: () => null,
-  });
-
-  public readonly emailsById = signal<Record<string, EmailType>>({});
-
-  public readonly currentSelectedEmail = computed(() => {
-    const id = this.currentSelectedEmailId();
-    return id ? (this.emailsById()[id] ?? null) : null;
-  });
-
-  public readonly emailIdsByFolderId = signal<Record<string, string[]>>({});
-
-  public readonly hasAttachmentByEmailId = signal<Record<string, boolean | undefined>>({});
-
-  public readonly isBodyExpanded = signal<boolean>(false);
-
-  public clearHasAttachment(emailId: string) {
-    this.hasAttachmentByEmailId.update((m) => {
-      const next = { ...m };
-      delete next[emailId];
-      return next;
-    });
-  }
-
-  public emailsInFolderWithFlags(folderId: string) {
-    return computed(() => {
-      const ids = this.emailIdsByFolderId()[folderId] ?? [];
-      const emailsMap = this.emailsById();
-      const flags = this.hasAttachmentByEmailId();
-      return ids
-        .map((id) => emailsMap[id])
-        .filter(Boolean)
-        .map((e) => ({ ...e!, has_attachment: flags[e!.id] ?? false }));
-    });
-  }
-
-  public hasAttachment(emailId: string) {
-    return computed<boolean | undefined>(() => this.hasAttachmentByEmailId()[emailId]);
-  }
-
-  public mergeHasRows(rows: Array<{ email_id: string; has: boolean }>, fillFalseForIds?: string[]) {
-    const map: Record<string, boolean> = {};
-    for (const r of rows) map[String(r.email_id)] = !!r.has;
-
-    // Optional: mark any requested ids that didn't come back as false
-    if (fillFalseForIds?.length) {
-      for (const id of fillFalseForIds) if (!(id in map)) map[id] = false;
-    }
-
-    this.setManyHasAttachment(map);
-  }
-
-  public patchEmail(emailKey: string, patch: Partial<EmailType>): EmailType | undefined {
-    const prev = this.readEmail(emailKey);
-    if (!prev) return undefined;
-    this.emailsById.update((m) => ({ ...m, [emailKey]: { ...prev, ...patch } }));
-    return prev;
-  }
-
-  public readEmail(emailKey: string): EmailType | undefined {
-    return this.emailsById()[emailKey];
-  }
-
-  public removeEmail(emailId: string): void {
-    // Remove from normalized map
-    this.emailsById.update((m) => {
-      const next = { ...m };
-      delete next[emailId];
-      return next;
-    });
-
-    // Remove from folder lists
-    this.emailIdsByFolderId.update((map) => {
-      const next: Record<string, string[]> = {};
-      for (const [fid, ids] of Object.entries(map)) {
-        next[fid] = ids.filter((id) => id !== emailId);
-      }
-      return next;
-    });
-
-    // Clear attachment flag
-    this.clearHasAttachment(emailId);
-  }
-
-  public replaceEmail(emailKey: string, value: EmailType): void {
-    this.emailsById.update((m) => ({ ...m, [emailKey]: value }));
-  }
-
-  public selectEmail(email: EmailType | { id: EmailId } | null): void {
-    this.currentSelectedEmailId.set(email ? String(email.id) : null);
-  }
-
-  public setEmailsForFolder(folderId: string, serverEmails: ServerEmail[], append = false): void {
-    const ids: string[] = [];
-    const flagsMap: Record<string, boolean> = {}; // collect booleans while we normalize rows
-
-    this.emailsById.update((map) => {
-      const next = { ...map };
-      for (const s of serverEmails) {
-        const id = String(s.id);
-        ids.push(id);
-
-        // reuse your existing helper; prefer hasMap[id] when provided
-        const { has, count } = deriveHasAndCount(s);
-        flagsMap[id] = has;
-
-        const e: EmailType = {
-          id,
-          folder_id: String(s.folder_id),
-          updated_at: new Date(s.updated_at),
-          date_sent: s.date_sent ? new Date(s.date_sent) : undefined,
-          is_favourite: !!s.is_favourite,
-          attachment_count: count,
-          status: (s as any).status || 'open',
-          from_email: s.from_email ?? undefined,
-          to_email: s.to_email ?? undefined,
-          subject: s.subject ?? undefined,
-          preview: s.preview ?? undefined,
-          assigned_to: s.assigned_to ?? undefined,
-          has_attachment: has, // keep in the normalized email too
-          is_read: !!(s as any).is_read,
-          sender_first_name: s.sender_first_name ?? undefined,
-          sender_last_name: s.sender_last_name ?? undefined,
-        };
-
-        next[id] = e;
-      }
-      return next;
-    });
-
-    this.emailIdsByFolderId.update((m) => {
-      const existing = append ? (m[folderId] ?? []) : [];
-      const combined = [...existing];
-      for (const id of ids) {
-        if (!combined.includes(id)) {
-          combined.push(id);
-        }
-      }
-      return { ...m, [folderId]: combined };
-    });
-
-    // seed/refresh the per-id flags cache
-    this.setManyHasAttachment(flagsMap);
-  }
-
-  public setHasAttachment(emailId: string, hasAttachment: boolean | undefined) {
-    this.hasAttachmentByEmailId.update((m) => ({ ...m, [emailId]: hasAttachment }));
-  }
-
-  public setManyHasAttachment(map: Record<string, boolean | undefined>) {
-    this.hasAttachmentByEmailId.update((prev) => ({ ...prev, ...map }));
-  }
-
-  public toggleBodyExpanded(): void {
-    this.isBodyExpanded.update((v) => !v);
-  }
-}
-
-export type EmailId = string | number;
-
-function deriveHasAndCount(s: ServerEmail): { has: boolean; count: number } {
-  if (typeof s.has_attachment === 'boolean') {
-    const n = toNum(s.attachment_count);
-    // if backend didn’t send a count, synthesize a minimal one
-    return { has: s.has_attachment, count: n ?? (s.has_attachment ? 1 : 0) };
-  }
-  const count = toNum(s.attachment_count);
-  return { has: count > 0, count };
-}
-
-function toNum(n: unknown): number {
-  if (typeof n === 'bigint') return Number(n);
-  if (typeof n === 'string') return Number(n) || 0;
-  if (typeof n === 'number') return n;
-  return 0;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/emails/ui/email-activities/email-activities.html
 
 ```html
@@ -3856,91 +3564,6 @@ export class EmailActivities {
       default:
         return `performed ${act.activity} on this email`;
     }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-assign/email-assign.ts
-
-```typescript
-import { Component, effect, inject, input, signal } from '@angular/core';
-import { IAuthUser } from '../../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-
-import { UserService } from '../../../../services/user.service';
-import { EmailsStore } from '../../services/store/emailstore';
-import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Component({
-  selector: 'pc-email-assign',
-  imports: [Icon],
-  template: `<div class="flex items-center gap-2 mt-1">
-    <span class="text-xs text-base-content/70">Assign to:</span>
-    <div class="dropdown">
-      <div tabindex="0" class="badge badge-xs text-xs badge-info badge-outline cursor-pointer">
-        <span>{{ getUserName(assignedTo()) }}</span>
-        <span><pc-icon name="chevron-down" [size]="4"></pc-icon></span>
-      </div>
-
-      <ul class="dropdown-content menu bg-base-100 rounded-box z-[1] w-44 p-2 shadow">
-        @for (user of users(); track user.id) {
-          <li>
-            <button type="button" (click)="assign(user.id); closeDropdown()">{{ user.first_name }}</button>
-          </li>
-        }
-        @if (assignedTo()) {
-          <li><button type="button" (click)="assign(null); closeDropdown()">Unassign</button></li>
-        }
-      </ul>
-    </div>
-  </div>`,
-})
-export class EmailAssign {
-  private alertSvc = inject(AlertService);
-  private userService = inject(UserService);
-  private store = inject(EmailsStore);
-
-  protected assignedTo = signal<string | null>(null);
-
-  public email = input.required<EmailType | null>();
-
-  public users = signal<IAuthUser[]>([]);
-
-  constructor() {
-    this.userService.getUsers().then((u) => this.users.set(u));
-    // Can't use computed because assignedTo is settable
-    effect(() => {
-      this.assignedTo.set(this.email()?.assigned_to || null);
-    });
-  }
-
-  public async assign(userId: string | number | null) {
-    const email = this.email();
-    if (!email) return;
-
-    const normalizedUserId = userId != null ? String(userId) : null;
-    const assigneeName = normalizedUserId
-      ? (this.users().find((u) => String(u.id) === normalizedUserId)?.first_name ?? null)
-      : null;
-
-    try {
-      await this.store.assignEmailToUser(email.id, normalizedUserId, assigneeName);
-      this.assignedTo.set(normalizedUserId);
-    } catch (e) {
-      this.alertSvc.showError('Something went wrong, please try again');
-      this.assignedTo.set(null);
-    }
-  }
-
-  public closeDropdown() {
-    const el = document.activeElement as HTMLElement | null;
-    el?.blur?.(); // remove focus -> :focus-within becomes false -> closes
-  }
-
-  public getUserName(id: string | null = null) {
-    if (!id) return 'Not Assigned';
-    return this.users().find((u) => String(u.id) === String(id))?.first_name || 'Not Assigned';
   }
 }
 ```
@@ -4314,441 +3937,6 @@ export class EmailComments {
     });
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.css
-
-```css
-::ng-deep.ql-tooltip {
-  left: unset !important;
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.html
-
-```html
-<form class="flex flex-col gap-3 h-full overflow-y-auto pr-3" (submit)="$event.preventDefault(); onSend()">
-  <!-- Header -->
-  <div class="flex justify-between">
-    <div class="text-base"></div>
-    <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-md hover:btn-error" (click)="delete()">
-        <pc-icon name="trash" class="mr-1"></pc-icon>
-      </button>
-      <button type="button" class="btn btn-ghost btn-md hover:btn-secondary" (click)="discard()">
-        <pc-icon name="x-circle" class="mr-1"></pc-icon>
-      </button>
-      <button type="button" class="btn btn-ghost btn-md hover:btn-primary" (click)="saveDraft()">
-        <pc-icon name="save" class="mr-1"></pc-icon>
-      </button>
-      <button type="submit" class="btn btn-primary btn-md" [disabled]="sending() || !validTo()">
-        <pc-icon name="paper-airplane" class="mr-1"></pc-icon>Send
-      </button>
-    </div>
-  </div>
-
-  <!-- Collapsible Recipients/Subject -->
-  <div class="border border-neutral rounded-md">
-    <!-- Header row with toggle -->
-    <div class="flex items-center justify-between cursor-pointer px-3 py-2 bg-base-200" (click)="toggleHeader()">
-      <span class="font-medium">Recipients & Subject</span>
-      <pc-swap
-        swapOnIcon="expand-content"
-        swapOffIcon="collapse-content"
-        animation="flip"
-        [checked]="showHeader()"
-        [size]="4"
-        (click)="toggleHeader()"
-      ></pc-swap>
-    </div>
-
-    <!-- Collapsible body -->
-    @if (showHeader()) {
-    <div class="p-3 space-y-2">
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-        <input
-          class="input-pplcrm w-full"
-          placeholder="To (comma or semicolon separated)"
-          [formControl]="form.controls.to"
-        />
-        <input class="input-pplcrm w-full" placeholder="Cc" [formControl]="form.controls.cc" />
-        <input class="input-pplcrm w-full" placeholder="Bcc" [formControl]="form.controls.bcc" />
-      </div>
-
-      <input class="input-pplcrm p-3 w-full" placeholder="Subject" [formControl]="form.controls.subject" />
-    </div>
-    }
-  </div>
-
-  <!-- Editor card: ONE ROW toolbar + scrollable editor -->
-  <div class="rounded-lg border border-base-300 flex flex-col h-full">
-    <!-- Custom Quill toolbar (single row, no wrap, horizontal scroll) -->
-    <div [id]="toolbarId" class="ql-toolbar ql-snow border-b flex items-center">
-      <!-- Undo / Redo -->
-      <span class="ql-formats">
-        <button class="ql-undo tooltip" data-tip="Undo" type="button" aria-label="Undo">
-          <pc-icon name="undo-fat" [size]="4"></pc-icon>
-        </button>
-        <button class="ql-redo tooltip" data-tip="Redo" type="button" aria-label="Redo">
-          <pc-icon name="redo-fat" [size]="4"></pc-icon>
-        </button>
-      </span>
-
-      <!-- Font / Size -->
-      <span class="ql-formats">
-        <select class="ql-font" aria-label="Font">
-          <option selected></option>
-          <option value="serif"></option>
-          <option value="monospace"></option>
-        </select>
-        <select class="ql-size" aria-label="Size">
-          <option value="small"></option>
-          <option selected></option>
-          <option value="large"></option>
-          <option value="huge"></option>
-        </select>
-      </span>
-
-      <!-- Bold / Italic / Underline / Strike -->
-      <span class="ql-formats">
-        <button class="ql-bold tooltip" data-tip="Bold" aria-label="Bold"></button>
-        <button class="ql-italic tooltip" data-tip="Italic" aria-label="Italic"></button>
-        <button class="ql-underline tooltip" data-tip="Underline" aria-label="Underline"></button>
-        <button class="ql-strike tooltip" data-tip="Strikethrough" aria-label="Strikethrough"></button>
-        <button class="ql-blockquote tooltip" data-tip="quote" aria-label="Blockquote"></button>
-      </span>
-
-      <!-- Align (dropdown) -->
-      <span class="ql-formats">
-        <select class="ql-color tooltip" data-tip="text color" aria-label="Text color"></select>
-        <select class="ql-align" aria-label="Align">
-          <option selected></option>
-          <option value="center"></option>
-          <option value="right"></option>
-          <option value="justify"></option>
-        </select>
-        <button class="ql-list tooltip" data-tip="Numbered list" value="ordered" aria-label="Numbered list"></button>
-        <button class="ql-list tooltip" data-tip="Bulleted list" value="bullet" aria-label="Bulleted list"></button>
-      </span>
-
-      <!-- Link / Attach / Image -->
-      <span class="ql-formats">
-        <button class="ql-attach tooltip" data-tip="Attach files" type="button" aria-label="Attach files">
-          <pc-icon name="attach-fat" [size]="4"></pc-icon></button
-        ><button class="ql-link tooltip" data-tip="Insert link" aria-label="Insert link"></button>
-        <button class="ql-image tooltip" data-tip="Insert image" aria-label="Insert image"></button>
-      </span>
-
-      <!-- Remove formatting -->
-      <span class="ql-formats">
-        <button class="ql-clean tooltip" data-tip="Clear formatting" aria-label="Clear formatting"></button>
-      </span>
-    </div>
-
-    <!-- Quill editor (scrolls when content grows) -->
-    <quill-editor
-      class="compose-quill flex-1"
-      [modules]="modules"
-      [formControl]="form.controls.html"
-      [placeholder]="'Write your message…'"
-      (onEditorCreated)="onEditorCreated($event)"
-    ></quill-editor>
-  </div>
-  <input #fileInput type="file" class="hidden" multiple (change)="onFileChoose($event)" />
-
-  <!-- Attachment list -->
-  @if (attachments().length) {
-  <ul class="mt-2 space-y-1 max-h-40">
-    <li class="text-xs opacity-70">Attachments: {{ attachments().length }} file(s) • {{ totalSize()| fileSize }}</li>
-    @for (f of attachments(); track f.name + ':' + f.size + ':' + f.lastModified; let i = $index) {
-    <li class="flex items-center justify-between rounded-md border border-base-300 px-2 py-1">
-      <div class="flex items-center gap-2 min-w-0">
-        <pc-attachment-icon [filename]="f.name" class="shrink-0"></pc-attachment-icon>
-        <span class="truncate">{{ f.name }}</span>
-        <span class="text-xs opacity-60">({{ (f.size / 1024) | number:'1.0-0' }} KB)</span>
-      </div>
-
-      <pc-icon
-        class="cursor-pointer hover:text-error tooltip tooltip-left"
-        data-tip="Remove attachment"
-        name="attach-file-off"
-        [size]="4"
-        (click)="removeAttachment(i)"
-      ></pc-icon>
-    </li>
-    }
-  </ul>
-  }
-</form>
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.ts
-
-```typescript
-// pc-compose-email.component.ts
-import { DecimalPipe } from '@angular/common';
-import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
-import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
-import { Icon } from '@icons/icon'; // your <pc-icon>
-import { ConfirmDialogService } from '../../../../services/shared-dialog.service';
-import { Swap } from '@uxcommon/components/swap/swap';
-import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
-
-import { QuillModule } from 'ngx-quill';
-import Quill from 'quill';
-
-import { EmailActionsStore } from '../../services/store/email-actions.store';
-
-@Component({
-  selector: 'pc-compose-email',
-  imports: [ReactiveFormsModule, QuillModule, Icon, AttachmentIconComponent, DecimalPipe, FileSizePipe, Swap],
-  host: { ngSkipHydration: 'true' }, // avoids hydration mismatches with rich editors
-  templateUrl: './email-compose.html',
-  styleUrls: ['./email-compose.css'],
-})
-export class ComposeEmailComponent {
-  private actions = inject(EmailActionsStore);
-  private dialogs = inject(ConfirmDialogService);
-  private draftIdSignal = signal<string | null>(null);
-  private fb = inject(NonNullableFormBuilder);
-  private quill!: Quill;
-
-  public readonly finished = output<void>();
-
-  public readonly draftId = input<string | null>(null);
-  public readonly initial = input<ComposeInitial | null>(null);
-
-  public attachments = signal<File[]>([]);
-  public dragOver = signal(false);
-  public readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
-  public form = this.fb.group({
-    to: [''],
-    cc: [''],
-    bcc: [''],
-    subject: ['', [Validators.maxLength(998)]],
-    html: [''],
-  });
-  public toolbarId = `compose-toolbar-${Math.random().toString(36).slice(2)}`;
-  public modules = {
-    toolbar: {
-      container: `#${this.toolbarId}`,
-      handlers: {
-        undo: () => this.historyUndo(),
-        redo: () => this.historyRedo(),
-        attach: () => this.triggerAttach(),
-      },
-    },
-    history: { delay: 500, maxStack: 200, userOnly: true },
-  };
-  public sending = signal(false);
-  public showHeader = signal(true);
-  public showMore = signal(false);
-  public totalSize = computed(() => Math.round(this.attachments().reduce((s, f) => s + f.size, 0)));
-
-  constructor() {
-    // Replaces the @Input() set draftId setter
-    effect(() => {
-      const id = this.draftId();
-      if (id) {
-        void this.loadDraft(id);
-      } else {
-        this.draftIdSignal.set(null);
-        this.form.reset({ to: '', cc: '', bcc: '', subject: '', html: '' });
-        this.attachments.set([]);
-      }
-    });
-
-    // Replaces the @Input() set initial setter
-    effect(() => {
-      const value = this.initial();
-      if (!value) return;
-      this.form.patchValue({
-        to: value.to ?? '',
-        cc: value.cc ?? '',
-        bcc: value.bcc ?? '',
-        subject: value.subject ?? '',
-        html: value.html ?? '',
-      });
-    });
-  }
-
-  public async delete() {
-    const hasDraft = !!this.draftIdSignal();
-    const isDirty = this.form.dirty;
-    if (!isDirty && !hasDraft) {
-      this.finished.emit();
-      return;
-    }
-    const ok = await this.dialogs.confirm({
-      title: 'Discard draft?',
-      message: 'Your changes will be permanently removed.',
-      variant: 'danger',
-      icon: 'trash',
-      confirmText: 'Discard',
-      cancelText: 'Cancel',
-      allowBackdropClose: false,
-    });
-    if (ok) {
-      if (hasDraft) {
-        try {
-          await this.actions.deleteDraft(this.draftIdSignal()!);
-        } catch (e) {
-          console.error('Failed to delete draft', e);
-        }
-      }
-      this.finished.emit();
-    }
-  }
-
-  public async discard() {
-    return this.delete();
-  }
-
-  public async loadDraft(id: string) {
-    const d = await this.actions.getDraft(id);
-    this.form.patchValue({
-      to: (d.to_list || []).join(', '),
-      cc: (d.cc_list || []).join(', '),
-      bcc: (d.bcc_list || []).join(', '),
-      subject: d.subject || '',
-      html: d.body_html || '',
-    });
-    this.draftIdSignal.set(d.id);
-    this.form.markAsPristine();
-  }
-
-  public onDragLeave(e: DragEvent) {
-    e.preventDefault();
-    this.dragOver.set(false);
-  }
-
-  public onDragOver(e: DragEvent) {
-    e.preventDefault();
-    this.dragOver.set(true);
-  }
-
-  public onDrop(e: DragEvent) {
-    e.preventDefault();
-    this.dragOver.set(false);
-    if (e.dataTransfer?.files?.length) this.mergeFiles(e.dataTransfer.files);
-  }
-
-  // attachments
-  public onFileChoose(ev: Event) {
-    const input = ev.target as HTMLInputElement;
-    if (input.files?.length) this.mergeFiles(input.files);
-    if (input) input.value = '';
-  }
-
-  public onSend() {
-    if (!this.validTo()) return;
-    const v = this.form.getRawValue();
-    const input: ComposePayload = {
-      to: this.parseEmails(v.to),
-      cc: this.parseEmails(v.cc),
-      bcc: this.parseEmails(v.bcc),
-      subject: v.subject,
-      html: v.html,
-      attachments: this.attachments(),
-    };
-    void this.actions.sendEmail(input);
-    this.finished.emit(); // close composer immediately
-  }
-
-  public removeAttachment(index: number) {
-    const arr = this.attachments().slice();
-    arr.splice(index, 1);
-    this.attachments.set(arr);
-  }
-
-  public async saveDraft() {
-    const v = this.form.getRawValue();
-    const input: DraftPayload = {
-      id: this.draftIdSignal() || undefined,
-      to: this.parseEmails(v.to),
-      cc: this.parseEmails(v.cc),
-      bcc: this.parseEmails(v.bcc),
-      subject: v.subject,
-      html: v.html,
-    };
-    const res = await this.actions.saveDraft(input);
-    this.draftIdSignal.set(res.id);
-  }
-
-  public toggleHeader() {
-    this.showHeader.update((v) => !v);
-  }
-
-  public toggleMore() {
-    this.showMore.update((v) => !v);
-  }
-
-  public validTo() {
-    const to = this.form.get('to')?.value;
-    return to && to.trim().length > 0;
-  }
-
-  protected onEditorCreated(q: Quill) {
-    this.quill = q;
-  }
-
-  private historyRedo() {
-    if (!this.quill) return;
-
-    const history = this.quill.getModule('history');
-    if (!history) return;
-    (history as any).redo();
-  }
-
-  private historyUndo() {
-    if (!this.quill) return;
-    const history = this.quill.getModule('history');
-    if (!history) return;
-    (history as any).undo();
-  }
-
-  private mergeFiles(list: FileList) {
-    this.attachments.set([...this.attachments(), ...Array.from(list)]);
-  }
-
-  private parseEmails(raw: string | null | undefined): string[] {
-    return (raw || '')
-      .split(/[;,]/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-
-  private triggerAttach() {
-    this.fileInput()?.nativeElement.click();
-  }
-}
-
-export type ComposeInitial = {
-  bcc?: string;
-  cc?: string;
-  html?: string;
-  subject?: string;
-  to?: string;
-};
-
-export type ComposePayload = {
-  attachments: File[];
-  bcc: string[];
-  cc: string[];
-  html: string; // keep HTML for simplicity; switch to Delta if you prefer
-  subject: string;
-  to: string[];
-};
-
-export type DraftPayload = {
-  bcc: string[];
-  cc: string[];
-  html: string;
-  id?: string;
-  subject: string;
-  to: string[];
-};
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-details/email-details.html
@@ -19725,6 +18913,106 @@ export class ResumeAccountPage extends TRPCService<any> {
 }
 ```
 
+## File: apps/frontend/src/app/auth/signup-page/signup-page.ts
+
+```typescript
+import { DecimalPipe } from '@angular/common';
+import { Component, inject, signal } from '@angular/core';
+import { form, submit, required, email, minLength, FormField } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { IAuthUser, signUpInputType } from '../../../../../../libs/common/src';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
+
+@Component({
+  selector: 'pc-signup',
+  imports: [DecimalPipe, FormField, Icon, RouterModule, AuthLayoutComponent],
+  templateUrl: './signup-page.html',
+})
+export class SignUpPage {
+  private readonly alertSvc = inject(AlertService);
+  private readonly authService = inject(AuthService);
+  private readonly router = inject(Router);
+
+  private _loading = createLoadingGate();
+
+  protected readonly signUpData = signal({
+    organization: '',
+    email: '',
+    password: '',
+    first_name: '',
+    middle_names: '',
+    last_name: '',
+    terms: '',
+  });
+
+  public readonly form = form(this.signUpData, (p) => {
+    required(p.organization);
+    required(p.email);
+    email(p.email);
+    required(p.password);
+    minLength(p.password, 8);
+    required(p.first_name);
+  });
+
+  protected isLoading = this._loading.visible;
+
+  protected passwordBreachNumber = passwordBreachNumber;
+  protected passwordInBreach = passwordInBreach;
+
+  public get email() {
+    return this.form.email();
+  }
+
+  public get firstName() {
+    return this.form.first_name();
+  }
+
+  public get organization() {
+    return this.form.organization();
+  }
+
+  public get password() {
+    return this.form.password();
+  }
+
+  public async join(event?: Event) {
+    event?.preventDefault();
+    this.form().markAsTouched();
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const data = await this.authService.signUp(this.signUpData() as signUpInputType);
+          const user = data as IAuthUser;
+          if (user) {
+            await this.router.navigate(['/signin'], {
+              queryParams: { verificationPending: 'true', email: user.email },
+            });
+          } else {
+            this.alertSvc.showError('Unable to complete signup.');
+          }
+        } catch (err: any) {
+          this.alertSvc.showError(err.message);
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        this.alertSvc.showError('Please enter all information before continuing.');
+      },
+    });
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/activity/ui/record-activities/record-activities.ts
 
 ```typescript
@@ -20978,6 +20266,200 @@ export class PledgesGridComponent implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/emails/services/store/email-state.store.ts
+
+```typescript
+import { computed, signal, Service, linkedSignal } from '@angular/core';
+
+import { ServerEmail } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+
+@Service()
+export class EmailStateStore {
+  public readonly activeFolderId = signal<string | null>(null);
+
+  public readonly currentSelectedEmailId = linkedSignal<string | null, string | null>({
+    source: () => this.activeFolderId(),
+    computation: () => null,
+  });
+
+  public readonly emailsById = signal<Record<string, EmailType>>({});
+
+  public readonly currentSelectedEmail = computed(() => {
+    const id = this.currentSelectedEmailId();
+    return id ? (this.emailsById()[id] ?? null) : null;
+  });
+
+  public readonly emailIdsByFolderId = signal<Record<string, string[]>>({});
+
+  public readonly hasAttachmentByEmailId = signal<Record<string, boolean | undefined>>({});
+
+  public readonly isBodyExpanded = signal<boolean>(false);
+
+  public readonly mobilePanelView = signal<'folders' | 'list' | 'detail'>('folders');
+
+  public clearHasAttachment(emailId: string) {
+    this.hasAttachmentByEmailId.update((m) => {
+      const next = { ...m };
+      delete next[emailId];
+      return next;
+    });
+  }
+
+  public emailsInFolderWithFlags(folderId: string) {
+    return computed(() => {
+      const ids = this.emailIdsByFolderId()[folderId] ?? [];
+      const emailsMap = this.emailsById();
+      const flags = this.hasAttachmentByEmailId();
+      return ids
+        .map((id) => emailsMap[id])
+        .filter(Boolean)
+        .map((e) => ({ ...e!, has_attachment: flags[e!.id] ?? false }));
+    });
+  }
+
+  public hasAttachment(emailId: string) {
+    return computed<boolean | undefined>(() => this.hasAttachmentByEmailId()[emailId]);
+  }
+
+  public mergeHasRows(rows: Array<{ email_id: string; has: boolean }>, fillFalseForIds?: string[]) {
+    const map: Record<string, boolean> = {};
+    for (const r of rows) map[String(r.email_id)] = !!r.has;
+
+    // Optional: mark any requested ids that didn't come back as false
+    if (fillFalseForIds?.length) {
+      for (const id of fillFalseForIds) if (!(id in map)) map[id] = false;
+    }
+
+    this.setManyHasAttachment(map);
+  }
+
+  public patchEmail(emailKey: string, patch: Partial<EmailType>): EmailType | undefined {
+    const prev = this.readEmail(emailKey);
+    if (!prev) return undefined;
+    this.emailsById.update((m) => ({ ...m, [emailKey]: { ...prev, ...patch } }));
+    return prev;
+  }
+
+  public readEmail(emailKey: string): EmailType | undefined {
+    return this.emailsById()[emailKey];
+  }
+
+  public removeEmail(emailId: string): void {
+    // Remove from normalized map
+    this.emailsById.update((m) => {
+      const next = { ...m };
+      delete next[emailId];
+      return next;
+    });
+
+    // Remove from folder lists
+    this.emailIdsByFolderId.update((map) => {
+      const next: Record<string, string[]> = {};
+      for (const [fid, ids] of Object.entries(map)) {
+        next[fid] = ids.filter((id) => id !== emailId);
+      }
+      return next;
+    });
+
+    // Clear attachment flag
+    this.clearHasAttachment(emailId);
+  }
+
+  public replaceEmail(emailKey: string, value: EmailType): void {
+    this.emailsById.update((m) => ({ ...m, [emailKey]: value }));
+  }
+
+  public selectEmail(email: EmailType | { id: EmailId } | null): void {
+    this.currentSelectedEmailId.set(email ? String(email.id) : null);
+  }
+
+  public setEmailsForFolder(folderId: string, serverEmails: ServerEmail[], append = false): void {
+    const ids: string[] = [];
+    const flagsMap: Record<string, boolean> = {}; // collect booleans while we normalize rows
+
+    this.emailsById.update((map) => {
+      const next = { ...map };
+      for (const s of serverEmails) {
+        const id = String(s.id);
+        ids.push(id);
+
+        // reuse your existing helper; prefer hasMap[id] when provided
+        const { has, count } = deriveHasAndCount(s);
+        flagsMap[id] = has;
+
+        const e: EmailType = {
+          id,
+          folder_id: String(s.folder_id),
+          updated_at: new Date(s.updated_at),
+          date_sent: s.date_sent ? new Date(s.date_sent) : undefined,
+          is_favourite: !!s.is_favourite,
+          attachment_count: count,
+          status: (s as any).status || 'open',
+          from_email: s.from_email ?? undefined,
+          to_email: s.to_email ?? undefined,
+          subject: s.subject ?? undefined,
+          preview: s.preview ?? undefined,
+          assigned_to: s.assigned_to ?? undefined,
+          has_attachment: has, // keep in the normalized email too
+          is_read: !!(s as any).is_read,
+          sender_first_name: s.sender_first_name ?? undefined,
+          sender_last_name: s.sender_last_name ?? undefined,
+        };
+
+        next[id] = e;
+      }
+      return next;
+    });
+
+    this.emailIdsByFolderId.update((m) => {
+      const existing = append ? (m[folderId] ?? []) : [];
+      const combined = [...existing];
+      for (const id of ids) {
+        if (!combined.includes(id)) {
+          combined.push(id);
+        }
+      }
+      return { ...m, [folderId]: combined };
+    });
+
+    // seed/refresh the per-id flags cache
+    this.setManyHasAttachment(flagsMap);
+  }
+
+  public setHasAttachment(emailId: string, hasAttachment: boolean | undefined) {
+    this.hasAttachmentByEmailId.update((m) => ({ ...m, [emailId]: hasAttachment }));
+  }
+
+  public setManyHasAttachment(map: Record<string, boolean | undefined>) {
+    this.hasAttachmentByEmailId.update((prev) => ({ ...prev, ...map }));
+  }
+
+  public toggleBodyExpanded(): void {
+    this.isBodyExpanded.update((v) => !v);
+  }
+}
+
+export type EmailId = string | number;
+
+function deriveHasAndCount(s: ServerEmail): { has: boolean; count: number } {
+  if (typeof s.has_attachment === 'boolean') {
+    const n = toNum(s.attachment_count);
+    // if backend didn’t send a count, synthesize a minimal one
+    return { has: s.has_attachment, count: n ?? (s.has_attachment ? 1 : 0) };
+  }
+  const count = toNum(s.attachment_count);
+  return { has: count > 0, count };
+}
+
+function toNum(n: unknown): number {
+  if (typeof n === 'bigint') return Number(n);
+  if (typeof n === 'string') return Number(n) || 0;
+  if (typeof n === 'number') return n;
+  return 0;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/emails/services/store/emailstore.ts
 
 ```typescript
@@ -21437,6 +20919,90 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
 }
 ```
 
+## File: apps/frontend/src/app/experiences/emails/ui/email-assign/email-assign.ts
+
+```typescript
+import { Component, effect, inject, input, signal } from '@angular/core';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+
+import { IAuthUser } from '../../../../../../../../libs/common/src';
+import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { UserService } from '../../../../services/user.service';
+import { EmailsStore } from '../../services/store/emailstore';
+
+@Component({
+  selector: 'pc-email-assign',
+  imports: [Icon],
+  template: `<div class="flex items-center gap-2 mt-1">
+    <span class="text-xs text-base-content/70">Owner:</span>
+    <div class="dropdown">
+      <div tabindex="0" class="badge badge-xs text-xs badge-info badge-outline cursor-pointer">
+        <span>{{ getUserName(assignedTo()) }}</span>
+        <span><pc-icon name="chevron-down" [size]="4"></pc-icon></span>
+      </div>
+
+      <ul class="dropdown-content menu bg-base-100 rounded-box z-[1] w-44 p-2 shadow">
+        @for (user of users(); track user.id) {
+          <li>
+            <button type="button" (click)="assign(user.id); closeDropdown()">{{ user.first_name }}</button>
+          </li>
+        }
+        @if (assignedTo()) {
+          <li><button type="button" (click)="assign(null); closeDropdown()">Unassign</button></li>
+        }
+      </ul>
+    </div>
+  </div>`,
+})
+export class EmailAssign {
+  private alertSvc = inject(AlertService);
+  private store = inject(EmailsStore);
+  private userService = inject(UserService);
+
+  protected assignedTo = signal<string | null>(null);
+
+  public email = input.required<EmailType | null>();
+  public users = signal<IAuthUser[]>([]);
+
+  constructor() {
+    this.userService.getUsers().then((u) => this.users.set(u));
+    // Can't use computed because assignedTo is settable
+    effect(() => {
+      this.assignedTo.set(this.email()?.assigned_to || null);
+    });
+  }
+
+  public async assign(userId: string | number | null) {
+    const email = this.email();
+    if (!email) return;
+
+    const normalizedUserId = userId != null ? String(userId) : null;
+    const assigneeName = normalizedUserId
+      ? (this.users().find((u) => String(u.id) === normalizedUserId)?.first_name ?? null)
+      : null;
+
+    try {
+      await this.store.assignEmailToUser(email.id, normalizedUserId, assigneeName);
+      this.assignedTo.set(normalizedUserId);
+    } catch (e) {
+      this.alertSvc.showError('Something went wrong, please try again');
+      this.assignedTo.set(null);
+    }
+  }
+
+  public closeDropdown() {
+    const el = document.activeElement as HTMLElement | null;
+    el?.blur?.(); // remove focus -> :focus-within becomes false -> closes
+  }
+
+  public getUserName(id: string | null = null) {
+    if (!id) return 'Noone';
+    return this.users().find((u) => String(u.id) === String(id))?.first_name || 'Noone';
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.html
 
 ```html
@@ -21519,245 +21085,447 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.ts
+## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.css
+
+```css
+::ng-deep .ql-tooltip {
+  left: unset !important;
+}
+
+::ng-deep .ql-toolbar.ql-snow {
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.html
+
+```html
+<form class="flex flex-col gap-3 h-full overflow-y-auto pr-3" (submit)="$event.preventDefault(); onSend()">
+  <!-- Header -->
+  <div class="flex justify-between">
+    <div class="text-base"></div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-ghost btn-md hover:btn-error" (click)="delete()">
+        <pc-icon name="trash" class="mr-1"></pc-icon>
+      </button>
+      <button type="button" class="btn btn-ghost btn-md hover:btn-secondary" (click)="discard()">
+        <pc-icon name="x-circle" class="mr-1"></pc-icon>
+      </button>
+      <button type="button" class="btn btn-ghost btn-md hover:btn-primary" (click)="saveDraft()">
+        <pc-icon name="save" class="mr-1"></pc-icon>
+      </button>
+      <button type="submit" class="btn btn-primary btn-md" [disabled]="sending() || !validTo()">
+        <pc-icon name="paper-airplane" class="mr-1"></pc-icon>Send
+      </button>
+    </div>
+  </div>
+
+  <!-- Collapsible Recipients/Subject -->
+  <div class="border border-neutral rounded-md">
+    <!-- Header row with toggle -->
+    <div class="flex items-center justify-between cursor-pointer px-3 py-2 bg-base-200" (click)="toggleHeader()">
+      <span class="font-medium">Recipients & Subject</span>
+      <pc-swap
+        swapOnIcon="expand-content"
+        swapOffIcon="collapse-content"
+        animation="flip"
+        [checked]="showHeader()"
+        [size]="4"
+        (click)="toggleHeader()"
+      ></pc-swap>
+    </div>
+
+    <!-- Collapsible body -->
+    @if (showHeader()) {
+    <div class="p-3 space-y-2">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+        <input
+          class="input-pplcrm w-full"
+          placeholder="To (comma or semicolon separated)"
+          [formControl]="form.controls.to"
+        />
+        <input class="input-pplcrm w-full" placeholder="Cc" [formControl]="form.controls.cc" />
+        <input class="input-pplcrm w-full" placeholder="Bcc" [formControl]="form.controls.bcc" />
+      </div>
+
+      <input class="input-pplcrm p-3 w-full" placeholder="Subject" [formControl]="form.controls.subject" />
+    </div>
+    }
+  </div>
+
+  <!-- Editor card: ONE ROW toolbar + scrollable editor -->
+  <div class="rounded-lg border border-base-300 flex flex-col h-full">
+    <!-- Custom Quill toolbar (single row, no wrap, horizontal scroll) -->
+    <div [id]="toolbarId" class="ql-toolbar ql-snow border-b">
+      <!-- Undo / Redo -->
+      <span class="ql-formats">
+        <button class="ql-undo tooltip" data-tip="Undo" type="button" aria-label="Undo">
+          <pc-icon name="undo-fat" [size]="4"></pc-icon>
+        </button>
+        <button class="ql-redo tooltip" data-tip="Redo" type="button" aria-label="Redo">
+          <pc-icon name="redo-fat" [size]="4"></pc-icon>
+        </button>
+      </span>
+
+      <!-- Font / Size -->
+      @if (showHeader()) {
+      <span class="ql-formats">
+        <select class="ql-font" aria-label="Font">
+          <option selected></option>
+          <option value="serif"></option>
+          <option value="monospace"></option>
+        </select>
+        <select class="ql-size" aria-label="Size">
+          <option value="small"></option>
+          <option selected></option>
+          <option value="large"></option>
+          <option value="huge"></option>
+        </select>
+      </span>
+      }
+
+      <!-- Bold / Italic / Underline / Strike -->
+      <span class="ql-formats">
+        <button class="ql-bold tooltip" data-tip="Bold" aria-label="Bold"></button>
+        <button class="ql-italic tooltip" data-tip="Italic" aria-label="Italic"></button>
+        <button class="ql-underline tooltip" data-tip="Underline" aria-label="Underline"></button>
+        <button class="ql-strike tooltip" data-tip="Strikethrough" aria-label="Strikethrough"></button>
+        <button class="ql-blockquote tooltip" data-tip="quote" aria-label="Blockquote"></button>
+      </span>
+
+      <!-- Align (dropdown) -->
+      <span class="ql-formats">
+        <select class="ql-color tooltip" data-tip="text color" aria-label="Text color"></select>
+        <select class="ql-align" aria-label="Align">
+          <option selected></option>
+          <option value="center"></option>
+          <option value="right"></option>
+          <option value="justify"></option>
+        </select>
+        <button class="ql-list tooltip" data-tip="Numbered list" value="ordered" aria-label="Numbered list"></button>
+        <button class="ql-list tooltip" data-tip="Bulleted list" value="bullet" aria-label="Bulleted list"></button>
+      </span>
+
+      <!-- Link / Attach / Image -->
+      <span class="ql-formats">
+        <button class="ql-attach tooltip" data-tip="Attach files" type="button" aria-label="Attach files">
+          <pc-icon name="attach-fat" [size]="4"></pc-icon></button
+        ><button class="ql-link tooltip" data-tip="Insert link" aria-label="Insert link"></button>
+        <button class="ql-image tooltip" data-tip="Insert image" aria-label="Insert image"></button>
+      </span>
+
+      <!-- Remove formatting -->
+      <span class="ql-formats">
+        <button class="ql-clean tooltip" data-tip="Clear formatting" aria-label="Clear formatting"></button>
+      </span>
+    </div>
+
+    <!-- Quill editor (scrolls when content grows) -->
+    <quill-editor
+      class="compose-quill flex-1"
+      [modules]="modules"
+      [formControl]="form.controls.html"
+      [placeholder]="'Write your message…'"
+      (onEditorCreated)="onEditorCreated($event)"
+    ></quill-editor>
+  </div>
+  <input #fileInput type="file" class="hidden" multiple (change)="onFileChoose($event)" />
+
+  <!-- Attachment list -->
+  @if (attachments().length) {
+  <ul class="mt-2 space-y-1 max-h-40">
+    <li class="text-xs opacity-70">Attachments: {{ attachments().length }} file(s) • {{ totalSize()| fileSize }}</li>
+    @for (f of attachments(); track f.name + ':' + f.size + ':' + f.lastModified; let i = $index) {
+    <li class="flex items-center justify-between rounded-md border border-base-300 px-2 py-1">
+      <div class="flex items-center gap-2 min-w-0">
+        <pc-attachment-icon [filename]="f.name" class="shrink-0"></pc-attachment-icon>
+        <span class="truncate">{{ f.name }}</span>
+        <span class="text-xs opacity-60">({{ (f.size / 1024) | number:'1.0-0' }} KB)</span>
+      </div>
+
+      <pc-icon
+        class="cursor-pointer hover:text-error tooltip tooltip-left"
+        data-tip="Remove attachment"
+        name="attach-file-off"
+        [size]="4"
+        (click)="removeAttachment(i)"
+      ></pc-icon>
+    </li>
+    }
+  </ul>
+  }
+</form>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.ts
 
 ```typescript
-import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
+// pc-compose-email.component.ts
+import { DecimalPipe } from '@angular/common';
+import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
+import { Icon } from '@icons/icon'; // your <pc-icon>
+import { ConfirmDialogService } from '../../../../services/shared-dialog.service';
+import { Swap } from '@uxcommon/components/swap/swap';
+import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
 
-import { EmailsService } from '../../services/emails-service';
-import { EmailsStore } from '../../services/store/emailstore';
-import { EmailStateStore } from '../../services/store/email-state.store';
-import { EmailBody } from '../email-body/email-body';
-import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-compose';
-import { EmailDetails } from '../email-details/email-details';
-import { EmailFolderList } from '../email-folder-list/email-folder-list';
-import { EmailList } from '../email-list/email-list';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { AuthService } from '@frontend/auth/auth-service';
+import { QuillModule } from 'ngx-quill';
+import Quill from 'quill';
+
+import { EmailActionsStore } from '../../services/store/email-actions.store';
 
 @Component({
-  selector: 'pc-email-client',
-  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, Icon],
-  host: {
-    class: 'block h-full',
-    '(document:keydown)': 'handleDocumentKeydown($event)',
-  },
-  templateUrl: 'email-client.html',
+  selector: 'pc-compose-email',
+  imports: [ReactiveFormsModule, QuillModule, Icon, AttachmentIconComponent, DecimalPipe, FileSizePipe, Swap],
+  host: { ngSkipHydration: 'true' }, // avoids hydration mismatches with rich editors
+  templateUrl: './email-compose.html',
+  styleUrls: ['./email-compose.css'],
 })
-export class EmailClient {
-  private readonly composer = viewChild<ComposeEmailComponent>('composer');
+export class ComposeEmailComponent {
+  private actions = inject(EmailActionsStore);
+  private dialogs = inject(ConfirmDialogService);
+  private draftIdSignal = signal<string | null>(null);
+  private fb = inject(NonNullableFormBuilder);
+  private quill!: Quill;
 
-  private authService = inject(AuthService);
+  public readonly finished = output<void>();
 
-  protected readonly store = inject(EmailsStore);
-  private readonly stateStore = inject(EmailStateStore);
-  private readonly emailSvc = inject(EmailsService);
+  public readonly draftId = input<string | null>(null);
+  public readonly initial = input<ComposeInitial | null>(null);
 
-  protected composePrefill = signal<ComposeInitial | null>(null);
-  protected draftIdToLoad = signal<string | null>(null);
-  protected isComposing = signal(false);
-
-  protected mobileView = signal<'folders' | 'list' | 'detail'>('folders');
-
-  protected folderPanelClass = computed(() =>
-    this.mobileView() === 'folders' ? 'flex-1 lg:flex-none' : 'hidden lg:block',
-  );
-
-  protected listPanelClass = computed(() =>
-    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 lg:flex-none' : 'hidden lg:flex lg:flex-col lg:h-full',
-  );
-
-  protected detailPanelClass = computed(() =>
-    this.mobileView() === 'detail'
-      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
-      : 'hidden lg:flex lg:flex-col lg:flex-1 lg:h-full lg:p-4 lg:pt-2 lg:relative lg:z-10',
-  );
+  public attachments = signal<File[]>([]);
+  public dragOver = signal(false);
+  public readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
+  public form = this.fb.group({
+    to: [''],
+    cc: [''],
+    bcc: [''],
+    subject: ['', [Validators.maxLength(998)]],
+    html: [''],
+  });
+  public toolbarId = `compose-toolbar-${Math.random().toString(36).slice(2)}`;
+  public modules = {
+    toolbar: {
+      container: `#${this.toolbarId}`,
+      handlers: {
+        undo: () => this.historyUndo(),
+        redo: () => this.historyRedo(),
+        attach: () => this.triggerAttach(),
+      },
+    },
+    history: { delay: 500, maxStack: 200, userOnly: true },
+  };
+  public sending = signal(false);
+  public showHeader = signal(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
+  public showMore = signal(false);
+  public totalSize = computed(() => Math.round(this.attachments().reduce((s, f) => s + f.size, 0)));
 
   constructor() {
+    // Replaces the @Input() set draftId setter
     effect(() => {
-      const id = this.emailId();
+      const id = this.draftId();
       if (id) {
-        untracked(() => this.loadEmailData(id));
+        void this.loadDraft(id);
+      } else {
+        this.draftIdSignal.set(null);
+        this.form.reset({ to: '', cc: '', bcc: '', subject: '', html: '' });
+        this.attachments.set([]);
       }
+    });
+
+    // Replaces the @Input() set initial setter
+    effect(() => {
+      const value = this.initial();
+      if (!value) return;
+      this.form.patchValue({
+        to: value.to ?? '',
+        cc: value.cc ?? '',
+        bcc: value.bcc ?? '',
+        subject: value.subject ?? '',
+        html: value.html ?? '',
+      });
     });
   }
 
-  readonly emailId = input<string | undefined>(undefined, { alias: 'email' });
-
-  private async loadEmailData(emailId: string): Promise<void> {
-    try {
-      // 1. Fetch the email header/details from backend to know its folder_id
-      const res = await this.emailSvc.getEmailHeader(emailId);
-      if (res && res.email) {
-        const folderId = res.email.folder_id;
-
-        // 2. Ensure folders list is loaded
-        let folders = this.store.allFolders();
-        if (!folders || folders.length === 0) {
-          folders = await this.store.loadAllFoldersWithCounts();
-        }
-
-        // 3. Find the folder
-        const folder = folders.find((f) => String(f.id) === String(folderId));
-        if (folder) {
-          const emailObj: EmailType = {
-            id: String(res.email.id),
-            folder_id: String(res.email.folder_id),
-            updated_at: new Date(res.email.updated_at),
-            date_sent: res.email.date_sent ? new Date(res.email.date_sent) : undefined,
-            is_favourite: !!res.email.is_favourite,
-            attachment_count: res.email.attachment_count ?? 0,
-            status: res.email.status || 'open',
-            from_email: res.email.from_email ?? undefined,
-            to_email: res.email.to_email ?? undefined,
-            subject: res.email.subject ?? undefined,
-            preview: res.email.preview ?? undefined,
-            assigned_to: res.email.assigned_to ?? undefined,
-            has_attachment: !!res.email.has_attachment,
-            is_read: !!(res.email as any).is_read,
-          };
-
-          // Add to store's normalized map so it is available immediately
-          this.stateStore.replaceEmail(emailObj.id, emailObj);
-
-          // Select the folder and email
-          this.store.selectFolder(folder);
-          this.store.selectEmail(emailObj);
+  public async delete() {
+    const hasDraft = !!this.draftIdSignal();
+    const isDirty = this.form.dirty;
+    if (!isDirty && !hasDraft) {
+      this.finished.emit();
+      return;
+    }
+    const ok = await this.dialogs.confirm({
+      title: 'Discard draft?',
+      message: 'Your changes will be permanently removed.',
+      variant: 'danger',
+      icon: 'trash',
+      confirmText: 'Discard',
+      cancelText: 'Cancel',
+      allowBackdropClose: false,
+    });
+    if (ok) {
+      if (hasDraft) {
+        try {
+          await this.actions.deleteDraft(this.draftIdSignal()!);
+        } catch (e) {
+          console.error('Failed to delete draft', e);
         }
       }
-    } catch (err) {
-      console.error('Failed to pre-select email from notification link', err);
+      this.finished.emit();
     }
   }
 
-  public readonly emails = this.store.emailsInSelectedFolder;
-
-  public readonly isBodyExpanded = this.store.isBodyExpanded;
-
-  public readonly selectedEmail = this.store.currentSelectedEmail;
-
-  public readonly selectedFolderId = this.store.currentSelectedFolderId;
-
-  public closeCompose() {
-    this.isComposing.set(false);
-    this.draftIdToLoad.set(null);
-    this.composePrefill.set(null);
+  public async discard() {
+    return this.delete();
   }
 
-  public newEmail() {
-    this.openCompose();
-  }
-
-  // handle send from composer
-  public async onComposeSend(_payload: any) {
-    // TODO: integrate with your EmailActionsStore/EmailsService
-    // Example:
-    // await this.emailActions.sendEmail(payload);
-    this.isComposing.set(false);
-    // Optionally refresh current folder, show toast, etc.
-  }
-
-  public async onEmail(email: EmailType | null): Promise<void> {
-    const folderId = this.store.currentSelectedFolderId();
-    if (this.isComposing()) {
-      try {
-        const c = this.composer();
-        if (c?.form.dirty) {
-          await c.saveDraft();
-        }
-      } catch (e) {
-        console.error('Failed to save draft', e);
-        alert('Failed to save your draft. Please check your connection or copy your work.');
-        // Abort the function here.
-        // Do not close the composer or navigate to the new email.
-        return;
-      }
-      this.closeCompose();
-    }
-
-    // Always update the store selection so the list can reflect it
-    this.store.selectEmail(email);
-    this.mobileView.set('detail');
-
-    // In the drafts folder, also open the composer for the selected draft
-    if (folderId === ALL_FOLDERS.DRAFTS && email) {
-      this.draftIdToLoad.set(String(email.id));
-      this.isComposing.set(true);
-    }
-  }
-
-  public onFolder(folder: EmailFolderType): void {
-    this.store.selectFolder(folder);
-    this.mobileView.set('list');
-  }
-
-  public mobileGoBack(): void {
-    if (this.isComposing()) {
-      this.closeCompose();
-    }
-    if (this.mobileView() === 'detail') {
-      this.mobileView.set('list');
-    } else if (this.mobileView() === 'list') {
-      this.mobileView.set('folders');
-    }
-  }
-
-  public onForward(email: EmailType) {
-    const subject = email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`;
-    this.openCompose({ subject });
-  }
-
-  public onReply(email: EmailType) {
-    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
-    this.openCompose({ to: email.from_email || '', subject });
-  }
-
-  public async onReplyAll(email: EmailType) {
-    const header = this.store.getEmailHeaderById(email.id)();
-    const recipients = new Set<string>();
-
-    const currentUser = await this.authService.getCurrentUser();
-    const currentUserEmail = currentUser.email.toLowerCase(); // Safe without ?.
-
-    if (email.from_email) recipients.add(email.from_email);
-
-    header?.email?.to_list?.forEach((r: any) => {
-      if (r?.email) recipients.add(r.email);
+  public async loadDraft(id: string) {
+    const d = await this.actions.getDraft(id);
+    this.form.patchValue({
+      to: (d.to_list || []).join(', '),
+      cc: (d.cc_list || []).join(', '),
+      bcc: (d.bcc_list || []).join(', '),
+      subject: d.subject || '',
+      html: d.body_html || '',
     });
-    header?.email?.cc_list?.forEach((r: any) => {
-      if (r?.email) recipients.add(r.email);
-    });
-
-    const to = Array.from(recipients)
-      .filter((e) => e && e.toLowerCase() !== currentUserEmail)
-      .join(', ');
-
-    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
-    this.openCompose({ to, subject });
+    this.draftIdSignal.set(d.id);
+    this.form.markAsPristine();
   }
 
-  public openCompose(prefill?: ComposeInitial | null) {
-    this.isBodyExpanded.set(false); // ensure body overlay is closed
-    this.draftIdToLoad.set(null);
-    this.composePrefill.set(prefill ?? null);
-    this.isComposing.set(true);
-    this.mobileView.set('detail');
+  public onDragLeave(e: DragEvent) {
+    e.preventDefault();
+    this.dragOver.set(false);
   }
 
-  public toggleExpanded(): void {
-    this.store.toggleBodyExpanded();
+  public onDragOver(e: DragEvent) {
+    e.preventDefault();
+    this.dragOver.set(true);
   }
 
-  protected handleDocumentKeydown(ev: KeyboardEvent): void {
-    if (ev.key === 'Escape' && !ev.repeat && this.isBodyExpanded()) {
-      this.store.toggleBodyExpanded();
-      ev.preventDefault();
-      ev.stopPropagation();
-    }
+  public onDrop(e: DragEvent) {
+    e.preventDefault();
+    this.dragOver.set(false);
+    if (e.dataTransfer?.files?.length) this.mergeFiles(e.dataTransfer.files);
+  }
+
+  // attachments
+  public onFileChoose(ev: Event) {
+    const input = ev.target as HTMLInputElement;
+    if (input.files?.length) this.mergeFiles(input.files);
+    if (input) input.value = '';
+  }
+
+  public onSend() {
+    if (!this.validTo()) return;
+    const v = this.form.getRawValue();
+    const input: ComposePayload = {
+      to: this.parseEmails(v.to),
+      cc: this.parseEmails(v.cc),
+      bcc: this.parseEmails(v.bcc),
+      subject: v.subject,
+      html: v.html,
+      attachments: this.attachments(),
+    };
+    void this.actions.sendEmail(input);
+    this.finished.emit(); // close composer immediately
+  }
+
+  public removeAttachment(index: number) {
+    const arr = this.attachments().slice();
+    arr.splice(index, 1);
+    this.attachments.set(arr);
+  }
+
+  public async saveDraft() {
+    const v = this.form.getRawValue();
+    const input: DraftPayload = {
+      id: this.draftIdSignal() || undefined,
+      to: this.parseEmails(v.to),
+      cc: this.parseEmails(v.cc),
+      bcc: this.parseEmails(v.bcc),
+      subject: v.subject,
+      html: v.html,
+    };
+    const res = await this.actions.saveDraft(input);
+    this.draftIdSignal.set(res.id);
+  }
+
+  public toggleHeader() {
+    this.showHeader.update((v) => !v);
+  }
+
+  public toggleMore() {
+    this.showMore.update((v) => !v);
+  }
+
+  public validTo() {
+    const to = this.form.get('to')?.value;
+    return to && to.trim().length > 0;
+  }
+
+  protected onEditorCreated(q: Quill) {
+    this.quill = q;
+  }
+
+  private historyRedo() {
+    if (!this.quill) return;
+
+    const history = this.quill.getModule('history');
+    if (!history) return;
+    (history as any).redo();
+  }
+
+  private historyUndo() {
+    if (!this.quill) return;
+    const history = this.quill.getModule('history');
+    if (!history) return;
+    (history as any).undo();
+  }
+
+  private mergeFiles(list: FileList) {
+    this.attachments.set([...this.attachments(), ...Array.from(list)]);
+  }
+
+  private parseEmails(raw: string | null | undefined): string[] {
+    return (raw || '')
+      .split(/[;,]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  private triggerAttach() {
+    this.fileInput()?.nativeElement.click();
   }
 }
+
+export type ComposeInitial = {
+  bcc?: string;
+  cc?: string;
+  html?: string;
+  subject?: string;
+  to?: string;
+};
+
+export type ComposePayload = {
+  attachments: File[];
+  bcc: string[];
+  cc: string[];
+  html: string; // keep HTML for simplicity; switch to Delta if you prefer
+  subject: string;
+  to: string[];
+};
+
+export type DraftPayload = {
+  bcc: string[];
+  cc: string[];
+  html: string;
+  id?: string;
+  subject: string;
+  to: string[];
+};
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-create-task-dialog/email-create-task-dialog.html
@@ -22146,515 +21914,6 @@ export class EmailCreateTaskDialog {
     </button>
   </div>
 </aside>
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
-
-```html
-<header class="border-b border-base-300 px-4 pb-4">
-  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
-    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
-  </div>
-  <div class="flex items-start gap-3 mt-2">
-    <pc-email-assign [email]="email()"></pc-email-assign>
-    <div class="min-w-0 flex-1"></div>
-
-    <div class="flex items-center gap-1 text-sm text-base-content/70">
-      <span class="whitespace-nowrap pr-2">
-        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
-      </span>
-
-      <div class="border-t border-base-300 my-1 h-0"></div>
-
-      <!-- Reply -->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        data-tip="reply"
-        aria-label="Reply"
-        (click)="handleReply()"
-      >
-        <pc-icon name="reply" [size]="4"></pc-icon>
-      </button>
-
-      <!-- Reply All -->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        data-tip="Reply All"
-        aria-label="Reply All"
-        (click)="handleReplyAll()"
-      >
-        <pc-icon name="reply-all" [size]="4"></pc-icon>
-      </button>
-
-      <!-- Forward-->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        data-tip="Forward"
-        aria-label="Forward"
-        (click)="handleForward()"
-      >
-        <pc-icon name="forward" [size]="4"></pc-icon>
-      </button>
-
-      @if (!isFolderTrash()) {
-      <!-- Star/Favorite -->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        data-tip="Toggle favourite"
-        aria-label="Star"
-        data-testid="favorite-button"
-        (click)="toggleFavourite()"
-      >
-        <pc-icon [size]="4" [name]="getFavouriteIcon()" [class.text-primary]="isFavourite()"></pc-icon>
-      </button>
-
-      <!-- Close/Mark as Done -->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        [attr.data-tip]="markAsDoneText()"
-        aria-label="Mark as Done"
-        (click)="toggleClosed()"
-      >
-        <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
-      </button>
-      } @else {
-      <!-- Restore from Trash -->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        data-tip="Restore from Trash"
-        aria-label="Restore from Trash"
-        (click)="restoreFromTrash()"
-      >
-        <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
-      </button>
-      }
-
-      <!-- Delete -->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        [attr.data-tip]="getTrashText()"
-        [attr.aria-label]="getTrashText()"
-        (click)="deleteEmail()"
-      >
-        @if (isFolderTrash()) {
-        <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
-        } @else {
-        <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
-        }
-      </button>
-
-      <!-- More Actions Dropdown -->
-      <div class="dropdown dropdown-end">
-        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
-          <svg viewBox="0 0 24 24" class="h-5 w-5">
-            <path
-              fill="currentColor"
-              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
-            />
-          </svg>
-        </button>
-        <ul
-          tabindex="0"
-          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
-        >
-          <li>
-            <a
-              (click)="handleCreateTask()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create Task
-            </a>
-          </li>
-          <div class="border-t border-base-300 my-1 h-0"></div>
-          <li>
-            <a
-              (click)="handleReply()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleReplyAll()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply All
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleForward()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
-          <li>
-            <a
-              (click)="markAsSpam()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
-            </a>
-          </li>
-          } @else {
-          <li>
-            <a
-              (click)="moveToInbox()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
-            </a>
-          </li>
-          } }
-          <li>
-            <a
-              (click)="handleMarkAsUnread()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          <li>
-            <a
-              (click)="toggleFavourite()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                [name]="getFavouriteIcon()"
-                [size]="4"
-                [class.text-amber-500]="isFavourite()"
-                [class.text-base-content/60]="!isFavourite()"
-              ></pc-icon>
-              {{ isFavourite() ? 'Unstar' : 'Star' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="toggleClosed()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                name="check-circle"
-                [size]="4"
-                [class.text-success]="isClosed()"
-                [class.text-base-content/60]="!isClosed()"
-              ></pc-icon>
-              {{ isClosed() ? 'Mark as Open' : 'Mark as Done' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="deleteEmail()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          <li>
-            <a
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
-            </a>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <div class="mt-3 flex items-center gap-3">
-    <div class="avatar">
-      @if (headerData()?.person; as person) {
-      <a
-        [routerLink]="['/people', person.id]"
-        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
-      >
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </a>
-      } @else {
-      <div class="w-10 rounded-full bg-base-200">
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </div>
-      }
-    </div>
-
-    <div class="min-w-0 flex-1">
-      <div class="flex items-center gap-1.5 min-w-0">
-        @if (headerData()?.person; as person) {
-        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
-          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
-          (email()!.from_name || email()!.from_email) }}
-        </a>
-        <div class="dropdown dropdown-bottom inline-block">
-          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
-            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
-          </button>
-          <div
-            tabindex="0"
-            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
-          >
-            <div class="space-y-4">
-              <div class="flex items-center gap-3">
-                <div class="avatar placeholder">
-                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
-                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
-                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <h3 class="font-bold text-sm">{{ person.first_name }} {{ person.last_name }}</h3>
-                  @if (person.company_name) {
-                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
-                  }
-                </div>
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <div class="space-y-2 text-xs">
-                <div class="flex items-center gap-2">
-                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span class="truncate">{{ person.email }}</span>
-                </div>
-                @if (person.mobile) {
-                <div class="flex items-center gap-2">
-                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span>{{ person.mobile }}</span>
-                </div>
-                } @if (person.notes) {
-                <div class="flex flex-col gap-1 mt-1">
-                  <span class="font-semibold text-base-content/60">Notes:</span>
-                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
-                    {{ person.notes }}
-                  </p>
-                </div>
-                }
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <div class="space-y-3">
-                <div>
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
-                    >Tags:</span
-                  >
-                  <pc-tags
-                    [tags]="personTags()"
-                    [type]="'tag'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add tag...'"
-                    (tagAdded)="onTagAdded($event)"
-                    (tagRemoved)="onTagRemoved($event)"
-                  ></pc-tags>
-                  @if (!personTags().length) {
-                  <span class="text-xs italic text-base-content/40 block mt-1">No tags</span>
-                  }
-                </div>
-
-                <div>
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
-                    >Issues:</span
-                  >
-                  <pc-tags
-                    [tags]="personIssues()"
-                    [type]="'issue'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add issue...'"
-                    (tagAdded)="onIssueAdded($event)"
-                    (tagRemoved)="onIssueRemoved($event)"
-                  ></pc-tags>
-                  @if (!personIssues().length) {
-                  <span class="text-xs italic text-base-content/40 block mt-1">No issues</span>
-                  }
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        } @else {
-        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
-        }
-        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
-      </div>
-
-      @if (headerData()?.person; as person) { @if (person.tags?.length || person.issues?.length) {
-      <div class="flex flex-wrap gap-1.5 mt-1 items-center">
-        @for (tag of person.tags; track tag.name) {
-        <pc-tagitem [name]="tag.name" [color]="tag.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-        } @for (issue of person.issues; track issue.name) {
-        <pc-tagitem [name]="issue.name" [color]="issue.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-        }
-      </div>
-      } }
-
-      <div class="text-xs text-base-content/60 mt-1">
-        to
-        <div class="dropdown inline-block">
-          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
-            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
-            (getToRecipients().length > 1) {
-            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
-            } } @else { {{ email()!.to_email }} }
-            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
-              />
-            </svg>
-          </button>
-          <ul
-            tabindex="0"
-            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
-          >
-            <!-- Recipients Section -->
-            <li class="menu-title text-xs">Recipients</li>
-
-            @if (getToRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">To:</li>
-            @for (recipient of getToRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getCcRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">CC:</li>
-            @for (recipient of getCcRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getBccRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">BCC:</li>
-            @for (recipient of getBccRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
-            0) {
-            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
-            }
-
-            <!-- Email Details Section -->
-            <li class="divider mt-3"></li>
-            <li class="menu-title text-xs">Email Details</li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Subject:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Date:</span>
-                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">From:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Reply-To:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
-                </div>
-              </div>
-            </li>
-
-            <!-- Technical Details Section -->
-            <li class="divider mt-2"></li>
-            <li class="menu-title text-xs">Technical Details</li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Message-ID:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Mailed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Security:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Signed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Return-Path:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
-                </div>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-    <div class="flex items-center gap-1">
-      <pc-icon
-        class="hover:text-primary tooltip tooltip-left cursor-pointer"
-        [attr.data-tip]="'Expand email body'"
-        name="expand-content"
-        [size]="4"
-        (click)="toggleExpand()"
-      ></pc-icon>
-    </div>
-  </div>
-</header>
-
-<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts
@@ -33976,38 +33235,6 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
 }
 ```
 
-## File: apps/frontend/src/app/auth/auth-guard.ts
-
-```typescript
-import { inject } from '@angular/core';
-import { CanActivateFn, Router } from '@angular/router';
-
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-
-export const authGuard: CanActivateFn = () => {
-  const auth = inject(AuthService);
-  const router = inject(Router);
-  const user = auth.getUser();
-
-  if (!user) return router.navigateByUrl('/signin');
-
-  if (!user.email_verified) {
-    return router.navigateByUrl(`/signin?verificationPending=true&email=${encodeURIComponent(user.email)}`);
-  }
-
-  // /cancel-deletion and /resume-account are public, so these won't loop
-  if (user.tenant_deletion_scheduled_at) {
-    return router.navigateByUrl('/cancel-deletion');
-  }
-
-  if (user.tenant_paused_at) {
-    return router.navigateByUrl('/resume-account');
-  }
-
-  return true;
-};
-```
-
 ## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
 
 ```typescript
@@ -34420,6 +33647,247 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
 }
 ```
 
+## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+
+import { EmailsService } from '../../services/emails-service';
+import { EmailsStore } from '../../services/store/emailstore';
+import { EmailStateStore } from '../../services/store/email-state.store';
+import { EmailBody } from '../email-body/email-body';
+import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-compose';
+import { EmailDetails } from '../email-details/email-details';
+import { EmailFolderList } from '../email-folder-list/email-folder-list';
+import { EmailList } from '../email-list/email-list';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { AuthService } from '@frontend/auth/auth-service';
+
+@Component({
+  selector: 'pc-email-client',
+  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, Icon],
+  host: {
+    class: 'block h-full',
+    '(document:keydown)': 'handleDocumentKeydown($event)',
+  },
+  templateUrl: 'email-client.html',
+})
+export class EmailClient {
+  private readonly composer = viewChild<ComposeEmailComponent>('composer');
+
+  private authService = inject(AuthService);
+
+  protected readonly store = inject(EmailsStore);
+  private readonly stateStore = inject(EmailStateStore);
+  private readonly emailSvc = inject(EmailsService);
+
+  protected composePrefill = signal<ComposeInitial | null>(null);
+  protected draftIdToLoad = signal<string | null>(null);
+  protected isComposing = signal(false);
+
+  protected mobileView = this.stateStore.mobilePanelView;
+
+  protected folderPanelClass = computed(() =>
+    this.mobileView() === 'folders' ? 'flex-1 lg:flex-none' : 'hidden lg:block',
+  );
+
+  protected listPanelClass = computed(() =>
+    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 lg:flex-none' : 'hidden lg:flex lg:flex-col lg:h-full',
+  );
+
+  protected detailPanelClass = computed(() =>
+    this.mobileView() === 'detail'
+      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
+      : 'hidden lg:flex lg:flex-col lg:flex-1 lg:h-full lg:p-4 lg:pt-2 lg:relative lg:z-10',
+  );
+
+  constructor() {
+    effect(() => {
+      const id = this.emailId();
+      if (id) {
+        untracked(() => this.loadEmailData(id));
+      }
+    });
+  }
+
+  readonly emailId = input<string | undefined>(undefined, { alias: 'email' });
+
+  private async loadEmailData(emailId: string): Promise<void> {
+    try {
+      // 1. Fetch the email header/details from backend to know its folder_id
+      const res = await this.emailSvc.getEmailHeader(emailId);
+      if (res && res.email) {
+        const folderId = res.email.folder_id;
+
+        // 2. Ensure folders list is loaded
+        let folders = this.store.allFolders();
+        if (!folders || folders.length === 0) {
+          folders = await this.store.loadAllFoldersWithCounts();
+        }
+
+        // 3. Find the folder
+        const folder = folders.find((f) => String(f.id) === String(folderId));
+        if (folder) {
+          const emailObj: EmailType = {
+            id: String(res.email.id),
+            folder_id: String(res.email.folder_id),
+            updated_at: new Date(res.email.updated_at),
+            date_sent: res.email.date_sent ? new Date(res.email.date_sent) : undefined,
+            is_favourite: !!res.email.is_favourite,
+            attachment_count: res.email.attachment_count ?? 0,
+            status: res.email.status || 'open',
+            from_email: res.email.from_email ?? undefined,
+            to_email: res.email.to_email ?? undefined,
+            subject: res.email.subject ?? undefined,
+            preview: res.email.preview ?? undefined,
+            assigned_to: res.email.assigned_to ?? undefined,
+            has_attachment: !!res.email.has_attachment,
+            is_read: !!(res.email as any).is_read,
+          };
+
+          // Add to store's normalized map so it is available immediately
+          this.stateStore.replaceEmail(emailObj.id, emailObj);
+
+          // Select the folder and email
+          this.store.selectFolder(folder);
+          this.store.selectEmail(emailObj);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to pre-select email from notification link', err);
+    }
+  }
+
+  public readonly emails = this.store.emailsInSelectedFolder;
+
+  public readonly isBodyExpanded = this.store.isBodyExpanded;
+
+  public readonly selectedEmail = this.store.currentSelectedEmail;
+
+  public readonly selectedFolderId = this.store.currentSelectedFolderId;
+
+  public closeCompose() {
+    this.isComposing.set(false);
+    this.draftIdToLoad.set(null);
+    this.composePrefill.set(null);
+  }
+
+  public newEmail() {
+    this.openCompose();
+  }
+
+  // handle send from composer
+  public async onComposeSend(_payload: any) {
+    // TODO: integrate with your EmailActionsStore/EmailsService
+    // Example:
+    // await this.emailActions.sendEmail(payload);
+    this.isComposing.set(false);
+    // Optionally refresh current folder, show toast, etc.
+  }
+
+  public async onEmail(email: EmailType | null): Promise<void> {
+    const folderId = this.store.currentSelectedFolderId();
+    if (this.isComposing()) {
+      try {
+        const c = this.composer();
+        if (c?.form.dirty) {
+          await c.saveDraft();
+        }
+      } catch (e) {
+        console.error('Failed to save draft', e);
+        alert('Failed to save your draft. Please check your connection or copy your work.');
+        // Abort the function here.
+        // Do not close the composer or navigate to the new email.
+        return;
+      }
+      this.closeCompose();
+    }
+
+    // Always update the store selection so the list can reflect it
+    this.store.selectEmail(email);
+    this.mobileView.set('detail');
+
+    // In the drafts folder, also open the composer for the selected draft
+    if (folderId === ALL_FOLDERS.DRAFTS && email) {
+      this.draftIdToLoad.set(String(email.id));
+      this.isComposing.set(true);
+    }
+  }
+
+  public onFolder(folder: EmailFolderType): void {
+    this.store.selectFolder(folder);
+    this.mobileView.set('list');
+  }
+
+  public mobileGoBack(): void {
+    if (this.isComposing()) {
+      this.closeCompose();
+    }
+    if (this.mobileView() === 'detail') {
+      this.mobileView.set('list');
+    } else if (this.mobileView() === 'list') {
+      this.mobileView.set('folders');
+    }
+  }
+
+  public onForward(email: EmailType) {
+    const subject = email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`;
+    this.openCompose({ subject });
+  }
+
+  public onReply(email: EmailType) {
+    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
+    this.openCompose({ to: email.from_email || '', subject });
+  }
+
+  public async onReplyAll(email: EmailType) {
+    const header = this.store.getEmailHeaderById(email.id)();
+    const recipients = new Set<string>();
+
+    const currentUser = await this.authService.getCurrentUser();
+    const currentUserEmail = currentUser.email.toLowerCase(); // Safe without ?.
+
+    if (email.from_email) recipients.add(email.from_email);
+
+    header?.email?.to_list?.forEach((r: any) => {
+      if (r?.email) recipients.add(r.email);
+    });
+    header?.email?.cc_list?.forEach((r: any) => {
+      if (r?.email) recipients.add(r.email);
+    });
+
+    const to = Array.from(recipients)
+      .filter((e) => e && e.toLowerCase() !== currentUserEmail)
+      .join(', ');
+
+    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
+    this.openCompose({ to, subject });
+  }
+
+  public openCompose(prefill?: ComposeInitial | null) {
+    this.isBodyExpanded.set(false); // ensure body overlay is closed
+    this.draftIdToLoad.set(null);
+    this.composePrefill.set(prefill ?? null);
+    this.isComposing.set(true);
+    this.mobileView.set('detail');
+  }
+
+  public toggleExpanded(): void {
+    this.store.toggleBodyExpanded();
+  }
+
+  protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    if (ev.key === 'Escape' && !ev.repeat && this.isBodyExpanded()) {
+      this.store.toggleBodyExpanded();
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.ts
 
 ```typescript
@@ -34522,344 +33990,513 @@ export class EmailFolderList implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.ts
+## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
 
-```typescript
-import { Component, effect, inject, output, signal, computed, viewChild, ElementRef } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
+```html
+<header class="border-b border-base-300 px-4 pb-4">
+  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
+    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
+  </div>
+  <div class="flex items-start gap-3 mt-2">
+    <pc-email-assign [email]="email()"></pc-email-assign>
+    <div class="min-w-0 flex-1"></div>
 
-import { EmailsStore } from '../../services/store/emailstore';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { PcIconNameType } from '@icons/icons.index';
+    <div class="flex items-center gap-1 text-sm text-base-content/70">
+      <span class="whitespace-nowrap pr-2">
+        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
+      </span>
 
-interface ContextMenuItem {
-  label: string;
-  icon: PcIconNameType;
-  action: () => void;
-  iconClass?: string; // The '?' makes it optional
-  extraClass?: string; // The '?' makes it optional
-}
+      <div class="border-t border-base-300 my-1 h-0"></div>
+      <div class="hidden md:block">
+        <!-- Reply -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="reply"
+          aria-label="Reply"
+          (click)="handleReply()"
+        >
+          <pc-icon name="reply" [size]="4"></pc-icon>
+        </button>
 
-interface ContextMenuSection {
-  show: boolean;
-  items: ContextMenuItem[];
-}
+        <!-- Reply All -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Reply All"
+          aria-label="Reply All"
+          (click)="handleReplyAll()"
+        >
+          <pc-icon name="reply-all" [size]="4"></pc-icon>
+        </button>
 
-@Component({
-  selector: 'pc-email-list',
-  imports: [Icon, TimeAgoPipe],
-  templateUrl: 'email-list.html',
-  host: {
-    '(document:click)': 'closeContextMenu()',
-    '(document:keydown.escape)': 'closeContextMenu()',
-  },
-})
-export class EmailList {
-  private readonly store = inject(EmailsStore);
-  private readonly alertSvc = inject(AlertService);
+        <!-- Forward-->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Forward"
+          aria-label="Forward"
+          (click)="handleForward()"
+        >
+          <pc-icon name="forward" [size]="4"></pc-icon>
+        </button>
 
-  public readonly scrollContainer = viewChild<ElementRef<HTMLUListElement>>('scrollContainer');
+        @if (!isFolderTrash()) {
+        <!-- Star/Favorite -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Toggle favourite"
+          aria-label="Star"
+          data-testid="favorite-button"
+          (click)="toggleFavourite()"
+        >
+          <pc-icon [size]="4" [name]="getFavouriteIcon()" [class.text-primary]="isFavourite()"></pc-icon>
+        </button>
 
-  public readonly emailSelected = output<EmailType>();
-
-  public readonly reply = output<EmailType>();
-  public readonly replyAll = output<EmailType>();
-  public readonly forward = output<EmailType>();
-
-  public readonly showContextMenu = signal<boolean>(false);
-  public readonly contextMenuPosition = signal<{ x: number; y: number }>({ x: 0, y: 0 });
-  public readonly contextMenuEmail = signal<EmailType | null>(null);
-
-  public readonly emails = this.store.emailsInSelectedFolder;
-
-  public readonly currentFolderId = computed(() => this.store.currentSelectedFolderId());
-
-  protected readonly isLoadingMore = this.store.isLoadingMore;
-  protected readonly ALL_FOLDERS = ALL_FOLDERS;
-
-  protected onScroll(event: Event): void {
-    this.closeContextMenu();
-    const el = event.target as HTMLElement;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
-      void this.store.loadNextPage();
-    }
-  }
-
-  public readonly sortOrder = signal<'newest' | 'oldest'>('newest');
-
-  public readonly sortedEmails = computed(() => {
-    const list = [...this.emails()];
-    const order = this.sortOrder();
-    return list.sort((a, b) => {
-      const timeA = new Date(a.date_sent || a.updated_at).getTime();
-      const timeB = new Date(b.date_sent || b.updated_at).getTime();
-      return order === 'newest' ? timeB - timeA : timeA - timeB;
-    });
-  });
-
-  constructor() {
-    let lastFolderId: string | null = null;
-
-    // Auto-select the first email when the folder changes or the current selection is removed.
-    effect(() => {
-      const folderId = this.store.currentSelectedFolderId();
-      const emails = this.sortedEmails();
-      const selectedId = this.store.currentSelectedEmailId();
-
-      const folderChanged = folderId !== lastFolderId;
-      lastFolderId = folderId;
-
-      const container = this.scrollContainer();
-      if (folderChanged && container) {
-        container.nativeElement.scrollTop = 0;
-      }
-
-      // If the list is empty, clear any existing selection and bail out.
-      if (emails.length === 0) {
-        if (selectedId) {
-          // The selected email was removed; clear selection so parent can react.
-          this.store.selectEmail(null);
+        <!-- Close/Mark as Done -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="markAsDoneText()"
+          aria-label="Mark as Done"
+          (click)="toggleClosed()"
+        >
+          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
+        </button>
+        } @else {
+        <!-- Restore from Trash -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Restore from Trash"
+          aria-label="Restore from Trash"
+          (click)="restoreFromTrash()"
+        >
+          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
+        </button>
         }
-        return;
+
+        <!-- Delete -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="getTrashText()"
+          [attr.aria-label]="getTrashText()"
+          (click)="deleteEmail()"
+        >
+          @if (isFolderTrash()) {
+          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
+          } @else {
+          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
+          }
+        </button>
+      </div>
+      <!-- More Actions Dropdown -->
+      <div class="dropdown dropdown-end">
+        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
+          <svg viewBox="0 0 24 24" class="h-5 w-5">
+            <path
+              fill="currentColor"
+              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
+            />
+          </svg>
+        </button>
+        <ul
+          tabindex="0"
+          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
+        >
+          <li>
+            <a
+              (click)="handleCreateTask()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create Task
+            </a>
+          </li>
+          <div class="border-t border-base-300 my-1 h-0"></div>
+          <li>
+            <a
+              (click)="handleReply()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleReplyAll()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply All
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleForward()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
+          <li>
+            <a
+              (click)="markAsSpam()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
+            </a>
+          </li>
+          } @else {
+          <li>
+            <a
+              (click)="moveToInbox()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
+            </a>
+          </li>
+          } }
+          <li>
+            <a
+              (click)="handleMarkAsUnread()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              (click)="toggleFavourite()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                [name]="getFavouriteIcon()"
+                [size]="4"
+                [class.text-amber-500]="isFavourite()"
+                [class.text-base-content/60]="!isFavourite()"
+              ></pc-icon>
+              {{ isFavourite() ? 'Unstar' : 'Star' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="toggleClosed()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                name="check-circle"
+                [size]="4"
+                [class.text-success]="isClosed()"
+                [class.text-base-content/60]="!isClosed()"
+              ></pc-icon>
+              {{ isClosed() ? 'Mark as Open' : 'Mark as Done' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="deleteEmail()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-3 flex items-center gap-3">
+    <div class="avatar">
+      @if (headerData()?.person; as person) {
+      <a
+        [routerLink]="['/people', person.id]"
+        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
+      >
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </a>
+      } @else {
+      <div class="w-10 rounded-full bg-base-200">
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </div>
       }
+    </div>
 
-      if (folderId) {
-        // Auto-select the first email only if:
-        // 1. The folder has changed, OR
-        // 2. The previously selected email is no longer in the list (e.g., deleted or moved).
-        const currentSelectionStillExists = selectedId ? emails.some((e) => e.id === selectedId) : false;
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-1.5 min-w-0">
+        @if (headerData()?.person; as person) {
+        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
+          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
+          (email()!.from_name || email()!.from_email) }}
+        </a>
+        <div class="dropdown dropdown-bottom inline-block">
+          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
+            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
+          </button>
+          <div
+            tabindex="0"
+            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
+          >
+            <div class="space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
+                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
+                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <h3 class="font-bold text-sm">{{ person.first_name }} {{ person.last_name }}</h3>
+                  @if (person.company_name) {
+                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
+                  }
+                </div>
+              </div>
 
-        if (folderChanged || (selectedId && !currentSelectionStillExists)) {
-          this.selectEmail(emails[0]!);
+              <div class="divider my-1"></div>
+
+              <div class="space-y-2 text-xs">
+                <div class="flex items-center gap-2">
+                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span class="truncate">{{ person.email }}</span>
+                </div>
+                @if (person.mobile) {
+                <div class="flex items-center gap-2">
+                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span>{{ person.mobile }}</span>
+                </div>
+                } @if (person.notes) {
+                <div class="flex flex-col gap-1 mt-1">
+                  <span class="font-semibold text-base-content/60">Notes:</span>
+                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
+                    {{ person.notes }}
+                  </p>
+                </div>
+                }
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-3">
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Tags:</span
+                  >
+                  <pc-tags
+                    [tags]="personTags()"
+                    [type]="'tag'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add tag...'"
+                    (tagAdded)="onTagAdded($event)"
+                    (tagRemoved)="onTagRemoved($event)"
+                  ></pc-tags>
+                  @if (!personTags().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No tags</span>
+                  }
+                </div>
+
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Issues:</span
+                  >
+                  <pc-tags
+                    [tags]="personIssues()"
+                    [type]="'issue'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add issue...'"
+                    (tagAdded)="onIssueAdded($event)"
+                    (tagRemoved)="onIssueRemoved($event)"
+                  ></pc-tags>
+                  @if (!personIssues().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No issues</span>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        } @else {
+        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
         }
-      }
-    });
-  }
+        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
+      </div>
 
-  public isSelected(id: string): boolean {
-    return this.store.currentSelectedEmailId() === id;
-  }
+      @if (headerData()?.person; as person) { @if (person.tags?.length || person.issues?.length) {
+      <div class="flex flex-wrap gap-1.5 mt-1 items-center">
+        @for (tag of person.tags; track tag.name) {
+        <pc-tagitem [name]="tag.name" [color]="tag.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+        } @for (issue of person.issues; track issue.name) {
+        <pc-tagitem [name]="issue.name" [color]="issue.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+        }
+      </div>
+      } }
 
-  public selectEmail(email: EmailType): void {
-    this.emailSelected.emit(email);
-  }
+      <div class="text-xs text-base-content/60 mt-1">
+        to
+        <div class="dropdown inline-block">
+          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
+            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
+            (getToRecipients().length > 1) {
+            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
+            } } @else { {{ email()!.to_email }} }
+            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+              <path
+                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
+              />
+            </svg>
+          </button>
+          <ul
+            tabindex="0"
+            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
+          >
+            <!-- Recipients Section -->
+            <li class="menu-title text-xs">Recipients</li>
 
-  public onContextMenu(event: MouseEvent, email: EmailType): void {
-    event.preventDefault();
-    this.selectEmail(email);
-    this.contextMenuEmail.set(email);
+            @if (getToRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">To:</li>
+            @for (recipient of getToRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getCcRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">CC:</li>
+            @for (recipient of getCcRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getBccRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">BCC:</li>
+            @for (recipient of getBccRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
+            0) {
+            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
+            }
 
-    // Dynamic viewport boundary collision checking
-    const menuWidth = 192; // equivalent to w-48
-    const menuHeight = 280; // approximate maximum height
+            <!-- Email Details Section -->
+            <li class="divider mt-3"></li>
+            <li class="menu-title text-xs">Email Details</li>
 
-    let x = event.clientX;
-    let y = event.clientY;
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Subject:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
+                </div>
+              </div>
+            </li>
 
-    if (x + menuWidth > window.innerWidth) {
-      x = window.innerWidth - menuWidth - 8;
-    }
-    if (y + menuHeight > window.innerHeight) {
-      y = window.innerHeight - menuHeight - 8;
-    }
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Date:</span>
+                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
+                </div>
+              </div>
+            </li>
 
-    this.contextMenuPosition.set({ x, y });
-    this.showContextMenu.set(true);
-  }
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">From:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
+                </div>
+              </div>
+            </li>
 
-  get menuSections(): ContextMenuSection[] {
-    const email = this.contextMenuEmail();
-    if (!email) return [];
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Reply-To:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
+                </div>
+              </div>
+            </li>
 
-    return [
-      // Section 1: Actions
-      {
-        show: this.currentFolderId() !== this.ALL_FOLDERS.DRAFTS,
-        items: [
-          { label: 'Reply', icon: 'reply', action: () => this.handleReply() },
-          { label: 'Reply All', icon: 'reply-all', action: () => this.handleReplyAll() },
-          { label: 'Forward', icon: 'forward', iconClass: 'scale-x-[-1]', action: () => this.handleForward() },
-        ] as ContextMenuItem[],
-      },
-      // Section 2: Spam & Read
-      {
-        show: true,
-        items: [
-          ...(!this.isFolderTrash()
-            ? [
-                {
-                  label: this.isFolderSpam() ? 'Not spam' : 'Mark as spam',
-                  icon: (this.isFolderSpam() ? 'inbox' : 'exclamation-triangle') as PcIconNameType,
-                  action: () => (this.isFolderSpam() ? this.moveToInbox() : this.markAsSpam()),
-                },
-              ]
-            : []),
-          {
-            label: `Mark as ${email.is_read ? 'unread' : 'read'}`,
-            icon: 'envelope',
-            action: () => this.toggleReadStatus(),
-          },
-        ] as ContextMenuItem[],
-      },
-      // Section 3: Status & Delete
-      {
-        show: true,
-        items: [
-          {
-            label: email.is_favourite ? 'Unstar' : 'Star',
-            icon: (email.is_favourite ? 'star-filled' : 'star') as PcIconNameType,
-            iconClass: email.is_favourite ? 'text-amber-500' : 'text-base-content/60',
-            action: () => this.toggleFavourite(),
-          },
-          {
-            label: email.status === 'closed' ? 'Mark as Open' : 'Mark as Done',
-            icon: 'check-circle',
-            iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
-            action: () => this.toggleClosed(),
-          },
-          ...(this.isFolderTrash()
-            ? [
-                {
-                  label: 'Restore to Inbox',
-                  icon: 'restore-from-trash',
-                  action: () => this.restoreFromTrash(),
-                },
-              ]
-            : []),
-          {
-            label: this.isFolderTrash() ? 'Delete Permanently' : 'Delete',
-            icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
-            iconClass: 'text-error',
-            action: () => this.deleteEmail(),
-          },
-        ] as ContextMenuItem[],
-      },
-      // Section 4: Print
-      {
-        show: true,
-        items: [
-          {
-            label: 'Print',
-            icon: 'print',
-            extraClass: '!py-1',
-            action: () => {
-              window.print();
-            },
-          },
-        ] as ContextMenuItem[],
-      },
-    ].filter((section) => section.show && section.items.length > 0);
-  }
-  public closeContextMenu(): void {
-    this.showContextMenu.set(false);
-  }
+            <!-- Technical Details Section -->
+            <li class="divider mt-2"></li>
+            <li class="menu-title text-xs">Technical Details</li>
 
-  protected handleReply(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.reply.emit(email);
-  }
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Message-ID:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
+                </div>
+              </div>
+            </li>
 
-  protected handleReplyAll(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.replyAll.emit(email);
-  }
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Mailed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
+                </div>
+              </div>
+            </li>
 
-  protected handleForward(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.forward.emit(email);
-  }
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Security:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
+                </div>
+              </div>
+            </li>
 
-  protected isFolderTrash(): boolean {
-    return this.currentFolderId() === ALL_FOLDERS.TRASH;
-  }
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Signed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
+                </div>
+              </div>
+            </li>
 
-  protected isFolderSpam(): boolean {
-    return this.currentFolderId() === ALL_FOLDERS.SPAM;
-  }
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Return-Path:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1">
+      <pc-icon
+        class="hover:text-primary tooltip tooltip-left cursor-pointer"
+        [attr.data-tip]="'Expand email body'"
+        name="expand-content"
+        [size]="4"
+        (click)="toggleExpand()"
+      ></pc-icon>
+    </div>
+  </div>
+</header>
 
-  protected async toggleReadStatus() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.toggleEmailReadStatus(email.id, !email.is_read);
-    } catch (e) {
-      this.alertSvc.showError('Failed to update read status');
-    }
-  }
-
-  protected async toggleFavourite() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
-    } catch (e) {
-      this.alertSvc.showError('Failed to update favorite status');
-    }
-  }
-
-  protected async toggleClosed() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    const currentStatus = email.status || 'open';
-    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
-    try {
-      await this.store.updateEmailStatus(email.id, newStatus);
-    } catch (e) {
-      this.alertSvc.showError('Failed to update email status');
-    }
-  }
-
-  protected async deleteEmail() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.deleteEmail(email.id);
-    } catch (e) {
-      this.alertSvc.showError('Failed to delete email');
-    }
-  }
-
-  protected restoreFromTrash() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    this.store.restoreFromTrash(email.id);
-  }
-
-  protected async moveToInbox() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.moveToFolder(email.id, ALL_FOLDERS.INBOX);
-      this.alertSvc.showSuccess('Email moved to Inbox');
-    } catch (e) {
-      this.alertSvc.showError('Failed to move email to Inbox');
-    }
-  }
-
-  protected async markAsSpam() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.moveToFolder(email.id, ALL_FOLDERS.SPAM);
-      this.alertSvc.showSuccess('Email marked as spam');
-    } catch (e) {
-      this.alertSvc.showError('Failed to mark email as spam');
-    }
-  }
-}
+<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/events/ui/event-form.ts
@@ -41494,6 +41131,494 @@ export const appRoutes = [
 ] as const satisfies Routes;
 ```
 
+## File: apps/frontend/project.json
+
+```json
+{
+  "name": "frontend",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "prefix": "pplcrm",
+  "sourceRoot": "apps/frontend/src",
+  "tags": [],
+  "targets": {
+    "generate-context": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx repomix --output apps/frontend/STRUCTURE.md --include \"apps/frontend/src/**/*\" --ignore \"apps/backend/**,apps/libs/**,libs/**,**/STRUCTURE.md,**/*.spec.ts\" --style markdown"
+      }
+    },
+    "build": {
+      "executor": "@angular/build:application",
+      "dependsOn": ["generate-context"],
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/frontend",
+        "index": "apps/frontend/src/index.html",
+        "browser": "apps/frontend/src/main.ts",
+        "tsConfig": "apps/frontend/tsconfig.app.json",
+        "assets": ["apps/frontend/src/favicon.ico", "apps/frontend/src/assets"],
+        "styles": ["apps/frontend/src/styles.css"],
+        "scripts": [],
+        "polyfills": ["@angular/localize/init"]
+      },
+      "configurations": {
+        "production": {
+          "optimization": {
+            "scripts": true,
+            "styles": {
+              "minify": true,
+              "inlineCritical": false
+            },
+            "fonts": {
+              "inline": false
+            }
+          },
+          "budgets": [
+            {
+              "type": "initial",
+              "maximumWarning": "3mb",
+              "maximumError": "4mb"
+            },
+            {
+              "type": "anyComponentStyle",
+              "maximumWarning": "2kb",
+              "maximumError": "4kb"
+            }
+          ],
+          "outputHashing": "all",
+          "fileReplacements": [
+            {
+              "replace": "apps/frontend/src/environments/environment.ts",
+              "with": "apps/frontend/src/environments/environment.prod.ts"
+            }
+          ]
+        },
+        "development": {
+          "optimization": false,
+          "extractLicenses": false,
+          "sourceMap": true
+        }
+      }
+    },
+    "serve": {
+      "executor": "@angular/build:dev-server",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "frontend:build",
+        "port": 4200
+      },
+      "configurations": {
+        "production": {
+          "buildTarget": "frontend:build:production"
+        },
+        "development": {
+          "buildTarget": "frontend:build:development"
+        }
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "outputs": ["{workspaceRoot}/coverage/apps/frontend"],
+      "options": {
+        "cwd": "apps/frontend",
+        "command": "vitest run"
+      }
+    },
+    "extract-i18n": {
+      "executor": "@angular/build:extract-i18n",
+      "options": {
+        "buildTarget": "frontend:build"
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint",
+      "outputs": ["{options.outputFile}"],
+      "options": {
+        "lintFilePatterns": ["apps/frontend/**/*.ts", "apps/frontend/**/*.html"]
+      }
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/auth/auth-guard.ts
+
+```typescript
+import { inject } from '@angular/core';
+import type { CanActivateFn } from '@angular/router';
+import { Router } from '@angular/router';
+
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+
+export const authGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  const user = auth.getUser();
+
+  if (!user) return router.navigateByUrl('/signin');
+
+  if (!user.email_verified) {
+    return router.navigateByUrl(`/signin?verificationPending=true&email=${encodeURIComponent(user.email)}`);
+  }
+
+  // /cancel-deletion and /resume-account are public, so these won't loop
+  if (user.tenant_deletion_scheduled_at) {
+    return router.navigateByUrl('/cancel-deletion');
+  }
+
+  if (user.tenant_paused_at) {
+    return router.navigateByUrl('/resume-account');
+  }
+
+  return true;
+};
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.ts
+
+```typescript
+import { Component, effect, inject, output, signal, computed, viewChild, ElementRef } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { EmailsStore } from '../../services/store/emailstore';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { PcIconNameType } from '@icons/icons.index';
+
+interface ContextMenuItem {
+  label: string;
+  icon: PcIconNameType;
+  action: () => void;
+  iconClass?: string; // The '?' makes it optional
+  extraClass?: string; // The '?' makes it optional
+}
+
+interface ContextMenuSection {
+  show: boolean;
+  items: ContextMenuItem[];
+}
+
+@Component({
+  selector: 'pc-email-list',
+  imports: [Icon, TimeAgoPipe],
+  templateUrl: 'email-list.html',
+  host: {
+    '(document:click)': 'closeContextMenu()',
+    '(document:keydown.escape)': 'closeContextMenu()',
+  },
+})
+export class EmailList {
+  private readonly store = inject(EmailsStore);
+  private readonly alertSvc = inject(AlertService);
+
+  public readonly scrollContainer = viewChild<ElementRef<HTMLUListElement>>('scrollContainer');
+
+  public readonly emailSelected = output<EmailType>();
+
+  public readonly reply = output<EmailType>();
+  public readonly replyAll = output<EmailType>();
+  public readonly forward = output<EmailType>();
+
+  public readonly showContextMenu = signal<boolean>(false);
+  public readonly contextMenuPosition = signal<{ x: number; y: number }>({ x: 0, y: 0 });
+  public readonly contextMenuEmail = signal<EmailType | null>(null);
+
+  public readonly emails = this.store.emailsInSelectedFolder;
+
+  public readonly currentFolderId = computed(() => this.store.currentSelectedFolderId());
+
+  protected readonly isLoadingMore = this.store.isLoadingMore;
+  protected readonly ALL_FOLDERS = ALL_FOLDERS;
+
+  protected onScroll(event: Event): void {
+    this.closeContextMenu();
+    const el = event.target as HTMLElement;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+      void this.store.loadNextPage();
+    }
+  }
+
+  public readonly sortOrder = signal<'newest' | 'oldest'>('newest');
+
+  public readonly sortedEmails = computed(() => {
+    const list = [...this.emails()];
+    const order = this.sortOrder();
+    return list.sort((a, b) => {
+      const timeA = new Date(a.date_sent || a.updated_at).getTime();
+      const timeB = new Date(b.date_sent || b.updated_at).getTime();
+      return order === 'newest' ? timeB - timeA : timeA - timeB;
+    });
+  });
+
+  constructor() {
+    let lastFolderId: string | null = null;
+
+    // Auto-select the first email when the folder changes or the current selection is removed.
+    effect(() => {
+      const folderId = this.store.currentSelectedFolderId();
+      const emails = this.sortedEmails();
+      const selectedId = this.store.currentSelectedEmailId();
+
+      const folderChanged = folderId !== lastFolderId;
+      lastFolderId = folderId;
+
+      const container = this.scrollContainer();
+      if (folderChanged && container) {
+        container.nativeElement.scrollTop = 0;
+      }
+
+      // If the list is empty, clear any existing selection and bail out.
+      if (emails.length === 0) {
+        if (selectedId) {
+          // The selected email was removed; clear selection so parent can react.
+          this.store.selectEmail(null);
+        }
+        return;
+      }
+
+      if (folderId) {
+        // Auto-select the first email only if:
+        // 1. The folder has changed, OR
+        // 2. The previously selected email is no longer in the list (e.g., deleted or moved).
+        const currentSelectionStillExists = selectedId ? emails.some((e) => e.id === selectedId) : false;
+
+        if (folderChanged || (selectedId && !currentSelectionStillExists)) {
+          // Update the store directly — do NOT emit through emailSelected output, which would
+          // trigger the parent's onEmail() and reset mobileView to 'detail' on every init.
+          this.store.selectEmail(emails[0]!);
+        }
+      }
+    });
+  }
+
+  public isSelected(id: string): boolean {
+    return this.store.currentSelectedEmailId() === id;
+  }
+
+  public selectEmail(email: EmailType): void {
+    this.emailSelected.emit(email);
+  }
+
+  public onContextMenu(event: MouseEvent, email: EmailType): void {
+    event.preventDefault();
+    this.selectEmail(email);
+    this.contextMenuEmail.set(email);
+
+    // Dynamic viewport boundary collision checking
+    const menuWidth = 192; // equivalent to w-48
+    const menuHeight = 280; // approximate maximum height
+
+    let x = event.clientX;
+    let y = event.clientY;
+
+    if (x + menuWidth > window.innerWidth) {
+      x = window.innerWidth - menuWidth - 8;
+    }
+    if (y + menuHeight > window.innerHeight) {
+      y = window.innerHeight - menuHeight - 8;
+    }
+
+    this.contextMenuPosition.set({ x, y });
+    this.showContextMenu.set(true);
+  }
+
+  get menuSections(): ContextMenuSection[] {
+    const email = this.contextMenuEmail();
+    if (!email) return [];
+
+    return [
+      // Section 1: Actions
+      {
+        show: this.currentFolderId() !== this.ALL_FOLDERS.DRAFTS,
+        items: [
+          { label: 'Reply', icon: 'reply', action: () => this.handleReply() },
+          { label: 'Reply All', icon: 'reply-all', action: () => this.handleReplyAll() },
+          { label: 'Forward', icon: 'forward', iconClass: 'scale-x-[-1]', action: () => this.handleForward() },
+        ] as ContextMenuItem[],
+      },
+      // Section 2: Spam & Read
+      {
+        show: true,
+        items: [
+          ...(!this.isFolderTrash()
+            ? [
+                {
+                  label: this.isFolderSpam() ? 'Not spam' : 'Mark as spam',
+                  icon: (this.isFolderSpam() ? 'inbox' : 'exclamation-triangle') as PcIconNameType,
+                  action: () => (this.isFolderSpam() ? this.moveToInbox() : this.markAsSpam()),
+                },
+              ]
+            : []),
+          {
+            label: `Mark as ${email.is_read ? 'unread' : 'read'}`,
+            icon: 'envelope',
+            action: () => this.toggleReadStatus(),
+          },
+        ] as ContextMenuItem[],
+      },
+      // Section 3: Status & Delete
+      {
+        show: true,
+        items: [
+          {
+            label: email.is_favourite ? 'Unstar' : 'Star',
+            icon: (email.is_favourite ? 'star-filled' : 'star') as PcIconNameType,
+            iconClass: email.is_favourite ? 'text-amber-500' : 'text-base-content/60',
+            action: () => this.toggleFavourite(),
+          },
+          {
+            label: email.status === 'closed' ? 'Mark as Open' : 'Mark as Done',
+            icon: 'check-circle',
+            iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
+            action: () => this.toggleClosed(),
+          },
+          ...(this.isFolderTrash()
+            ? [
+                {
+                  label: 'Restore to Inbox',
+                  icon: 'restore-from-trash',
+                  action: () => this.restoreFromTrash(),
+                },
+              ]
+            : []),
+          {
+            label: this.isFolderTrash() ? 'Delete Permanently' : 'Delete',
+            icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
+            iconClass: 'text-error',
+            action: () => this.deleteEmail(),
+          },
+        ] as ContextMenuItem[],
+      },
+      // Section 4: Print
+      {
+        show: true,
+        items: [
+          {
+            label: 'Print',
+            icon: 'print',
+            extraClass: '!py-1',
+            action: () => {
+              window.print();
+            },
+          },
+        ] as ContextMenuItem[],
+      },
+    ].filter((section) => section.show && section.items.length > 0);
+  }
+  public closeContextMenu(): void {
+    this.showContextMenu.set(false);
+  }
+
+  protected handleReply(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.reply.emit(email);
+  }
+
+  protected handleReplyAll(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.replyAll.emit(email);
+  }
+
+  protected handleForward(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.forward.emit(email);
+  }
+
+  protected isFolderTrash(): boolean {
+    return this.currentFolderId() === ALL_FOLDERS.TRASH;
+  }
+
+  protected isFolderSpam(): boolean {
+    return this.currentFolderId() === ALL_FOLDERS.SPAM;
+  }
+
+  protected async toggleReadStatus() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.toggleEmailReadStatus(email.id, !email.is_read);
+    } catch (e) {
+      this.alertSvc.showError('Failed to update read status');
+    }
+  }
+
+  protected async toggleFavourite() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
+    } catch (e) {
+      this.alertSvc.showError('Failed to update favorite status');
+    }
+  }
+
+  protected async toggleClosed() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    const currentStatus = email.status || 'open';
+    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
+    try {
+      await this.store.updateEmailStatus(email.id, newStatus);
+    } catch (e) {
+      this.alertSvc.showError('Failed to update email status');
+    }
+  }
+
+  protected async deleteEmail() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.deleteEmail(email.id);
+    } catch (e) {
+      this.alertSvc.showError('Failed to delete email');
+    }
+  }
+
+  protected restoreFromTrash() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    this.store.restoreFromTrash(email.id);
+  }
+
+  protected async moveToInbox() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.moveToFolder(email.id, ALL_FOLDERS.INBOX);
+      this.alertSvc.showSuccess('Email moved to Inbox');
+    } catch (e) {
+      this.alertSvc.showError('Failed to move email to Inbox');
+    }
+  }
+
+  protected async markAsSpam() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.moveToFolder(email.id, ALL_FOLDERS.SPAM);
+      this.alertSvc.showSuccess('Email marked as spam');
+    } catch (e) {
+      this.alertSvc.showError('Failed to mark email as spam');
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-grid.ts
 
 ```typescript
@@ -43461,119 +43586,6 @@ function httpUnbatchedLink(tokenSvc: TokenService) {
 }
 ```
 
-## File: apps/frontend/project.json
-
-```json
-{
-  "name": "frontend",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "projectType": "application",
-  "prefix": "pplcrm",
-  "sourceRoot": "apps/frontend/src",
-  "tags": [],
-  "targets": {
-    "generate-context": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "npx repomix --output apps/frontend/STRUCTURE.md --include \"apps/frontend/src/**/*\" --ignore \"apps/backend/**,apps/libs/**,libs/**,**/STRUCTURE.md,**/*.spec.ts\" --style markdown"
-      }
-    },
-    "build": {
-      "executor": "@angular/build:application",
-      "dependsOn": ["generate-context"],
-      "outputs": ["{options.outputPath}"],
-      "defaultConfiguration": "production",
-      "options": {
-        "outputPath": "dist/apps/frontend",
-        "index": "apps/frontend/src/index.html",
-        "browser": "apps/frontend/src/main.ts",
-        "tsConfig": "apps/frontend/tsconfig.app.json",
-        "assets": ["apps/frontend/src/favicon.ico", "apps/frontend/src/assets"],
-        "styles": ["apps/frontend/src/styles.css"],
-        "scripts": [],
-        "polyfills": ["@angular/localize/init"]
-      },
-      "configurations": {
-        "production": {
-          "optimization": {
-            "scripts": true,
-            "styles": {
-              "minify": true,
-              "inlineCritical": false
-            },
-            "fonts": {
-              "inline": false
-            }
-          },
-          "budgets": [
-            {
-              "type": "initial",
-              "maximumWarning": "3mb",
-              "maximumError": "4mb"
-            },
-            {
-              "type": "anyComponentStyle",
-              "maximumWarning": "2kb",
-              "maximumError": "4kb"
-            }
-          ],
-          "outputHashing": "all",
-          "fileReplacements": [
-            {
-              "replace": "apps/frontend/src/environments/environment.ts",
-              "with": "apps/frontend/src/environments/environment.prod.ts"
-            }
-          ]
-        },
-        "development": {
-          "optimization": false,
-          "extractLicenses": false,
-          "sourceMap": true
-        }
-      }
-    },
-    "serve": {
-      "executor": "@angular/build:dev-server",
-      "defaultConfiguration": "development",
-      "options": {
-        "buildTarget": "frontend:build",
-        "port": 4200
-      },
-      "configurations": {
-        "production": {
-          "buildTarget": "frontend:build:production"
-        },
-        "development": {
-          "buildTarget": "frontend:build:development"
-        }
-      }
-    },
-    "test": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "outputs": ["{workspaceRoot}/coverage/apps/frontend"],
-      "options": {
-        "cwd": "apps/frontend",
-        "command": "vitest run"
-      }
-    },
-    "extract-i18n": {
-      "executor": "@angular/build:extract-i18n",
-      "options": {
-        "buildTarget": "frontend:build"
-      }
-    },
-    "lint": {
-      "executor": "@nx/eslint:lint",
-      "outputs": ["{options.outputFile}"],
-      "options": {
-        "lintFilePatterns": ["apps/frontend/**/*.ts", "apps/frontend/**/*.html"]
-      }
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
 
 ```html
@@ -44846,7 +44858,342 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
 
 ```html
-<ul class="menu menu-horizontal flex flex-row pl-0 relative z-30">
+<!-- Mobile toolbar -->
+<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
+  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Delete selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+  <!-- Combined filter panel -->
+  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
+  grid.showListFilter()) {
+  <pc-grid-tool-btn
+    icon="funnel"
+    tip="Filters"
+    [hasDropdown]="true"
+    [dropdownEnd]="false"
+    [active]="
+      grid.selectedNarrowType() !== null ||
+      grid.selectedTags().length > 0 ||
+      grid.selectedIssues().length > 0 ||
+      grid.selectedListId() !== null ||
+      grid.hasActiveFilters() ||
+      grid.hasActiveAdvancedFilters()
+    "
+  >
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
+    >
+      @if (grid.showNarrowTypeFilter()) {
+      <details class="group/narrow" [open]="grid.selectedNarrowType() !== null">
+        <summary
+          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
+        >
+          <span class="flex items-center gap-1.5">
+            @if (grid.selectedNarrowType() !== null) {
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
+            } Narrow by Type
+          </span>
+          <pc-icon
+            name="chevron-down"
+            [size]="3"
+            class="transition-transform group-open/narrow:rotate-180 text-base-content/40"
+          ></pc-icon>
+        </summary>
+        <div class="pt-1 pb-2">
+          @for (opt of grid.narrowTypeOptions(); track opt.value) {
+          <label class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 rounded select-none">
+            <input
+              type="radio"
+              name="narrowTypeMobile"
+              class="radio radio-primary radio-xs shrink-0"
+              [checked]="grid.selectedNarrowType() === opt.value"
+              (change)="grid.selectNarrowType(opt.value)"
+            />
+            <span class="label-text text-xs">{{ opt.label }}</span>
+          </label>
+          }
+        </div>
+      </details>
+      } @if (grid.showTagFilter()) {
+      <details class="group/tags border-t border-base-200" [open]="grid.selectedTags().length > 0">
+        <summary
+          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
+        >
+          <span class="flex items-center gap-1.5">
+            @if (grid.selectedTags().length > 0) {
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
+            } Filter by Tags
+          </span>
+          <div class="flex items-center gap-1">
+            @if (grid.selectedTags().length > 0) {
+            <button
+              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
+              (click)="grid.clearTagsFilter(); $event.stopPropagation()"
+            >
+              Clear
+            </button>
+            }
+            <pc-icon
+              name="chevron-down"
+              [size]="3"
+              class="transition-transform group-open/tags:rotate-180 text-base-content/40"
+            ></pc-icon>
+          </div>
+        </summary>
+        <div class="pt-1 pb-2 flex flex-col gap-1">
+          <input
+            type="text"
+            placeholder="Search tags..."
+            class="input input-bordered input-xs w-full bg-base-100"
+            [value]="grid.tagSearchQuery()"
+            (input)="grid.tagSearchQuery.set($any($event.target).value)"
+          />
+          <div class="flex gap-2 text-[11px] text-primary px-1">
+            <button class="hover:underline cursor-pointer font-medium" (click)="grid.selectAllTags()">
+              Select all
+            </button>
+            <span class="text-base-300">|</span>
+            <button class="hover:underline cursor-pointer font-medium" (click)="grid.clearAllTagsVisible()">
+              Clear
+            </button>
+          </div>
+          <div class="max-h-36 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
+            @if (grid.filteredAvailableTags().length === 0) {
+            <div class="px-3 py-3 text-xs text-neutral-400 text-center">No tags found</div>
+            } @else { @for (tag of grid.filteredAvailableTags(); track tag) {
+            <label
+              class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none rounded"
+            >
+              <input
+                type="checkbox"
+                class="checkbox checkbox-primary checkbox-xs shrink-0"
+                [checked]="grid.selectedTags().includes(tag)"
+                (change)="grid.toggleTagFilter(tag, $any($event.target).checked)"
+              />
+              <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="tag">{{ tag }}</span>
+            </label>
+            } }
+          </div>
+        </div>
+      </details>
+      } @if (grid.showIssueFilter()) {
+      <details class="group/issues border-t border-base-200" [open]="grid.selectedIssues().length > 0">
+        <summary
+          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
+        >
+          <span class="flex items-center gap-1.5">
+            @if (grid.selectedIssues().length > 0) {
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
+            } Filter by Issues
+          </span>
+          <div class="flex items-center gap-1">
+            @if (grid.selectedIssues().length > 0) {
+            <button
+              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
+              (click)="grid.clearIssuesFilter(); $event.stopPropagation()"
+            >
+              Clear
+            </button>
+            }
+            <pc-icon
+              name="chevron-down"
+              [size]="3"
+              class="transition-transform group-open/issues:rotate-180 text-base-content/40"
+            ></pc-icon>
+          </div>
+        </summary>
+        <div class="pt-1 pb-2 flex flex-col gap-1">
+          <input
+            type="text"
+            placeholder="Search issues..."
+            class="input input-bordered input-xs w-full bg-base-100"
+            [value]="grid.issueSearchQuery()"
+            (input)="grid.issueSearchQuery.set($any($event.target).value)"
+          />
+          <div class="flex gap-2 text-[11px] text-primary px-1">
+            <button class="hover:underline cursor-pointer font-medium" (click)="grid.selectAllIssues()">
+              Select all
+            </button>
+            <span class="text-base-300">|</span>
+            <button class="hover:underline cursor-pointer font-medium" (click)="grid.clearAllIssuesVisible()">
+              Clear
+            </button>
+          </div>
+          <div class="max-h-36 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
+            @if (grid.filteredAvailableIssues().length === 0) {
+            <div class="px-3 py-3 text-xs text-neutral-400 text-center">No issues found</div>
+            } @else { @for (issue of grid.filteredAvailableIssues(); track issue) {
+            <label
+              class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none rounded"
+            >
+              <input
+                type="checkbox"
+                class="checkbox checkbox-primary checkbox-xs shrink-0"
+                [checked]="grid.selectedIssues().includes(issue)"
+                (change)="grid.toggleIssueFilter(issue, $any($event.target).checked)"
+              />
+              <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="issue">{{ issue }}</span>
+            </label>
+            } }
+          </div>
+        </div>
+      </details>
+      } @if (grid.showListFilter()) {
+      <details class="group/list border-t border-base-200" [open]="grid.selectedListId() !== null">
+        <summary
+          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
+        >
+          <span class="flex items-center gap-1.5">
+            @if (grid.selectedListId() !== null) {
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
+            } Filter by List
+          </span>
+          <div class="flex items-center gap-1">
+            @if (grid.selectedListId() !== null) {
+            <button
+              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
+              (click)="grid.clearListFilter(); $event.stopPropagation()"
+            >
+              Clear
+            </button>
+            }
+            <pc-icon
+              name="chevron-down"
+              [size]="3"
+              class="transition-transform group-open/list:rotate-180 text-base-content/40"
+            ></pc-icon>
+          </div>
+        </summary>
+        <div class="pt-1 pb-2">
+          <div class="max-h-36 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
+            @if (grid.availableLists().length === 0) {
+            <div class="px-3 py-3 text-xs text-neutral-400 text-center">No lists found</div>
+            } @else { @for (l of grid.availableLists(); track l.id) {
+            <label
+              class="label cursor-pointer justify-start gap-2 py-1 px-2 rounded-md hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
+            >
+              <input
+                type="radio"
+                name="selectedListMobile"
+                class="radio radio-primary radio-xs shrink-0"
+                [checked]="grid.selectedListId() === l.id"
+                (change)="grid.selectListFilter(l.id)"
+              />
+              <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="l.name">{{ l.name }}</span>
+            </label>
+            } }
+          </div>
+        </div>
+      </details>
+      } @if (grid.allowFilter()) {
+      <div class="border-t border-base-200 pt-1 flex flex-col">
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
+          [disabled]="grid.hasActiveAdvancedFilters()"
+          (click)="onToggleFilters()"
+        >
+          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
+        </button>
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+          (click)="grid.openAdvancedFilterBuilder()"
+        >
+          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
+        </button>
+      </div>
+      }
+    </div>
+  </pc-grid-tool-btn>
+  }
+
+  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
+      <li class="px-2 py-1 flex gap-2">
+        <button class="btn btn-ghost btn-xs" (click)="onShowAllCols()">Show all</button>
+        <button class="btn btn-ghost btn-xs" (click)="onHideAllCols()">Hide all</button>
+        <button class="btn btn-ghost btn-xs" (click)="onResetAllWidths()">Reset widths</button>
+      </li>
+      @for (col of grid.getColDefsForToolbar(); track col.field) { @if (col.field) {
+      <li>
+        <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-xs"
+            [checked]="grid.getColVisibilityMap()[col.field!] !== false"
+            (change)="onToggleCol(col.field!, $any($event.target).checked)"
+          />
+          <span class="label-text">{{ col.headerName || col.field }}</span>
+        </label>
+      </li>
+      } }
+    </ul>
+  </pc-grid-tool-btn>
+
+  <!-- Overflow: secondary actions -->
+  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
+      <li
+        [class.disabled]="grid.disableRefresh()"
+        [class.cursor-not-allowed]="grid.disableRefresh()"
+        [class.text-neutral-400]="grid.disableRefresh()"
+        [class.pointer-events-none]="grid.disableRefresh()"
+      >
+        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
+      </li>
+      @if (grid.addRoute() || !grid.disableMerge()) {
+      <li class="border-t border-base-200 mt-1 pt-1 menu-title text-[10px]"></li>
+      } @if (grid.addRoute()) {
+      <li
+        [class.disabled]="!grid.hasSingleSelection()"
+        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
+        [class.text-neutral-400]="!grid.hasSingleSelection()"
+        [class.pointer-events-none]="!grid.hasSingleSelection()"
+      >
+        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
+      </li>
+      } @if (!grid.disableMerge()) {
+      <li
+        [class.disabled]="grid.getCountRowSelected() !== 2"
+        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
+        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
+        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
+      >
+        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
+      </li>
+      } @if (!grid.disableImport() || !grid.disableExport()) {
+      <li class="border-t border-base-200 mt-1 pt-1 menu-title text-[10px]"></li>
+      } @if (!grid.disableImport()) {
+      <li>
+        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
+      </li>
+      } @if (!grid.disableExport()) {
+      <li>
+        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
+      </li>
+      } @if (grid.showArchiveIcon()) {
+      <li>
+        <a (click)="onToggleArchive()">
+          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
+        </a>
+      </li>
+      }
+    </ul>
+  </pc-grid-tool-btn>
+</ul>
+
+<!-- Desktop toolbar -->
+<ul class="menu menu-horizontal hidden lg:flex flex-row pl-0 relative z-30">
   <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
   <pc-grid-tool-btn
     [enabled]="!!grid.addRoute() && grid.hasSingleSelection()"
@@ -45777,238 +46124,6 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
   </div>
 </div>
 }
-```
-
-## File: apps/frontend/src/app/auth/signin-page/signin-page.html
-
-```html
-<pc-auth-layout>
-  @if (rateLimitSecondsLeft() > 0) {
-  <div class="alert alert-error text-sm mb-4">
-    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
-    <div>
-      <p class="font-semibold" i18n>Too many attempts</p>
-      <p class="text-xs mt-1 flex items-center gap-1">
-        <span i18n>Try again in</span>
-        <span class="countdown font-mono text-lg">
-          @if (rateLimitMins() > 0) {
-          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
-            >{{rateLimitMins()}}</span
-          >
-          m }
-          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
-            >{{rateLimitRemSecs()}}</span
-          >
-          s
-        </span>
-      </p>
-    </div>
-  </div>
-  } @switch (step()) { @case ('email') {
-  <label class="label text-neutral-100">Enter your email to sign in</label>
-  <form (submit)="continueWithEmail($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="at-symbol" />
-        <input
-          type="email"
-          placeholder="Enter your email"
-          [formField]="emailForm.email"
-          aria-label="Email"
-          autocomplete="email"
-        />
-      </label>
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { Continue }
-        </button>
-      </div>
-    </div>
-  </form>
-  <div class="pt-4 text-center">
-    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
-  </div>
-  } @case ('passkey') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-1">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
-      <p class="text-sm text-white">{{ emailData().email }}</p>
-      @if (isLoading()) {
-      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
-      }
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button
-        type="button"
-        class="btn btn-primary w-full"
-        (click)="signInWithPasskey()"
-        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
-      >
-        @if (isLoading()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Sign in with Passkey
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="usePasswordInstead()"
-        [disabled]="isLoading()"
-      >
-        Use password instead
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="goBackToEmail()"
-        [disabled]="isLoading()"
-      >
-        Back
-      </button>
-    </div>
-  </div>
-  } @case ('password') { @if (verificationPending()) {
-  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
-    <div class="flex flex-col gap-2 w-full">
-      <div class="flex items-center gap-2 font-semibold">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <span>Verification Pending</span>
-      </div>
-      <p class="text-xs text-amber-200/80">
-        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
-        inbox.
-      </p>
-      <button
-        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
-        type="button"
-        (click)="resendVerification()"
-        [disabled]="resending() || resendCooldownSeconds() > 0"
-      >
-        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
-        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
-      </button>
-    </div>
-  </div>
-  }
-
-  <div class="flex items-center gap-2 text-sm mb-3">
-    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
-    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
-    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
-      Change
-    </button>
-  </div>
-
-  <label class="label text-neutral-100">Enter your password</label>
-  <form (submit)="signIn($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="lock-closed" />
-        <input
-          type="password"
-          placeholder="Enter your password"
-          [formField]="passwordForm.password"
-          aria-label="Password"
-          autocomplete="current-password"
-        />
-      </label>
-
-      <div class="flex items-center justify-between pt-2">
-        <div class="flex items-center">
-          <input
-            id="remember_me"
-            name="remember_me"
-            type="checkbox"
-            class="checkbox checkbox-primary checkbox-sm"
-            [checked]="persistence()"
-            (change)="togglePersistence($event.target)"
-          />
-          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
-        </div>
-        <div class="text-sm">
-          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
-        </div>
-      </div>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { SIGN IN }
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('2fa') {
-  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
-  <form (submit)="verify2FA($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="shield-exclamation" />
-        <input
-          type="text"
-          placeholder="6-digit code"
-          [formField]="otpForm.code"
-          aria-label="Verification Code"
-          autocomplete="one-time-code"
-        />
-      </label>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { VERIFY }
-        </button>
-      </div>
-
-      <div class="text-center pt-2">
-        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
-          Back to Sign In
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('passkey-setup') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
-      <p class="text-sm text-white">
-        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
-        sign-ins.
-      </p>
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
-        @if (settingUpPasskey()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Set Up Passkey
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
-        Skip for now
-      </button>
-    </div>
-  </div>
-  } }
-
-  <div class="text-neutral-200 text-center text-xs pt-2">
-    <span>
-      Copyright © 2024
-      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
-    </span>
-  </div>
-</pc-auth-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/person-view.ts
@@ -47610,6 +47725,238 @@ export class DonationsSettingsComponent implements OnInit {
 </div>
 ```
 
+## File: apps/frontend/src/app/auth/signin-page/signin-page.html
+
+```html
+<pc-auth-layout>
+  @if (rateLimitSecondsLeft() > 0) {
+  <div class="alert alert-error text-sm mb-4">
+    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
+    <div>
+      <p class="font-semibold" i18n>Too many attempts</p>
+      <p class="text-xs mt-1 flex items-center gap-1">
+        <span i18n>Try again in</span>
+        <span class="countdown font-mono text-lg">
+          @if (rateLimitMins() > 0) {
+          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
+            >{{rateLimitMins()}}</span
+          >
+          m }
+          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
+            >{{rateLimitRemSecs()}}</span
+          >
+          s
+        </span>
+      </p>
+    </div>
+  </div>
+  } @switch (step()) { @case ('email') {
+  <label class="label text-neutral-100">Enter your email to sign in</label>
+  <form (submit)="continueWithEmail($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="at-symbol" />
+        <input
+          type="email"
+          placeholder="Enter your email"
+          [formField]="emailForm.email"
+          aria-label="Email"
+          autocomplete="email"
+        />
+      </label>
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { Continue }
+        </button>
+      </div>
+    </div>
+  </form>
+  <div class="pt-4 text-center">
+    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
+  </div>
+  } @case ('passkey') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-1">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
+      <p class="text-sm text-white">{{ emailData().email }}</p>
+      @if (isLoading()) {
+      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
+      }
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button
+        type="button"
+        class="btn btn-primary w-full"
+        (click)="signInWithPasskey()"
+        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
+      >
+        @if (isLoading()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Sign in with Passkey
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="usePasswordInstead()"
+        [disabled]="isLoading()"
+      >
+        Use password instead
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="goBackToEmail()"
+        [disabled]="isLoading()"
+      >
+        Back
+      </button>
+    </div>
+  </div>
+  } @case ('password') { @if (verificationPending()) {
+  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
+    <div class="flex flex-col gap-2 w-full">
+      <div class="flex items-center gap-2 font-semibold">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <span>Verification Pending</span>
+      </div>
+      <p class="text-xs text-amber-200/80">
+        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
+        inbox.
+      </p>
+      <button
+        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
+        type="button"
+        (click)="resendVerification()"
+        [disabled]="resending() || resendCooldownSeconds() > 0"
+      >
+        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
+        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
+      </button>
+    </div>
+  </div>
+  }
+
+  <div class="flex items-center gap-2 text-sm mb-3">
+    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
+    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
+    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
+      Change
+    </button>
+  </div>
+
+  <label class="label text-neutral-100">Enter your password</label>
+  <form (submit)="signIn($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="lock-closed" />
+        <input
+          type="password"
+          placeholder="Enter your password"
+          [formField]="passwordForm.password"
+          aria-label="Password"
+          autocomplete="current-password"
+        />
+      </label>
+
+      <div class="flex items-center justify-between pt-2">
+        <div class="flex items-center">
+          <input
+            id="remember_me"
+            name="remember_me"
+            type="checkbox"
+            class="checkbox checkbox-primary checkbox-sm"
+            [checked]="persistence()"
+            (change)="togglePersistence($event.target)"
+          />
+          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
+        </div>
+        <div class="text-sm">
+          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
+        </div>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { SIGN IN }
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('2fa') {
+  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
+  <form (submit)="verify2FA($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="shield-exclamation" />
+        <input
+          type="text"
+          placeholder="6-digit code"
+          [formField]="otpForm.code"
+          aria-label="Verification Code"
+          autocomplete="one-time-code"
+        />
+      </label>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { VERIFY }
+        </button>
+      </div>
+
+      <div class="text-center pt-2">
+        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
+          Back to Sign In
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('passkey-setup') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
+      <p class="text-sm text-white">
+        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
+        sign-ins.
+      </p>
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
+        @if (settingUpPasskey()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Set Up Passkey
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
+        Skip for now
+      </button>
+    </div>
+  </div>
+  } }
+
+  <div class="text-neutral-200 text-center text-xs pt-2">
+    <span>
+      Copyright © 2024
+      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
+    </span>
+  </div>
+</pc-auth-layout>
+```
+
 ## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
 
 ```typescript
@@ -48600,214 +48947,6 @@ export class SettingsPage implements OnInit {
         this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
       }
     }, 1000);
-  }
-}
-```
-
-## File: apps/frontend/src/app/auth/auth-service.ts
-
-```typescript
-import { signal, Service } from '@angular/core';
-import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
-import { TRPCService } from '../services/api/trpc-service';
-import { TRPCError } from '@trpc/server';
-import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-
-@Service()
-export class AuthService extends TRPCService<'authusers'> {
-  private user = signal<IAuthUser | null>(null);
-
-  public async getCurrentUser() {
-    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
-    if (user) this.user.set(user);
-    return user;
-  }
-
-  public getUser(): IAuthUser | null {
-    return this.user();
-  }
-
-  public getUserSignal() {
-    return this.user;
-  }
-
-  public init() {
-    return this.getCurrentUser();
-  }
-
-  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
-    const dataBase64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
-        resolve(result.split(',')[1]!);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-
-    const res = (await this.api.auth.uploadAvatar.mutate({
-      dataBase64,
-      mimeType: file.type as any,
-      filename: file.name,
-    })) as { avatar_url: string };
-
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: res.avatar_url,
-      });
-    }
-
-    return res;
-  }
-
-  public async deleteAvatar(): Promise<{ success: boolean }> {
-    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
-
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: null,
-      });
-    }
-
-    return res;
-  }
-
-  public async cancelEmailChange() {
-    const response = await this.api.auth.cancelEmailChange.mutate();
-    await this.getCurrentUser();
-    return response;
-  }
-
-  public resetPassword(input: { code: string; password: string }) {
-    return this.api.auth.resetPassword.mutate(input);
-  }
-
-  public sendPasswordResetEmail(input: { email: string }) {
-    return this.api.auth.sendPasswordResetEmail.mutate(input);
-  }
-
-  public async signIn(
-    input: signInInputType & { rememberMe?: boolean },
-  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
-    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-
-    if (response && 'requires2FA' in response && response.requires2FA) {
-      return { requires2FA: true, email: response.email };
-    }
-
-    const user = await this.updateTokensAndGetCurrentUser(response);
-    if (user?.tenant_deletion_scheduled_at) {
-      this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      this.router.navigate(['/resume-account']);
-    }
-    return { requires2FA: false, user };
-  }
-
-  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
-    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
-      this.router.navigate(['/cancel-deletion']);
-    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
-      this.router.navigate(['/resume-account']);
-    }
-    return user;
-  }
-
-  public async signOut() {
-    let apiReturn = null;
-    try {
-      apiReturn = await this.api.auth.signOut.mutate();
-    } catch (error) {
-      console.error('Error during sign out:', error);
-    }
-
-    this.user.set(null);
-    this.tokenService.clearAll();
-    this.router.navigate(['/signin']);
-
-    return apiReturn;
-  }
-
-  public async signUp(input: signUpInputType) {
-    const token = await this.api.auth.signUp.mutate(input);
-    return this.updateTokensAndGetCurrentUser(token);
-  }
-
-  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
-    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
-  }
-
-  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
-    return this.api.auth.resendVerificationEmail.mutate({ email }) as Promise<{ success: boolean }>;
-  }
-
-  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
-    return this.api.auth.checkEmail.query({ email }) as Promise<{ hasPasskeys: boolean }>;
-  }
-
-  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
-    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
-    let response: any;
-    try {
-      response = await startAuthentication({ optionsJSON: options });
-    } catch (err: any) {
-      if (err?.name === 'NotAllowedError') return { user: null, cancelled: true };
-      throw err;
-    }
-    const token = await (
-      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
-    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if (user?.tenant_deletion_scheduled_at) {
-      this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      this.router.navigate(['/resume-account']);
-    }
-    return { user, cancelled: false };
-  }
-
-  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
-    const options = await this.api.auth.passkeyRegistrationOptions.query();
-    const response = await startRegistration({ optionsJSON: options as any });
-    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
-      verified: boolean;
-    };
-  }
-
-  public listPasskeys() {
-    return this.api.auth.listPasskeys.query();
-  }
-
-  public deletePasskey(id: string) {
-    return this.api.auth.deletePasskey.mutate({ id });
-  }
-
-  public dismissPasskeyPrompt() {
-    return this.api.auth.dismissPasskeyPrompt.mutate();
-  }
-
-  public updatePasskeyName(id: string, friendlyName: string) {
-    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
-  }
-
-  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
-    if (!token || token instanceof TRPCError) {
-      throw token;
-    }
-    this.tokenService.set(token);
-    return this.getCurrentUser();
   }
 }
 ```
@@ -51181,6 +51320,214 @@ type TagDiff = {
   toRemove: string[];
   hasChanges: boolean;
 };
+```
+
+## File: apps/frontend/src/app/auth/auth-service.ts
+
+```typescript
+import { signal, Service } from '@angular/core';
+import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
+import { TRPCService } from '../services/api/trpc-service';
+import { TRPCError } from '@trpc/server';
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
+
+@Service()
+export class AuthService extends TRPCService<'authusers'> {
+  private user = signal<IAuthUser | null>(null);
+
+  public async getCurrentUser() {
+    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
+    if (user) this.user.set(user);
+    return user;
+  }
+
+  public getUser(): IAuthUser | null {
+    return this.user();
+  }
+
+  public getUserSignal() {
+    return this.user;
+  }
+
+  public init() {
+    return this.getCurrentUser();
+  }
+
+  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
+    const dataBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
+        resolve(result.split(',')[1]!);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const res = (await this.api.auth.uploadAvatar.mutate({
+      dataBase64,
+      mimeType: file.type as any,
+      filename: file.name,
+    })) as { avatar_url: string };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: res.avatar_url,
+      });
+    }
+
+    return res;
+  }
+
+  public async deleteAvatar(): Promise<{ success: boolean }> {
+    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: null,
+      });
+    }
+
+    return res;
+  }
+
+  public async cancelEmailChange() {
+    const response = await this.api.auth.cancelEmailChange.mutate();
+    await this.getCurrentUser();
+    return response;
+  }
+
+  public resetPassword(input: { code: string; password: string }) {
+    return this.api.auth.resetPassword.mutate(input);
+  }
+
+  public sendPasswordResetEmail(input: { email: string }) {
+    return this.api.auth.sendPasswordResetEmail.mutate(input);
+  }
+
+  public async signIn(
+    input: signInInputType & { rememberMe?: boolean },
+  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
+    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+
+    if (response && 'requires2FA' in response && response.requires2FA) {
+      return { requires2FA: true, email: response.email };
+    }
+
+    const user = await this.updateTokensAndGetCurrentUser(response);
+    if (user?.tenant_deletion_scheduled_at) {
+      this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      this.router.navigate(['/resume-account']);
+    }
+    return { requires2FA: false, user };
+  }
+
+  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
+    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
+      this.router.navigate(['/cancel-deletion']);
+    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
+      this.router.navigate(['/resume-account']);
+    }
+    return user;
+  }
+
+  public async signOut() {
+    let apiReturn = null;
+    try {
+      apiReturn = await this.api.auth.signOut.mutate();
+    } catch (error) {
+      console.error('Error during sign out:', error);
+    }
+
+    this.user.set(null);
+    this.tokenService.clearAll();
+    this.router.navigate(['/signin']);
+
+    return apiReturn;
+  }
+
+  public async signUp(input: signUpInputType) {
+    const token = await this.api.auth.signUp.mutate(input);
+    return this.updateTokensAndGetCurrentUser(token);
+  }
+
+  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
+    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
+  }
+
+  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
+    return this.api.auth.resendVerificationEmail.mutate({ email }) as Promise<{ success: boolean }>;
+  }
+
+  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
+    return this.api.auth.checkEmail.query({ email }) as Promise<{ hasPasskeys: boolean }>;
+  }
+
+  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
+    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
+    let response: any;
+    try {
+      response = await startAuthentication({ optionsJSON: options });
+    } catch (err: any) {
+      if (err?.name === 'NotAllowedError') return { user: null, cancelled: true };
+      throw err;
+    }
+    const token = await (
+      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
+    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if (user?.tenant_deletion_scheduled_at) {
+      this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      this.router.navigate(['/resume-account']);
+    }
+    return { user, cancelled: false };
+  }
+
+  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
+    const options = await this.api.auth.passkeyRegistrationOptions.query();
+    const response = await startRegistration({ optionsJSON: options as any });
+    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
+      verified: boolean;
+    };
+  }
+
+  public listPasskeys() {
+    return this.api.auth.listPasskeys.query();
+  }
+
+  public deletePasskey(id: string) {
+    return this.api.auth.deletePasskey.mutate({ id });
+  }
+
+  public dismissPasskeyPrompt() {
+    return this.api.auth.dismissPasskeyPrompt.mutate();
+  }
+
+  public updatePasskeyName(id: string, friendlyName: string) {
+    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
+  }
+
+  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
+    if (!token || token instanceof TRPCError) {
+      throw token;
+    }
+    this.tokenService.set(token);
+    return this.getCurrentUser();
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/dashboard.routes.ts
