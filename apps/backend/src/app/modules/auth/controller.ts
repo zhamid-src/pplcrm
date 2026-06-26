@@ -49,10 +49,6 @@ import { AuthUsersRepo } from './repositories/authusers.repo';
 import { SessionsRepo } from './repositories/sessions.repo';
 import { TenantsRepo } from './repositories/tenants.repo';
 
-const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
-const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
-
 export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private static readonly AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
   private static readonly AVATAR_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -275,7 +271,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new UnauthorizedError();
     }
     const options = {
-      columns: ['id', 'email', 'first_name', 'role'],
+      columns: ['id', 'email', 'first_name', 'role', 'verified', 'passkey_setup_dismissed_at'],
     } as QueryParams<'authusers'>;
 
     try {
@@ -308,6 +304,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       return {
         ...user,
         avatar_url,
+        email_verified: this.coerceBoolean((user as any).verified),
+        passkey_setup_dismissed_at: (user as any).passkey_setup_dismissed_at
+          ? new Date((user as any).passkey_setup_dismissed_at)
+          : null,
         tenant_deletion_scheduled_at,
         tenant_paused_at,
       };
@@ -422,6 +422,16 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
       return { success: true };
     });
+  }
+
+  public async dismissPasskeyPrompt(auth: IAuthKeyPayload) {
+    await this.getRepo()
+      .db.updateTable('authusers')
+      .set({ passkey_setup_dismissed_at: new Date() as any })
+      .where('id', '=', auth.user_id as any)
+      .where('tenant_id', '=', auth.tenant_id as any)
+      .execute();
+    return { success: true };
   }
 
   public async ensureAtLeastOneOwner(
@@ -979,7 +989,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     if (!user.verified) {
       throw new ForbiddenError(
-        'Your email address is not verified yet. Please check your inbox for a verification link.',
+        'Your email address is not verified yet. Please check your inbox (and spam folder) for a verification link.',
       );
     }
 
@@ -1438,7 +1448,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     if (!user.verified) {
       throw new ForbiddenError(
-        'Your email address is not verified yet. Please check your inbox for a verification link.',
+        'Your email address is not verified yet. Please check your inbox (and spam folder) for a verification link.',
       );
     }
 
@@ -1791,6 +1801,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       last_name: lastName ?? '',
       role: record.role != null ? String(record.role) : null,
       verified: this.coerceBoolean(record.verified),
+      email_verified: this.coerceBoolean(record.verified),
       two_factor_enabled: this.coerceBoolean(record.two_factor_enabled),
       deletion_scheduled_at: this.coerceDate(record.deletion_scheduled_at),
       created_at: this.coerceDate(record.created_at),
@@ -1885,6 +1896,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 }
 
+const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const renewalVerifier = createVerifier({
   algorithms: ['HS256'],
   key: env.sharedSecret,

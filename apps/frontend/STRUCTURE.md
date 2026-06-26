@@ -954,8 +954,9 @@ export class SignUpPage {
           const data = await this.authService.signUp(this.signUpData() as signUpInputType);
           const user = data as IAuthUser;
           if (user) {
-            this.alertSvc.showSuccess(`Welcome ${user.first_name}!`);
-            await this.router.navigate(['summary']);
+            await this.router.navigate(['/signin'], {
+              queryParams: { verificationPending: 'true', email: user.email },
+            });
           } else {
             this.alertSvc.showError('Unable to complete signup.');
           }
@@ -4027,329 +4028,6 @@ export class EmailBody {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.html
-
-```html
-<div class="flex text-sm bg-base-100 h-full overflow-hidden">
-  <!-- Folder list panel: full-width on mobile when active, narrow sidebar on desktop -->
-  <div [class]="folderPanelClass()">
-    <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"></pc-email-folder-list>
-  </div>
-
-  <!-- Email list panel -->
-  @if (!isBodyExpanded()) {
-  <div [class]="listPanelClass()">
-    <!-- Mobile back button -->
-    <div class="lg:hidden flex items-center px-2 py-1 border-b border-base-300 bg-base-200 shrink-0">
-      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-        Folders
-      </button>
-    </div>
-    <pc-email-list
-      class="flex-1 min-h-0 block"
-      (emailSelected)="onEmail($event!)"
-      (reply)="onReply($event)"
-      (replyAll)="onReplyAll($event)"
-      (forward)="onForward($event)"
-    ></pc-email-list>
-  </div>
-  }
-
-  <!-- Right pane: compose OR details -->
-  <div [class]="detailPanelClass()">
-    <!-- Mobile back button -->
-    <div class="lg:hidden flex items-center mb-2 shrink-0">
-      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-        Back
-      </button>
-    </div>
-
-    <div class="flex-1 min-h-0 overflow-hidden">
-      @if (isComposing()) {
-      <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3 relative z-20">
-        <pc-compose-email
-          #composer
-          class="h-full"
-          [draftId]="draftIdToLoad()"
-          [initial]="composePrefill()"
-          (finished)="closeCompose()"
-        ></pc-compose-email>
-      </div>
-      } @else {
-      <pc-email-details
-        class="h-full"
-        [email]="selectedEmail()"
-        (reply)="onReply($event)"
-        (replyAll)="onReplyAll($event)"
-        (forward)="onForward($event)"
-      ></pc-email-details>
-      }
-    </div>
-  </div>
-
-  @if (isBodyExpanded() && selectedEmail()) {
-  <!-- Keep your existing BODY overlay when expanded -->
-  <div class="absolute inset-0 z-40 bg-base-100/95 backdrop-blur-sm">
-    <div class="h-full max-w-4xl mx-auto p-4 flex flex-col">
-      <div class="flex items-center justify-end">
-        <button class="btn btn-ghost btn-md" (click)="toggleExpanded()">
-          <pc-icon name="collapse-content" class="mr-1"></pc-icon>Collapse
-        </button>
-      </div>
-      <div class="flex-1 min-h-0">
-        <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3">
-          <pc-email-body class="h-full" [email]="selectedEmail()!"></pc-email-body>
-        </div>
-      </div>
-    </div>
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.ts
-
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-
-import { EmailsService } from '../../services/emails-service';
-import { EmailsStore } from '../../services/store/emailstore';
-import { EmailStateStore } from '../../services/store/email-state.store';
-import { EmailBody } from '../email-body/email-body';
-import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-compose';
-import { EmailDetails } from '../email-details/email-details';
-import { EmailFolderList } from '../email-folder-list/email-folder-list';
-import { EmailList } from '../email-list/email-list';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { AuthService } from '@frontend/auth/auth-service';
-
-@Component({
-  selector: 'pc-email-client',
-  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, Icon],
-  host: {
-    class: 'block h-full',
-    '(document:keydown)': 'handleDocumentKeydown($event)',
-  },
-  templateUrl: 'email-client.html',
-})
-export class EmailClient {
-  private readonly composer = viewChild<ComposeEmailComponent>('composer');
-
-  private authService = inject(AuthService);
-
-  protected readonly store = inject(EmailsStore);
-  private readonly stateStore = inject(EmailStateStore);
-  private readonly emailSvc = inject(EmailsService);
-
-  protected composePrefill = signal<ComposeInitial | null>(null);
-  protected draftIdToLoad = signal<string | null>(null);
-  protected isComposing = signal(false);
-
-  protected mobileView = signal<'folders' | 'list' | 'detail'>('folders');
-
-  protected folderPanelClass = computed(() =>
-    this.mobileView() === 'folders' ? 'flex-1 lg:flex-none' : 'hidden lg:block',
-  );
-
-  protected listPanelClass = computed(() =>
-    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 lg:flex-none' : 'hidden lg:flex lg:flex-col lg:h-full',
-  );
-
-  protected detailPanelClass = computed(() =>
-    this.mobileView() === 'detail'
-      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
-      : 'hidden lg:flex lg:flex-col lg:flex-1 lg:h-full lg:p-4 lg:pt-2 lg:relative lg:z-10',
-  );
-
-  constructor() {
-    effect(() => {
-      const id = this.emailId();
-      if (id) {
-        untracked(() => this.loadEmailData(id));
-      }
-    });
-  }
-
-  readonly emailId = input<string | undefined>(undefined, { alias: 'email' });
-
-  private async loadEmailData(emailId: string): Promise<void> {
-    try {
-      // 1. Fetch the email header/details from backend to know its folder_id
-      const res = await this.emailSvc.getEmailHeader(emailId);
-      if (res && res.email) {
-        const folderId = res.email.folder_id;
-
-        // 2. Ensure folders list is loaded
-        let folders = this.store.allFolders();
-        if (!folders || folders.length === 0) {
-          folders = await this.store.loadAllFoldersWithCounts();
-        }
-
-        // 3. Find the folder
-        const folder = folders.find((f) => String(f.id) === String(folderId));
-        if (folder) {
-          const emailObj: EmailType = {
-            id: String(res.email.id),
-            folder_id: String(res.email.folder_id),
-            updated_at: new Date(res.email.updated_at),
-            date_sent: res.email.date_sent ? new Date(res.email.date_sent) : undefined,
-            is_favourite: !!res.email.is_favourite,
-            attachment_count: res.email.attachment_count ?? 0,
-            status: res.email.status || 'open',
-            from_email: res.email.from_email ?? undefined,
-            to_email: res.email.to_email ?? undefined,
-            subject: res.email.subject ?? undefined,
-            preview: res.email.preview ?? undefined,
-            assigned_to: res.email.assigned_to ?? undefined,
-            has_attachment: !!res.email.has_attachment,
-            is_read: !!(res.email as any).is_read,
-          };
-
-          // Add to store's normalized map so it is available immediately
-          this.stateStore.replaceEmail(emailObj.id, emailObj);
-
-          // Select the folder and email
-          this.store.selectFolder(folder);
-          this.store.selectEmail(emailObj);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to pre-select email from notification link', err);
-    }
-  }
-
-  public readonly emails = this.store.emailsInSelectedFolder;
-
-  public readonly isBodyExpanded = this.store.isBodyExpanded;
-
-  public readonly selectedEmail = this.store.currentSelectedEmail;
-
-  public readonly selectedFolderId = this.store.currentSelectedFolderId;
-
-  public closeCompose() {
-    this.isComposing.set(false);
-    this.draftIdToLoad.set(null);
-    this.composePrefill.set(null);
-  }
-
-  public newEmail() {
-    this.openCompose();
-  }
-
-  // handle send from composer
-  public async onComposeSend(_payload: any) {
-    // TODO: integrate with your EmailActionsStore/EmailsService
-    // Example:
-    // await this.emailActions.sendEmail(payload);
-    this.isComposing.set(false);
-    // Optionally refresh current folder, show toast, etc.
-  }
-
-  public async onEmail(email: EmailType | null): Promise<void> {
-    const folderId = this.store.currentSelectedFolderId();
-    if (this.isComposing()) {
-      try {
-        const c = this.composer();
-        if (c?.form.dirty) {
-          await c.saveDraft();
-        }
-      } catch (e) {
-        console.error('Failed to save draft', e);
-        alert('Failed to save your draft. Please check your connection or copy your work.');
-        // Abort the function here.
-        // Do not close the composer or navigate to the new email.
-        return;
-      }
-      this.closeCompose();
-    }
-
-    // Always update the store selection so the list can reflect it
-    this.store.selectEmail(email);
-    this.mobileView.set('detail');
-
-    // In the drafts folder, also open the composer for the selected draft
-    if (folderId === ALL_FOLDERS.DRAFTS && email) {
-      this.draftIdToLoad.set(String(email.id));
-      this.isComposing.set(true);
-    }
-  }
-
-  public onFolder(folder: EmailFolderType): void {
-    this.store.selectFolder(folder);
-    this.mobileView.set('list');
-  }
-
-  public mobileGoBack(): void {
-    if (this.isComposing()) {
-      this.closeCompose();
-    }
-    if (this.mobileView() === 'detail') {
-      this.mobileView.set('list');
-    } else if (this.mobileView() === 'list') {
-      this.mobileView.set('folders');
-    }
-  }
-
-  public onForward(email: EmailType) {
-    const subject = email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`;
-    this.openCompose({ subject });
-  }
-
-  public onReply(email: EmailType) {
-    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
-    this.openCompose({ to: email.from_email || '', subject });
-  }
-
-  public async onReplyAll(email: EmailType) {
-    const header = this.store.getEmailHeaderById(email.id)();
-    const recipients = new Set<string>();
-
-    const currentUser = await this.authService.getCurrentUser();
-    const currentUserEmail = currentUser.email.toLowerCase(); // Safe without ?.
-
-    if (email.from_email) recipients.add(email.from_email);
-
-    header?.email?.to_list?.forEach((r: any) => {
-      if (r?.email) recipients.add(r.email);
-    });
-    header?.email?.cc_list?.forEach((r: any) => {
-      if (r?.email) recipients.add(r.email);
-    });
-
-    const to = Array.from(recipients)
-      .filter((e) => e && e.toLowerCase() !== currentUserEmail)
-      .join(', ');
-
-    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
-    this.openCompose({ to, subject });
-  }
-
-  public openCompose(prefill?: ComposeInitial | null) {
-    this.isBodyExpanded.set(false); // ensure body overlay is closed
-    this.draftIdToLoad.set(null);
-    this.composePrefill.set(prefill ?? null);
-    this.isComposing.set(true);
-    this.mobileView.set('detail');
-  }
-
-  public toggleExpanded(): void {
-    this.store.toggleBodyExpanded();
-  }
-
-  protected handleDocumentKeydown(ev: KeyboardEvent): void {
-    if (ev.key === 'Escape' && !ev.repeat && this.isBodyExpanded()) {
-      this.store.toggleBodyExpanded();
-      ev.preventDefault();
-      ev.stopPropagation();
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/emails/ui/email-comments/email-comments.html
 
 ```html
@@ -5215,114 +4893,6 @@ export class EmailDetails {
     if (e) this.replyAll.emit(e);
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.html
-
-```html
-<section class="border-r border-base-300 flex flex-col h-full overflow-hidden w-full lg:w-48 bg-base-200">
-  <!-- Toolbar -->
-  <div
-    class="flex items-center justify-between border-t border-base-300 px-3 border-double border-b-4 min-h-[33px] shrink-0 bg-base-200"
-  >
-    <span class="text-xs font-semibold text-neutral-content">Sort</span>
-    <div class="dropdown dropdown-end">
-      <label
-        tabindex="0"
-        class="btn btn-ghost btn-xs gap-0.5 px-1 normal-case font-normal text-xs text-base-content/75 hover:bg-base-200 cursor-pointer"
-      >
-        {{ sortOrder() === 'newest' ? 'Newest' : 'Oldest' }}
-        <pc-icon name="chevron-down" [size]="3"></pc-icon>
-      </label>
-      <ul
-        tabindex="0"
-        class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-28 text-xs z-30 border border-base-200"
-      >
-        <li>
-          <a (click)="sortOrder.set('newest')" [class.active]="sortOrder() === 'newest'">Newest First</a>
-        </li>
-        <li>
-          <a (click)="sortOrder.set('oldest')" [class.active]="sortOrder() === 'oldest'">Oldest First</a>
-        </li>
-      </ul>
-    </div>
-  </div>
-
-  <ul #scrollContainer (scroll)="onScroll($event)" class="flex-1 overflow-y-auto min-h-0 email-scrollbar bg-base-100">
-    @for (email of sortedEmails(); track email.id) {
-    <li
-      (click)="selectEmail(email)"
-      (contextmenu)="onContextMenu($event, email)"
-      [class.bg-primary/10]="isSelected(email.id)"
-      class="border-b border-base-200 cursor-pointer px-4 py-3 hover:bg-primary/5 transition-colors duration-150 ease-in-out"
-    >
-      <div
-        class="truncate text-xs flex gap-1 items-center"
-        [class.text-base-content/90]="!email.is_read"
-        [class.text-base-content/60]="email.is_read"
-      >
-        @if (!email.is_read) {
-        <span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0 mr-1" title="Unread"></span>
-        } @if (email.from_email || email.to_email) {
-        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">
-          {{ email.sender_first_name || email.sender_last_name ? (email.sender_first_name + ' ' +
-          (email.sender_last_name || '')).trim() : (email.from_name || email.from_email || email.to_email) }}
-        </span>
-        } @else {
-        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">No recipient</span>
-        }
-        <span class="flex-none"
-          >{{ (email.date_sent || email.updated_at) | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span
-        >
-      </div>
-      <div class="truncate flex gap-1 mt-1" [class.font-semibold]="!email.is_read" [class.font-medium]="email.is_read">
-        @if (email?.subject) {
-        <span class="truncate flex-1">{{ email.subject }}</span>
-        } @else {
-        <span class="truncate flex-1 italic font-light text-base-content/40">No Subject</span>
-        } @if (email.has_attachment) {
-        <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
-        }
-      </div>
-      <div class="truncate font-light text-xs text-base-content/60 mt-0.5">{{ email.preview }}</div>
-    </li>
-    } @empty {
-    <li class="flex flex-col items-center justify-center h-32 text-base-content/40 text-sm gap-2">
-      <pc-icon name="inbox" [size]="8"></pc-icon>
-      <span>No emails</span>
-    </li>
-    } @if (isLoadingMore()) {
-    <li class="flex justify-center p-3 border-b border-base-200">
-      <span class="loading loading-spinner loading-sm text-primary"></span>
-    </li>
-    }
-  </ul>
-
-  @if (showContextMenu() && contextMenuEmail()) {
-  <div
-    class="fixed bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-[220px] py-1 z-[100] select-none"
-    [style.left.px]="contextMenuPosition().x"
-    [style.top.px]="contextMenuPosition().y"
-  >
-    @for (section of menuSections; track $index; let last = $last) {
-    <div class="px-1.5 py-0.5">
-      @for (item of section.items; track item.label) {
-      <button
-        (click)="item.action()"
-        [class]="'w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left ' + (item.extraClass || '')"
-      >
-        <pc-icon [name]="item.icon" [size]="5" [class]="item.iconClass || 'text-base-content/60'"></pc-icon>
-        <span>{{ item.label }}</span>
-      </button>
-      }
-    </div>
-
-    @if (!last) {
-    <div class="border-t border-base-300 my-1"></div>
-    } }
-  </div>
-  }
-</section>
 ```
 
 ## File: apps/frontend/src/app/experiences/files/services/files.service.ts
@@ -21867,6 +21437,329 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
 }
 ```
 
+## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.html
+
+```html
+<div class="flex text-sm bg-base-100 h-full overflow-hidden">
+  <!-- Folder list panel: full-width on mobile when active, narrow sidebar on desktop -->
+  <div [class]="folderPanelClass()">
+    <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"></pc-email-folder-list>
+  </div>
+
+  <!-- Email list panel -->
+  @if (!isBodyExpanded()) {
+  <div [class]="listPanelClass()">
+    <!-- Mobile back button -->
+    <div class="lg:hidden flex items-center px-2 py-1 border-b border-base-300 bg-base-200 shrink-0">
+      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Folders
+      </button>
+    </div>
+    <pc-email-list
+      class="flex-1 min-h-0 block"
+      (emailSelected)="onEmail($event!)"
+      (reply)="onReply($event)"
+      (replyAll)="onReplyAll($event)"
+      (forward)="onForward($event)"
+    ></pc-email-list>
+  </div>
+  }
+
+  <!-- Right pane: compose OR details -->
+  <div [class]="detailPanelClass()">
+    <!-- Mobile back button -->
+    <div class="lg:hidden flex items-center mb-2 shrink-0">
+      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Back
+      </button>
+    </div>
+
+    <div class="flex-1 min-h-0 overflow-hidden">
+      @if (isComposing()) {
+      <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3 relative z-20">
+        <pc-compose-email
+          #composer
+          class="h-full"
+          [draftId]="draftIdToLoad()"
+          [initial]="composePrefill()"
+          (finished)="closeCompose()"
+        ></pc-compose-email>
+      </div>
+      } @else {
+      <pc-email-details
+        class="h-full"
+        [email]="selectedEmail()"
+        (reply)="onReply($event)"
+        (replyAll)="onReplyAll($event)"
+        (forward)="onForward($event)"
+      ></pc-email-details>
+      }
+    </div>
+  </div>
+
+  @if (isBodyExpanded() && selectedEmail()) {
+  <!-- Keep your existing BODY overlay when expanded -->
+  <div class="absolute inset-0 z-40 bg-base-100/95 backdrop-blur-sm">
+    <div class="h-full max-w-4xl mx-auto p-4 flex flex-col">
+      <div class="flex items-center justify-end">
+        <button class="btn btn-ghost btn-md" (click)="toggleExpanded()">
+          <pc-icon name="collapse-content" class="mr-1"></pc-icon>Collapse
+        </button>
+      </div>
+      <div class="flex-1 min-h-0">
+        <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3">
+          <pc-email-body class="h-full" [email]="selectedEmail()!"></pc-email-body>
+        </div>
+      </div>
+    </div>
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+
+import { EmailsService } from '../../services/emails-service';
+import { EmailsStore } from '../../services/store/emailstore';
+import { EmailStateStore } from '../../services/store/email-state.store';
+import { EmailBody } from '../email-body/email-body';
+import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-compose';
+import { EmailDetails } from '../email-details/email-details';
+import { EmailFolderList } from '../email-folder-list/email-folder-list';
+import { EmailList } from '../email-list/email-list';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { AuthService } from '@frontend/auth/auth-service';
+
+@Component({
+  selector: 'pc-email-client',
+  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, Icon],
+  host: {
+    class: 'block h-full',
+    '(document:keydown)': 'handleDocumentKeydown($event)',
+  },
+  templateUrl: 'email-client.html',
+})
+export class EmailClient {
+  private readonly composer = viewChild<ComposeEmailComponent>('composer');
+
+  private authService = inject(AuthService);
+
+  protected readonly store = inject(EmailsStore);
+  private readonly stateStore = inject(EmailStateStore);
+  private readonly emailSvc = inject(EmailsService);
+
+  protected composePrefill = signal<ComposeInitial | null>(null);
+  protected draftIdToLoad = signal<string | null>(null);
+  protected isComposing = signal(false);
+
+  protected mobileView = signal<'folders' | 'list' | 'detail'>('folders');
+
+  protected folderPanelClass = computed(() =>
+    this.mobileView() === 'folders' ? 'flex-1 lg:flex-none' : 'hidden lg:block',
+  );
+
+  protected listPanelClass = computed(() =>
+    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 lg:flex-none' : 'hidden lg:flex lg:flex-col lg:h-full',
+  );
+
+  protected detailPanelClass = computed(() =>
+    this.mobileView() === 'detail'
+      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
+      : 'hidden lg:flex lg:flex-col lg:flex-1 lg:h-full lg:p-4 lg:pt-2 lg:relative lg:z-10',
+  );
+
+  constructor() {
+    effect(() => {
+      const id = this.emailId();
+      if (id) {
+        untracked(() => this.loadEmailData(id));
+      }
+    });
+  }
+
+  readonly emailId = input<string | undefined>(undefined, { alias: 'email' });
+
+  private async loadEmailData(emailId: string): Promise<void> {
+    try {
+      // 1. Fetch the email header/details from backend to know its folder_id
+      const res = await this.emailSvc.getEmailHeader(emailId);
+      if (res && res.email) {
+        const folderId = res.email.folder_id;
+
+        // 2. Ensure folders list is loaded
+        let folders = this.store.allFolders();
+        if (!folders || folders.length === 0) {
+          folders = await this.store.loadAllFoldersWithCounts();
+        }
+
+        // 3. Find the folder
+        const folder = folders.find((f) => String(f.id) === String(folderId));
+        if (folder) {
+          const emailObj: EmailType = {
+            id: String(res.email.id),
+            folder_id: String(res.email.folder_id),
+            updated_at: new Date(res.email.updated_at),
+            date_sent: res.email.date_sent ? new Date(res.email.date_sent) : undefined,
+            is_favourite: !!res.email.is_favourite,
+            attachment_count: res.email.attachment_count ?? 0,
+            status: res.email.status || 'open',
+            from_email: res.email.from_email ?? undefined,
+            to_email: res.email.to_email ?? undefined,
+            subject: res.email.subject ?? undefined,
+            preview: res.email.preview ?? undefined,
+            assigned_to: res.email.assigned_to ?? undefined,
+            has_attachment: !!res.email.has_attachment,
+            is_read: !!(res.email as any).is_read,
+          };
+
+          // Add to store's normalized map so it is available immediately
+          this.stateStore.replaceEmail(emailObj.id, emailObj);
+
+          // Select the folder and email
+          this.store.selectFolder(folder);
+          this.store.selectEmail(emailObj);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to pre-select email from notification link', err);
+    }
+  }
+
+  public readonly emails = this.store.emailsInSelectedFolder;
+
+  public readonly isBodyExpanded = this.store.isBodyExpanded;
+
+  public readonly selectedEmail = this.store.currentSelectedEmail;
+
+  public readonly selectedFolderId = this.store.currentSelectedFolderId;
+
+  public closeCompose() {
+    this.isComposing.set(false);
+    this.draftIdToLoad.set(null);
+    this.composePrefill.set(null);
+  }
+
+  public newEmail() {
+    this.openCompose();
+  }
+
+  // handle send from composer
+  public async onComposeSend(_payload: any) {
+    // TODO: integrate with your EmailActionsStore/EmailsService
+    // Example:
+    // await this.emailActions.sendEmail(payload);
+    this.isComposing.set(false);
+    // Optionally refresh current folder, show toast, etc.
+  }
+
+  public async onEmail(email: EmailType | null): Promise<void> {
+    const folderId = this.store.currentSelectedFolderId();
+    if (this.isComposing()) {
+      try {
+        const c = this.composer();
+        if (c?.form.dirty) {
+          await c.saveDraft();
+        }
+      } catch (e) {
+        console.error('Failed to save draft', e);
+        alert('Failed to save your draft. Please check your connection or copy your work.');
+        // Abort the function here.
+        // Do not close the composer or navigate to the new email.
+        return;
+      }
+      this.closeCompose();
+    }
+
+    // Always update the store selection so the list can reflect it
+    this.store.selectEmail(email);
+    this.mobileView.set('detail');
+
+    // In the drafts folder, also open the composer for the selected draft
+    if (folderId === ALL_FOLDERS.DRAFTS && email) {
+      this.draftIdToLoad.set(String(email.id));
+      this.isComposing.set(true);
+    }
+  }
+
+  public onFolder(folder: EmailFolderType): void {
+    this.store.selectFolder(folder);
+    this.mobileView.set('list');
+  }
+
+  public mobileGoBack(): void {
+    if (this.isComposing()) {
+      this.closeCompose();
+    }
+    if (this.mobileView() === 'detail') {
+      this.mobileView.set('list');
+    } else if (this.mobileView() === 'list') {
+      this.mobileView.set('folders');
+    }
+  }
+
+  public onForward(email: EmailType) {
+    const subject = email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`;
+    this.openCompose({ subject });
+  }
+
+  public onReply(email: EmailType) {
+    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
+    this.openCompose({ to: email.from_email || '', subject });
+  }
+
+  public async onReplyAll(email: EmailType) {
+    const header = this.store.getEmailHeaderById(email.id)();
+    const recipients = new Set<string>();
+
+    const currentUser = await this.authService.getCurrentUser();
+    const currentUserEmail = currentUser.email.toLowerCase(); // Safe without ?.
+
+    if (email.from_email) recipients.add(email.from_email);
+
+    header?.email?.to_list?.forEach((r: any) => {
+      if (r?.email) recipients.add(r.email);
+    });
+    header?.email?.cc_list?.forEach((r: any) => {
+      if (r?.email) recipients.add(r.email);
+    });
+
+    const to = Array.from(recipients)
+      .filter((e) => e && e.toLowerCase() !== currentUserEmail)
+      .join(', ');
+
+    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
+    this.openCompose({ to, subject });
+  }
+
+  public openCompose(prefill?: ComposeInitial | null) {
+    this.isBodyExpanded.set(false); // ensure body overlay is closed
+    this.draftIdToLoad.set(null);
+    this.composePrefill.set(prefill ?? null);
+    this.isComposing.set(true);
+    this.mobileView.set('detail');
+  }
+
+  public toggleExpanded(): void {
+    this.store.toggleBodyExpanded();
+  }
+
+  protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    if (ev.key === 'Escape' && !ev.repeat && this.isBodyExpanded()) {
+      this.store.toggleBodyExpanded();
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/emails/ui/email-create-task-dialog/email-create-task-dialog.html
 
 ```html
@@ -22253,108 +22146,6 @@ export class EmailCreateTaskDialog {
     </button>
   </div>
 </aside>
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.ts
-
-```typescript
-import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
-import { Swap } from '@uxcommon/components/swap/swap';
-
-import { EmailsStore } from '../../services/store/emailstore';
-import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Component({
-  selector: 'pc-email-folder-list',
-  imports: [Swap, Icon],
-  templateUrl: 'email-folder-list.html',
-})
-export class EmailFolderList implements OnInit {
-  protected readonly store = inject(EmailsStore);
-
-  protected trackByFolderId = (_: number, f: EmailFolderType) => String(f.id);
-
-  public readonly folderSelected = output<EmailFolderType>();
-
-  public readonly folders = this.store.allFolders;
-
-  public readonly foldersCollapsed = signal(false);
-
-  public readonly realFoldersCollapsed = signal(true);
-
-  public readonly newEmail = output<void>();
-
-  // Responsive Tailwind class strings — CSS handles breakpoint, signal handles manual toggle
-  protected readonly asideClass = computed(
-    () =>
-      'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
-      'w-full lg:hover:w-48 ' +
-      (this.foldersCollapsed() ? 'lg:w-12' : 'lg:w-12 xl:w-48'),
-  );
-
-  // Labels: always visible on mobile (< lg); on desktop hidden unless hovered or xl+ and not collapsed
-  protected readonly labelClass = computed(
-    () => 'block lg:hidden lg:group-hover:block' + (this.foldersCollapsed() ? '' : ' xl:block'),
-  );
-
-  protected readonly countClass = computed(
-    () =>
-      'text-xs tabular-nums font-normal block lg:hidden lg:group-hover:block' +
-      (this.foldersCollapsed() ? '' : ' xl:block'),
-  );
-
-  protected readonly sectionHeaderClass = computed(
-    () =>
-      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none flex lg:hidden lg:group-hover:flex' +
-      (this.foldersCollapsed() ? '' : ' xl:flex'),
-  );
-
-  protected readonly buttonLabelClass = computed(
-    () => 'inline lg:hidden lg:group-hover:inline' + (this.foldersCollapsed() ? '' : ' xl:inline'),
-  );
-
-  protected readonly separatorClass = computed(
-    () => 'h-px bg-base-300 my-2' + (this.foldersCollapsed() ? ' mx-1' : ' mx-1 xl:mx-3'),
-  );
-
-  public emitNewEmail() {
-    this.newEmail.emit();
-  }
-
-  public getEmailCount(folder: EmailFolderType): number {
-    return (folder as any).email_count ?? 0;
-  }
-
-  public async ngOnInit(): Promise<void> {
-    try {
-      await this.store.loadAllFoldersWithCounts();
-    } catch (e) {
-      console.error('Failed to load folders with counts', e);
-    }
-  }
-
-  public selectFolder(folder: EmailFolderType): void {
-    this.folderSelected.emit(folder);
-  }
-
-  public toggleFolders(): void {
-    this.foldersCollapsed.update((v) => !v);
-  }
-
-  public toggleRealFolders(): void {
-    this.realFoldersCollapsed.update((v) => !v);
-  }
-
-  protected getIcon(folder: EmailFolderType): PcIconNameType {
-    return folder.icon as PcIconNameType;
-  }
-
-  protected isSelected(folder: EmailFolderType): boolean {
-    return String(folder.id) === String(this.store.currentSelectedFolderId());
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
@@ -23139,6 +22930,114 @@ export class EmailHeader {
     return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.html
+
+```html
+<section class="border-r border-base-300 flex flex-col h-full overflow-hidden w-full lg:w-48 bg-base-200">
+  <!-- Toolbar -->
+  <div
+    class="flex items-center justify-between border-t border-base-300 px-3 border-double border-b-4 min-h-[33px] shrink-0 bg-base-200"
+  >
+    <span class="text-xs font-semibold text-neutral-content">Sort</span>
+    <div class="dropdown dropdown-end">
+      <label
+        tabindex="0"
+        class="btn btn-ghost btn-xs gap-0.5 px-1 normal-case font-normal text-xs text-base-content/75 hover:bg-base-200 cursor-pointer"
+      >
+        {{ sortOrder() === 'newest' ? 'Newest' : 'Oldest' }}
+        <pc-icon name="chevron-down" [size]="3"></pc-icon>
+      </label>
+      <ul
+        tabindex="0"
+        class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-28 text-xs z-30 border border-base-200"
+      >
+        <li>
+          <a (click)="sortOrder.set('newest')" [class.active]="sortOrder() === 'newest'">Newest First</a>
+        </li>
+        <li>
+          <a (click)="sortOrder.set('oldest')" [class.active]="sortOrder() === 'oldest'">Oldest First</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <ul #scrollContainer (scroll)="onScroll($event)" class="flex-1 overflow-y-auto min-h-0 email-scrollbar bg-base-100">
+    @for (email of sortedEmails(); track email.id) {
+    <li
+      (click)="selectEmail(email)"
+      (contextmenu)="onContextMenu($event, email)"
+      [class.bg-primary/10]="isSelected(email.id)"
+      class="border-b border-base-200 cursor-pointer px-4 py-3 hover:bg-primary/5 transition-colors duration-150 ease-in-out"
+    >
+      <div
+        class="truncate text-xs flex gap-1 items-center"
+        [class.text-base-content/90]="!email.is_read"
+        [class.text-base-content/60]="email.is_read"
+      >
+        @if (!email.is_read) {
+        <span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0 mr-1" title="Unread"></span>
+        } @if (email.from_email || email.to_email) {
+        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">
+          {{ email.sender_first_name || email.sender_last_name ? (email.sender_first_name + ' ' +
+          (email.sender_last_name || '')).trim() : (email.from_name || email.from_email || email.to_email) }}
+        </span>
+        } @else {
+        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">No recipient</span>
+        }
+        <span class="flex-none"
+          >{{ (email.date_sent || email.updated_at) | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span
+        >
+      </div>
+      <div class="truncate flex gap-1 mt-1" [class.font-semibold]="!email.is_read" [class.font-medium]="email.is_read">
+        @if (email?.subject) {
+        <span class="truncate flex-1">{{ email.subject }}</span>
+        } @else {
+        <span class="truncate flex-1 italic font-light text-base-content/40">No Subject</span>
+        } @if (email.has_attachment) {
+        <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
+        }
+      </div>
+      <div class="truncate font-light text-xs text-base-content/60 mt-0.5">{{ email.preview }}</div>
+    </li>
+    } @empty {
+    <li class="flex flex-col items-center justify-center h-32 text-base-content/40 text-sm gap-2">
+      <pc-icon name="inbox" [size]="8"></pc-icon>
+      <span>No emails</span>
+    </li>
+    } @if (isLoadingMore()) {
+    <li class="flex justify-center p-3 border-b border-base-200">
+      <span class="loading loading-spinner loading-sm text-primary"></span>
+    </li>
+    }
+  </ul>
+
+  @if (showContextMenu() && contextMenuEmail()) {
+  <div
+    class="fixed bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-[220px] py-1 z-[100] select-none"
+    [style.left.px]="contextMenuPosition().x"
+    [style.top.px]="contextMenuPosition().y"
+  >
+    @for (section of menuSections; track $index; let last = $last) {
+    <div class="px-1.5 py-0.5">
+      @for (item of section.items; track item.label) {
+      <button
+        (click)="item.action()"
+        [class]="'w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left ' + (item.extraClass || '')"
+      >
+        <pc-icon [name]="item.icon" [size]="5" [class]="item.iconClass || 'text-base-content/60'"></pc-icon>
+        <span>{{ item.label }}</span>
+      </button>
+      }
+    </div>
+
+    @if (!last) {
+    <div class="border-t border-base-300 my-1"></div>
+    } }
+  </div>
+  }
+</section>
 ```
 
 ## File: apps/frontend/src/app/experiences/events/services/events-frontend-service.ts
@@ -34092,6 +33991,10 @@ export const authGuard: CanActivateFn = () => {
 
   if (!user) return router.navigateByUrl('/signin');
 
+  if (!user.email_verified) {
+    return router.navigateByUrl(`/signin?verificationPending=true&email=${encodeURIComponent(user.email)}`);
+  }
+
   // /cancel-deletion and /resume-account are public, so these won't loop
   if (user.tenant_deletion_scheduled_at) {
     return router.navigateByUrl('/cancel-deletion');
@@ -34513,6 +34416,108 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
       this.currentPage.update((p) => p - 1);
       this.loadDuplicates();
     }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.ts
+
+```typescript
+import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
+import { Swap } from '@uxcommon/components/swap/swap';
+
+import { EmailsStore } from '../../services/store/emailstore';
+import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
+
+@Component({
+  selector: 'pc-email-folder-list',
+  imports: [Swap, Icon],
+  templateUrl: 'email-folder-list.html',
+})
+export class EmailFolderList implements OnInit {
+  protected readonly store = inject(EmailsStore);
+
+  protected trackByFolderId = (_: number, f: EmailFolderType) => String(f.id);
+
+  public readonly folderSelected = output<EmailFolderType>();
+
+  public readonly folders = this.store.allFolders;
+
+  public readonly foldersCollapsed = signal(false);
+
+  public readonly realFoldersCollapsed = signal(true);
+
+  public readonly newEmail = output<void>();
+
+  // Responsive Tailwind class strings — CSS handles breakpoint, signal handles manual toggle
+  protected readonly asideClass = computed(
+    () =>
+      'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
+      'w-full lg:hover:w-48 ' +
+      (this.foldersCollapsed() ? 'lg:w-12' : 'lg:w-12 xl:w-48'),
+  );
+
+  // Labels: always visible on mobile (< lg); on desktop hidden unless hovered or xl+ and not collapsed
+  protected readonly labelClass = computed(
+    () => 'block lg:hidden lg:group-hover:block' + (this.foldersCollapsed() ? '' : ' xl:block'),
+  );
+
+  protected readonly countClass = computed(
+    () =>
+      'text-xs tabular-nums font-normal block lg:hidden lg:group-hover:block' +
+      (this.foldersCollapsed() ? '' : ' xl:block'),
+  );
+
+  protected readonly sectionHeaderClass = computed(
+    () =>
+      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none flex lg:hidden lg:group-hover:flex' +
+      (this.foldersCollapsed() ? '' : ' xl:flex'),
+  );
+
+  protected readonly buttonLabelClass = computed(
+    () => 'inline lg:hidden lg:group-hover:inline' + (this.foldersCollapsed() ? '' : ' xl:inline'),
+  );
+
+  protected readonly separatorClass = computed(
+    () => 'h-px bg-base-300 my-2' + (this.foldersCollapsed() ? ' mx-1' : ' mx-1 xl:mx-3'),
+  );
+
+  public emitNewEmail() {
+    this.newEmail.emit();
+  }
+
+  public getEmailCount(folder: EmailFolderType): number {
+    return (folder as any).email_count ?? 0;
+  }
+
+  public async ngOnInit(): Promise<void> {
+    try {
+      await this.store.loadAllFoldersWithCounts();
+    } catch (e) {
+      console.error('Failed to load folders with counts', e);
+    }
+  }
+
+  public selectFolder(folder: EmailFolderType): void {
+    this.folderSelected.emit(folder);
+  }
+
+  public toggleFolders(): void {
+    this.foldersCollapsed.update((v) => !v);
+  }
+
+  public toggleRealFolders(): void {
+    this.realFoldersCollapsed.update((v) => !v);
+  }
+
+  protected getIcon(folder: EmailFolderType): PcIconNameType {
+    return folder.icon as PcIconNameType;
+  }
+
+  protected isSelected(folder: EmailFolderType): boolean {
+    return String(folder.id) === String(this.store.currentSelectedFolderId());
   }
 }
 ```
@@ -45883,9 +45888,10 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
         class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
         type="button"
         (click)="resendVerification()"
-        [disabled]="resending()"
+        [disabled]="resending() || resendCooldownSeconds() > 0"
       >
-        {{ resending() ? 'Sending...' : 'Resend Verification Email' }}
+        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
+        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
       </button>
     </div>
   </div>
@@ -47635,6 +47641,7 @@ export class SignInPage implements OnInit, OnDestroy {
   private readonly tokenService = inject(TokenService);
 
   private _countdownInterval: ReturnType<typeof setInterval> | null = null;
+  private _resendCooldownInterval: ReturnType<typeof setInterval> | null = null;
   private _loading = createLoadingGate();
 
   protected readonly step = signal<SignInStep>('email');
@@ -47647,6 +47654,9 @@ export class SignInPage implements OnInit, OnDestroy {
   protected readonly rateLimitMins = computed(() => Math.floor(this.rateLimitSecondsLeft() / 60));
   protected readonly rateLimitRemSecs = computed(() => this.rateLimitSecondsLeft() % 60);
   protected readonly resending = signal<boolean>(false);
+  protected readonly resendCooldownSeconds = signal<number>(0);
+  protected readonly resendCooldownMins = computed(() => Math.floor(this.resendCooldownSeconds() / 60));
+  protected readonly resendCooldownRemSecs = computed(() => this.resendCooldownSeconds() % 60);
   protected readonly settingUpPasskey = signal<boolean>(false);
   protected readonly verificationPending = signal<boolean>(false);
 
@@ -47689,15 +47699,20 @@ export class SignInPage implements OnInit, OnDestroy {
 
   public ngOnInit() {
     const params = this.route.snapshot.queryParamMap;
-    if (params.get('emailChanged') === 'true') {
-      const emailVal = params.get('email') || '';
+    const emailVal = params.get('email') || '';
+    if (params.get('emailChanged') === 'true' || params.get('verificationPending') === 'true') {
       this.verificationPending.set(true);
       this.pendingEmail.set(emailVal);
+      if (emailVal) {
+        this.emailForm.email().value.set(emailVal);
+        this.step.set('password');
+      }
     }
   }
 
   public ngOnDestroy() {
     this.clearCountdown();
+    this.clearResendCooldown();
   }
 
   public goBackToEmail() {
@@ -47799,12 +47814,16 @@ export class SignInPage implements OnInit, OnDestroy {
             this.emailFor2FA.set(res.email || emailVal);
             this.otpData.update((o) => ({ ...o, code: '' }));
           } else {
-            const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
-            if (passkeys.length === 0) {
-              this.step.set('passkey-setup');
-            } else {
-              this.suppressNavigation.set(false);
+            const user = this.authService.getUser();
+            const dismissed = !!user?.passkey_setup_dismissed_at;
+            if (!dismissed) {
+              const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
+              if (passkeys.length === 0) {
+                this.step.set('passkey-setup');
+                return null;
+              }
             }
+            this.suppressNavigation.set(false);
           }
         } catch (err: any) {
           this.suppressNavigation.set(false);
@@ -47878,7 +47897,12 @@ export class SignInPage implements OnInit, OnDestroy {
     }
   }
 
-  public skipPasskeySetup() {
+  public async skipPasskeySetup() {
+    try {
+      await this.authService.dismissPasskeyPrompt();
+    } catch {
+      // non-fatal — still allow navigation
+    }
     this.suppressNavigation.set(false);
   }
 
@@ -47891,13 +47915,21 @@ export class SignInPage implements OnInit, OnDestroy {
 
   public async resendVerification() {
     const emailVal = this.pendingEmail().trim();
-    if (!emailVal) return;
+    if (!emailVal || this.resendCooldownSeconds() > 0) return;
     this.resending.set(true);
     try {
       await this.authService.resendVerificationEmail(emailVal);
       this.alertSvc.showSuccess('Verification email sent successfully!');
+      this.startResendCooldown(60);
     } catch (err: any) {
-      this.alertSvc.showError(err.message || 'Failed to resend verification email.');
+      const tRPCData = err?.originalError?.data ?? err?.data;
+      const retryAfterSec =
+        (tRPCData?.retryAfterSec as number | undefined) ?? this.parseRetryAfterSec(err.message || '');
+      if (retryAfterSec) {
+        this.startResendCooldown(retryAfterSec);
+      } else {
+        this.alertSvc.showError(err.message || 'Failed to resend verification email.');
+      }
     } finally {
       this.resending.set(false);
     }
@@ -47908,6 +47940,27 @@ export class SignInPage implements OnInit, OnDestroy {
       clearInterval(this._countdownInterval);
       this._countdownInterval = null;
     }
+  }
+
+  private clearResendCooldown() {
+    if (this._resendCooldownInterval !== null) {
+      clearInterval(this._resendCooldownInterval);
+      this._resendCooldownInterval = null;
+    }
+  }
+
+  private startResendCooldown(seconds: number) {
+    this.clearResendCooldown();
+    this.resendCooldownSeconds.set(seconds);
+    this._resendCooldownInterval = setInterval(() => {
+      const current = this.resendCooldownSeconds();
+      if (current <= 1) {
+        this.resendCooldownSeconds.set(0);
+        this.clearResendCooldown();
+      } else {
+        this.resendCooldownSeconds.update((s) => s - 1);
+      }
+    }, 1000);
   }
 
   private handleError(err: any, emailVal?: string) {
@@ -47963,26 +48016,26 @@ const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
 ## File: apps/frontend/src/app/experiences/settings/settings-page.ts
 
 ```typescript
-import { Component, OnInit, effect, inject, signal, WritableSignal, input, computed } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
+import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
-import { form, email, pattern, FormField, validate } from '@angular/forms/signals';
 import { Icon } from '@icons/icon';
-import { SettingsEntryType, UpdateAuthUserType, IAuthUserDetail } from '../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
 import { AuthService } from '../../auth/auth-service';
 import { UserService } from '../../services/user.service';
-
-import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
-import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
-import { MsSyncSettings } from './ms-sync/ms-sync-settings';
-import { GoogleSyncSettings } from './google-sync/google-sync-settings';
+import { HouseholdsService } from '../households/services/households-service';
+import { AccountSettingsComponent } from './account/account-settings';
 import { BillingSettingsComponent } from './billing/billing-settings';
 import { DomainSettingsComponent } from './domains/domains-settings';
 import { DonationsSettingsComponent } from './donations/donations-settings';
-import { AccountSettingsComponent } from './account/account-settings';
+import { GoogleSyncSettings } from './google-sync/google-sync-settings';
+import { MsSyncSettings } from './ms-sync/ms-sync-settings';
 import { PasskeySettingsComponent } from './security/passkey-settings';
-import { HouseholdsService } from '../households/services/households-service';
+import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
+import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
 
 interface SectionFieldState {
   config: SettingsFieldConfig;
@@ -47991,9 +48044,9 @@ interface SectionFieldState {
 
 interface SectionState {
   config: SettingsSectionConfig;
-  payload: WritableSignal<Record<string, any>>;
-  form: any;
   fields: SectionFieldState[];
+  form: any;
+  payload: WritableSignal<Record<string, any>>;
 }
 
 @Component({
@@ -48013,36 +48066,16 @@ interface SectionState {
   templateUrl: './settings-page.html',
 })
 export class SettingsPage implements OnInit {
-  protected readonly settingsSvc = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly alerts = inject(AlertService);
-  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
-  protected readonly householdsSvc = inject(HouseholdsService);
-  private readonly auth = inject(AuthService);
   private readonly userService = inject(UserService);
 
-  public readonly section = input<string>();
-
-  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
-
   protected readonly currentMode: 'settings' | 'configuration';
-  protected readonly sections = SETTINGS_SECTIONS;
-  protected readonly sectionStates: SectionState[];
-  protected readonly selectedSectionId = signal<string>('');
-  protected readonly savingSectionId = signal<string | null>(null);
-  protected readonly hasLoaded = signal(false);
-  protected readonly verifyingEmail = signal<string | null>(null);
-  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
+  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
   protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
-  protected readonly recomputingFingerprints = signal(false);
   protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
-  protected readonly senderEmailInput = signal('');
-  protected readonly lastRequestedEmail = signal<string | null>(null);
-  protected readonly verifiedEmailsList = computed<string[]>(() => {
-    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-  });
-
   protected readonly fingerprintRecomputeNextAvailable = computed(() => {
     const lastTime = this.lastFingerprintRecomputeTime();
     if (!lastTime) return null;
@@ -48050,12 +48083,32 @@ export class SettingsPage implements OnInit {
     nextAvailable.setMonth(nextAvailable.getMonth() + 1);
     return nextAvailable;
   });
-
+  protected readonly hasLoaded = signal(false);
+  protected readonly householdsSvc = inject(HouseholdsService);
   protected readonly isFingerprintRecomputeCooldown = computed(() => {
     const nextAvailable = this.fingerprintRecomputeNextAvailable();
     if (!nextAvailable) return false;
     return Date.now() < nextAvailable.getTime();
   });
+  protected readonly lastRequestedEmail = signal<string | null>(null);
+  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
+  protected readonly recomputingFingerprints = signal(false);
+  protected readonly savingSectionId = signal<string | null>(null);
+  protected readonly sectionStates: SectionState[];
+  protected readonly sections = SETTINGS_SECTIONS;
+  protected readonly selectedSectionId = signal<string>('');
+  protected readonly senderEmailInput = signal('');
+  protected readonly settingsSvc = inject(SettingsService);
+  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
+  protected readonly verifiedEmailsList = computed<string[]>(() => {
+    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+  });
+  protected readonly verifyingEmail = signal<string | null>(null);
+
+  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
+  protected trackSection = (_: number, section: SectionState) => section.config.id;
+
+  public readonly section = input<string>();
 
   constructor() {
     this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'configuration') || 'settings';
@@ -48121,15 +48174,61 @@ export class SettingsPage implements OnInit {
     await this.loadLastFingerprintRecomputeTime();
   }
 
-  protected trackSection = (_: number, section: SectionState) => section.config.id;
-  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
-
-  protected selectSection(sectionId: string) {
-    this.router.navigate(['/', this.currentMode, sectionId]);
+  protected copyToClipboard(val: string | null | undefined) {
+    if (!val) return;
+    navigator.clipboard
+      .writeText(val)
+      .then(() => {
+        this.alerts.showSuccess('Copied to clipboard!');
+      })
+      .catch(() => {
+        this.alerts.showError('Failed to copy to clipboard.');
+      });
   }
 
-  protected isSelected(sectionId: string) {
-    return this.selectedSectionId() === sectionId;
+  protected generateWebhookCredentials(section: SectionState) {
+    const key = 'pk_live_' + this.randomHex(24);
+    const secret = 'whsec_' + this.randomHex(32);
+
+    section.payload.update((p) => ({
+      ...p,
+      integrations_webhook_api_key: key,
+      integrations_webhook_api_secret: secret,
+    }));
+
+    (section.form as any)['integrations_webhook_api_key']().markAsDirty();
+    (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
+    this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
+  }
+
+  protected getNotificationGroups(section: SectionState) {
+    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
+    const fields = section.fields;
+
+    for (const field of fields) {
+      if (field.config.key.endsWith('_in_app')) continue;
+
+      const inAppControlName = `${field.controlName}_in_app`;
+      const inAppField = fields.find((f) => f.controlName === inAppControlName);
+
+      groups.push({
+        label: field.config.label,
+        helper: field.config.helper || '',
+        emailField: field,
+        inAppField: inAppField,
+      });
+    }
+    return groups;
+  }
+
+  protected isEmailVerified(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+    return verified.includes(email.toLowerCase().trim());
+  }
+
+  protected isSaving(section: SectionState) {
+    return this.savingSectionId() === section.config.id;
   }
 
   protected isSectionDirty(section: SectionState) {
@@ -48140,8 +48239,98 @@ export class SettingsPage implements OnInit {
     return section.form().invalid();
   }
 
-  protected isSaving(section: SectionState) {
-    return this.savingSectionId() === section.config.id;
+  protected isSelected(sectionId: string) {
+    return this.selectedSectionId() === sectionId;
+  }
+
+  protected isVerifyCooldown(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
+    if (!lastTime) return false;
+    return Date.now() - lastTime < 60000;
+  }
+
+  protected async loadLastFingerprintRecomputeTime() {
+    try {
+      const res = await this.householdsSvc.getLastFingerprintRecomputation();
+      if (res && res.lastRunAt) {
+        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
+      } else {
+        this.lastFingerprintRecomputeTime.set(null);
+      }
+    } catch (err) {
+      console.error('Failed to load last fingerprint recompute time', err);
+    }
+  }
+
+  protected async loadUserPrefs() {
+    try {
+      const currentUser = await this.auth.getCurrentUser();
+      if (currentUser) {
+        const user = await this.userService.getProfileById(currentUser.id);
+        this.currentUserDetail.set(user);
+        const prefs = user.notification_preferences || {
+          mention_in_comment: true,
+          mention_in_comment_in_app: true,
+          task_assigned: true,
+          task_assigned_in_app: true,
+          task_due: true,
+          task_due_in_app: true,
+          person_assigned: true,
+          person_assigned_in_app: true,
+          export_ready: true,
+          export_ready_in_app: true,
+          import_summary: true,
+          import_summary_in_app: true,
+        };
+        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
+        if (notifState) {
+          notifState.payload.update((p) => ({
+            ...p,
+            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
+            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
+            notifications_task_assigned: prefs.task_assigned ?? true,
+            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
+            notifications_task_due: prefs.task_due ?? true,
+            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
+            notifications_person_assigned: prefs.person_assigned ?? true,
+            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
+            notifications_export_ready: prefs.export_ready ?? true,
+            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
+            notifications_import_summary: prefs.import_summary ?? true,
+            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
+          }));
+          notifState.form().reset();
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to load user preferences in settings page', err);
+    }
+  }
+
+  protected async recomputeAddressFingerprints() {
+    if (this.isFingerprintRecomputeCooldown()) {
+      this.alerts.showError('Fingerprints can only be recomputed once a month.');
+      return;
+    }
+
+    this.recomputingFingerprints.set(true);
+    try {
+      await this.householdsSvc.recomputeAddressFingerprints();
+      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
+      await this.loadLastFingerprintRecomputeTime();
+    } catch (err: any) {
+      this.alerts.showError(err.message || 'Failed to trigger address fingerprint recomputation.');
+    } finally {
+      this.recomputingFingerprints.set(false);
+    }
+  }
+
+  protected resetSection(section: SectionState) {
+    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
+    if (section.config.id === 'notifications') {
+      void this.loadUserPrefs();
+    }
   }
 
   protected async saveSection(section: SectionState) {
@@ -48202,31 +48391,70 @@ export class SettingsPage implements OnInit {
     }
   }
 
-  protected resetSection(section: SectionState) {
-    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
-    if (section.config.id === 'notifications') {
-      void this.loadUserPrefs();
+  protected selectSection(sectionId: string) {
+    this.router.navigate(['/', this.currentMode, sectionId]);
+  }
+
+  protected async verifySenderEmail(email: string | null | undefined) {
+    if (!email) return;
+    const normalized = email.toLowerCase().trim();
+
+    if (this.isVerifyCooldown(normalized)) {
+      this.alerts.showError('Please wait at least one minute before requesting verification again.');
+      return;
+    }
+
+    this.verifyingEmail.set(normalized);
+
+    try {
+      await this.settingsSvc.requestEmailVerification(normalized);
+      this.lastVerificationTimes.update((prev) => ({
+        ...prev,
+        [normalized]: Date.now(),
+      }));
+      this.startEmailCooldown(normalized);
+      this.lastRequestedEmail.set(normalized);
+      this.alerts.showSuccess(
+        `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
+      );
+    } catch (err: any) {
+      this.alerts.showError(err.message || 'Failed to send verification email.');
+    } finally {
+      this.verifyingEmail.set(null);
     }
   }
 
-  protected getNotificationGroups(section: SectionState) {
-    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
-    const fields = section.fields;
+  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
+    const sections = target ? [target] : this.sectionStates;
 
-    for (const field of fields) {
-      if (field.config.key.endsWith('_in_app')) continue;
+    for (const state of sections) {
+      const nextPayload = { ...state.payload() };
+      let changed = false;
 
-      const inAppControlName = `${field.controlName}_in_app`;
-      const inAppField = fields.find((f) => f.controlName === inAppControlName);
+      for (const field of state.fields) {
+        const fieldSignal = (state.form as any)[field.controlName]();
+        if (!resetDirty && fieldSignal.dirty()) continue;
 
-      groups.push({
-        label: field.config.label,
-        helper: field.config.helper || '',
-        emailField: field,
-        inAppField: inAppField,
-      });
+        // Skip user notification preferences from tenant settings snapshot update
+        if (state.config.id === 'notifications') {
+          continue;
+        }
+
+        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
+        if (nextPayload[field.controlName] !== incoming) {
+          nextPayload[field.controlName] = incoming;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        state.payload.set(nextPayload);
+      }
+
+      if (resetDirty) {
+        state.form().reset();
+      }
     }
-    return groups;
   }
 
   private buildSectionState(section: SettingsSectionConfig): SectionState {
@@ -48269,41 +48497,21 @@ export class SettingsPage implements OnInit {
     return { config: section, payload, form: formSignal, fields: fieldStates };
   }
 
-  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
-    const sections = target ? [target] : this.sectionStates;
-
-    for (const state of sections) {
-      const nextPayload = { ...state.payload() };
-      let changed = false;
-
-      for (const field of state.fields) {
-        const fieldSignal = (state.form as any)[field.controlName]();
-        if (!resetDirty && fieldSignal.dirty()) continue;
-
-        // Skip user notification preferences from tenant settings snapshot update
-        if (state.config.id === 'notifications') {
-          continue;
-        }
-
-        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
-        if (nextPayload[field.controlName] !== incoming) {
-          nextPayload[field.controlName] = incoming;
-          changed = true;
-        }
-      }
-
-      if (changed) {
-        state.payload.set(nextPayload);
-      }
-
-      if (resetDirty) {
-        state.form().reset();
-      }
-    }
-  }
-
   private controlNameFor(key: string) {
     return key.replace(/[^a-zA-Z0-9]+/g, '_');
+  }
+
+  private defaultForField(field: SettingsFieldConfig) {
+    switch (field.type) {
+      case 'toggle':
+        return false;
+      case 'number':
+        return null;
+      case 'select':
+        return field.options?.[0]?.value ?? '';
+      default:
+        return '';
+    }
   }
 
   private normalizeIncomingValue(field: SettingsFieldConfig, raw: unknown) {
@@ -48339,19 +48547,6 @@ export class SettingsPage implements OnInit {
     }
   }
 
-  private defaultForField(field: SettingsFieldConfig) {
-    switch (field.type) {
-      case 'toggle':
-        return false;
-      case 'number':
-        return null;
-      case 'select':
-        return field.options?.[0]?.value ?? '';
-      default:
-        return '';
-    }
-  }
-
   private prepareOutgoingValue(field: SettingsFieldConfig, value: unknown) {
     switch (field.type) {
       case 'toggle':
@@ -48381,63 +48576,6 @@ export class SettingsPage implements OnInit {
     }
   }
 
-  protected isEmailVerified(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-    return verified.includes(email.toLowerCase().trim());
-  }
-
-  protected isVerifyCooldown(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
-    if (!lastTime) return false;
-    return Date.now() - lastTime < 60000;
-  }
-
-  protected async verifySenderEmail(email: string | null | undefined) {
-    if (!email) return;
-    const normalized = email.toLowerCase().trim();
-
-    if (this.isVerifyCooldown(normalized)) {
-      this.alerts.showError('Please wait at least one minute before requesting verification again.');
-      return;
-    }
-
-    this.verifyingEmail.set(normalized);
-
-    try {
-      await this.settingsSvc.requestEmailVerification(normalized);
-      this.lastVerificationTimes.update((prev) => ({
-        ...prev,
-        [normalized]: Date.now(),
-      }));
-      this.startEmailCooldown(normalized);
-      this.lastRequestedEmail.set(normalized);
-      this.alerts.showSuccess(
-        `Verification email sent to ${email}. Please check your inbox and click the verification link.`,
-      );
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to send verification email.');
-    } finally {
-      this.verifyingEmail.set(null);
-    }
-  }
-
-  protected generateWebhookCredentials(section: SectionState) {
-    const key = 'pk_live_' + this.randomHex(24);
-    const secret = 'whsec_' + this.randomHex(32);
-
-    section.payload.update((p) => ({
-      ...p,
-      integrations_webhook_api_key: key,
-      integrations_webhook_api_secret: secret,
-    }));
-
-    (section.form as any)['integrations_webhook_api_key']().markAsDirty();
-    (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
-    this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
-  }
-
   private randomHex(len: number): string {
     const chars = '0123456789abcdef';
     let result = '';
@@ -48445,18 +48583,6 @@ export class SettingsPage implements OnInit {
       result += chars[Math.floor(Math.random() * chars.length)];
     }
     return result;
-  }
-
-  protected copyToClipboard(val: string | null | undefined) {
-    if (!val) return;
-    navigator.clipboard
-      .writeText(val)
-      .then(() => {
-        this.alerts.showSuccess('Copied to clipboard!');
-      })
-      .catch(() => {
-        this.alerts.showError('Failed to copy to clipboard.');
-      });
   }
 
   private startEmailCooldown(email: string) {
@@ -48474,82 +48600,6 @@ export class SettingsPage implements OnInit {
         this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
       }
     }, 1000);
-  }
-
-  protected async loadLastFingerprintRecomputeTime() {
-    try {
-      const res = await this.householdsSvc.getLastFingerprintRecomputation();
-      if (res && res.lastRunAt) {
-        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
-      } else {
-        this.lastFingerprintRecomputeTime.set(null);
-      }
-    } catch (err) {
-      console.error('Failed to load last fingerprint recompute time', err);
-    }
-  }
-
-  protected async recomputeAddressFingerprints() {
-    if (this.isFingerprintRecomputeCooldown()) {
-      this.alerts.showError('Fingerprints can only be recomputed once a month.');
-      return;
-    }
-
-    this.recomputingFingerprints.set(true);
-    try {
-      await this.householdsSvc.recomputeAddressFingerprints();
-      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
-      await this.loadLastFingerprintRecomputeTime();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to trigger address fingerprint recomputation.');
-    } finally {
-      this.recomputingFingerprints.set(false);
-    }
-  }
-
-  protected async loadUserPrefs() {
-    try {
-      const currentUser = await this.auth.getCurrentUser();
-      if (currentUser) {
-        const user = await this.userService.getProfileById(currentUser.id);
-        this.currentUserDetail.set(user);
-        const prefs = user.notification_preferences || {
-          mention_in_comment: true,
-          mention_in_comment_in_app: true,
-          task_assigned: true,
-          task_assigned_in_app: true,
-          task_due: true,
-          task_due_in_app: true,
-          person_assigned: true,
-          person_assigned_in_app: true,
-          export_ready: true,
-          export_ready_in_app: true,
-          import_summary: true,
-          import_summary_in_app: true,
-        };
-        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
-        if (notifState) {
-          notifState.payload.update((p) => ({
-            ...p,
-            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
-            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
-            notifications_task_assigned: prefs.task_assigned ?? true,
-            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
-            notifications_task_due: prefs.task_due ?? true,
-            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
-            notifications_person_assigned: prefs.person_assigned ?? true,
-            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
-            notifications_export_ready: prefs.export_ready ?? true,
-            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
-            notifications_import_summary: prefs.import_summary ?? true,
-            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
-          }));
-          notifState.form().reset();
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load user preferences in settings page', err);
-    }
   }
 }
 ```
@@ -48742,6 +48792,10 @@ export class AuthService extends TRPCService<'authusers'> {
 
   public deletePasskey(id: string) {
     return this.api.auth.deletePasskey.mutate({ id });
+  }
+
+  public dismissPasskeyPrompt() {
+    return this.api.auth.dismissPasskeyPrompt.mutate();
   }
 
   public updatePasskeyName(id: string, friendlyName: string) {

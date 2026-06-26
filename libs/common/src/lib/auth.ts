@@ -27,6 +27,10 @@ export interface IAuthUser {
 
   avatar_url?: string | null;
 
+  email_verified: boolean;
+
+  passkey_setup_dismissed_at?: Date | null;
+
   tenant_deletion_scheduled_at?: Date | null;
 
   tenant_paused_at?: Date | null;

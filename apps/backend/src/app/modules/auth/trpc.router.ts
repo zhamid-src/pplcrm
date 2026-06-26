@@ -172,9 +172,16 @@ function verifyEmail() {
 }
 
 function resendVerificationEmail() {
-  return publicProcedure
-    .input(z.object({ email: z.string().trim().email() }))
-    .mutation(({ input }) => controller.resendVerificationEmail(input.email));
+  return publicProcedure.input(z.object({ email: z.string().trim().email() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:resendVerification`, 5, MIN15);
+    checkRateLimit(`resendVerification:${input.email}`, 5, MIN15);
+    return controller.resendVerificationEmail(input.email);
+  });
+}
+
+function dismissPasskeyPrompt() {
+  return authProcedure.mutation(({ ctx }) => controller.dismissPasskeyPrompt(ctx.auth));
 }
 
 const controller = new AuthController();
@@ -277,4 +284,5 @@ export const AuthRouter = router({
   listPasskeys: listPasskeys(),
   deletePasskey: deletePasskey(),
   updatePasskeyName: updatePasskeyName(),
+  dismissPasskeyPrompt: dismissPasskeyPrompt(),
 });

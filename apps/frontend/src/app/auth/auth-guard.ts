@@ -1,5 +1,6 @@
 import { inject } from '@angular/core';
-import { CanActivateFn, Router } from '@angular/router';
+import type { CanActivateFn} from '@angular/router';
+import { Router } from '@angular/router';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
@@ -9,6 +10,10 @@ export const authGuard: CanActivateFn = () => {
   const user = auth.getUser();
 
   if (!user) return router.navigateByUrl('/signin');
+
+  if (!user.email_verified) {
+    return router.navigateByUrl(`/signin?verificationPending=true&email=${encodeURIComponent(user.email)}`);
+  }
 
   // /cancel-deletion and /resume-account are public, so these won't loop
   if (user.tenant_deletion_scheduled_at) {

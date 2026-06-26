@@ -185,6 +185,10 @@ export class AuthService extends TRPCService<'authusers'> {
     return this.api.auth.deletePasskey.mutate({ id });
   }
 
+  public dismissPasskeyPrompt() {
+    return this.api.auth.dismissPasskeyPrompt.mutate();
+  }
+
   public updatePasskeyName(id: string, friendlyName: string) {
     return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
   }

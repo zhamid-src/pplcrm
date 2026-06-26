@@ -186,6 +186,7 @@ interface AuthUsers extends RecordType {
   deletion_scheduled_at: Timestamp | null;
   previous_email: string | null;
   previous_role: string | null;
+  passkey_setup_dismissed_at: Timestamp | null;
 }
 
 interface Campaigns extends Omit<RecordType, 'createdby_id'> {
