@@ -48,8 +48,8 @@ export class GoogleSyncService {
     this.ingester = new EmailIngesterService(db, 'google');
   }
 
-  public async syncUser(userId: string, tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
-    const accessToken = await this.oauthSvc.getValidToken(userId);
+  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
+    const accessToken = await this.oauthSvc.getValidToken(tenantId);
 
     // Map Gmail label names to pplcrm folder IDs
     const syncFolders = [
@@ -63,7 +63,7 @@ export class GoogleSyncService {
     // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
     // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
     // positions after a successful sync, so no explicit clear is needed.
-    const dbDeltaLink = await this.oauthSvc.getDeltaLink(userId);
+    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
     let deltaMap: Record<string, number> = {};
     if (dbDeltaLink) {
       try {
@@ -160,7 +160,7 @@ export class GoogleSyncService {
       }
     }
 
-    await this.oauthSvc.saveDeltaLink(userId, JSON.stringify(nextDeltaMap));
+    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
     return { inserted };
   }
 

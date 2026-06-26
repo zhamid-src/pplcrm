@@ -1156,7 +1156,7 @@ ALTER SEQUENCE public.files_id_seq OWNED BY public.files.id;
 CREATE TABLE public.google_oauth_tokens (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id text NOT NULL,
-    user_id text NOT NULL,
+    user_id text,
     access_token text NOT NULL,
     refresh_token text NOT NULL,
     expires_at timestamp with time zone NOT NULL,
@@ -1429,7 +1429,7 @@ ALTER TABLE public.map_teams_persons OWNER TO zeehamid;
 CREATE TABLE public.ms_oauth_tokens (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     tenant_id text NOT NULL,
-    user_id text NOT NULL,
+    user_id text,
     access_token text NOT NULL,
     refresh_token text NOT NULL,
     expires_at timestamp with time zone NOT NULL,
@@ -3231,11 +3231,11 @@ ALTER TABLE ONLY public.google_oauth_tokens
 
 
 --
--- Name: google_oauth_tokens google_oauth_tokens_user_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+-- Name: google_oauth_tokens google_oauth_tokens_tenant_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
 --
 
 ALTER TABLE ONLY public.google_oauth_tokens
-    ADD CONSTRAINT google_oauth_tokens_user_id_key UNIQUE (user_id);
+    ADD CONSTRAINT google_oauth_tokens_tenant_id_key UNIQUE (tenant_id);
 
 
 --
@@ -3351,11 +3351,11 @@ ALTER TABLE ONLY public.ms_oauth_tokens
 
 
 --
--- Name: ms_oauth_tokens ms_oauth_tokens_user_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+-- Name: ms_oauth_tokens ms_oauth_tokens_tenant_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
 --
 
 ALTER TABLE ONLY public.ms_oauth_tokens
-    ADD CONSTRAINT ms_oauth_tokens_user_id_key UNIQUE (user_id);
+    ADD CONSTRAINT ms_oauth_tokens_tenant_id_key UNIQUE (tenant_id);
 
 
 --
@@ -3783,10 +3783,10 @@ CREATE UNIQUE INDEX events_tenant_slug_unique ON public.events USING btree (tena
 
 
 --
--- Name: google_oauth_tokens_tenant_user_idx; Type: INDEX; Schema: public; Owner: zeehamid
+-- Name: google_oauth_tokens_tenant_idx; Type: INDEX; Schema: public; Owner: zeehamid
 --
 
-CREATE INDEX google_oauth_tokens_tenant_user_idx ON public.google_oauth_tokens USING btree (tenant_id, user_id);
+CREATE INDEX google_oauth_tokens_tenant_idx ON public.google_oauth_tokens USING btree (tenant_id);
 
 
 --
@@ -4602,10 +4602,10 @@ CREATE INDEX idx_workflows_trigger_event_id ON public.workflows USING btree (tri
 
 
 --
--- Name: ms_oauth_tokens_tenant_user_idx; Type: INDEX; Schema: public; Owner: zeehamid
+-- Name: ms_oauth_tokens_tenant_idx; Type: INDEX; Schema: public; Owner: zeehamid
 --
 
-CREATE INDEX ms_oauth_tokens_tenant_user_idx ON public.ms_oauth_tokens USING btree (tenant_id, user_id);
+CREATE INDEX ms_oauth_tokens_tenant_idx ON public.ms_oauth_tokens USING btree (tenant_id);
 
 
 --

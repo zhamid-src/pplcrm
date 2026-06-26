@@ -101,12 +101,8 @@ export async function saveLocalEmail(
     // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
     // email_folders(id) — not tenant_id — so the existence check must be by id
     // alone. onConflict guards against a concurrent/global row already present.
-     
-    const existingOutbox = await trx
-      .selectFrom('email_folders')
-      .select('id')
-      .where('id', '=', '10')
-      .executeTakeFirst();
+
+    const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
 
     if (!existingOutbox) {
       await trx
@@ -514,7 +510,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
           // Trigger background sync to get folders/Sent items synchronized
           const syncSvc = new MsSyncService(db, oauthSvc);
-          syncSvc.syncUser(userId, tenantId, userId).catch((err: any) => {
+          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
             fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
           });
 
@@ -602,7 +598,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             .executeTakeFirstOrThrow();
 
           const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
-          googleSyncSvc.syncUser(userId, tenantId, userId).catch((err: any) => {
+          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
             fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
           });
 

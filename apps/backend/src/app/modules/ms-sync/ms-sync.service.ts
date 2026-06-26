@@ -1,9 +1,10 @@
 import { Client } from '@microsoft/microsoft-graph-client';
-import { Kysely } from 'kysely';
-import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { MsOAuthService } from './ms-oauth.service';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { MsOAuthService } from './ms-oauth.service';
 import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
-import { EmailIngesterService, IngestableEmail } from '../emails/services/email-ingester.service';
+import type { IngestableEmail } from '../emails/services/email-ingester.service';
+import { EmailIngesterService } from '../emails/services/email-ingester.service';
 
 const MAX_MESSAGES_PER_SYNC = 50;
 
@@ -44,8 +45,8 @@ export class MsSyncService {
     this.ingester = new EmailIngesterService(db, 'ms');
   }
 
-  public async syncUser(userId: string, tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
-    const accessToken = await this.oauthSvc.getValidToken(userId);
+  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
+    const accessToken = await this.oauthSvc.getValidToken(tenantId);
     const client = this.buildGraphClient(accessToken);
 
     const syncFolders = [
@@ -59,7 +60,7 @@ export class MsSyncService {
     // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
     // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
     // positions after a successful sync, so no explicit clear is needed.
-    const dbDeltaLink = await this.oauthSvc.getDeltaLink(userId);
+    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
     let deltaMap: Record<string, string> = {};
     if (dbDeltaLink) {
       try {
@@ -161,7 +162,7 @@ export class MsSyncService {
     }
 
     // Save updated delta map back to database
-    await this.oauthSvc.saveDeltaLink(userId, JSON.stringify(nextDeltaMap));
+    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
 
     return { inserted };
   }
