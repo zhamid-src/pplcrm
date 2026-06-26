@@ -37,21 +37,29 @@ async function cleanup(db: any, user_id: any, tenant_id: any) {
   await db.deleteFrom('households').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('campaigns').where('tenant_id', '=', tenant_id).execute();
 
+  const tenantUserIds = db.selectFrom('authusers').select('id').where('tenant_id', '=', tenant_id);
+
   // Cannot delete the user from auth without deleting all references
   // Deleting the user should just cascade
-  await db.deleteFrom('profiles').where('auth_id', '=', user_id).execute();
-  await db.deleteFrom('tags').where('createdby_id', '=', user_id).execute();
-  await db.deleteFrom('lists').where('createdby_id', '=', user_id).execute();
-  await db.deleteFrom('tasks').where('createdby_id', '=', user_id).execute();
-  await db.deleteFrom('newsletters').where('createdby_id', '=', user_id).execute();
-  await db.deleteFrom('user_activity').where('createdby_id', '=', user_id).execute();
-  await db.deleteFrom('teams').where('createdby_id', '=', user_id).execute();
-  await db.deleteFrom('volunteer_events').where('createdby_id', '=', user_id).execute();
-  await db.deleteFrom('web_forms').where('createdby_id', '=', user_id).execute();
+  await db.deleteFrom('profiles').where('auth_id', 'in', tenantUserIds).execute();
+  await db.deleteFrom('tags').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('lists').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('tasks').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('newsletters').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('user_activity').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('teams').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('volunteer_events').where('tenant_id', '=', tenant_id).execute();
+  await db.deleteFrom('web_forms').where('tenant_id', '=', tenant_id).execute();
 
-  await db.deleteFrom('sessions').where('user_id', '=', user_id).execute();
+  await db.deleteFrom('sessions').where('user_id', 'in', tenantUserIds).execute();
 
-  await db.deleteFrom('authusers').where('id', '=', user_id).execute();
+  // Null out self-referential FKs so we can delete all tenant users at once.
+  await db
+    .updateTable('authusers')
+    .set({ createdby_id: null, updatedby_id: null })
+    .where('tenant_id', '=', tenant_id)
+    .execute();
+  await db.deleteFrom('authusers').where('tenant_id', '=', tenant_id).execute();
 
   await db.deleteFrom('map_peoples_tags').where('tenant_id', '=', tenant_id).execute();
   await db.deleteFrom('map_households_tags').where('tenant_id', '=', tenant_id).execute();
