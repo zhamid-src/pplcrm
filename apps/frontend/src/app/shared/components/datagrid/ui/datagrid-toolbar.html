@@ -197,26 +197,7 @@
   <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
 
   <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
-      <li class="px-2 py-1 flex gap-2">
-        <button class="btn btn-ghost btn-xs" (click)="onShowAllCols()">Show all</button>
-        <button class="btn btn-ghost btn-xs" (click)="onHideAllCols()">Hide all</button>
-        <button class="btn btn-ghost btn-xs" (click)="onResetAllWidths()">Reset widths</button>
-      </li>
-      @for (col of grid.getColDefsForToolbar(); track col.field) { @if (col.field) {
-      <li>
-        <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
-          <input
-            type="checkbox"
-            class="checkbox checkbox-xs"
-            [checked]="grid.getColVisibilityMap()[col.field!] !== false"
-            (change)="onToggleCol(col.field!, $any($event.target).checked)"
-          />
-          <span class="label-text">{{ col.headerName || col.field }}</span>
-        </label>
-      </li>
-      } }
-    </ul>
+    <pc-dg-columns-dropdown />
   </pc-grid-tool-btn>
 
   <!-- Overflow: secondary actions -->
@@ -283,7 +264,7 @@
   />
   <pc-grid-tool-btn
     [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Deleted selected row(s)'"
+    [tip]="'Delete selected row(s)'"
     icon="trash"
     (action)="onDeleteSelected()"
   />
@@ -468,26 +449,7 @@
   <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
 
   <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
-      <li class="px-2 py-1 flex gap-2">
-        <button class="btn btn-ghost btn-xs" (click)="onShowAllCols()">Show all</button>
-        <button class="btn btn-ghost btn-xs" (click)="onHideAllCols()">Hide all</button>
-        <button class="btn btn-ghost btn-xs" (click)="onResetAllWidths()">Reset widths</button>
-      </li>
-      @for (col of grid.getColDefsForToolbar(); track col.field) { @if (col.field) {
-      <li>
-        <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
-          <input
-            type="checkbox"
-            class="checkbox checkbox-xs"
-            [checked]="grid.getColVisibilityMap()[col.field!] !== false"
-            (change)="onToggleCol(col.field!, $any($event.target).checked)"
-          />
-          <span class="label-text">{{ col.headerName || col.field }}</span>
-        </label>
-      </li>
-      } }
-    </ul>
+    <pc-dg-columns-dropdown />
   </pc-grid-tool-btn>
 
   <pc-grid-tool-btn
