@@ -1,6 +1,8 @@
 import { Component, computed, inject } from '@angular/core';
 import { DataGrid } from '../datagrid';
 import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
+import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
+import { DataGridFilterSectionComponent } from './datagrid-filter-section';
 import { GridActionComponent } from '../tool-button';
 import { Icon } from '@icons/icon';
 import { MultiselectFilterComponent } from './multiselect-filter';
@@ -14,6 +16,8 @@ import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-
     MultiselectFilterComponent,
     SingleselectFilterComponent,
     DataGridColumnsDropdownComponent,
+    DataGridFilterDropdownComponent,
+    DataGridFilterSectionComponent,
   ],
   templateUrl: 'datagrid-toolbar.html',
 })
