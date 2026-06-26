@@ -54,7 +54,7 @@
   <!-- Editor card: ONE ROW toolbar + scrollable editor -->
   <div class="rounded-lg border border-base-300 flex flex-col h-full">
     <!-- Custom Quill toolbar (single row, no wrap, horizontal scroll) -->
-    <div [id]="toolbarId" class="ql-toolbar ql-snow border-b flex items-center">
+    <div [id]="toolbarId" class="ql-toolbar ql-snow border-b">
       <!-- Undo / Redo -->
       <span class="ql-formats">
         <button class="ql-undo tooltip" data-tip="Undo" type="button" aria-label="Undo">
@@ -66,6 +66,7 @@
       </span>
 
       <!-- Font / Size -->
+      @if (showHeader()) {
       <span class="ql-formats">
         <select class="ql-font" aria-label="Font">
           <option selected></option>
@@ -79,6 +80,7 @@
           <option value="huge"></option>
         </select>
       </span>
+      }
 
       <!-- Bold / Italic / Underline / Strike -->
       <span class="ql-formats">

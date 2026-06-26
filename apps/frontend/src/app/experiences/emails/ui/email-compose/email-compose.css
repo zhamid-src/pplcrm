@@ -1,3 +1,9 @@
-::ng-deep.ql-tooltip {
+::ng-deep .ql-tooltip {
   left: unset !important;
+}
+
+::ng-deep .ql-toolbar.ql-snow {
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
 }

@@ -1,17 +1,17 @@
 import { Component, effect, inject, input, signal } from '@angular/core';
-import { IAuthUser } from '../../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 
+import { IAuthUser } from '../../../../../../../../libs/common/src';
+import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 import { UserService } from '../../../../services/user.service';
 import { EmailsStore } from '../../services/store/emailstore';
-import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Component({
   selector: 'pc-email-assign',
   imports: [Icon],
   template: `<div class="flex items-center gap-2 mt-1">
-    <span class="text-xs text-base-content/70">Assign to:</span>
+    <span class="text-xs text-base-content/70">Owner:</span>
     <div class="dropdown">
       <div tabindex="0" class="badge badge-xs text-xs badge-info badge-outline cursor-pointer">
         <span>{{ getUserName(assignedTo()) }}</span>
@@ -33,13 +33,12 @@ import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 })
 export class EmailAssign {
   private alertSvc = inject(AlertService);
-  private userService = inject(UserService);
   private store = inject(EmailsStore);
+  private userService = inject(UserService);
 
   protected assignedTo = signal<string | null>(null);
 
   public email = input.required<EmailType | null>();
-
   public users = signal<IAuthUser[]>([]);
 
   constructor() {
@@ -74,7 +73,7 @@ export class EmailAssign {
   }
 
   public getUserName(id: string | null = null) {
-    if (!id) return 'Not Assigned';
-    return this.users().find((u) => String(u.id) === String(id))?.first_name || 'Not Assigned';
+    if (!id) return 'Noone';
+    return this.users().find((u) => String(u.id) === String(id))?.first_name || 'Noone';
   }
 }
