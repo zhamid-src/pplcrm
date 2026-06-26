@@ -25,6 +25,8 @@ export class EmailStateStore {
 
   public readonly isBodyExpanded = signal<boolean>(false);
 
+  public readonly mobilePanelView = signal<'folders' | 'list' | 'detail'>('folders');
+
   public clearHasAttachment(emailId: string) {
     this.hasAttachmentByEmailId.update((m) => {
       const next = { ...m };

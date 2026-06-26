@@ -106,7 +106,9 @@ export class EmailList {
         const currentSelectionStillExists = selectedId ? emails.some((e) => e.id === selectedId) : false;
 
         if (folderChanged || (selectedId && !currentSelectionStillExists)) {
-          this.selectEmail(emails[0]!);
+          // Update the store directly — do NOT emit through emailSelected output, which would
+          // trigger the parent's onEmail() and reset mobileView to 'detail' on every init.
+          this.store.selectEmail(emails[0]!);
         }
       }
     });

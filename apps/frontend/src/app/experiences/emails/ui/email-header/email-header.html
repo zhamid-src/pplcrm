@@ -12,84 +12,84 @@
       </span>
 
       <div class="border-t border-base-300 my-1 h-0"></div>
+      <div class="hidden md:block">
+        <!-- Reply -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="reply"
+          aria-label="Reply"
+          (click)="handleReply()"
+        >
+          <pc-icon name="reply" [size]="4"></pc-icon>
+        </button>
 
-      <!-- Reply -->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        data-tip="reply"
-        aria-label="Reply"
-        (click)="handleReply()"
-      >
-        <pc-icon name="reply" [size]="4"></pc-icon>
-      </button>
+        <!-- Reply All -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Reply All"
+          aria-label="Reply All"
+          (click)="handleReplyAll()"
+        >
+          <pc-icon name="reply-all" [size]="4"></pc-icon>
+        </button>
 
-      <!-- Reply All -->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        data-tip="Reply All"
-        aria-label="Reply All"
-        (click)="handleReplyAll()"
-      >
-        <pc-icon name="reply-all" [size]="4"></pc-icon>
-      </button>
+        <!-- Forward-->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Forward"
+          aria-label="Forward"
+          (click)="handleForward()"
+        >
+          <pc-icon name="forward" [size]="4"></pc-icon>
+        </button>
 
-      <!-- Forward-->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        data-tip="Forward"
-        aria-label="Forward"
-        (click)="handleForward()"
-      >
-        <pc-icon name="forward" [size]="4"></pc-icon>
-      </button>
+        @if (!isFolderTrash()) {
+        <!-- Star/Favorite -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Toggle favourite"
+          aria-label="Star"
+          data-testid="favorite-button"
+          (click)="toggleFavourite()"
+        >
+          <pc-icon [size]="4" [name]="getFavouriteIcon()" [class.text-primary]="isFavourite()"></pc-icon>
+        </button>
 
-      @if (!isFolderTrash()) {
-      <!-- Star/Favorite -->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        data-tip="Toggle favourite"
-        aria-label="Star"
-        data-testid="favorite-button"
-        (click)="toggleFavourite()"
-      >
-        <pc-icon [size]="4" [name]="getFavouriteIcon()" [class.text-primary]="isFavourite()"></pc-icon>
-      </button>
-
-      <!-- Close/Mark as Done -->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        [attr.data-tip]="markAsDoneText()"
-        aria-label="Mark as Done"
-        (click)="toggleClosed()"
-      >
-        <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
-      </button>
-      } @else {
-      <!-- Restore from Trash -->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        data-tip="Restore from Trash"
-        aria-label="Restore from Trash"
-        (click)="restoreFromTrash()"
-      >
-        <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
-      </button>
-      }
-
-      <!-- Delete -->
-      <button
-        class="tooltip btn btn-ghost btn-circle btn-sm"
-        [attr.data-tip]="getTrashText()"
-        [attr.aria-label]="getTrashText()"
-        (click)="deleteEmail()"
-      >
-        @if (isFolderTrash()) {
-        <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
+        <!-- Close/Mark as Done -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="markAsDoneText()"
+          aria-label="Mark as Done"
+          (click)="toggleClosed()"
+        >
+          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
+        </button>
         } @else {
-        <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
+        <!-- Restore from Trash -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Restore from Trash"
+          aria-label="Restore from Trash"
+          (click)="restoreFromTrash()"
+        >
+          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
+        </button>
         }
-      </button>
 
+        <!-- Delete -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="getTrashText()"
+          [attr.aria-label]="getTrashText()"
+          (click)="deleteEmail()"
+        >
+          @if (isFolderTrash()) {
+          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
+          } @else {
+          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
+          }
+        </button>
+      </div>
       <!-- More Actions Dropdown -->
       <div class="dropdown dropdown-end">
         <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
