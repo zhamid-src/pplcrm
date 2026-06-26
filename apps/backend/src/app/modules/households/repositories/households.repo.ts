@@ -1,7 +1,9 @@
-import { SelectQueryBuilder, Transaction, sql } from 'kysely';
+import type { SelectQueryBuilder, Transaction} from 'kysely';
+import { sql } from 'kysely';
 
-import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
 import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
 
@@ -394,6 +396,42 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     return new Set(result.map((r) => String(r.id)));
   }
 
+  /**
+   * Deletes households and reassigns their members to the tenant's placeholder
+   * household. persons.household_id is NOT NULL, so members are *moved* rather
+   * than cascade-deleted along with the household. Runs in a single transaction
+   * so persons are never orphaned. Callers must exclude the placeholder household
+   * itself from `ids` (see getPlaceholderIds).
+   */
+  public async deleteManyReassigningPersons(input: {
+    tenant_id: string;
+    ids: string[];
+    user_id: string;
+  }): Promise<boolean> {
+    if (!input.ids.length) return false;
+
+    return this.transaction().execute(async (trx) => {
+      const tenant = await trx
+        .selectFrom('tenants')
+        .select('placeholder_household_id')
+        .where('id', '=', input.tenant_id)
+        .executeTakeFirst();
+
+      const placeholderId = tenant?.placeholder_household_id;
+
+      if (placeholderId != null) {
+        await trx
+          .updateTable('persons')
+          .set({ household_id: placeholderId as any, updated_at: sql`now()`, updatedby_id: input.user_id })
+          .where('tenant_id', '=', input.tenant_id)
+          .where('household_id', 'in', input.ids as any)
+          .execute();
+      }
+
+      return this.deleteMany({ tenant_id: input.tenant_id as any, ids: input.ids as any }, trx);
+    });
+  }
+
   public async getPeopleCount(input: { tenant_id: string; id: string }) {
     const result = await this.getSelect()
       .leftJoin('persons', 'persons.household_id', 'households.id')
@@ -429,7 +467,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   }
 
   public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // eslint-disable-next-line local/no-unscoped-db-query
+     
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -453,7 +491,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const page = options?.page ?? 1;
     const pageSize = options?.pageSize ?? 20;
 
-    // eslint-disable-next-line local/no-unscoped-db-query
+     
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
