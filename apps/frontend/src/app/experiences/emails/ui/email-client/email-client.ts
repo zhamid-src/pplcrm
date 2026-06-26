@@ -1,4 +1,4 @@
-import { Component, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 
 import { EmailsService } from '../../services/emails-service';
@@ -34,6 +34,22 @@ export class EmailClient {
   protected composePrefill = signal<ComposeInitial | null>(null);
   protected draftIdToLoad = signal<string | null>(null);
   protected isComposing = signal(false);
+
+  protected mobileView = signal<'folders' | 'list' | 'detail'>('folders');
+
+  protected folderPanelClass = computed(() =>
+    this.mobileView() === 'folders' ? 'flex-1 lg:flex-none' : 'hidden lg:block',
+  );
+
+  protected listPanelClass = computed(() =>
+    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 lg:flex-none' : 'hidden lg:flex lg:flex-col lg:h-full',
+  );
+
+  protected detailPanelClass = computed(() =>
+    this.mobileView() === 'detail'
+      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
+      : 'hidden lg:flex lg:flex-col lg:flex-1 lg:h-full lg:p-4 lg:pt-2 lg:relative lg:z-10',
+  );
 
   constructor() {
     effect(() => {
@@ -139,6 +155,7 @@ export class EmailClient {
 
     // Always update the store selection so the list can reflect it
     this.store.selectEmail(email);
+    this.mobileView.set('detail');
 
     // In the drafts folder, also open the composer for the selected draft
     if (folderId === ALL_FOLDERS.DRAFTS && email) {
@@ -149,6 +166,18 @@ export class EmailClient {
 
   public onFolder(folder: EmailFolderType): void {
     this.store.selectFolder(folder);
+    this.mobileView.set('list');
+  }
+
+  public mobileGoBack(): void {
+    if (this.isComposing()) {
+      this.closeCompose();
+    }
+    if (this.mobileView() === 'detail') {
+      this.mobileView.set('list');
+    } else if (this.mobileView() === 'list') {
+      this.mobileView.set('folders');
+    }
   }
 
   public onForward(email: EmailType) {
@@ -190,6 +219,7 @@ export class EmailClient {
     this.draftIdToLoad.set(null);
     this.composePrefill.set(prefill ?? null);
     this.isComposing.set(true);
+    this.mobileView.set('detail');
   }
 
   public toggleExpanded(): void {

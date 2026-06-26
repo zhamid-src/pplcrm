@@ -1,4 +1,4 @@
-<section class="border-r border-base-300 flex flex-col h-full overflow-hidden w-48 bg-base-200">
+<section class="border-r border-base-300 flex flex-col h-full overflow-hidden w-full lg:w-48 bg-base-200">
   <!-- Toolbar -->
   <div
     class="flex items-center justify-between border-t border-base-300 px-3 border-double border-b-4 min-h-[33px] shrink-0 bg-base-200"
@@ -63,6 +63,11 @@
         }
       </div>
       <div class="truncate font-light text-xs text-base-content/60 mt-0.5">{{ email.preview }}</div>
+    </li>
+    } @empty {
+    <li class="flex flex-col items-center justify-center h-32 text-base-content/40 text-sm gap-2">
+      <pc-icon name="inbox" [size]="8"></pc-icon>
+      <span>No emails</span>
     </li>
     } @if (isLoadingMore()) {
     <li class="flex justify-center p-3 border-b border-base-200">
