@@ -74,8 +74,9 @@ export class SignUpPage {
           const data = await this.authService.signUp(this.signUpData() as signUpInputType);
           const user = data as IAuthUser;
           if (user) {
-            this.alertSvc.showSuccess(`Welcome ${user.first_name}!`);
-            await this.router.navigate(['summary']);
+            await this.router.navigate(['/signin'], {
+              queryParams: { verificationPending: 'true', email: user.email },
+            });
           } else {
             this.alertSvc.showError('Unable to complete signup.');
           }

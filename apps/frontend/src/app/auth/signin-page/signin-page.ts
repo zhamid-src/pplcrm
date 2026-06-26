@@ -26,6 +26,7 @@ export class SignInPage implements OnInit, OnDestroy {
   private readonly tokenService = inject(TokenService);
 
   private _countdownInterval: ReturnType<typeof setInterval> | null = null;
+  private _resendCooldownInterval: ReturnType<typeof setInterval> | null = null;
   private _loading = createLoadingGate();
 
   protected readonly step = signal<SignInStep>('email');
@@ -38,6 +39,9 @@ export class SignInPage implements OnInit, OnDestroy {
   protected readonly rateLimitMins = computed(() => Math.floor(this.rateLimitSecondsLeft() / 60));
   protected readonly rateLimitRemSecs = computed(() => this.rateLimitSecondsLeft() % 60);
   protected readonly resending = signal<boolean>(false);
+  protected readonly resendCooldownSeconds = signal<number>(0);
+  protected readonly resendCooldownMins = computed(() => Math.floor(this.resendCooldownSeconds() / 60));
+  protected readonly resendCooldownRemSecs = computed(() => this.resendCooldownSeconds() % 60);
   protected readonly settingUpPasskey = signal<boolean>(false);
   protected readonly verificationPending = signal<boolean>(false);
 
@@ -80,15 +84,20 @@ export class SignInPage implements OnInit, OnDestroy {
 
   public ngOnInit() {
     const params = this.route.snapshot.queryParamMap;
-    if (params.get('emailChanged') === 'true') {
-      const emailVal = params.get('email') || '';
+    const emailVal = params.get('email') || '';
+    if (params.get('emailChanged') === 'true' || params.get('verificationPending') === 'true') {
       this.verificationPending.set(true);
       this.pendingEmail.set(emailVal);
+      if (emailVal) {
+        this.emailForm.email().value.set(emailVal);
+        this.step.set('password');
+      }
     }
   }
 
   public ngOnDestroy() {
     this.clearCountdown();
+    this.clearResendCooldown();
   }
 
   public goBackToEmail() {
@@ -190,12 +199,16 @@ export class SignInPage implements OnInit, OnDestroy {
             this.emailFor2FA.set(res.email || emailVal);
             this.otpData.update((o) => ({ ...o, code: '' }));
           } else {
-            const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
-            if (passkeys.length === 0) {
-              this.step.set('passkey-setup');
-            } else {
-              this.suppressNavigation.set(false);
+            const user = this.authService.getUser();
+            const dismissed = !!user?.passkey_setup_dismissed_at;
+            if (!dismissed) {
+              const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
+              if (passkeys.length === 0) {
+                this.step.set('passkey-setup');
+                return null;
+              }
             }
+            this.suppressNavigation.set(false);
           }
         } catch (err: any) {
           this.suppressNavigation.set(false);
@@ -269,7 +282,12 @@ export class SignInPage implements OnInit, OnDestroy {
     }
   }
 
-  public skipPasskeySetup() {
+  public async skipPasskeySetup() {
+    try {
+      await this.authService.dismissPasskeyPrompt();
+    } catch {
+      // non-fatal — still allow navigation
+    }
     this.suppressNavigation.set(false);
   }
 
@@ -282,13 +300,21 @@ export class SignInPage implements OnInit, OnDestroy {
 
   public async resendVerification() {
     const emailVal = this.pendingEmail().trim();
-    if (!emailVal) return;
+    if (!emailVal || this.resendCooldownSeconds() > 0) return;
     this.resending.set(true);
     try {
       await this.authService.resendVerificationEmail(emailVal);
       this.alertSvc.showSuccess('Verification email sent successfully!');
+      this.startResendCooldown(60);
     } catch (err: any) {
-      this.alertSvc.showError(err.message || 'Failed to resend verification email.');
+      const tRPCData = err?.originalError?.data ?? err?.data;
+      const retryAfterSec =
+        (tRPCData?.retryAfterSec as number | undefined) ?? this.parseRetryAfterSec(err.message || '');
+      if (retryAfterSec) {
+        this.startResendCooldown(retryAfterSec);
+      } else {
+        this.alertSvc.showError(err.message || 'Failed to resend verification email.');
+      }
     } finally {
       this.resending.set(false);
     }
@@ -299,6 +325,27 @@ export class SignInPage implements OnInit, OnDestroy {
       clearInterval(this._countdownInterval);
       this._countdownInterval = null;
     }
+  }
+
+  private clearResendCooldown() {
+    if (this._resendCooldownInterval !== null) {
+      clearInterval(this._resendCooldownInterval);
+      this._resendCooldownInterval = null;
+    }
+  }
+
+  private startResendCooldown(seconds: number) {
+    this.clearResendCooldown();
+    this.resendCooldownSeconds.set(seconds);
+    this._resendCooldownInterval = setInterval(() => {
+      const current = this.resendCooldownSeconds();
+      if (current <= 1) {
+        this.resendCooldownSeconds.set(0);
+        this.clearResendCooldown();
+      } else {
+        this.resendCooldownSeconds.update((s) => s - 1);
+      }
+    }, 1000);
   }
 
   private handleError(err: any, emailVal?: string) {

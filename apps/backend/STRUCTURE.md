@@ -50,6 +50,8 @@ apps/
           0001_baseline.ts
           2026-06-25-fix-ondelete-behavior.ts
           2026-06-25-person-newsletter-engagements.ts
+          2026-06-26-email-sync-per-tenant.ts
+          2026-06-26-passkey-setup-dismissed.ts
           schema.sql
         config/
           email-folders.config.ts
@@ -319,44 +321,20 @@ apps/
 
 # Files
 
-## File: apps/backend/src/app/\_migrations/2026-06-25-person-newsletter-engagements.ts
+## File: apps/backend/src/app/\_migrations/2026-06-26-passkey-setup-dismissed.ts
 
 ```typescript
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 
 export async function up(db: Kysely<any>): Promise<void> {
-  await sql`
-    CREATE TABLE public.person_newsletter_engagements (
-      tenant_id       bigint      NOT NULL,
-      newsletter_id   bigint      NOT NULL,
-      email           text        NOT NULL,
-      open_count      integer     NOT NULL DEFAULT 0,
-      click_count     integer     NOT NULL DEFAULT 0,
-      has_unsubscribed boolean    NOT NULL DEFAULT false,
-      hard_bounced    boolean     NOT NULL DEFAULT false,
-      soft_bounced    boolean     NOT NULL DEFAULT false,
-      first_opened_at  timestamptz,
-      last_opened_at   timestamptz,
-      first_clicked_at timestamptz,
-      last_clicked_at  timestamptz,
-      bounced_at       timestamptz,
-      unsubscribed_at  timestamptz,
-      PRIMARY KEY (tenant_id, newsletter_id, email)
-    )
-  `.execute(db);
-
-  await sql`
-    CREATE INDEX idx_pne_tenant_email ON public.person_newsletter_engagements (tenant_id, email)
-  `.execute(db);
-
-  await sql`
-    CREATE INDEX idx_pne_newsletter ON public.person_newsletter_engagements (newsletter_id)
-  `.execute(db);
+  await sql`ALTER TABLE authusers ADD COLUMN IF NOT EXISTS passkey_setup_dismissed_at TIMESTAMP WITH TIME ZONE`.execute(
+    db,
+  );
 }
 
 export async function down(db: Kysely<any>): Promise<void> {
-  await sql`DROP TABLE IF EXISTS public.person_newsletter_engagements`.execute(db);
+  await sql`ALTER TABLE authusers DROP COLUMN IF EXISTS passkey_setup_dismissed_at`.execute(db);
 }
 ```
 
@@ -1385,6 +1363,383 @@ export async function verifyAuthToken(token: string): Promise<IAuthKeyPayload> {
 }
 ```
 
+## File: apps/backend/src/app/lib/base.controller.ts
+
+```typescript
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  getAllOptionsType,
+} from '../../../../../libs/common/src';
+import { env } from '../../env';
+
+import { ReferenceExpression, Transaction } from 'kysely';
+
+import { Models, OperationDataType, TypeTenantId } from '../../../../../libs/common/src/lib/kysely.models';
+import { BaseRepository, QueryParams } from './base.repo';
+import { rowsToCsv } from './csv';
+import { UserActivityRepo } from './user-activity.repo';
+import { TransactionalEmailService } from './mail/transactional-mail.service';
+
+export class BaseController<T extends keyof Models, R extends BaseRepository<T>> {
+  protected readonly userActivity = new UserActivityRepo();
+
+  constructor(private repo: R) {}
+
+  private getEntityLabel(tableName: string, rowObj: any): string {
+    if (!rowObj) return '';
+    if (tableName === 'tasks') {
+      return String(rowObj['name'] || '');
+    }
+    if (tableName === 'persons') {
+      return `${rowObj['first_name'] || ''} ${rowObj['last_name'] || ''}`.trim();
+    }
+    if (tableName === 'households') {
+      const streetParts = [
+        rowObj['apt'] ? `Apt ${rowObj['apt']}` : null,
+        rowObj['street_num'],
+        rowObj['street1'],
+        rowObj['street2'],
+      ].filter(Boolean);
+      const locationParts = [rowObj['city'], rowObj['state'], rowObj['zip']].filter(Boolean);
+      return [streetParts.join(' '), locationParts.join(', ')].filter(Boolean).join(', ').trim() || 'Household';
+    }
+    if (tableName === 'emails') {
+      return String(rowObj['subject'] || '');
+    }
+    return String(rowObj['name'] || rowObj['subject'] || rowObj['title'] || '');
+  }
+
+  public async add(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
+    const result = await this.repo.add({ row }, trx);
+    try {
+      const rowObj = row as Record<string, unknown>;
+      const actor = rowObj['createdby_id'];
+      const tenant = rowObj['tenant_id'];
+      if (actor != null && tenant != null) {
+        const resultObj = result as Record<string, unknown> | undefined;
+        const resultId = resultObj && 'id' in resultObj ? String(resultObj['id']) : null;
+        const metadata: Record<string, any> = resultId ? { id: resultId } : {};
+        if (resultObj) {
+          const tableName = String(this.repo.getTableName());
+          metadata['entity_label'] = this.getEntityLabel(tableName, resultObj);
+        }
+        if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
+          metadata['task_name'] = String(resultObj['name']);
+        }
+        await this.userActivity.log(
+          {
+            tenant_id: String(tenant),
+            user_id: String(actor),
+            activity: 'create',
+            entity: String(this.repo.getTableName()),
+            entity_id: resultId,
+            quantity: 1,
+            metadata,
+          },
+          trx,
+        );
+      }
+    } catch (e) {
+      console.error('Failed to log create activity', e);
+    }
+    return result;
+  }
+
+  public async addMany(rows: OperationDataType<T, 'insert'>[], trx?: Transaction<Models>) {
+    const result = await this.repo.addMany({ rows }, trx);
+    try {
+      const firstRow = rows[0];
+      if (firstRow) {
+        const rowObj = firstRow as Record<string, unknown>;
+        const actor = rowObj['createdby_id'];
+        const tenant = rowObj['tenant_id'];
+        if (actor != null && tenant != null) {
+          await this.userActivity.log(
+            {
+              tenant_id: String(tenant),
+              user_id: String(actor),
+              activity: 'create',
+              entity: String(this.repo.getTableName()),
+              quantity: rows.length,
+              metadata: { count: rows.length },
+            },
+            trx,
+          );
+        }
+      }
+    } catch (e) {
+      console.error('Failed to log addMany activity', e);
+    }
+    return result;
+  }
+
+  public async delete(tenant_id: TypeTenantId<T>, idToDelete: string, userId?: string) {
+    const result = await this.repo.delete({
+      tenant_id,
+      id: idToDelete,
+    });
+    try {
+      if (userId != null) {
+        await this.userActivity.log({
+          tenant_id: String(tenant_id),
+          user_id: String(userId),
+          activity: 'delete',
+          entity: String(this.repo.getTableName()),
+          entity_id: idToDelete ? String(idToDelete) : null,
+          quantity: 1,
+          metadata: { id: idToDelete },
+        });
+      }
+    } catch (e) {
+      console.error('Failed to log delete activity', e);
+    }
+    return result;
+  }
+
+  public deleteMany(tenant_id: TypeTenantId<T>, idsToDelete: string[]) {
+    return this.repo.deleteMany({
+      ids: idsToDelete,
+      tenant_id,
+    });
+  }
+
+  public find(input: { tenant_id: string; key: string; column: ReferenceExpression<Models, T> }) {
+    return this.repo.find({
+      tenant_id: input.tenant_id,
+      key: input.key,
+      column: input.column,
+    });
+  }
+
+  public getAll(tenant: string, options?: getAllOptionsType) {
+    return this.repo.getAll({
+      tenant_id: tenant,
+      options: options as QueryParams<T>,
+    });
+  }
+
+  public getAllWithCounts(tenant: string, options?: getAllOptionsType) {
+    return this.getRepo().getAllWithCounts({
+      tenant_id: tenant,
+      options: options as QueryParams<any>,
+    });
+  }
+
+  public getCount(tenant_id: string) {
+    return this.repo.count(tenant_id);
+  }
+
+  public getOneById(input: { tenant_id: string; id: string }) {
+    return this.repo.getOneBy('id' as any, { value: input.id as any, tenant_id: input.tenant_id });
+  }
+
+  public async update(input: { tenant_id: string; id: string; row: OperationDataType<T, 'update'> }) {
+    let original: any = null;
+    try {
+      original = await this.repo.getOneBy('id' as any, { value: input.id as any, tenant_id: input.tenant_id });
+    } catch (err) {
+      console.error('Failed to fetch original record for activity log', err);
+    }
+    const result = await this.repo.update({ id: input.id, tenant_id: input.tenant_id, row: input.row });
+    try {
+      const rowObj = input.row as Record<string, unknown>;
+      const actor = rowObj['updatedby_id'];
+      if (actor != null) {
+        const metadata: Record<string, any> = { id: input.id };
+        const resultObj = result as Record<string, unknown> | undefined;
+        if (original && resultObj) {
+          const skipKeys = [
+            'id',
+            'tenant_id',
+            'createdby_id',
+            'updatedby_id',
+            'created_at',
+            'updated_at',
+            'address_fp_street',
+            'address_fp_full',
+            'password',
+            'password_reset_code',
+            'password_reset_code_created_at',
+          ];
+          const changes: Record<string, any> = {};
+          for (const key of Object.keys(rowObj)) {
+            if (skipKeys.includes(key)) continue;
+            const oldVal = (original as any)[key];
+            const newVal = resultObj[key];
+            if (oldVal !== newVal) {
+              changes[key] = { from: oldVal ?? null, to: newVal ?? null };
+            }
+          }
+          metadata['changes'] = changes;
+          metadata['entity_label'] = this.getEntityLabel(String(this.repo.getTableName()), resultObj);
+        }
+        if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
+          metadata['task_name'] = String(resultObj['name']);
+        }
+        let activity = 'update';
+        if (String(this.repo.getTableName()) === 'tasks' && 'due_at' in rowObj) {
+          metadata['action'] = 'change_due_date';
+          metadata['due_at'] = rowObj['due_at'];
+        }
+        if (String(this.repo.getTableName()) === 'tasks' && 'assigned_to' in rowObj) {
+          const assigneeId = rowObj['assigned_to'];
+          if (assigneeId == null || assigneeId === '') {
+            activity = 'unassign';
+          } else {
+            activity = 'assign';
+            try {
+              const assignee = await this.repo.db
+                .selectFrom('authusers')
+                .select(['first_name', 'last_name'])
+                .where('id', '=', Number(assigneeId) as any)
+                .executeTakeFirst();
+              if (assignee) {
+                metadata['assigned_to_name'] = `${assignee.first_name} ${assignee.last_name || ''}`.trim();
+              }
+            } catch (err) {
+              console.error('Failed to look up assignee name', err);
+            }
+          }
+        }
+        await this.userActivity.log({
+          tenant_id: String(input.tenant_id),
+          user_id: String(actor),
+          activity: activity as any,
+          entity: String(this.repo.getTableName()),
+          entity_id: input.id ? String(input.id) : null,
+          quantity: 1,
+          metadata,
+        });
+      }
+    } catch (e) {
+      console.error('Failed to log update activity', e);
+    }
+    return result;
+  }
+
+  protected getRepo() {
+    return this.repo;
+  }
+
+  public async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    const options = (input?.options ?? {}) as QueryParams<T>;
+    const rows = await this.repo.getAll({ tenant_id: input.tenant_id, options });
+    const records = rows.map((row) => ({ ...(row as Record<string, unknown>) }));
+    const response = this.buildCsvResponse(records, input) as {
+      csv: string;
+      fileName: string;
+      columns: string[];
+      rowCount: number;
+    };
+
+    if (auth) {
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'export',
+          entity: String(this.repo.getTableName()),
+          quantity: response.rowCount,
+          metadata: {
+            requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+            returned_columns: response.columns.slice(0, 12),
+            file_name: response.fileName,
+          },
+        });
+
+        const user = await this.repo.db
+          .selectFrom('authusers')
+          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+          .select(['authusers.email', 'profiles.json as profile_json'])
+          .where('authusers.id', '=', auth.user_id as any)
+          .executeTakeFirst();
+        if (user && user.email) {
+          let optedIn = true;
+          const profileJson = user.profile_json;
+          if (profileJson) {
+            try {
+              const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+              if (json?.notifications?.export_ready === false) {
+                optedIn = false;
+              }
+            } catch (e) {
+              console.error('Failed to parse profile json in exportCsv', e);
+            }
+          }
+
+          if (optedIn) {
+            const mailService = new TransactionalEmailService();
+            await mailService.sendMail({
+              to: user.email,
+              subject: `Your Export is Ready: ${response.fileName}`,
+              text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the ${String(this.repo.getTableName())} table is ready.\n\nFile Name: ${response.fileName}\nDownload Link: ${env.appUrl}/downloads/${response.fileName}`,
+              html: `<p>Hi ${auth.name},</p><p>Your export of <strong>${response.rowCount}</strong> records from the <strong>${String(this.repo.getTableName())}</strong> table is ready.</p><p><strong>File Name:</strong> ${response.fileName}<br><strong>Download Link:</strong> <a href="${env.appUrl}/downloads/${response.fileName}">Download CSV</a></p>`,
+            });
+          }
+        }
+      } catch (err) {
+        // Logging failures should never break export flow; swallow silently
+        console.error('Failed to log export activity or send email alert', err);
+      }
+    }
+
+    return response;
+  }
+
+  protected buildCsvResponse(
+    rows: Array<Record<string, unknown>>,
+    input: ExportCsvInputType & { tenant_id: string },
+  ): ExportCsvResponseType {
+    const requestedColumns = Array.isArray(input?.columns)
+      ? (input.columns.filter((c): c is string => Boolean(c)) ?? [])
+      : [];
+    const columns = requestedColumns.length
+      ? requestedColumns
+      : rows.length > 0
+        ? Object.keys(rows[0] as Record<string, unknown>)
+        : [];
+    const fileName = input?.fileName?.trim() || `${String(this.repo.getTableName())}-export.csv`;
+    const csv = columns.length ? rowsToCsv(rows as Array<Record<string, any>>, columns) : '';
+    return {
+      csv,
+      columns,
+      fileName,
+      rowCount: rows.length,
+    };
+  }
+
+  protected async resolveCreatorAndUpdater(tenantId: string, record: any, trx?: any) {
+    if (!record) return record;
+    const db = trx || this.repo.db;
+    const userIds = [record.createdby_id, record.updatedby_id].filter(Boolean);
+    if (userIds.length === 0) return record;
+
+    const users = await db
+      .selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name'])
+      .where('id', 'in', userIds as any)
+      .where('tenant_id', '=', tenantId as any)
+      .execute();
+
+    const userMap: Record<string, string> = {};
+    for (const u of users) {
+      userMap[String(u.id)] = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || 'Unknown User';
+    }
+
+    return {
+      ...record,
+      created_by_name: record.createdby_id ? (userMap[String(record.createdby_id)] ?? 'Unknown User') : null,
+      updated_by_name: record.updatedby_id ? (userMap[String(record.updatedby_id)] ?? 'Unknown User') : null,
+    };
+  }
+}
+```
+
 ## File: apps/backend/src/app/lib/crud-router.ts
 
 ```typescript
@@ -1452,6 +1807,50 @@ export function createCrudRouter<
 }
 ```
 
+## File: apps/backend/src/app/lib/csv-stream.ts
+
+```typescript
+import { Transform } from 'stream';
+
+export class CsvTransformStream extends Transform {
+  private isFirst = true;
+  private columns: string[];
+  public rowCount = 0;
+
+  constructor(columns: string[] = []) {
+    super({ objectMode: true });
+    this.columns = columns;
+  }
+
+  override _transform(row: any, _encoding: string, callback: (err?: Error | null, chunk?: any) => void) {
+    this.rowCount++;
+    let chunk = '';
+
+    if (this.isFirst) {
+      if (!this.columns || this.columns.length === 0) {
+        this.columns = Object.keys(row);
+      }
+      chunk += this.columns.join(',') + '\n';
+      this.isFirst = false;
+    }
+
+    const escape = (value: unknown) => {
+      if (value === null || value === undefined) return '';
+      if (value instanceof Date) return value.toISOString();
+      const str = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+      return str.includes(',') || str.includes('"') || str.includes('\n') ? '"' + str.replace(/"/g, '""') + '"' : str;
+    };
+
+    chunk += this.columns.map((col) => escape(row[col])).join(',') + '\n';
+    callback(null, chunk);
+  }
+
+  override _flush(callback: (err?: Error | null) => void) {
+    callback();
+  }
+}
+```
+
 ## File: apps/backend/src/app/lib/csv.ts
 
 ```typescript
@@ -1479,6 +1878,93 @@ import { FastifyRequest } from 'fastify';
 export type IdParam = FastifyRequest<{
   Params: { id: string };
 }>;
+```
+
+## File: apps/backend/src/app/lib/storage.service.ts
+
+```typescript
+import { BlobServiceClient, BlobSASPermissions } from '@azure/storage-blob';
+import { env } from '../../env';
+import { Readable } from 'stream';
+
+export class StorageService {
+  private serviceClient: BlobServiceClient;
+  private containerClient;
+
+  constructor() {
+    const connectionString = env.azureStorageConnectionString || 'UseDevelopmentStorage=true';
+    const containerName = env.azureStorageContainer || 'uploads';
+    this.serviceClient = BlobServiceClient.fromConnectionString(connectionString);
+    this.containerClient = this.serviceClient.getContainerClient(containerName);
+  }
+
+  public async upload(key: string, data: Buffer, contentType: string): Promise<void> {
+    await this.containerClient.createIfNotExists();
+    const blockBlobClient = this.containerClient.getBlockBlobClient(key);
+    await blockBlobClient.upload(data, data.length, {
+      blobHTTPHeaders: { blobContentType: contentType },
+    });
+  }
+
+  public async uploadStream(key: string, stream: Readable, contentType: string): Promise<void> {
+    await this.containerClient.createIfNotExists();
+    const blockBlobClient = this.containerClient.getBlockBlobClient(key);
+    await blockBlobClient.uploadStream(stream, undefined, undefined, {
+      blobHTTPHeaders: { blobContentType: contentType },
+    });
+  }
+
+  public async generateWriteSasUrl(key: string, expiryMinutes = 15): Promise<string> {
+    await this.containerClient.createIfNotExists();
+
+    try {
+      await this.serviceClient.setProperties({
+        cors: [
+          {
+            allowedOrigins: '*',
+            allowedMethods: 'GET,HEAD,POST,PUT,DELETE,OPTIONS',
+            allowedHeaders: '*',
+            exposedHeaders: '*',
+            maxAgeInSeconds: 3600,
+          },
+        ],
+      });
+    } catch (err) {
+      console.warn('Failed to set storage service CORS properties:', err);
+    }
+
+    const blockBlobClient = this.containerClient.getBlockBlobClient(key);
+    const permissions = BlobSASPermissions.parse('w');
+    const expiresOn = new Date();
+    expiresOn.setMinutes(expiresOn.getMinutes() + expiryMinutes);
+    return await blockBlobClient.generateSasUrl({
+      permissions,
+      expiresOn,
+    });
+  }
+
+  public async download(key: string): Promise<Buffer> {
+    const blockBlobClient = this.containerClient.getBlockBlobClient(key);
+    const downloadBlockBlobResponse = await blockBlobClient.download(0);
+
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const stream = downloadBlockBlobResponse.readableStreamBody;
+      if (!stream) {
+        reject(new Error('No readable stream body in blob response'));
+        return;
+      }
+      stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      stream.on('end', () => resolve(Buffer.concat(chunks)));
+      stream.on('error', (err) => reject(err));
+    });
+  }
+
+  public async delete(key: string): Promise<void> {
+    const blockBlobClient = this.containerClient.getBlockBlobClient(key);
+    await blockBlobClient.deleteIfExists();
+  }
+}
 ```
 
 ## File: apps/backend/src/app/lib/token-hash.ts
@@ -1749,6 +2235,117 @@ export type UserActivityType =
   | 'reopen'
   | 'send';
 import { QueryParams } from './base.repo';
+```
+
+## File: apps/backend/src/app/modules/activity/controller.ts
+
+```typescript
+import { TRPCError } from '@trpc/server';
+import { BaseController } from '../../lib/base.controller';
+import { UserActivityRepo } from '../../lib/user-activity.repo';
+import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
+import { ExportsRepo } from '../exports/repositories/exports.repo';
+
+export class ActivityController extends BaseController<'user_activity', UserActivityRepo> {
+  constructor() {
+    super(new UserActivityRepo());
+  }
+
+  public async getFeed(auth: IAuthKeyPayload, options?: any) {
+    return this.getRepo().getAllWithUser(auth.tenant_id, options || {});
+  }
+
+  public async getActivities(
+    tenant_id: string,
+    entity: string,
+    entityId: string,
+    options?: { startRow?: number; endRow?: number },
+  ) {
+    return this.getRepo().getForEntity(tenant_id, entity, entityId, options);
+  }
+
+  public async deleteOldActivities(): Promise<void> {
+    const tenants = await this.getRepo().db.selectFrom('tenants').select(['id', 'subscription_plan']).execute();
+
+    for (const tenant of tenants) {
+      const isHigherPlan = tenant.subscription_plan && tenant.subscription_plan !== 'free';
+      const days = isHigherPlan ? 28 : 7;
+      const thresholdDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+      await this.getRepo()
+        .db.deleteFrom('user_activity')
+        .where('tenant_id', '=', tenant.id as any)
+        .where('created_at', '<', thresholdDate)
+        .execute();
+    }
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (!auth) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Authentication required' });
+    }
+
+    const options = (input?.options ?? {}) as any;
+    // Remove pagination options to export all matching records
+    const { startRow, endRow, ...restOptions } = options;
+
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const fileName = input?.fileName?.trim() || `activity-feed-export-${ts}.csv`;
+    const columns = input?.columns || [
+      'id',
+      'created_at',
+      'user',
+      'email',
+      'activity',
+      'entity',
+      'entity_id',
+      'quantity',
+      'metadata',
+    ];
+
+    const exportsRepo = new ExportsRepo();
+    const exportRecord = await exportsRepo.create({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entity: 'user_activity',
+      file_name: fileName,
+      columns,
+    });
+
+    const exportId = String((exportRecord as any).id);
+
+    await this.getRepo()
+      .db.insertInto('background_jobs' as any)
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'export_csv',
+          export_id: exportId,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          entity: 'user_activity',
+          table: 'user_activity',
+          options: restOptions,
+          columns,
+          file_name: fileName,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
+
+    return {
+      status: 'processing',
+    } as any;
+  }
+}
 ```
 
 ## File: apps/backend/src/app/modules/activity/trpc.router.ts
@@ -4582,6 +5179,350 @@ export class EmailTrashRepo extends BaseRepository<'email_trash'> {
 }
 ```
 
+## File: apps/backend/src/app/modules/emails/repositories/email.repo.ts
+
+```typescript
+import { EmailStatus, SPECIAL_FOLDERS } from '../../../../../../../libs/common/src';
+
+import { UpdateResult, sql } from 'kysely';
+
+import { BaseRepository } from '../../../lib/base.repo';
+import { EmailAttachmentsRepo } from './email-attachments.repo';
+import { EmailHeadersRepo } from './email-headers.repo';
+import { EmailRecipientsRepo } from './email-recipients.repo';
+import { EmailTrashRepo } from './email-trash.repo';
+import { ALL_FOLDERS } from '../../../../../../../libs/common/src/lib/emails';
+
+export class EmailRepo extends BaseRepository<'emails'> {
+  private emailAttachmentsRepo = new EmailAttachmentsRepo();
+  private emailHeadersRepo = new EmailHeadersRepo();
+  private emailRecipientsRepo = new EmailRecipientsRepo();
+  private emailTrashRepo = new EmailTrashRepo();
+
+  constructor() {
+    super('emails');
+  }
+
+  public async emptyTrash(tenantId: string) {
+    return this.transaction().execute(async (trx) => {
+      const trashId = ALL_FOLDERS.TRASH;
+
+      const res = await this.getDelete(trx)
+        .where('tenant_id', '=', tenantId)
+        .where('folder_id', '=', trashId)
+        .executeTakeFirst();
+
+      // email_trash rows should be cleaned via FK ON DELETE CASCADE
+      return Number(res.numDeletedRows ?? 0);
+    });
+  }
+
+  public async getAttachmentsByEmailId(tenant_id: string, email_id: string) {
+    return this.emailAttachmentsRepo.getByEmailId(tenant_id, email_id);
+  }
+
+  public async getByFolder(user_id: string, tenant_id: string, folder_id: string) {
+    const whereForFolder = this.buildFolderPredicate(folder_id, user_id);
+
+    const query = this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', tenant_id)
+      .where((eb) => whereForFolder(eb));
+
+    return query.execute();
+  }
+
+  public async getByFolderWithAttachmentFlag(
+    user_id: string,
+    tenant_id: string,
+    folder_id: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<any[]> {
+    const whereForFolder = this.buildFolderPredicate(folder_id, user_id);
+
+    // Subquery: SELECT email_id, COUNT(*)::int AS att_count FROM email_attachments ... GROUP BY email_id
+    const ea = this.emailAttachmentsRepo.getSelectForCountByEmails(tenant_id); // should be aliased as 'ea'
+
+    let q = this.getSelect()
+      .leftJoin(ea, 'ea.email_id', 'emails.id')
+      .leftJoin('email_headers as eh', 'eh.email_id', 'emails.id')
+      .leftJoin('email_read_states as ers', (join) =>
+        join
+          .onRef('ers.email_id', '=', 'emails.id')
+          .on('ers.user_id', '=', user_id)
+          .on('ers.tenant_id', '=', tenant_id),
+      )
+      .leftJoin('persons as p_sender', (join) =>
+        join
+          .onRef('p_sender.tenant_id', '=', 'emails.tenant_id')
+          .on(
+            sql`lower(p_sender.email) = lower(emails.from_email) or lower(p_sender.email2) = lower(emails.from_email)`,
+          ),
+      )
+      .selectAll('emails')
+      .select('eh.date_sent as date_sent')
+      .select('p_sender.first_name as sender_first_name')
+      .select('p_sender.last_name as sender_last_name')
+      // numeric count (coalesced to 0)
+      .select((eb) => eb.fn.coalesce(eb.ref('ea.att_count' as any), eb.val(0)).as('attachment_count'))
+      // boolean has_attachment via EXISTS (fast)
+      .select((eb) =>
+        eb
+          .exists(
+            eb
+              .selectFrom('email_attachments as a')
+              .select('a.id')
+              .whereRef('a.tenant_id', '=', 'emails.tenant_id')
+              .whereRef('a.email_id', '=', 'emails.id'),
+          )
+          .as('has_attachment'),
+      )
+      .select((eb) => eb.fn.coalesce(eb.ref('ers.is_read'), eb.val(false)).as('is_read'))
+      .where('emails.tenant_id', '=', tenant_id)
+      .where((eb) => whereForFolder(eb))
+      .orderBy(sql`coalesce(eh.date_sent, emails.created_at)`, 'desc');
+
+    if (typeof limit === 'number') q = q.limit(limit);
+    if (typeof offset === 'number') q = q.offset(offset);
+
+    return q.execute();
+  }
+
+  public async getByIdsInFolder(tenant_id: string, emailIds: string[], folder_id: string) {
+    if (!emailIds?.length) return [];
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', tenant_id)
+      .where('folder_id', '=', folder_id)
+      .where('id', 'in', emailIds)
+      .execute();
+  }
+
+  public async getEmailCountsByFolder(user_id: string, tenant_id: string): Promise<Record<string, number>> {
+    // 1) Regular per-folder counts
+    const regular = await this.getSelect()
+      .select(['folder_id'])
+      .select((eb) => eb.fn.count('id').as('count'))
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('folder_id')
+      .execute();
+
+    // 2) Virtual counts (tenant-wide, not grouped) + Inbox unread count
+    const virtual = await this.getSelect()
+      .leftJoin('email_read_states as ers', (join) =>
+        join
+          .onRef('ers.email_id', '=', 'emails.id')
+          .on('ers.user_id', '=', user_id)
+          .on('ers.tenant_id', '=', tenant_id),
+      )
+      .select(() => [
+        sql<number>`count(*) filter (where status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as('all_open'),
+        sql<number>`count(*) filter (where status = 'closed' and folder_id = ${ALL_FOLDERS.INBOX})`.as('closed'),
+        sql<number>`count(*) filter (where assigned_to = ${user_id} and status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
+          'assigned',
+        ),
+        sql<number>`count(*) filter (where assigned_to is null and status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
+          'unassigned',
+        ),
+        sql<number>`count(*) filter (where is_favourite = true and status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
+          'favourites',
+        ),
+        sql<number>`count(*) filter (where folder_id = ${ALL_FOLDERS.INBOX} and (ers.is_read is not true))`.as(
+          'inbox_unread',
+        ),
+      ])
+      .where('emails.tenant_id', '=', tenant_id)
+      .executeTakeFirst();
+
+    const counts: Record<string, number> = {};
+
+    // Real folders
+    for (const row of regular) {
+      counts[row.folder_id as unknown as string] = Number((row as any).count ?? 0);
+    }
+
+    // Override Inbox count with the unread count
+    counts[ALL_FOLDERS.INBOX] = Number((virtual as any)?.inbox_unread ?? 0);
+
+    // Virtual folders (COALESCE to 0 if tenant has no emails)
+    counts[SPECIAL_FOLDERS.ALL_OPEN] = Number((virtual as any)?.all_open ?? 0);
+    counts[SPECIAL_FOLDERS.CLOSED] = Number((virtual as any)?.closed ?? 0);
+    counts[SPECIAL_FOLDERS.ASSIGNED_TO_ME] = Number((virtual as any)?.assigned ?? 0);
+    counts[SPECIAL_FOLDERS.UNASSIGNED] = Number((virtual as any)?.unassigned ?? 0);
+    counts[SPECIAL_FOLDERS.FAVOURITES] = Number((virtual as any)?.favourites ?? 0);
+
+    return counts;
+  }
+
+  public async getEmailWithHeadersAndRecipients(tenant_id: string, email_id: string, user_id?: string) {
+    let query = this.getSelect()
+      .selectAll('emails')
+      .where('emails.tenant_id', '=', tenant_id)
+      .where('emails.id', '=', email_id);
+
+    if (user_id) {
+      query = query
+        .leftJoin('email_read_states as ers', (join) =>
+          join
+            .onRef('ers.email_id', '=', 'emails.id')
+            .on('ers.user_id', '=', user_id)
+            .on('ers.tenant_id', '=', tenant_id),
+        )
+        .select((eb) => eb.fn.coalesce(eb.ref('ers.is_read'), eb.val(false)).as('is_read'));
+    }
+
+    const email = await query.executeTakeFirst();
+    if (!email) return null;
+
+    const emailHeaders = await this.emailHeadersRepo.getByEmailId(tenant_id, email_id);
+
+    const [toRecipients, ccRecipients, bccRecipients] = await Promise.all([
+      this.emailRecipientsRepo.getByEmailIdAndKind(tenant_id, email_id, 'to'),
+      this.emailRecipientsRepo.getByEmailIdAndKind(tenant_id, email_id, 'cc'),
+      this.emailRecipientsRepo.getByEmailIdAndKind(tenant_id, email_id, 'bcc'),
+    ]);
+
+    return {
+      ...email,
+      headers_json: emailHeaders?.headers_json ?? null,
+      raw_headers: emailHeaders?.raw_headers ?? null,
+      date_sent: emailHeaders?.date_sent ?? null,
+      to_list: toRecipients,
+      cc_list: ccRecipients,
+      bcc_list: bccRecipients,
+    };
+  }
+
+  public async hasAttachments(tenant_id: string, email_id: string): Promise<boolean> {
+    return this.emailAttachmentsRepo.hasAttachment(tenant_id, email_id);
+  }
+
+  public async assignEmail(tenant_id: string, id: string, user_id: string | null) {
+    return this.getUpdate()
+      .set({ assigned_to: user_id })
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', id)
+      .returningAll()
+      .executeTakeFirst();
+  }
+
+  public async getAssignmentStats(input: { tenant_id: string; user_id: string }) {
+    const row = await this.getSelect()
+      .select(() => [
+        sql<number>`count(*)`.as('total'),
+        sql<number>`count(*) filter (where status = 'open')`.as('open'),
+        sql<number>`count(*) filter (where status = 'closed')`.as('closed'),
+      ])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('assigned_to', '=', input.user_id)
+      .executeTakeFirst();
+
+    return {
+      total: Number((row as any)?.total ?? 0),
+      open: Number((row as any)?.open ?? 0),
+      closed: Number((row as any)?.closed ?? 0),
+    };
+  }
+
+  public async moveToTrash(tenant_id: string, emailIds: string[]) {
+    if (!emailIds?.length) return 0;
+
+    return this.transaction().execute(async (trx) => {
+      const trashFolderId = ALL_FOLDERS.TRASH;
+
+      // Remember provenance (skip ones already in Trash)
+      await this.emailTrashRepo.addFromEmails({ tenant_id, emailIds, folder_id: trashFolderId }, trx);
+
+      const res = (await this.getUpdate(trx)
+        .set({ folder_id: trashFolderId, deleted_at: new Date() })
+        .where('tenant_id', '=', tenant_id)
+        .where('id', 'in', emailIds)
+        .executeTakeFirst()) as unknown as UpdateResult;
+
+      return Number(res.numUpdatedRows ?? 0);
+    });
+  }
+
+  public async restoreFromTrash(tenantId: string, emailIds: string[]): Promise<number> {
+    if (!emailIds?.length) return 0;
+
+    return this.transaction().execute(async (trx) => {
+      // UPDATE emails e
+      // SET folder_id = et.from_folder_id, deleted_at = null
+      // FROM email_trash et
+      // WHERE e.tenant_id = et.tenant_id AND e.id = et.email_id
+      //   AND e.tenant_id = :tenantId AND e.id IN (:emailIds)
+
+      const updated = (await this.getUpdate(trx)
+        .set({
+          folder_id: sql`et.from_folder_id`,
+          deleted_at: null,
+        })
+        .from('email_trash as et')
+        .whereRef('et.tenant_id', '=', 'emails.tenant_id')
+        .whereRef('et.email_id', '=', 'emails.id')
+        .where('emails.tenant_id', '=', tenantId)
+        .where('emails.id', 'in', emailIds)
+        .executeTakeFirst()) as unknown as UpdateResult;
+
+      // Clean up only the provenance rows we used
+      await this.emailTrashRepo.deleteByEmailIds({ tenant_id: tenantId as any, emailIds }, trx);
+
+      return Number(updated?.numUpdatedRows ?? 0);
+    });
+  }
+
+  public async setFavourite(tenant_id: string, id: string, is_favourite: boolean) {
+    await this.getUpdate()
+      .set({ is_favourite })
+      .where('tenant_id', '=', tenant_id)
+      .where('id', '=', id)
+      .executeTakeFirst();
+
+    return is_favourite;
+  }
+
+  public async setStatus(tenant_id: string, id: string, status: EmailStatus) {
+    await this.getUpdate().set({ status }).where('tenant_id', '=', tenant_id).where('id', '=', id).executeTakeFirst();
+    return status;
+  }
+
+  private buildFolderPredicate(folder_id: string, user_id: string): (eb: any) => any {
+    switch (folder_id) {
+      case SPECIAL_FOLDERS.ALL_OPEN:
+        return (eb) => eb.and([eb('emails.status', '=', 'open'), eb('emails.folder_id', '=', ALL_FOLDERS.INBOX)]);
+      case SPECIAL_FOLDERS.CLOSED:
+        return (eb) => eb.and([eb('emails.status', '=', 'closed'), eb('emails.folder_id', '=', ALL_FOLDERS.INBOX)]);
+      case SPECIAL_FOLDERS.ASSIGNED_TO_ME:
+        return (eb) =>
+          eb.and([
+            eb('emails.assigned_to', '=', user_id),
+            eb('emails.status', '=', 'open'),
+            eb('emails.folder_id', '=', ALL_FOLDERS.INBOX),
+          ]);
+      case SPECIAL_FOLDERS.UNASSIGNED:
+        return (eb) =>
+          eb.and([
+            eb('emails.assigned_to', 'is', null),
+            eb('emails.status', '=', 'open'),
+            eb('emails.folder_id', '=', ALL_FOLDERS.INBOX),
+          ]);
+      case SPECIAL_FOLDERS.FAVOURITES:
+        return (eb) =>
+          eb.and([
+            eb('emails.is_favourite', '=', true),
+            eb('emails.status', '=', 'open'),
+            eb('emails.folder_id', '=', ALL_FOLDERS.INBOX),
+          ]);
+      default:
+        // Real folder
+        return (eb) => eb('emails.folder_id', '=', folder_id);
+    }
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/emails/trpc.router.ts
 
 ```typescript
@@ -5668,6 +6609,276 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
     }));
 
     return { rows, count };
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/newsletters/controller.ts
+
+```typescript
+import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
+import { sql } from 'kysely';
+
+import { BaseController } from '../../lib/base.controller';
+import { NewslettersRepo } from './repositories/newsletters.repo';
+import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+
+export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
+  constructor() {
+    super(new NewslettersRepo());
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const result = await this.getRepo().getAllWithCount(auth.tenant_id, input?.options as any);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: 'newsletters',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+        },
+      });
+      return response;
+    }
+    return super.exportCsv(input, auth);
+  }
+
+  public buildRecipientQuery(tenant_id: string, newsletter: any): any {
+    let includeListIds: string[] = [];
+    let excludeListIds: string[] = [];
+    let includeTags: string[] = [];
+    let excludeTags: string[] = [];
+
+    // target_lists is jsonb (returns pre-parsed object from Kysely) or legacy text string.
+    const parseJsonField = (value: unknown): unknown => {
+      if (value == null) return null;
+      if (typeof value === 'string') {
+        try {
+          return JSON.parse(value);
+        } catch {
+          return value;
+        }
+      }
+      return value; // already parsed object from jsonb column
+    };
+
+    const listsObj = parseJsonField(newsletter.target_lists);
+    if (Array.isArray(listsObj)) {
+      includeListIds = listsObj as string[];
+    } else if (listsObj && typeof listsObj === 'object') {
+      const obj = listsObj as Record<string, unknown>;
+      includeListIds = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
+      excludeListIds = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
+    } else if (typeof listsObj === 'string' && listsObj) {
+      includeListIds = (listsObj as string)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+
+    const segmentsObj = parseJsonField(newsletter.segments);
+    if (Array.isArray(segmentsObj)) {
+      includeTags = segmentsObj as string[];
+    } else if (segmentsObj && typeof segmentsObj === 'object') {
+      const obj = segmentsObj as Record<string, unknown>;
+      includeTags = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
+      excludeTags = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
+    } else if (typeof segmentsObj === 'string' && segmentsObj) {
+      includeTags = (segmentsObj as string)
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+
+    const db = this.getRepo().db;
+    let query = db
+      .selectFrom('persons')
+      .where('persons.tenant_id', '=', tenant_id as any)
+      .where('persons.email', 'is not', null)
+      .where('persons.email', '!=', '');
+
+    query = query.where((eb) => {
+      const conditions = [];
+      if (includeListIds.length > 0) {
+        conditions.push(
+          eb.exists(
+            db
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('map_lists_persons.tenant_id', '=', tenant_id as any)
+              .whereRef('map_lists_persons.person_id' as any, '=', 'persons.id' as any)
+              .where('map_lists_persons.list_id', 'in', includeListIds),
+          ),
+        );
+      }
+      if (includeTags.length > 0) {
+        conditions.push(
+          eb.exists(
+            db
+              .selectFrom('map_peoples_tags')
+              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+              .select('map_peoples_tags.person_id')
+              .where('map_peoples_tags.tenant_id', '=', tenant_id as any)
+              .whereRef('map_peoples_tags.person_id' as any, '=', 'persons.id' as any)
+              .where('tags.name', 'in', includeTags),
+          ),
+        );
+      }
+
+      if (conditions.length === 0) {
+        return eb.val(false);
+      }
+      return eb.or(conditions);
+    });
+
+    if (excludeListIds.length > 0) {
+      query = query.where((eb) =>
+        eb.not(
+          eb.exists(
+            db
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('map_lists_persons.tenant_id', '=', tenant_id as any)
+              .whereRef('map_lists_persons.person_id' as any, '=', 'persons.id' as any)
+              .where('map_lists_persons.list_id', 'in', excludeListIds),
+          ),
+        ),
+      );
+    }
+
+    if (excludeTags.length > 0) {
+      query = query.where((eb) =>
+        eb.not(
+          eb.exists(
+            db
+              .selectFrom('map_peoples_tags')
+              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+              .select('map_peoples_tags.person_id')
+              .where('map_peoples_tags.tenant_id', '=', tenant_id as any)
+              .whereRef('map_peoples_tags.person_id' as any, '=', 'persons.id' as any)
+              .where('tags.name', 'in', excludeTags),
+          ),
+        ),
+      );
+    }
+
+    return query;
+  }
+
+  public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
+    const newsletter = (await this.getOneById({ tenant_id, id })) as any;
+    if (!newsletter) {
+      throw new NotFoundError('Newsletter not found');
+    }
+    if (newsletter.status === 'sent' || newsletter.status === 'queuing' || newsletter.status === 'sending') {
+      throw new BadRequestError('Newsletter has already been sent or is currently sending');
+    }
+
+    const db = this.getRepo().db;
+    const baseQuery = this.buildRecipientQuery(tenant_id, newsletter);
+
+    // Get total count of unique recipients using a distinct count query
+    const countResult = await baseQuery
+      .select(({ fn }: any) => fn.count(sql`DISTINCT persons.email`).as('count'))
+      .executeTakeFirst();
+    const totalRecipients = Number((countResult as any)?.count || 0);
+
+    if (totalRecipients === 0) {
+      throw new BadRequestError('No recipients found for the selected lists or tags');
+    }
+
+    const updated = await this.update({
+      tenant_id,
+      id,
+      row: {
+        status: 'queuing',
+        total_recipients: totalRecipients,
+        delivered_count: 0,
+        updatedby_id: userId,
+        updated_at: new Date(),
+      },
+    });
+
+    await db
+      .insertInto('background_jobs' as any)
+      .values({
+        tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-newsletter',
+          newsletterId: id,
+          tenantId: tenant_id,
+          userId: userId,
+          offset: 0,
+          deliveredCount: 0,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return updated;
+  }
+
+  public async getEngagementStats(tenant_id: string, id: string): Promise<any> {
+    const db = this.getRepo().db;
+
+    // 1. Fetch recent events (limit 100)
+    const activities = await db
+      .selectFrom('newsletter_events')
+      .select(['email', 'event_type', 'timestamp', 'url', 'ip', 'user_agent'])
+      .where('newsletter_id', '=', id as any)
+      .where('tenant_id', '=', tenant_id as any)
+      .where('event_type', 'in', ['open', 'click', 'bounce', 'dropped', 'unsubscribe', 'spamreport'])
+      .orderBy('timestamp', 'desc')
+      .limit(100)
+      .execute();
+
+    // 2. Fetch timeline data grouped by date/hour
+    const timeline = await db
+      .selectFrom('newsletter_events')
+      .select([
+        sql<string>`to_char(timestamp, 'YYYY-MM-DD HH24:00')`.as('time_bucket'),
+        sql<number>`COUNT(id) FILTER (WHERE event_type = 'open')`.as('opens'),
+        sql<number>`COUNT(id) FILTER (WHERE event_type = 'click')`.as('clicks'),
+      ])
+      .where('newsletter_id', '=', id as any)
+      .where('tenant_id', '=', tenant_id as any)
+      .where('event_type', 'in', ['open', 'click'])
+      .groupBy('time_bucket')
+      .orderBy('time_bucket', 'asc')
+      .execute();
+
+    return {
+      activities: activities.map((a) => ({
+        email: a.email,
+        event_type: a.event_type,
+        timestamp: a.timestamp,
+        url: a.url,
+        ip: a.ip,
+        user_agent: a.user_agent,
+      })),
+      timeline: timeline.map((t) => ({
+        time: t.time_bucket,
+        opens: Number(t.opens),
+        clicks: Number(t.clicks),
+      })),
+    };
   }
 }
 ```
@@ -6799,6 +8010,437 @@ export class TaskCommentsController extends BaseController<'task_comments', Task
 
   public async addComment(row: OperationDataType<'task_comments', 'insert'>) {
     return this.add(row);
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/tasks/controller.ts
+
+```typescript
+import type {
+  AddTaskType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateTaskType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import { env } from '../../../env';
+import { BaseController } from '../../lib/base.controller';
+
+import { TasksRepo } from './repositories/tasks.repo';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { ImportsRepo } from '../imports/repositories/imports.repo';
+import { StorageService } from '../../lib/storage.service';
+import { TRPCError } from '@trpc/server';
+
+export class TasksController extends BaseController<'tasks', TasksRepo> {
+  private mailService = new TransactionalEmailService();
+
+  constructor() {
+    super(new TasksRepo());
+  }
+
+  public async addTask(payload: AddTaskType, auth: IAuthKeyPayload) {
+    const row = {
+      name: payload.name,
+      details: payload.details,
+      due_at: payload.due_at ?? null,
+      status: payload.status ?? 'todo',
+      priority: payload.priority ?? null,
+      completed_at: payload.completed_at ?? null,
+      position: payload.position ?? 0,
+      assigned_to: payload.assigned_to ?? null,
+      team_id: payload.team_id ?? null,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'tasks', 'insert'>;
+    const task = await this.add(row);
+    if (task && payload.assigned_to) {
+      try {
+        const notificationsRepo = new NotificationsRepo();
+        await notificationsRepo.pushNotification({
+          tenant_id: auth.tenant_id,
+          user_id: payload.assigned_to,
+          title: 'Task Assigned',
+          message: `You have been assigned the task: "${payload.name}"`,
+          type: 'task',
+          link: `/tasks/${task.id}`,
+        });
+
+        const assignedToNum = Number(payload.assigned_to);
+        if (!isNaN(assignedToNum)) {
+          const assignee = await this.getRepo()
+            .db.selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .where('authusers.id', '=', assignedToNum as any)
+            .executeTakeFirst();
+          if (assignee && assignee.email) {
+            let optedIn = true;
+            const profileJson = assignee.profile_json;
+            if (profileJson) {
+              try {
+                const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+                if (json?.notifications?.task_assigned === false) {
+                  optedIn = false;
+                }
+              } catch (e) {
+                console.error('Failed to parse profile json in addTask', e);
+              }
+            }
+
+            if (optedIn) {
+              await this.mailService.sendMail({
+                to: assignee.email,
+                subject: `New Task Assigned: ${payload.name}`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${payload.name}" by ${auth.name}.\n\nDetails:\n${payload.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${task.id}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${payload.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${payload.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${task.id}">View Task Details</a></p>`,
+              });
+            }
+          }
+        }
+      } catch (nErr) {
+        console.error('Failed to process task assignment alert/notification', nErr);
+      }
+    }
+    return task;
+  }
+
+  public async getAllTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getAllExcludingArchivedWithCount(auth.tenant_id, options as any);
+  }
+
+  public async getArchivedTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getAllArchivedWithCount(auth.tenant_id, options as any);
+  }
+
+  public async updateTask(id: string, row: UpdateTaskType, auth: IAuthKeyPayload) {
+    const existingTask = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    const rowWithUpdatedBy = { ...row, updatedby_id: auth.user_id } as OperationDataType<'tasks', 'update'>;
+    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
+
+    if (updated && row.assigned_to && row.assigned_to !== existingTask?.assigned_to) {
+      try {
+        const notificationsRepo = new NotificationsRepo();
+        await notificationsRepo.pushNotification({
+          tenant_id: auth.tenant_id,
+          user_id: row.assigned_to,
+          title: 'Task Assigned',
+          message: `You have been assigned the task: "${updated.name}"`,
+          type: 'task',
+          link: `/tasks/${id}`,
+        });
+
+        const assignedToNum = Number(row.assigned_to);
+        if (!isNaN(assignedToNum)) {
+          const assignee = await this.getRepo()
+            .db.selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .where('authusers.id', '=', assignedToNum as any)
+            .executeTakeFirst();
+          if (assignee && assignee.email) {
+            let optedIn = true;
+            const profileJson = assignee.profile_json;
+            if (profileJson) {
+              try {
+                const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+                if (json?.notifications?.task_assigned === false) {
+                  optedIn = false;
+                }
+              } catch (e) {
+                console.error('Failed to parse profile json in updateTask', e);
+              }
+            }
+
+            if (optedIn) {
+              await this.mailService.sendMail({
+                to: assignee.email,
+                subject: `Task Assigned: ${updated.name}`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${updated.name}" by ${auth.name}.\n\nDetails:\n${updated.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${id}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${updated.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${updated.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${id}">View Task Details</a></p>`,
+              });
+            }
+          }
+        }
+      } catch (nErr) {
+        console.error('Failed to process task assignment alert/notification', nErr);
+      }
+    }
+    return updated;
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const includeArchived = Boolean(input?.options && (input.options as any)?.includeArchived);
+      const result = includeArchived
+        ? await this.getArchivedTasks(auth, input?.options)
+        : await this.getAllTasks(auth, input?.options);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: includeArchived ? 'tasks_archived' : 'tasks',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+          include_archived: includeArchived,
+        },
+      });
+      return response;
+    }
+    return super.exportCsv(input, auth);
+  }
+
+  private readonly importsRepo = new ImportsRepo();
+  private readonly storageService = new StorageService();
+
+  public async importRows(
+    input: {
+      rows: Array<{
+        name: string;
+        details?: string | null;
+        status?: string | null;
+        priority?: string | null;
+        due_at?: string | null;
+        assigned_to?: string | null;
+      }>;
+      skipped?: number;
+      file_name?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-Tasks-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'tasks',
+      tag_name: null,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    } as any;
+
+    const savedImport = await this.importsRepo.add({ row: importRow });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
+    }
+
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
+
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      console.error('Failed to upload import payload to storage', err);
+      await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id as any,
+      id: importRecordId as any,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+      } as any,
+    });
+
+    await this.importsRepo.db
+      .insertInto('background_jobs' as any)
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          skipped: skippedFromClient,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+          source: 'tasks',
+        }),
+        run_at: new Date(),
+      } as any)
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      status: 'pending',
+    } as any;
+  }
+
+  public async processImportRows(import_id: string, tenant_id: string, user_id: string, skipped: number, rows: any[]) {
+    const results = { inserted: 0, errors: 0, skipped: 0 };
+    const errorMessages: string[] = [];
+
+    // Parse status and priority to validate choices
+    const normalize = (v?: string) =>
+      (v || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[_\s-]+/g, '');
+    const validStatuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+    const validPriorities = ['low', 'medium', 'high', 'urgent'];
+
+    // Map names to users for assigned_to
+    const users = await this.getRepo()
+      .db.selectFrom('authusers')
+      .select(['id', 'first_name', 'last_name', 'email'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+
+    const userMap = new Map<string, string>();
+    for (const u of users) {
+      const idStr = String(u.id);
+      userMap.set(idStr, idStr);
+      if (u.email) userMap.set(u.email.toLowerCase().trim(), idStr);
+      if (u.first_name) {
+        userMap.set(u.first_name.toLowerCase().trim(), idStr);
+        if (u.last_name) {
+          userMap.set(`${u.first_name.toLowerCase().trim()} ${u.last_name.toLowerCase().trim()}`, idStr);
+        }
+      }
+    }
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      // 1. Normalize and filter valid rows upfront
+      const taskRows: any[] = [];
+      for (const raw of chunk) {
+        if (!raw.name || !raw.name.trim()) {
+          results.skipped += 1;
+          continue;
+        }
+
+        let status: any = 'todo';
+        if (raw.status) {
+          const normStatus = normalize(raw.status);
+          const matchedStatus = validStatuses.find((s) => normalize(s) === normStatus);
+          if (matchedStatus) status = matchedStatus;
+        }
+
+        let priority: any = null;
+        if (raw.priority) {
+          const normPriority = normalize(raw.priority);
+          const matchedPriority = validPriorities.find((p) => normalize(p) === normPriority);
+          if (matchedPriority) priority = matchedPriority;
+        }
+
+        let assigned_to: string | null = null;
+        if (raw.assigned_to) {
+          assigned_to = userMap.get(raw.assigned_to.toLowerCase().trim()) ?? null;
+        }
+
+        let due_at: Date | null = null;
+        if (raw.due_at) {
+          const parsedDate = new Date(raw.due_at);
+          if (!isNaN(parsedDate.getTime())) due_at = parsedDate;
+        }
+
+        taskRows.push({
+          tenant_id,
+          createdby_id: user_id,
+          updatedby_id: user_id,
+          name: raw.name.trim(),
+          details: raw.details ?? null,
+          status,
+          priority,
+          assigned_to,
+          due_at,
+          file_id: import_id,
+        });
+      }
+
+      if (taskRows.length > 0) {
+        try {
+          await this.getRepo()
+            .transaction()
+            .execute(async (trx) => {
+              // Chunk inserts to a safe limit (e.g., 2000 rows * 10 cols = 20,000 params)
+              const CHUNK_SIZE = 2000;
+              for (let i = 0; i < taskRows.length; i += CHUNK_SIZE) {
+                const chunk = taskRows.slice(i, i + CHUNK_SIZE);
+                await (trx as any)
+                  .insertInto('tasks')
+                  .values(chunk)
+                  .returningAll() // Adheres to repository rules
+                  .execute();
+              }
+            });
+          results.inserted += taskRows.length;
+        } catch (err: any) {
+          results.errors += taskRows.length;
+          errorMessages.push(err?.message || String(err));
+        }
+      }
+
+      await this.importsRepo.update({
+        tenant_id: tenant_id as any,
+        id: import_id as any,
+        row: {
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      errorMessages,
+    };
   }
 }
 ```
@@ -9081,51 +10723,6 @@ export default config;
 }
 ```
 
-## File: apps/backend/vite.config.ts
-
-```typescript
-/// <reference types='vitest' />
-import { defineConfig } from 'vite';
-import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
-import { nxCopyAssetsPlugin } from '@nx/vite/plugins/nx-copy-assets.plugin';
-
-export default defineConfig(() => ({
-  root: __dirname,
-  cacheDir: '../../node_modules/.vite/apps/backend',
-  plugins: [nxViteTsPaths(), nxCopyAssetsPlugin(['*.md'])],
-  // Uncomment this if you are using workers.
-  // worker: {
-  //  plugins: [ nxViteTsPaths() ],
-  // },
-  test: {
-    name: 'backend',
-    watch: false,
-    globals: true,
-
-    plugins: [nxViteTsPaths()],
-    environment: 'node',
-
-    env: {
-      DB_USER: 'zeehamid',
-      DB_NAME: 'pplcrm',
-      DB_PASSWORD: 'Eternity#1',
-      JWT_SECRET: 'dev-secret',
-      SHARED_SECRET: 'dev-secret',
-      DB_PORT: '5432',
-      DB_HOST: 'localhost',
-      DB_SSL: 'false',
-    },
-
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    reporters: ['default'],
-    coverage: {
-      reportsDirectory: '../../coverage/apps/backend',
-      provider: 'v8' as const,
-    },
-  },
-}));
-```
-
 ## File: apps/frontend-e2e/playwright.config.ts
 
 ```typescript
@@ -9357,6206 +10954,105 @@ export async function down(db: Kysely<any>): Promise<void> {
 }
 ```
 
-## File: apps/backend/src/app/\_migrations/schema.sql
-
-```sql
---
--- PostgreSQL database dump
---
-
-\restrict oPFHGUe6wVNuN0eNnQazqyJQjnNPomJSMJiQZMlpJpzgVIBdJCJVrckJoNfysZW
-
--- Dumped from database version 14.18 (Homebrew)
--- Dumped by pg_dump version 17.6
-
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET transaction_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SELECT pg_catalog.set_config('search_path', '', false);
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
-
---
--- Name: public; Type: SCHEMA; Schema: -; Owner: zee
---
-
--- *not* creating schema, since initdb creates it
-
-
-ALTER SCHEMA public OWNER TO zee;
-
---
--- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
---
-
-CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
-
-
---
--- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner:
---
-
-COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
-
-
---
--- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
---
-
-CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
-
-
---
--- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner:
---
-
-COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
-
-
---
--- Name: recipient_kind; Type: TYPE; Schema: public; Owner: zeehamid
---
-
-CREATE TYPE public.recipient_kind AS ENUM (
-    'to',
-    'cc',
-    'bcc'
-);
-
-
-ALTER TYPE public.recipient_kind OWNER TO zeehamid;
-
---
--- Name: notify_job_inserted(); Type: FUNCTION; Schema: public; Owner: zeehamid
---
-
-CREATE FUNCTION public.notify_job_inserted() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-    BEGIN
-      PERFORM pg_notify('background_jobs_channel', '');
-      RETURN NEW;
-    END;
-    $$;
-
-
-ALTER FUNCTION public.notify_job_inserted() OWNER TO zeehamid;
-
---
--- Name: notify_webhook_event_inserted(); Type: FUNCTION; Schema: public; Owner: zeehamid
---
-
-CREATE FUNCTION public.notify_webhook_event_inserted() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-    BEGIN
-      PERFORM pg_notify('webhook_events_channel', '');
-      RETURN NEW;
-    END;
-    $$;
-
-
-ALTER FUNCTION public.notify_webhook_event_inserted() OWNER TO zeehamid;
-
---
--- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: zeehamid
---
-
-CREATE FUNCTION public.set_updated_at() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-    BEGIN
-      NEW.updated_at = now();
-      RETURN NEW;
-    END;
-    $$;
-
-
-ALTER FUNCTION public.set_updated_at() OWNER TO zeehamid;
-
---
--- Name: sync_email_has_attachments(); Type: FUNCTION; Schema: public; Owner: zeehamid
---
-
-CREATE FUNCTION public.sync_email_has_attachments() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-  UPDATE email_headers h
-  SET has_attachments = EXISTS (
-    SELECT 1 FROM email_attachments a
-    WHERE a.tenant_id = COALESCE(NEW.tenant_id, OLD.tenant_id)
-      AND a.email_id  = COALESCE(NEW.email_id,  OLD.email_id)
-  )
-  WHERE h.tenant_id = COALESCE(NEW.tenant_id, OLD.tenant_id)
-    AND h.email_id  = COALESCE(NEW.email_id,  OLD.email_id);
-  RETURN NULL;
-END$$;
-
-
-ALTER FUNCTION public.sync_email_has_attachments() OWNER TO zeehamid;
-
-SET default_tablespace = '';
-
-SET default_table_access_method = heap;
-
---
--- Name: authusers; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.authusers (
-    id bigint NOT NULL,
-    tenant_id bigint,
-    verified boolean DEFAULT false,
-    role text,
-    first_name text,
-    last_name text,
-    email text NOT NULL,
-    password text NOT NULL,
-    password_reset_code text,
-    password_reset_code_created_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    createdby_id bigint,
-    updatedby_id bigint,
-    two_factor_enabled boolean DEFAULT false NOT NULL,
-    two_factor_code text,
-    two_factor_expires_at timestamp with time zone,
-    deletion_scheduled_at timestamp with time zone,
-    previous_email text,
-    previous_role text,
-    CONSTRAINT chk_authusers_role CHECK (((role IS NULL) OR (role = ANY (ARRAY['owner'::text, 'admin'::text, 'user'::text, 'viewer'::text]))))
-);
-
-
-ALTER TABLE public.authusers OWNER TO zeehamid;
-
---
--- Name: authusers_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.authusers_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.authusers_id_seq OWNER TO zeehamid;
-
---
--- Name: authusers_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.authusers_id_seq OWNED BY public.authusers.id;
-
-
---
--- Name: background_jobs; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.background_jobs (
-    id bigint NOT NULL,
-    tenant_id bigint,
-    queue text DEFAULT 'default'::text NOT NULL,
-    status text DEFAULT 'pending'::text NOT NULL,
-    payload jsonb NOT NULL,
-    attempts integer DEFAULT 0 NOT NULL,
-    max_attempts integer DEFAULT 3 NOT NULL,
-    error text,
-    run_at timestamp with time zone DEFAULT now() NOT NULL,
-    locked_at timestamp with time zone,
-    locked_by text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_background_jobs_status CHECK ((status = ANY (ARRAY['pending'::text, 'processing'::text, 'completed'::text, 'failed'::text])))
-);
-
-
-ALTER TABLE public.background_jobs OWNER TO zeehamid;
-
---
--- Name: background_jobs_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.background_jobs_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.background_jobs_id_seq OWNER TO zeehamid;
-
---
--- Name: background_jobs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.background_jobs_id_seq OWNED BY public.background_jobs.id;
-
-
---
--- Name: campaigns; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.campaigns (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    admin_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    name text NOT NULL,
-    description text,
-    notes text,
-    "json" jsonb,
-    startdate date,
-    enddate date,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updatedby_id bigint
-);
-
-
-ALTER TABLE public.campaigns OWNER TO zeehamid;
-
---
--- Name: campaigns_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.campaigns_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.campaigns_id_seq OWNER TO zeehamid;
-
---
--- Name: campaigns_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.campaigns_id_seq OWNED BY public.campaigns.id;
-
-
---
--- Name: companies; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.companies (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    name text NOT NULL,
-    description text,
-    website text,
-    email text,
-    phone text,
-    industry text,
-    notes text,
-    "json" jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    file_id bigint,
-    search_vector tsvector GENERATED ALWAYS AS (((((setweight(to_tsvector('simple'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(email, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(website, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(phone, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(industry, ''::text)), 'C'::"char"))) STORED
-);
-
-
-ALTER TABLE public.companies OWNER TO zeehamid;
-
---
--- Name: companies_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.companies_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.companies_id_seq OWNER TO zeehamid;
-
---
--- Name: companies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.companies_id_seq OWNED BY public.companies.id;
-
-
---
--- Name: data_exports; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.data_exports (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    user_id bigint NOT NULL,
-    entity text NOT NULL,
-    file_name text NOT NULL,
-    status text DEFAULT 'pending'::text NOT NULL,
-    row_count integer DEFAULT 0,
-    storage_key text,
-    columns jsonb,
-    error text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.data_exports OWNER TO zeehamid;
-
---
--- Name: data_exports_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.data_exports_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.data_exports_id_seq OWNER TO zeehamid;
-
---
--- Name: data_exports_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.data_exports_id_seq OWNED BY public.data_exports.id;
-
-
---
--- Name: data_imports; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.data_imports (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    file_name text NOT NULL,
-    source text DEFAULT 'persons'::text NOT NULL,
-    tag_name text,
-    tag_id bigint,
-    row_count integer DEFAULT 0 NOT NULL,
-    inserted_count integer DEFAULT 0 NOT NULL,
-    error_count integer DEFAULT 0 NOT NULL,
-    skipped_count integer DEFAULT 0 NOT NULL,
-    households_created integer DEFAULT 0 NOT NULL,
-    metadata jsonb,
-    processed_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    status text DEFAULT 'completed'::text NOT NULL,
-    error_message text
-);
-
-
-ALTER TABLE public.data_imports OWNER TO zeehamid;
-
---
--- Name: data_imports_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.data_imports_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.data_imports_id_seq OWNER TO zeehamid;
-
---
--- Name: data_imports_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.data_imports_id_seq OWNED BY public.data_imports.id;
-
-
---
--- Name: donation_periods; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.donation_periods (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    name text NOT NULL,
-    start_date date NOT NULL,
-    end_date date,
-    limit_amount integer NOT NULL,
-    is_active boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    CONSTRAINT donation_periods_dates_check CHECK (((end_date IS NULL) OR (end_date > start_date))),
-    CONSTRAINT donation_periods_limit_check CHECK ((limit_amount > 0))
-);
-
-
-ALTER TABLE public.donation_periods OWNER TO zeehamid;
-
---
--- Name: donation_periods_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.donation_periods_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.donation_periods_id_seq OWNER TO zeehamid;
-
---
--- Name: donation_periods_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.donation_periods_id_seq OWNED BY public.donation_periods.id;
-
-
---
--- Name: donation_pledges; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.donation_pledges (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    person_id bigint,
-    stripe_subscription_id text,
-    stripe_customer_id text,
-    monthly_amount integer NOT NULL,
-    status text DEFAULT 'active'::text NOT NULL,
-    started_at timestamp with time zone DEFAULT now() NOT NULL,
-    cancelled_at timestamp with time zone,
-    next_billing_date date,
-    first_name text,
-    last_name text,
-    email text,
-    state text,
-    country text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    CONSTRAINT donation_pledges_status_check CHECK ((status = ANY (ARRAY['active'::text, 'past_due'::text, 'cancelled'::text, 'unpaid'::text])))
-);
-
-
-ALTER TABLE public.donation_pledges OWNER TO zeehamid;
-
---
--- Name: donation_pledges_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.donation_pledges_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.donation_pledges_id_seq OWNER TO zeehamid;
-
---
--- Name: donation_pledges_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.donation_pledges_id_seq OWNED BY public.donation_pledges.id;
-
-
---
--- Name: donations; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.donations (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    person_id bigint,
-    amount integer NOT NULL,
-    status text DEFAULT 'pending'::text NOT NULL,
-    stripe_session_id text,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL,
-    first_name text,
-    last_name text,
-    email text,
-    street text,
-    apt text,
-    city text,
-    state text,
-    zip text,
-    country text,
-    pledge_id bigint
-);
-
-
-ALTER TABLE public.donations OWNER TO zeehamid;
-
---
--- Name: donations_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.donations_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.donations_id_seq OWNER TO zeehamid;
-
---
--- Name: donations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.donations_id_seq OWNED BY public.donations.id;
-
-
---
--- Name: email_attachments; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.email_attachments (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    email_id bigint NOT NULL,
-    filename text NOT NULL,
-    content_type text NOT NULL,
-    size_bytes bigint NOT NULL,
-    cid text,
-    is_inline boolean DEFAULT false NOT NULL,
-    pos integer DEFAULT 0 NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL,
-    file_id bigint
-);
-
-
-ALTER TABLE public.email_attachments OWNER TO zeehamid;
-
---
--- Name: email_attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.email_attachments_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.email_attachments_id_seq OWNER TO zeehamid;
-
---
--- Name: email_attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.email_attachments_id_seq OWNED BY public.email_attachments.id;
-
-
---
--- Name: email_bodies; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.email_bodies (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    email_id bigint NOT NULL,
-    body_html text NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.email_bodies OWNER TO zeehamid;
-
---
--- Name: email_bodies_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.email_bodies_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.email_bodies_id_seq OWNER TO zeehamid;
-
---
--- Name: email_bodies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.email_bodies_id_seq OWNED BY public.email_bodies.id;
-
-
---
--- Name: email_comments; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.email_comments (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    email_id bigint NOT NULL,
-    author_id bigint NOT NULL,
-    comment text NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.email_comments OWNER TO zeehamid;
-
---
--- Name: email_comments_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.email_comments_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.email_comments_id_seq OWNER TO zeehamid;
-
---
--- Name: email_comments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.email_comments_id_seq OWNED BY public.email_comments.id;
-
-
---
--- Name: email_drafts; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.email_drafts (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    user_id bigint NOT NULL,
-    thread_id text,
-    to_list jsonb,
-    cc_list jsonb,
-    bcc_list jsonb,
-    subject text,
-    body_html text,
-    body_delta jsonb,
-    meta jsonb,
-    is_locked boolean DEFAULT false NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.email_drafts OWNER TO zeehamid;
-
---
--- Name: email_drafts_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.email_drafts_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.email_drafts_id_seq OWNER TO zeehamid;
-
---
--- Name: email_drafts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.email_drafts_id_seq OWNED BY public.email_drafts.id;
-
-
---
--- Name: email_folders; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.email_folders (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    name text NOT NULL,
-    icon text,
-    sort_order integer DEFAULT 0,
-    is_default boolean DEFAULT false,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.email_folders OWNER TO zeehamid;
-
---
--- Name: email_folders_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.email_folders_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.email_folders_id_seq OWNER TO zeehamid;
-
---
--- Name: email_folders_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.email_folders_id_seq OWNED BY public.email_folders.id;
-
-
---
--- Name: email_headers; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.email_headers (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    email_id bigint NOT NULL,
-    headers_json jsonb,
-    raw_headers text,
-    date_sent timestamp without time zone,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.email_headers OWNER TO zeehamid;
-
---
--- Name: email_headers_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.email_headers_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.email_headers_id_seq OWNER TO zeehamid;
-
---
--- Name: email_headers_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.email_headers_id_seq OWNED BY public.email_headers.id;
-
-
---
--- Name: email_read_states; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.email_read_states (
-    tenant_id bigint NOT NULL,
-    user_id bigint NOT NULL,
-    email_id bigint NOT NULL,
-    is_read boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.email_read_states OWNER TO zeehamid;
-
---
--- Name: email_recipients; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.email_recipients (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    email_id bigint NOT NULL,
-    kind text NOT NULL,
-    name text,
-    email text NOT NULL,
-    pos integer DEFAULT 0 NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL,
-    CONSTRAINT email_recipients_kind_check CHECK ((kind = ANY (ARRAY['to'::text, 'cc'::text, 'bcc'::text])))
-);
-
-
-ALTER TABLE public.email_recipients OWNER TO zeehamid;
-
---
--- Name: email_recipients_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.email_recipients_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.email_recipients_id_seq OWNER TO zeehamid;
-
---
--- Name: email_recipients_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.email_recipients_id_seq OWNED BY public.email_recipients.id;
-
-
---
--- Name: email_trash; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.email_trash (
-    tenant_id bigint NOT NULL,
-    email_id bigint NOT NULL,
-    from_folder_id bigint NOT NULL,
-    trashed_at timestamp without time zone DEFAULT now() NOT NULL,
-    createdby_id bigint,
-    updatedby_id bigint,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL,
-    id bigint NOT NULL
-);
-
-
-ALTER TABLE public.email_trash OWNER TO zeehamid;
-
---
--- Name: email_trash_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.email_trash_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.email_trash_id_seq OWNER TO zeehamid;
-
---
--- Name: email_trash_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.email_trash_id_seq OWNED BY public.email_trash.id;
-
-
---
--- Name: emails; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.emails (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    folder_id bigint NOT NULL,
-    from_email text,
-    to_email text,
-    subject text,
-    body text,
-    preview text,
-    assigned_to bigint,
-    is_favourite boolean DEFAULT false NOT NULL,
-    deleted_at timestamp without time zone,
-    status text DEFAULT 'open'::text,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.emails OWNER TO zeehamid;
-
---
--- Name: emails_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.emails_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.emails_id_seq OWNER TO zeehamid;
-
---
--- Name: emails_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.emails_id_seq OWNED BY public.emails.id;
-
-
---
--- Name: event_registrations; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.event_registrations (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    event_id bigint NOT NULL,
-    person_id bigint NOT NULL,
-    ticket_type_id bigint,
-    status text DEFAULT 'registered'::text NOT NULL,
-    checked_in_at timestamp with time zone,
-    notes text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    CONSTRAINT event_registrations_status_check CHECK ((status = ANY (ARRAY['registered'::text, 'attended'::text, 'no_show'::text, 'cancelled'::text])))
-);
-
-
-ALTER TABLE public.event_registrations OWNER TO zeehamid;
-
---
--- Name: event_registrations_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.event_registrations_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.event_registrations_id_seq OWNER TO zeehamid;
-
---
--- Name: event_registrations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.event_registrations_id_seq OWNED BY public.event_registrations.id;
-
-
---
--- Name: event_ticket_types; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.event_ticket_types (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    event_id bigint NOT NULL,
-    name text NOT NULL,
-    description text,
-    price_cents integer DEFAULT 0 NOT NULL,
-    capacity integer,
-    sort_order integer DEFAULT 0 NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    CONSTRAINT event_ticket_types_capacity_check CHECK (((capacity IS NULL) OR (capacity > 0))),
-    CONSTRAINT event_ticket_types_price_check CHECK ((price_cents >= 0))
-);
-
-
-ALTER TABLE public.event_ticket_types OWNER TO zeehamid;
-
---
--- Name: event_ticket_types_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.event_ticket_types_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.event_ticket_types_id_seq OWNER TO zeehamid;
-
---
--- Name: event_ticket_types_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.event_ticket_types_id_seq OWNED BY public.event_ticket_types.id;
-
-
---
--- Name: events; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.events (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    name text NOT NULL,
-    description text,
-    location_address text,
-    start_time timestamp with time zone NOT NULL,
-    end_time timestamp with time zone NOT NULL,
-    capacity integer,
-    contact_email text,
-    contact_phone text,
-    slug text NOT NULL,
-    is_published boolean DEFAULT false NOT NULL,
-    send_reminder boolean DEFAULT true NOT NULL,
-    send_registration_confirmation boolean DEFAULT true NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    search_vector tsvector GENERATED ALWAYS AS (((setweight(to_tsvector('english'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(location_address, ''::text)), 'B'::"char")) || setweight(to_tsvector('english'::regconfig, COALESCE(description, ''::text)), 'C'::"char"))) STORED,
-    fields jsonb DEFAULT '["first_name", "last_name", "email", "mobile", "notes"]'::jsonb NOT NULL,
-    CONSTRAINT events_capacity_check CHECK (((capacity IS NULL) OR (capacity > 0))),
-    CONSTRAINT events_end_after_start_check CHECK ((end_time > start_time))
-);
-
-
-ALTER TABLE public.events OWNER TO zeehamid;
-
---
--- Name: events_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.events_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.events_id_seq OWNER TO zeehamid;
-
---
--- Name: events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.events_id_seq OWNED BY public.events.id;
-
-
---
--- Name: files; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.files (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    filename text NOT NULL,
-    mime_type text,
-    size_bytes bigint,
-    storage_key text NOT NULL,
-    sha256_hex text,
-    uploaded_by bigint,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.files OWNER TO zeehamid;
-
---
--- Name: files_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.files_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.files_id_seq OWNER TO zeehamid;
-
---
--- Name: files_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.files_id_seq OWNED BY public.files.id;
-
-
---
--- Name: google_oauth_tokens; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.google_oauth_tokens (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    tenant_id text NOT NULL,
-    user_id text NOT NULL,
-    access_token text NOT NULL,
-    refresh_token text NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    google_email text,
-    delta_link text,
-    synced_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now(),
-    updated_at timestamp with time zone DEFAULT now(),
-    last_sync_error text,
-    last_sync_error_at timestamp with time zone
-);
-
-
-ALTER TABLE public.google_oauth_tokens OWNER TO zeehamid;
-
---
--- Name: households; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.households (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    campaign_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    file_id bigint,
-    home_phone text,
-    apt text,
-    street_num text,
-    street1 text,
-    street2 text,
-    city text,
-    state text,
-    zip text,
-    country text,
-    notes text,
-    "json" jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    address_fp_street text,
-    address_fp_full text,
-    is_placeholder boolean DEFAULT false NOT NULL,
-    updatedby_id bigint,
-    lat double precision,
-    lng double precision,
-    formatted_address text,
-    type text,
-    district text,
-    precinct text,
-    ward text,
-    geocoding_status text DEFAULT 'pending'::text,
-    search_vector tsvector GENERATED ALWAYS AS ((((((((((setweight(to_tsvector('simple'::regconfig, COALESCE(street1, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(city, ''::text)), 'A'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(address_fp_full, ''::text)), 'A'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(zip, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(state, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(home_phone, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(street_num, ''::text)), 'C'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(apt, ''::text)), 'C'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(street2, ''::text)), 'C'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(country, ''::text)), 'C'::"char"))) STORED
-);
-
-
-ALTER TABLE public.households OWNER TO zeehamid;
-
---
--- Name: households_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.households_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.households_id_seq OWNER TO zeehamid;
-
---
--- Name: households_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.households_id_seq OWNED BY public.households.id;
-
-
---
--- Name: kysely_migration; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.kysely_migration (
-    name character varying(255) NOT NULL,
-    "timestamp" character varying(255) NOT NULL
-);
-
-
-ALTER TABLE public.kysely_migration OWNER TO zeehamid;
-
---
--- Name: kysely_migration_lock; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.kysely_migration_lock (
-    id character varying(255) NOT NULL,
-    is_locked integer DEFAULT 0 NOT NULL
-);
-
-
-ALTER TABLE public.kysely_migration_lock OWNER TO zeehamid;
-
---
--- Name: lists; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.lists (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    name text NOT NULL,
-    description text,
-    object text NOT NULL,
-    is_dynamic boolean DEFAULT false,
-    definition jsonb,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    last_refreshed_at timestamp with time zone,
-    status text DEFAULT 'idle'::text NOT NULL,
-    CONSTRAINT chk_lists_status CHECK ((status = ANY (ARRAY['idle'::text, 'refreshing'::text, 'failed'::text]))),
-    CONSTRAINT lists_object_check CHECK ((object = ANY (ARRAY['people'::text, 'households'::text])))
-);
-
-
-ALTER TABLE public.lists OWNER TO zeehamid;
-
---
--- Name: lists_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.lists_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.lists_id_seq OWNER TO zeehamid;
-
---
--- Name: lists_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.lists_id_seq OWNED BY public.lists.id;
-
-
---
--- Name: map_campaigns_users; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.map_campaigns_users (
-    tenant_id bigint NOT NULL,
-    campaign_id bigint NOT NULL,
-    user_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.map_campaigns_users OWNER TO zeehamid;
-
---
--- Name: map_households_tags; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.map_households_tags (
-    tenant_id bigint NOT NULL,
-    household_id bigint NOT NULL,
-    tag_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.map_households_tags OWNER TO zeehamid;
-
---
--- Name: map_lists_households; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.map_lists_households (
-    tenant_id bigint NOT NULL,
-    list_id bigint NOT NULL,
-    household_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.map_lists_households OWNER TO zeehamid;
-
---
--- Name: map_lists_persons; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.map_lists_persons (
-    tenant_id bigint NOT NULL,
-    list_id bigint NOT NULL,
-    person_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.map_lists_persons OWNER TO zeehamid;
-
---
--- Name: map_peoples_tags; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.map_peoples_tags (
-    tenant_id bigint NOT NULL,
-    person_id bigint NOT NULL,
-    tag_id bigint NOT NULL,
-    deletable boolean DEFAULT true,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.map_peoples_tags OWNER TO zeehamid;
-
---
--- Name: map_teams_lists; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.map_teams_lists (
-    tenant_id bigint NOT NULL,
-    team_id bigint NOT NULL,
-    list_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.map_teams_lists OWNER TO zeehamid;
-
---
--- Name: map_teams_persons; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.map_teams_persons (
-    tenant_id bigint NOT NULL,
-    team_id bigint NOT NULL,
-    person_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.map_teams_persons OWNER TO zeehamid;
-
---
--- Name: ms_oauth_tokens; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.ms_oauth_tokens (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    tenant_id text NOT NULL,
-    user_id text NOT NULL,
-    access_token text NOT NULL,
-    refresh_token text NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
-    ms_email text,
-    delta_link text,
-    synced_at timestamp with time zone,
-    created_at timestamp with time zone DEFAULT now(),
-    updated_at timestamp with time zone DEFAULT now(),
-    last_sync_error text,
-    last_sync_error_at timestamp with time zone
-);
-
-
-ALTER TABLE public.ms_oauth_tokens OWNER TO zeehamid;
-
---
--- Name: newsletter_events; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.newsletter_events (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    newsletter_id bigint NOT NULL,
-    email text NOT NULL,
-    event_type text NOT NULL,
-    sg_event_id text NOT NULL,
-    sg_message_id text,
-    url text,
-    ip text,
-    user_agent text,
-    "timestamp" timestamp with time zone NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.newsletter_events OWNER TO zeehamid;
-
---
--- Name: newsletter_events_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.newsletter_events_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.newsletter_events_id_seq OWNER TO zeehamid;
-
---
--- Name: newsletter_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.newsletter_events_id_seq OWNED BY public.newsletter_events.id;
-
-
---
--- Name: newsletters; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.newsletters (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    name text NOT NULL,
-    status text DEFAULT 'sent'::text NOT NULL,
-    subject text,
-    preview_text text,
-    audience_description text,
-    target_lists jsonb,
-    segments jsonb,
-    total_recipients integer DEFAULT 0 NOT NULL,
-    delivered_count integer DEFAULT 0 NOT NULL,
-    bounce_count integer DEFAULT 0 NOT NULL,
-    open_rate numeric DEFAULT 0 NOT NULL,
-    click_rate numeric DEFAULT 0 NOT NULL,
-    unique_opens integer DEFAULT 0 NOT NULL,
-    unique_clicks integer DEFAULT 0 NOT NULL,
-    unsubscribe_count integer DEFAULT 0 NOT NULL,
-    spam_complaint_count integer DEFAULT 0 NOT NULL,
-    reply_count integer DEFAULT 0 NOT NULL,
-    send_date timestamp with time zone,
-    last_engagement_at timestamp with time zone,
-    summary text,
-    html_content text,
-    plain_text_content text,
-    top_links jsonb,
-    attachments jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_newsletters_click_rate_range CHECK (((click_rate >= (0)::numeric) AND (click_rate <= (100)::numeric))),
-    CONSTRAINT chk_newsletters_open_rate_range CHECK (((open_rate >= (0)::numeric) AND (open_rate <= (100)::numeric)))
-);
-
-
-ALTER TABLE public.newsletters OWNER TO zeehamid;
-
---
--- Name: newsletters_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.newsletters_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.newsletters_id_seq OWNER TO zeehamid;
-
---
--- Name: newsletters_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.newsletters_id_seq OWNED BY public.newsletters.id;
-
-
---
--- Name: notifications; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.notifications (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    user_id bigint NOT NULL,
-    title text NOT NULL,
-    message text NOT NULL,
-    type text DEFAULT 'info'::text NOT NULL,
-    read boolean DEFAULT false NOT NULL,
-    link text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.notifications OWNER TO zeehamid;
-
---
--- Name: notifications_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.notifications_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.notifications_id_seq OWNER TO zeehamid;
-
---
--- Name: notifications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.notifications_id_seq OWNED BY public.notifications.id;
-
-
---
--- Name: passkeys; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.passkeys (
-    id bigint NOT NULL,
-    user_id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    credential_id text NOT NULL,
-    public_key text NOT NULL,
-    counter bigint DEFAULT 0 NOT NULL,
-    device_type text NOT NULL,
-    backed_up boolean DEFAULT false NOT NULL,
-    transports text[],
-    aaguid text,
-    friendly_name text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.passkeys OWNER TO zeehamid;
-
---
--- Name: passkeys_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE public.passkeys ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.passkeys_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
-
-
---
--- Name: person_connections; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.person_connections (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    from_person_id bigint NOT NULL,
-    to_person_id bigint NOT NULL,
-    relation_type text NOT NULL,
-    custom_label text,
-    is_mutual boolean DEFAULT false NOT NULL,
-    notes text,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT pc_custom_label_required CHECK (((relation_type <> 'custom'::text) OR ((custom_label IS NOT NULL) AND (custom_label <> ''::text)))),
-    CONSTRAINT pc_no_self_loop CHECK ((from_person_id <> to_person_id)),
-    CONSTRAINT pc_relation_type_check CHECK ((relation_type = ANY (ARRAY['referred_by'::text, 'referred_to'::text, 'close_friend'::text, 'family_member'::text, 'spouse'::text, 'colleague'::text, 'org_affiliation'::text, 'introduced_by'::text, 'introduced_to'::text, 'custom'::text])))
-);
-
-
-ALTER TABLE public.person_connections OWNER TO zeehamid;
-
---
--- Name: person_connections_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.person_connections_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.person_connections_id_seq OWNER TO zeehamid;
-
---
--- Name: person_connections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.person_connections_id_seq OWNED BY public.person_connections.id;
-
-
---
--- Name: persons; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.persons (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    campaign_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    household_id bigint NOT NULL,
-    file_id bigint,
-    first_name text,
-    middle_names text,
-    last_name text,
-    home_phone text,
-    mobile text,
-    email text,
-    email2 text,
-    notes text,
-    "json" jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    updatedby_id bigint,
-    company_id bigint,
-    linkedin text,
-    twitter text,
-    facebook text,
-    instagram text,
-    assigned_to bigint,
-    search_vector tsvector GENERATED ALWAYS AS ((((((setweight(to_tsvector('simple'::regconfig, COALESCE(first_name, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(last_name, ''::text)), 'A'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(email, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(email2, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(mobile, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(home_phone, ''::text)), 'C'::"char"))) STORED
-);
-
-
-ALTER TABLE public.persons OWNER TO zeehamid;
-
---
--- Name: persons_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.persons_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.persons_id_seq OWNER TO zeehamid;
-
---
--- Name: persons_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.persons_id_seq OWNED BY public.persons.id;
-
-
---
--- Name: potential_duplicates; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.potential_duplicates (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    group_key text NOT NULL,
-    person_id bigint,
-    reason text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    household_id bigint,
-    company_id bigint
-);
-
-
-ALTER TABLE public.potential_duplicates OWNER TO zeehamid;
-
---
--- Name: potential_duplicates_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.potential_duplicates_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.potential_duplicates_id_seq OWNER TO zeehamid;
-
---
--- Name: potential_duplicates_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.potential_duplicates_id_seq OWNED BY public.potential_duplicates.id;
-
-
---
--- Name: profiles; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.profiles (
-    id bigint NOT NULL,
-    tenant_id bigint,
-    auth_id bigint,
-    middle_names text,
-    last_name text,
-    home_phone text,
-    mobile text,
-    email2 text,
-    apt text,
-    street_num text,
-    street1 text,
-    street2 text,
-    city text,
-    state text,
-    zip text,
-    country text,
-    "json" jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    createdby_id bigint,
-    updatedby_id bigint,
-    avatar_file_id bigint
-);
-
-
-ALTER TABLE public.profiles OWNER TO zeehamid;
-
---
--- Name: profiles_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.profiles_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.profiles_id_seq OWNER TO zeehamid;
-
---
--- Name: profiles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.profiles_id_seq OWNED BY public.profiles.id;
-
-
---
--- Name: sessions; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.sessions (
-    id bigint NOT NULL,
-    session_id text NOT NULL,
-    refresh_token text,
-    user_id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    last_accessed timestamp with time zone DEFAULT now() NOT NULL,
-    ip_address text NOT NULL,
-    user_agent text,
-    status text DEFAULT 'active'::text,
-    other_properties jsonb,
-    expires_at timestamp with time zone,
-    last_used_at timestamp with time zone
-);
-
-
-ALTER TABLE public.sessions OWNER TO zeehamid;
-
---
--- Name: sessions_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.sessions_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.sessions_id_seq OWNER TO zeehamid;
-
---
--- Name: sessions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.sessions_id_seq OWNED BY public.sessions.id;
-
-
---
--- Name: sessions_user_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.sessions_user_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.sessions_user_id_seq OWNER TO zeehamid;
-
---
--- Name: sessions_user_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.sessions_user_id_seq OWNED BY public.sessions.user_id;
-
-
---
--- Name: settings; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.settings (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    key text NOT NULL,
-    value jsonb NOT NULL,
-    createdby_id bigint,
-    updatedby_id bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.settings OWNER TO zeehamid;
-
---
--- Name: settings_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.settings_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.settings_id_seq OWNER TO zeehamid;
-
---
--- Name: settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.settings_id_seq OWNED BY public.settings.id;
-
-
---
--- Name: tags; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.tags (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    name text NOT NULL,
-    description text,
-    deletable boolean DEFAULT true,
-    color character varying(7),
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    type text DEFAULT 'tag'::text NOT NULL
-);
-
-
-ALTER TABLE public.tags OWNER TO zeehamid;
-
---
--- Name: tags_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.tags_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.tags_id_seq OWNER TO zeehamid;
-
---
--- Name: tags_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.tags_id_seq OWNED BY public.tags.id;
-
-
---
--- Name: task_attachments; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.task_attachments (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    task_id bigint NOT NULL,
-    filename text NOT NULL,
-    content_type text,
-    size_bytes bigint,
-    url text,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.task_attachments OWNER TO zeehamid;
-
---
--- Name: task_attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.task_attachments_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.task_attachments_id_seq OWNER TO zeehamid;
-
---
--- Name: task_attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.task_attachments_id_seq OWNED BY public.task_attachments.id;
-
-
---
--- Name: task_comments; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.task_comments (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    task_id bigint NOT NULL,
-    author_id bigint NOT NULL,
-    comment text NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.task_comments OWNER TO zeehamid;
-
---
--- Name: task_comments_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.task_comments_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.task_comments_id_seq OWNER TO zeehamid;
-
---
--- Name: task_comments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.task_comments_id_seq OWNED BY public.task_comments.id;
-
-
---
--- Name: task_subtasks; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.task_subtasks (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    task_id bigint NOT NULL,
-    name text NOT NULL,
-    status text DEFAULT 'todo'::text,
-    "position" integer DEFAULT 0,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.task_subtasks OWNER TO zeehamid;
-
---
--- Name: task_subtasks_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.task_subtasks_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.task_subtasks_id_seq OWNER TO zeehamid;
-
---
--- Name: task_subtasks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.task_subtasks_id_seq OWNED BY public.task_subtasks.id;
-
-
---
--- Name: tasks; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.tasks (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    name text NOT NULL,
-    details text,
-    due_at timestamp with time zone,
-    status text DEFAULT 'todo'::text,
-    priority text,
-    assigned_to bigint,
-    completed_at timestamp with time zone,
-    "position" integer DEFAULT 0,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    team_id bigint,
-    file_id bigint,
-    CONSTRAINT chk_tasks_status CHECK ((status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'blocked'::text, 'done'::text, 'canceled'::text, 'archived'::text])))
-);
-
-
-ALTER TABLE public.tasks OWNER TO zeehamid;
-
---
--- Name: tasks_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.tasks_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.tasks_id_seq OWNER TO zeehamid;
-
---
--- Name: tasks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.tasks_id_seq OWNED BY public.tasks.id;
-
-
---
--- Name: teams; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.teams (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    name text NOT NULL,
-    description text,
-    team_captain_id bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    team_lead_user_id bigint
-);
-
-
-ALTER TABLE public.teams OWNER TO zeehamid;
-
---
--- Name: teams_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.teams_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.teams_id_seq OWNER TO zeehamid;
-
---
--- Name: teams_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.teams_id_seq OWNED BY public.teams.id;
-
-
---
--- Name: tenants; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.tenants (
-    id bigint NOT NULL,
-    admin_id bigint,
-    createdby_id bigint,
-    name text NOT NULL,
-    mobile text,
-    email text,
-    email2 text,
-    apt text,
-    street_num text,
-    street1 text,
-    street2 text,
-    city text,
-    state text,
-    zip text,
-    country text,
-    billing_street_num text,
-    billing_street1 text,
-    billing_street2 text,
-    billing_city text,
-    billing_state text,
-    billing_zip text,
-    billing_country text,
-    notes text,
-    "json" jsonb,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    placeholder_household_id bigint,
-    stripe_customer_id text,
-    stripe_subscription_id text,
-    subscription_plan text DEFAULT 'free'::text NOT NULL,
-    subscription_status text,
-    subscription_ends_at timestamp with time zone,
-    deletion_scheduled_at timestamp with time zone,
-    suspended_at timestamp with time zone,
-    paused_at timestamp with time zone
-);
-
-
-ALTER TABLE public.tenants OWNER TO zeehamid;
-
---
--- Name: tenants_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.tenants_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.tenants_id_seq OWNER TO zeehamid;
-
---
--- Name: tenants_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.tenants_id_seq OWNED BY public.tenants.id;
-
-
---
--- Name: user_activity; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.user_activity (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    user_id bigint NOT NULL,
-    activity text NOT NULL,
-    entity text NOT NULL,
-    quantity integer DEFAULT 0 NOT NULL,
-    metadata jsonb,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    entity_id text
-);
-
-
-ALTER TABLE public.user_activity OWNER TO zeehamid;
-
---
--- Name: user_activity_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.user_activity_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.user_activity_id_seq OWNER TO zeehamid;
-
---
--- Name: user_activity_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.user_activity_id_seq OWNED BY public.user_activity.id;
-
-
---
--- Name: volunteer_events; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.volunteer_events (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    name text NOT NULL,
-    description text,
-    location_address text,
-    start_time timestamp with time zone NOT NULL,
-    end_time timestamp with time zone NOT NULL,
-    capacity integer,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    contact_email text,
-    contact_phone text,
-    is_private boolean DEFAULT false NOT NULL,
-    send_reminder boolean DEFAULT true NOT NULL,
-    slug text NOT NULL,
-    send_signup_confirmation boolean DEFAULT true NOT NULL,
-    send_volunteer_alert boolean DEFAULT true NOT NULL,
-    search_vector tsvector GENERATED ALWAYS AS ((((setweight(to_tsvector('simple'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(location_address, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(contact_email, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(description, ''::text)), 'C'::"char"))) STORED,
-    fields jsonb DEFAULT '["first_name", "last_name", "email", "mobile", "notes"]'::jsonb NOT NULL
-);
-
-
-ALTER TABLE public.volunteer_events OWNER TO zeehamid;
-
---
--- Name: volunteer_events_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.volunteer_events_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.volunteer_events_id_seq OWNER TO zeehamid;
-
---
--- Name: volunteer_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.volunteer_events_id_seq OWNED BY public.volunteer_events.id;
-
-
---
--- Name: volunteer_shifts; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.volunteer_shifts (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    event_id bigint NOT NULL,
-    person_id bigint NOT NULL,
-    status text DEFAULT 'signed_up'::text NOT NULL,
-    hours_worked numeric(5,2),
-    notes text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_volunteer_shifts_status CHECK ((status = ANY (ARRAY['signed_up'::text, 'attended'::text, 'no_show'::text, 'cancelled'::text])))
-);
-
-
-ALTER TABLE public.volunteer_shifts OWNER TO zeehamid;
-
---
--- Name: volunteer_shifts_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.volunteer_shifts_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.volunteer_shifts_id_seq OWNER TO zeehamid;
-
---
--- Name: volunteer_shifts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.volunteer_shifts_id_seq OWNED BY public.volunteer_shifts.id;
-
-
---
--- Name: web_forms; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.web_forms (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    tenant_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    name text NOT NULL,
-    description text,
-    redirect_url text,
-    target_tags jsonb,
-    target_lists jsonb,
-    status text DEFAULT 'active'::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    fields jsonb,
-    send_confirmation boolean DEFAULT true NOT NULL,
-    send_alert boolean DEFAULT true NOT NULL,
-    form_type text DEFAULT 'standard'::text NOT NULL,
-    CONSTRAINT chk_web_forms_status CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text])))
-);
-
-
-ALTER TABLE public.web_forms OWNER TO zeehamid;
-
---
--- Name: webhook_events; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.webhook_events (
-    id bigint NOT NULL,
-    tenant_id bigint,
-    stripe_event_id text NOT NULL,
-    type text NOT NULL,
-    payload jsonb NOT NULL,
-    status text DEFAULT 'pending'::text NOT NULL,
-    attempts integer DEFAULT 0 NOT NULL,
-    max_attempts integer DEFAULT 3 NOT NULL,
-    error text,
-    run_at timestamp with time zone DEFAULT now() NOT NULL,
-    locked_at timestamp with time zone,
-    locked_by text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    processed_at timestamp with time zone
-);
-
-
-ALTER TABLE public.webhook_events OWNER TO zeehamid;
-
---
--- Name: webhook_events_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.webhook_events_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.webhook_events_id_seq OWNER TO zeehamid;
-
---
--- Name: webhook_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.webhook_events_id_seq OWNED BY public.webhook_events.id;
-
-
---
--- Name: workflow_enrollments; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.workflow_enrollments (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    workflow_id bigint NOT NULL,
-    person_id bigint NOT NULL,
-    status text DEFAULT 'active'::text NOT NULL,
-    current_step_number integer DEFAULT 0 NOT NULL,
-    next_run_at timestamp with time zone,
-    enrolled_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.workflow_enrollments OWNER TO zeehamid;
-
---
--- Name: workflow_enrollments_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.workflow_enrollments_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.workflow_enrollments_id_seq OWNER TO zeehamid;
-
---
--- Name: workflow_enrollments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.workflow_enrollments_id_seq OWNED BY public.workflow_enrollments.id;
-
-
---
--- Name: workflow_steps; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.workflow_steps (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    workflow_id bigint NOT NULL,
-    step_number integer NOT NULL,
-    delay_days integer NOT NULL,
-    subject text NOT NULL,
-    preview_text text,
-    html_content text,
-    plain_text_content text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    delay_unit text DEFAULT 'days'::text NOT NULL
-);
-
-
-ALTER TABLE public.workflow_steps OWNER TO zeehamid;
-
---
--- Name: workflow_steps_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.workflow_steps_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.workflow_steps_id_seq OWNER TO zeehamid;
-
---
--- Name: workflow_steps_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.workflow_steps_id_seq OWNED BY public.workflow_steps.id;
-
-
---
--- Name: workflows; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.workflows (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    createdby_id bigint NOT NULL,
-    updatedby_id bigint NOT NULL,
-    name text NOT NULL,
-    description text,
-    trigger_type text NOT NULL,
-    status text DEFAULT 'draft'::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    trigger_event_id text
-);
-
-
-ALTER TABLE public.workflows OWNER TO zeehamid;
-
---
--- Name: workflows_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-CREATE SEQUENCE public.workflows_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.workflows_id_seq OWNER TO zeehamid;
-
---
--- Name: workflows_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
---
-
-ALTER SEQUENCE public.workflows_id_seq OWNED BY public.workflows.id;
-
-
---
--- Name: zapier_subscriptions; Type: TABLE; Schema: public; Owner: zeehamid
---
-
-CREATE TABLE public.zapier_subscriptions (
-    id bigint NOT NULL,
-    tenant_id bigint NOT NULL,
-    event_type text NOT NULL,
-    webhook_url text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
-ALTER TABLE public.zapier_subscriptions OWNER TO zeehamid;
-
---
--- Name: zapier_subscriptions_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE public.zapier_subscriptions ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.zapier_subscriptions_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
-
-
---
--- Name: authusers id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.authusers ALTER COLUMN id SET DEFAULT nextval('public.authusers_id_seq'::regclass);
-
-
---
--- Name: background_jobs id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.background_jobs ALTER COLUMN id SET DEFAULT nextval('public.background_jobs_id_seq'::regclass);
-
-
---
--- Name: campaigns id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.campaigns ALTER COLUMN id SET DEFAULT nextval('public.campaigns_id_seq'::regclass);
-
-
---
--- Name: companies id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.companies ALTER COLUMN id SET DEFAULT nextval('public.companies_id_seq'::regclass);
-
-
---
--- Name: data_exports id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.data_exports ALTER COLUMN id SET DEFAULT nextval('public.data_exports_id_seq'::regclass);
-
-
---
--- Name: data_imports id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.data_imports ALTER COLUMN id SET DEFAULT nextval('public.data_imports_id_seq'::regclass);
-
-
---
--- Name: donation_periods id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donation_periods ALTER COLUMN id SET DEFAULT nextval('public.donation_periods_id_seq'::regclass);
-
-
---
--- Name: donation_pledges id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donation_pledges ALTER COLUMN id SET DEFAULT nextval('public.donation_pledges_id_seq'::regclass);
-
-
---
--- Name: donations id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donations ALTER COLUMN id SET DEFAULT nextval('public.donations_id_seq'::regclass);
-
-
---
--- Name: email_attachments id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_attachments ALTER COLUMN id SET DEFAULT nextval('public.email_attachments_id_seq'::regclass);
-
-
---
--- Name: email_bodies id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_bodies ALTER COLUMN id SET DEFAULT nextval('public.email_bodies_id_seq'::regclass);
-
-
---
--- Name: email_comments id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_comments ALTER COLUMN id SET DEFAULT nextval('public.email_comments_id_seq'::regclass);
-
-
---
--- Name: email_drafts id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_drafts ALTER COLUMN id SET DEFAULT nextval('public.email_drafts_id_seq'::regclass);
-
-
---
--- Name: email_folders id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_folders ALTER COLUMN id SET DEFAULT nextval('public.email_folders_id_seq'::regclass);
-
-
---
--- Name: email_headers id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_headers ALTER COLUMN id SET DEFAULT nextval('public.email_headers_id_seq'::regclass);
-
-
---
--- Name: email_recipients id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_recipients ALTER COLUMN id SET DEFAULT nextval('public.email_recipients_id_seq'::regclass);
-
-
---
--- Name: email_trash id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_trash ALTER COLUMN id SET DEFAULT nextval('public.email_trash_id_seq'::regclass);
-
-
---
--- Name: emails id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.emails ALTER COLUMN id SET DEFAULT nextval('public.emails_id_seq'::regclass);
-
-
---
--- Name: event_registrations id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.event_registrations ALTER COLUMN id SET DEFAULT nextval('public.event_registrations_id_seq'::regclass);
-
-
---
--- Name: event_ticket_types id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.event_ticket_types ALTER COLUMN id SET DEFAULT nextval('public.event_ticket_types_id_seq'::regclass);
-
-
---
--- Name: events id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.events ALTER COLUMN id SET DEFAULT nextval('public.events_id_seq'::regclass);
-
-
---
--- Name: files id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.files ALTER COLUMN id SET DEFAULT nextval('public.files_id_seq'::regclass);
-
-
---
--- Name: households id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.households ALTER COLUMN id SET DEFAULT nextval('public.households_id_seq'::regclass);
-
-
---
--- Name: lists id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.lists ALTER COLUMN id SET DEFAULT nextval('public.lists_id_seq'::regclass);
-
-
---
--- Name: newsletter_events id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.newsletter_events ALTER COLUMN id SET DEFAULT nextval('public.newsletter_events_id_seq'::regclass);
-
-
---
--- Name: newsletters id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.newsletters ALTER COLUMN id SET DEFAULT nextval('public.newsletters_id_seq'::regclass);
-
-
---
--- Name: notifications id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.notifications ALTER COLUMN id SET DEFAULT nextval('public.notifications_id_seq'::regclass);
-
-
---
--- Name: person_connections id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.person_connections ALTER COLUMN id SET DEFAULT nextval('public.person_connections_id_seq'::regclass);
-
-
---
--- Name: persons id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.persons ALTER COLUMN id SET DEFAULT nextval('public.persons_id_seq'::regclass);
-
-
---
--- Name: potential_duplicates id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.potential_duplicates ALTER COLUMN id SET DEFAULT nextval('public.potential_duplicates_id_seq'::regclass);
-
-
---
--- Name: profiles id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.profiles ALTER COLUMN id SET DEFAULT nextval('public.profiles_id_seq'::regclass);
-
-
---
--- Name: sessions id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.sessions ALTER COLUMN id SET DEFAULT nextval('public.sessions_id_seq'::regclass);
-
-
---
--- Name: sessions user_id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.sessions ALTER COLUMN user_id SET DEFAULT nextval('public.sessions_user_id_seq'::regclass);
-
-
---
--- Name: settings id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.settings ALTER COLUMN id SET DEFAULT nextval('public.settings_id_seq'::regclass);
-
-
---
--- Name: tags id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tags ALTER COLUMN id SET DEFAULT nextval('public.tags_id_seq'::regclass);
-
-
---
--- Name: task_attachments id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.task_attachments ALTER COLUMN id SET DEFAULT nextval('public.task_attachments_id_seq'::regclass);
-
-
---
--- Name: task_comments id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.task_comments ALTER COLUMN id SET DEFAULT nextval('public.task_comments_id_seq'::regclass);
-
-
---
--- Name: task_subtasks id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.task_subtasks ALTER COLUMN id SET DEFAULT nextval('public.task_subtasks_id_seq'::regclass);
-
-
---
--- Name: tasks id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tasks ALTER COLUMN id SET DEFAULT nextval('public.tasks_id_seq'::regclass);
-
-
---
--- Name: teams id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.teams ALTER COLUMN id SET DEFAULT nextval('public.teams_id_seq'::regclass);
-
-
---
--- Name: tenants id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tenants ALTER COLUMN id SET DEFAULT nextval('public.tenants_id_seq'::regclass);
-
-
---
--- Name: user_activity id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.user_activity ALTER COLUMN id SET DEFAULT nextval('public.user_activity_id_seq'::regclass);
-
-
---
--- Name: volunteer_events id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_events ALTER COLUMN id SET DEFAULT nextval('public.volunteer_events_id_seq'::regclass);
-
-
---
--- Name: volunteer_shifts id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_shifts ALTER COLUMN id SET DEFAULT nextval('public.volunteer_shifts_id_seq'::regclass);
-
-
---
--- Name: webhook_events id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.webhook_events ALTER COLUMN id SET DEFAULT nextval('public.webhook_events_id_seq'::regclass);
-
-
---
--- Name: workflow_enrollments id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflow_enrollments ALTER COLUMN id SET DEFAULT nextval('public.workflow_enrollments_id_seq'::regclass);
-
-
---
--- Name: workflow_steps id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflow_steps ALTER COLUMN id SET DEFAULT nextval('public.workflow_steps_id_seq'::regclass);
-
-
---
--- Name: workflows id; Type: DEFAULT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflows ALTER COLUMN id SET DEFAULT nextval('public.workflows_id_seq'::regclass);
-
-
---
--- Name: authusers authusers_email_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.authusers
-    ADD CONSTRAINT authusers_email_key UNIQUE (email);
-
-
---
--- Name: authusers authusers_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.authusers
-    ADD CONSTRAINT authusers_pkey PRIMARY KEY (id);
-
-
---
--- Name: background_jobs background_jobs_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.background_jobs
-    ADD CONSTRAINT background_jobs_pk PRIMARY KEY (id);
-
-
---
--- Name: campaigns campaigns_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.campaigns
-    ADD CONSTRAINT campaigns_id_key UNIQUE (id);
-
-
---
--- Name: campaigns campaigns_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.campaigns
-    ADD CONSTRAINT campaigns_id_tenantid PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: companies companies_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.companies
-    ADD CONSTRAINT companies_id_key UNIQUE (id);
-
-
---
--- Name: companies companies_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.companies
-    ADD CONSTRAINT companies_pk PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: data_exports data_exports_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.data_exports
-    ADD CONSTRAINT data_exports_id_key UNIQUE (id);
-
-
---
--- Name: data_exports data_exports_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.data_exports
-    ADD CONSTRAINT data_exports_pk PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: data_imports data_imports_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.data_imports
-    ADD CONSTRAINT data_imports_id_key UNIQUE (id);
-
-
---
--- Name: data_imports data_imports_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.data_imports
-    ADD CONSTRAINT data_imports_pk PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: donation_periods donation_periods_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donation_periods
-    ADD CONSTRAINT donation_periods_pkey PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: donation_pledges donation_pledges_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donation_pledges
-    ADD CONSTRAINT donation_pledges_id_key UNIQUE (id);
-
-
---
--- Name: donation_pledges donation_pledges_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donation_pledges
-    ADD CONSTRAINT donation_pledges_pkey PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: donation_pledges donation_pledges_stripe_subscription_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donation_pledges
-    ADD CONSTRAINT donation_pledges_stripe_subscription_id_key UNIQUE (stripe_subscription_id);
-
-
---
--- Name: donations donations_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donations
-    ADD CONSTRAINT donations_id_key UNIQUE (id);
-
-
---
--- Name: donations donations_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donations
-    ADD CONSTRAINT donations_pk PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: donations donations_stripe_session_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donations
-    ADD CONSTRAINT donations_stripe_session_id_key UNIQUE (stripe_session_id);
-
-
---
--- Name: email_attachments email_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_attachments
-    ADD CONSTRAINT email_attachments_pkey PRIMARY KEY (id);
-
-
---
--- Name: email_bodies email_bodies_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_bodies
-    ADD CONSTRAINT email_bodies_pkey PRIMARY KEY (id);
-
-
---
--- Name: email_comments email_comments_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_comments
-    ADD CONSTRAINT email_comments_pkey PRIMARY KEY (id);
-
-
---
--- Name: email_drafts email_drafts_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_drafts
-    ADD CONSTRAINT email_drafts_pkey PRIMARY KEY (id);
-
-
---
--- Name: email_folders email_folders_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_folders
-    ADD CONSTRAINT email_folders_pkey PRIMARY KEY (id);
-
-
---
--- Name: email_headers email_headers_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_headers
-    ADD CONSTRAINT email_headers_pkey PRIMARY KEY (id);
-
-
---
--- Name: email_read_states email_read_states_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_read_states
-    ADD CONSTRAINT email_read_states_pk PRIMARY KEY (tenant_id, user_id, email_id);
-
-
---
--- Name: email_recipients email_recipients_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_recipients
-    ADD CONSTRAINT email_recipients_pkey PRIMARY KEY (id);
-
-
---
--- Name: email_trash email_trash_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_trash
-    ADD CONSTRAINT email_trash_pkey PRIMARY KEY (id);
-
-
---
--- Name: emails emails_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.emails
-    ADD CONSTRAINT emails_pkey PRIMARY KEY (id);
-
-
---
--- Name: event_registrations event_registrations_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.event_registrations
-    ADD CONSTRAINT event_registrations_pkey PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: event_registrations event_registrations_unique; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.event_registrations
-    ADD CONSTRAINT event_registrations_unique UNIQUE (tenant_id, event_id, person_id);
-
-
---
--- Name: event_ticket_types event_ticket_types_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.event_ticket_types
-    ADD CONSTRAINT event_ticket_types_id_key UNIQUE (id);
-
-
---
--- Name: event_ticket_types event_ticket_types_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.event_ticket_types
-    ADD CONSTRAINT event_ticket_types_pkey PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: events events_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.events
-    ADD CONSTRAINT events_pkey PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: files files_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.files
-    ADD CONSTRAINT files_pkey PRIMARY KEY (id);
-
-
---
--- Name: google_oauth_tokens google_oauth_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.google_oauth_tokens
-    ADD CONSTRAINT google_oauth_tokens_pkey PRIMARY KEY (id);
-
-
---
--- Name: google_oauth_tokens google_oauth_tokens_user_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.google_oauth_tokens
-    ADD CONSTRAINT google_oauth_tokens_user_id_key UNIQUE (user_id);
-
-
---
--- Name: households households_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.households
-    ADD CONSTRAINT households_id_key UNIQUE (id);
-
-
---
--- Name: households households_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.households
-    ADD CONSTRAINT households_id_tenantid PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: kysely_migration_lock kysely_migration_lock_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.kysely_migration_lock
-    ADD CONSTRAINT kysely_migration_lock_pkey PRIMARY KEY (id);
-
-
---
--- Name: kysely_migration kysely_migration_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.kysely_migration
-    ADD CONSTRAINT kysely_migration_pkey PRIMARY KEY (name);
-
-
---
--- Name: lists lists_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.lists
-    ADD CONSTRAINT lists_id_key UNIQUE (id);
-
-
---
--- Name: lists lists_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.lists
-    ADD CONSTRAINT lists_id_tenantid PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: map_campaigns_users map_campaigns_users_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_campaigns_users
-    ADD CONSTRAINT map_campaigns_users_pk PRIMARY KEY (tenant_id, campaign_id, user_id);
-
-
---
--- Name: map_households_tags map_households_tags_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_households_tags
-    ADD CONSTRAINT map_households_tags_pk PRIMARY KEY (tenant_id, household_id, tag_id);
-
-
---
--- Name: map_lists_households map_lists_households_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_lists_households
-    ADD CONSTRAINT map_lists_households_pk PRIMARY KEY (tenant_id, list_id, household_id);
-
-
---
--- Name: map_lists_persons map_lists_persons_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_lists_persons
-    ADD CONSTRAINT map_lists_persons_pk PRIMARY KEY (tenant_id, list_id, person_id);
-
-
---
--- Name: map_peoples_tags map_peoples_tags_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_peoples_tags
-    ADD CONSTRAINT map_peoples_tags_pk PRIMARY KEY (tenant_id, person_id, tag_id);
-
-
---
--- Name: map_teams_lists map_teams_lists_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_lists
-    ADD CONSTRAINT map_teams_lists_pk PRIMARY KEY (tenant_id, team_id, list_id);
-
-
---
--- Name: map_teams_persons map_teams_persons_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_persons
-    ADD CONSTRAINT map_teams_persons_pk PRIMARY KEY (tenant_id, team_id, person_id);
-
-
---
--- Name: ms_oauth_tokens ms_oauth_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.ms_oauth_tokens
-    ADD CONSTRAINT ms_oauth_tokens_pkey PRIMARY KEY (id);
-
-
---
--- Name: ms_oauth_tokens ms_oauth_tokens_user_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.ms_oauth_tokens
-    ADD CONSTRAINT ms_oauth_tokens_user_id_key UNIQUE (user_id);
-
-
---
--- Name: newsletter_events newsletter_events_id_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.newsletter_events
-    ADD CONSTRAINT newsletter_events_id_pk PRIMARY KEY (id);
-
-
---
--- Name: newsletter_events newsletter_events_sg_event_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.newsletter_events
-    ADD CONSTRAINT newsletter_events_sg_event_id_key UNIQUE (sg_event_id);
-
-
---
--- Name: newsletters newsletters_id_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.newsletters
-    ADD CONSTRAINT newsletters_id_pk PRIMARY KEY (id);
-
-
---
--- Name: notifications notifications_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.notifications
-    ADD CONSTRAINT notifications_id_key UNIQUE (id);
-
-
---
--- Name: notifications notifications_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.notifications
-    ADD CONSTRAINT notifications_pk PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: passkeys passkeys_credential_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.passkeys
-    ADD CONSTRAINT passkeys_credential_id_key UNIQUE (credential_id);
-
-
---
--- Name: passkeys passkeys_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.passkeys
-    ADD CONSTRAINT passkeys_pkey PRIMARY KEY (id);
-
-
---
--- Name: person_connections person_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.person_connections
-    ADD CONSTRAINT person_connections_pkey PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: persons persons_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.persons
-    ADD CONSTRAINT persons_id_key UNIQUE (id);
-
-
---
--- Name: persons persons_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.persons
-    ADD CONSTRAINT persons_id_tenantid PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: potential_duplicates potential_duplicates_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.potential_duplicates
-    ADD CONSTRAINT potential_duplicates_pk PRIMARY KEY (id);
-
-
---
--- Name: profiles profiles_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.profiles
-    ADD CONSTRAINT profiles_id_key UNIQUE (id);
-
-
---
--- Name: sessions sessions_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.sessions
-    ADD CONSTRAINT sessions_id_key UNIQUE (id);
-
-
---
--- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.sessions
-    ADD CONSTRAINT sessions_pkey PRIMARY KEY (session_id);
-
-
---
--- Name: sessions sessions_refresh_token_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.sessions
-    ADD CONSTRAINT sessions_refresh_token_key UNIQUE (refresh_token);
-
-
---
--- Name: settings settings_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.settings
-    ADD CONSTRAINT settings_pkey PRIMARY KEY (id);
-
-
---
--- Name: tags tags_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tags
-    ADD CONSTRAINT tags_id_key UNIQUE (id);
-
-
---
--- Name: tags tags_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tags
-    ADD CONSTRAINT tags_id_tenantid PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: tags tags_tenant_name_type_unique; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tags
-    ADD CONSTRAINT tags_tenant_name_type_unique UNIQUE (tenant_id, name, type);
-
-
---
--- Name: task_attachments task_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.task_attachments
-    ADD CONSTRAINT task_attachments_pkey PRIMARY KEY (id);
-
-
---
--- Name: task_comments task_comments_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.task_comments
-    ADD CONSTRAINT task_comments_pkey PRIMARY KEY (id);
-
-
---
--- Name: task_subtasks task_subtasks_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.task_subtasks
-    ADD CONSTRAINT task_subtasks_pkey PRIMARY KEY (id);
-
-
---
--- Name: tasks tasks_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tasks
-    ADD CONSTRAINT tasks_id_key UNIQUE (id);
-
-
---
--- Name: tasks tasks_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tasks
-    ADD CONSTRAINT tasks_id_tenantid PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: teams teams_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.teams
-    ADD CONSTRAINT teams_id_key UNIQUE (id);
-
-
---
--- Name: teams teams_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.teams
-    ADD CONSTRAINT teams_pk PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: tenants tenants_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tenants
-    ADD CONSTRAINT tenants_pkey PRIMARY KEY (id);
-
-
---
--- Name: email_bodies unique_email_bodies_email_id; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_bodies
-    ADD CONSTRAINT unique_email_bodies_email_id UNIQUE (email_id);
-
-
---
--- Name: email_headers unique_email_headers_email_id; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_headers
-    ADD CONSTRAINT unique_email_headers_email_id UNIQUE (email_id);
-
-
---
--- Name: settings uq_settings_tenant_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.settings
-    ADD CONSTRAINT uq_settings_tenant_key UNIQUE (tenant_id, key);
-
-
---
--- Name: user_activity user_activity_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.user_activity
-    ADD CONSTRAINT user_activity_id_key UNIQUE (id);
-
-
---
--- Name: user_activity user_activity_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.user_activity
-    ADD CONSTRAINT user_activity_pk PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: volunteer_events volunteer_events_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_events
-    ADD CONSTRAINT volunteer_events_id_key UNIQUE (id);
-
-
---
--- Name: volunteer_events volunteer_events_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_events
-    ADD CONSTRAINT volunteer_events_pk PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: volunteer_events volunteer_events_slug_unique; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_events
-    ADD CONSTRAINT volunteer_events_slug_unique UNIQUE (slug);
-
-
---
--- Name: volunteer_shifts volunteer_shifts_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_shifts
-    ADD CONSTRAINT volunteer_shifts_id_key UNIQUE (id);
-
-
---
--- Name: volunteer_shifts volunteer_shifts_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_shifts
-    ADD CONSTRAINT volunteer_shifts_pk PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: web_forms web_forms_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.web_forms
-    ADD CONSTRAINT web_forms_id_key UNIQUE (id);
-
-
---
--- Name: web_forms web_forms_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.web_forms
-    ADD CONSTRAINT web_forms_id_tenantid PRIMARY KEY (id, tenant_id);
-
-
---
--- Name: webhook_events webhook_events_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.webhook_events
-    ADD CONSTRAINT webhook_events_pk PRIMARY KEY (id);
-
-
---
--- Name: webhook_events webhook_events_stripe_event_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.webhook_events
-    ADD CONSTRAINT webhook_events_stripe_event_id_key UNIQUE (stripe_event_id);
-
-
---
--- Name: workflow_enrollments workflow_enrollments_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflow_enrollments
-    ADD CONSTRAINT workflow_enrollments_pk PRIMARY KEY (id);
-
-
---
--- Name: workflow_steps workflow_steps_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflow_steps
-    ADD CONSTRAINT workflow_steps_pk PRIMARY KEY (id);
-
-
---
--- Name: workflows workflows_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflows
-    ADD CONSTRAINT workflows_pk PRIMARY KEY (id);
-
-
---
--- Name: zapier_subscriptions zapier_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.zapier_subscriptions
-    ADD CONSTRAINT zapier_subscriptions_pkey PRIMARY KEY (id);
-
-
---
--- Name: zapier_subscriptions zapier_subscriptions_tenant_id_event_type_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.zapier_subscriptions
-    ADD CONSTRAINT zapier_subscriptions_tenant_id_event_type_key UNIQUE (tenant_id, event_type);
-
-
---
--- Name: authusers_email_index; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX authusers_email_index ON public.authusers USING btree (email);
-
-
---
--- Name: campaigns_map_tenant_campaign_index; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX campaigns_map_tenant_campaign_index ON public.map_campaigns_users USING btree (tenant_id, campaign_id);
-
-
---
--- Name: campaigns_map_tenant_user_index; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX campaigns_map_tenant_user_index ON public.map_campaigns_users USING btree (tenant_id, user_id);
-
-
---
--- Name: campaigns_tenant_index; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX campaigns_tenant_index ON public.campaigns USING btree (tenant_id);
-
-
---
--- Name: event_registrations_event_idx; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX event_registrations_event_idx ON public.event_registrations USING btree (tenant_id, event_id);
-
-
---
--- Name: event_registrations_person_idx; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX event_registrations_person_idx ON public.event_registrations USING btree (tenant_id, person_id);
-
-
---
--- Name: events_search_vector_idx; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX events_search_vector_idx ON public.events USING gin (search_vector);
-
-
---
--- Name: events_tenant_slug_unique; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE UNIQUE INDEX events_tenant_slug_unique ON public.events USING btree (tenant_id, slug);
-
-
---
--- Name: google_oauth_tokens_tenant_user_idx; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX google_oauth_tokens_tenant_user_idx ON public.google_oauth_tokens USING btree (tenant_id, user_id);
-
-
---
--- Name: households_tag_map_tenant_person_tag_index; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX households_tag_map_tenant_person_tag_index ON public.map_households_tags USING btree (tenant_id, household_id, tag_id);
-
-
---
--- Name: idx_background_jobs_queue_status; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_background_jobs_queue_status ON public.background_jobs USING btree (queue, status, run_at);
-
-
---
--- Name: idx_background_jobs_status_run_at; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_background_jobs_status_run_at ON public.background_jobs USING btree (status, run_at);
-
-
---
--- Name: idx_background_jobs_tenant_status; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_background_jobs_tenant_status ON public.background_jobs USING btree (tenant_id, status) WHERE (tenant_id IS NOT NULL);
-
-
---
--- Name: idx_companies_file_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_companies_file_id ON public.companies USING btree (file_id);
-
-
---
--- Name: idx_companies_fts; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_companies_fts ON public.companies USING gin (search_vector);
-
-
---
--- Name: idx_companies_tenant; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_companies_tenant ON public.companies USING btree (tenant_id);
-
-
---
--- Name: idx_companies_tenant_email; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_companies_tenant_email ON public.companies USING btree (tenant_id, email);
-
-
---
--- Name: idx_companies_tenant_industry; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_companies_tenant_industry ON public.companies USING btree (tenant_id, industry);
-
-
---
--- Name: idx_companies_trgm_email; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_companies_trgm_email ON public.companies USING gin (email public.gin_trgm_ops);
-
-
---
--- Name: idx_companies_trgm_industry; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_companies_trgm_industry ON public.companies USING gin (industry public.gin_trgm_ops);
-
-
---
--- Name: idx_companies_trgm_name; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_companies_trgm_name ON public.companies USING gin (name public.gin_trgm_ops);
-
-
---
--- Name: idx_data_exports_tenant_created; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_data_exports_tenant_created ON public.data_exports USING btree (tenant_id, created_at);
-
-
---
--- Name: idx_data_exports_tenant_pending; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_data_exports_tenant_pending ON public.data_exports USING btree (tenant_id, created_at) WHERE (status = 'pending'::text);
-
-
---
--- Name: idx_data_imports_tag; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_data_imports_tag ON public.data_imports USING btree (tag_id);
-
-
---
--- Name: idx_data_imports_tenant_processed; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_data_imports_tenant_processed ON public.data_imports USING btree (tenant_id, processed_at);
-
-
---
--- Name: idx_donations_person; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_donations_person ON public.donations USING btree (tenant_id, person_id);
-
-
---
--- Name: idx_donations_stripe_session; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_donations_stripe_session ON public.donations USING btree (stripe_session_id);
-
-
---
--- Name: idx_donations_tenant; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_donations_tenant ON public.donations USING btree (tenant_id);
-
-
---
--- Name: idx_email_attachments_email_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_email_attachments_email_id ON public.email_attachments USING btree (email_id);
-
-
---
--- Name: idx_email_attachments_file_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_email_attachments_file_id ON public.email_attachments USING btree (file_id);
-
-
---
--- Name: idx_email_bodies_email_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_email_bodies_email_id ON public.email_bodies USING btree (email_id);
-
-
---
--- Name: idx_email_drafts_user_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_email_drafts_user_id ON public.email_drafts USING btree (tenant_id, user_id);
-
-
---
--- Name: idx_email_headers_email_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_email_headers_email_id ON public.email_headers USING btree (email_id);
-
-
---
--- Name: idx_email_read_states_email; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_email_read_states_email ON public.email_read_states USING btree (tenant_id, email_id);
-
-
---
--- Name: idx_email_read_states_user; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_email_read_states_user ON public.email_read_states USING btree (tenant_id, user_id);
-
-
---
--- Name: idx_email_recipients_email_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_email_recipients_email_id ON public.email_recipients USING btree (email_id);
-
-
---
--- Name: idx_email_recipients_kind; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_email_recipients_kind ON public.email_recipients USING btree (email_id, kind, pos);
-
-
---
--- Name: idx_email_trash_tenant_email_unique; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE UNIQUE INDEX idx_email_trash_tenant_email_unique ON public.email_trash USING btree (tenant_id, email_id);
-
-
---
--- Name: idx_emails_tenant_active; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_emails_tenant_active ON public.emails USING btree (tenant_id, folder_id) WHERE (deleted_at IS NULL);
-
-
---
--- Name: idx_emails_tenant_assigned; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_emails_tenant_assigned ON public.emails USING btree (tenant_id, assigned_to);
-
-
---
--- Name: idx_emails_tenant_folder; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_emails_tenant_folder ON public.emails USING btree (tenant_id, folder_id);
-
-
---
--- Name: idx_emails_tenant_status; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_emails_tenant_status ON public.emails USING btree (tenant_id, status);
-
-
---
--- Name: idx_files_sha256; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_files_sha256 ON public.files USING btree (sha256_hex) WHERE (sha256_hex IS NOT NULL);
-
-
---
--- Name: idx_files_tenant; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_files_tenant ON public.files USING btree (tenant_id);
-
-
---
--- Name: idx_households_file_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_households_file_id ON public.households USING btree (file_id);
-
-
---
--- Name: idx_households_fp_full; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_households_fp_full ON public.households USING btree (address_fp_full);
-
-
---
--- Name: idx_households_fp_street; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_households_fp_street ON public.households USING btree (address_fp_street);
-
-
---
--- Name: idx_households_fts; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_households_fts ON public.households USING gin (search_vector);
-
-
---
--- Name: idx_households_tenant_campaign; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_households_tenant_campaign ON public.households USING btree (tenant_id, campaign_id);
-
-
---
--- Name: idx_households_tenant_geocoding; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_households_tenant_geocoding ON public.households USING btree (tenant_id, geocoding_status);
-
-
---
--- Name: idx_households_tenant_is_placeholder; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_households_tenant_is_placeholder ON public.households USING btree (tenant_id, is_placeholder);
-
-
---
--- Name: idx_households_tenant_type; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_households_tenant_type ON public.households USING btree (tenant_id, type);
-
-
---
--- Name: idx_households_trgm_city; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_households_trgm_city ON public.households USING gin (city public.gin_trgm_ops);
-
-
---
--- Name: idx_households_trgm_state; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_households_trgm_state ON public.households USING gin (state public.gin_trgm_ops);
-
-
---
--- Name: idx_households_trgm_street1; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_households_trgm_street1 ON public.households USING gin (street1 public.gin_trgm_ops);
-
-
---
--- Name: idx_households_trgm_zip; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_households_trgm_zip ON public.households USING gin (zip public.gin_trgm_ops);
-
-
---
--- Name: idx_lists_tenant_is_dynamic; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_lists_tenant_is_dynamic ON public.lists USING btree (tenant_id, is_dynamic);
-
-
---
--- Name: idx_lists_tenant_object; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_lists_tenant_object ON public.lists USING btree (tenant_id, object);
-
-
---
--- Name: idx_lists_tenant_status; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_lists_tenant_status ON public.lists USING btree (tenant_id, status);
-
-
---
--- Name: idx_lists_trgm_description; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_lists_trgm_description ON public.lists USING gin (description public.gin_trgm_ops);
-
-
---
--- Name: idx_lists_trgm_name; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_lists_trgm_name ON public.lists USING gin (name public.gin_trgm_ops);
-
-
---
--- Name: idx_map_lists_households; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_map_lists_households ON public.map_lists_households USING btree (tenant_id, list_id, household_id);
-
-
---
--- Name: idx_map_lists_persons; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_map_lists_persons ON public.map_lists_persons USING btree (tenant_id, list_id, person_id);
-
-
---
--- Name: idx_map_teams_lists_team; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_map_teams_lists_team ON public.map_teams_lists USING btree (tenant_id, team_id);
-
-
---
--- Name: idx_map_teams_persons_person; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_map_teams_persons_person ON public.map_teams_persons USING btree (tenant_id, person_id);
-
-
---
--- Name: idx_map_teams_persons_team; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_map_teams_persons_team ON public.map_teams_persons USING btree (tenant_id, team_id);
-
-
---
--- Name: idx_newsletter_events_newsletter_event; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_newsletter_events_newsletter_event ON public.newsletter_events USING btree (newsletter_id, event_type);
-
-
---
--- Name: idx_newsletter_events_tenant_newsletter; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_newsletter_events_tenant_newsletter ON public.newsletter_events USING btree (tenant_id, newsletter_id);
-
-
---
--- Name: idx_newsletter_events_type; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_newsletter_events_type ON public.newsletter_events USING btree (tenant_id, newsletter_id, event_type);
-
-
---
--- Name: idx_notifications_read; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_notifications_read ON public.notifications USING btree (tenant_id, user_id, read);
-
-
---
--- Name: idx_notifications_tenant_user; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_notifications_tenant_user ON public.notifications USING btree (tenant_id, user_id);
-
-
---
--- Name: idx_persons_company_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_persons_company_id ON public.persons USING btree (company_id);
-
-
---
--- Name: idx_persons_file_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_persons_file_id ON public.persons USING btree (file_id);
-
-
---
--- Name: idx_persons_fts; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_persons_fts ON public.persons USING gin (search_vector);
-
-
---
--- Name: idx_persons_tenant_assigned; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_persons_tenant_assigned ON public.persons USING btree (tenant_id, assigned_to);
-
-
---
--- Name: idx_persons_tenant_company; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_persons_tenant_company ON public.persons USING btree (tenant_id, company_id);
-
-
---
--- Name: idx_persons_tenant_email_btree; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_persons_tenant_email_btree ON public.persons USING btree (tenant_id, email);
-
-
---
--- Name: idx_persons_tenant_email_unique; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE UNIQUE INDEX idx_persons_tenant_email_unique ON public.persons USING btree (tenant_id, lower(email)) WHERE ((email IS NOT NULL) AND (TRIM(BOTH FROM email) <> ''::text));
-
-
---
--- Name: idx_persons_trgm_email; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_persons_trgm_email ON public.persons USING gin (email public.gin_trgm_ops);
-
-
---
--- Name: idx_persons_trgm_first_name; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_persons_trgm_first_name ON public.persons USING gin (first_name public.gin_trgm_ops);
-
-
---
--- Name: idx_persons_trgm_last_name; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_persons_trgm_last_name ON public.persons USING gin (last_name public.gin_trgm_ops);
-
-
---
--- Name: idx_persons_trgm_mobile; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_persons_trgm_mobile ON public.persons USING gin (mobile public.gin_trgm_ops);
-
-
---
--- Name: idx_potential_duplicates_company_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_potential_duplicates_company_id ON public.potential_duplicates USING btree (company_id) WHERE (company_id IS NOT NULL);
-
-
---
--- Name: idx_potential_duplicates_household_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_potential_duplicates_household_id ON public.potential_duplicates USING btree (household_id) WHERE (household_id IS NOT NULL);
-
-
---
--- Name: idx_potential_duplicates_person_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_potential_duplicates_person_id ON public.potential_duplicates USING btree (person_id);
-
-
---
--- Name: idx_potential_duplicates_tenant_group; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_potential_duplicates_tenant_group ON public.potential_duplicates USING btree (tenant_id, group_key);
-
-
---
--- Name: idx_potential_duplicates_unique_group_company; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE UNIQUE INDEX idx_potential_duplicates_unique_group_company ON public.potential_duplicates USING btree (group_key, company_id) WHERE (company_id IS NOT NULL);
-
-
---
--- Name: idx_potential_duplicates_unique_group_household; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE UNIQUE INDEX idx_potential_duplicates_unique_group_household ON public.potential_duplicates USING btree (group_key, household_id) WHERE (household_id IS NOT NULL);
-
-
---
--- Name: idx_potential_duplicates_unique_group_person; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE UNIQUE INDEX idx_potential_duplicates_unique_group_person ON public.potential_duplicates USING btree (group_key, person_id);
-
-
---
--- Name: idx_profiles_avatar_file_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_profiles_avatar_file_id ON public.profiles USING btree (avatar_file_id);
-
-
---
--- Name: idx_tags_tenant_type; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_tags_tenant_type ON public.tags USING btree (tenant_id, type);
-
-
---
--- Name: idx_tags_trgm_name; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_tags_trgm_name ON public.tags USING gin (name public.gin_trgm_ops);
-
-
---
--- Name: idx_task_attachments_task_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_task_attachments_task_id ON public.task_attachments USING btree (task_id);
-
-
---
--- Name: idx_task_comments_task_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_task_comments_task_id ON public.task_comments USING btree (task_id);
-
-
---
--- Name: idx_task_subtasks_task_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_task_subtasks_task_id ON public.task_subtasks USING btree (task_id);
-
-
---
--- Name: idx_tasks_file_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_tasks_file_id ON public.tasks USING btree (file_id);
-
-
---
--- Name: idx_tasks_team_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_tasks_team_id ON public.tasks USING btree (team_id);
-
-
---
--- Name: idx_tasks_tenant_assigned; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_tasks_tenant_assigned ON public.tasks USING btree (tenant_id, assigned_to);
-
-
---
--- Name: idx_tasks_tenant_due; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_tasks_tenant_due ON public.tasks USING btree (tenant_id, due_at);
-
-
---
--- Name: idx_tasks_tenant_status; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_tasks_tenant_status ON public.tasks USING btree (tenant_id, status);
-
-
---
--- Name: idx_teams_lead_user; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_teams_lead_user ON public.teams USING btree (team_lead_user_id);
-
-
---
--- Name: idx_teams_tenant; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_teams_tenant ON public.teams USING btree (tenant_id);
-
-
---
--- Name: idx_teams_tenant_captain; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_teams_tenant_captain ON public.teams USING btree (tenant_id, team_captain_id);
-
-
---
--- Name: idx_user_activity_activity; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_user_activity_activity ON public.user_activity USING btree (activity);
-
-
---
--- Name: idx_user_activity_entity_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_user_activity_entity_id ON public.user_activity USING btree (tenant_id, entity, entity_id);
-
-
---
--- Name: idx_user_activity_tenant_entity; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_user_activity_tenant_entity ON public.user_activity USING btree (tenant_id, entity, entity_id);
-
-
---
--- Name: idx_user_activity_tenant_user; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_user_activity_tenant_user ON public.user_activity USING btree (tenant_id, user_id);
-
-
---
--- Name: idx_user_activity_user; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_user_activity_user ON public.user_activity USING btree (tenant_id, user_id);
-
-
---
--- Name: idx_volunteer_events_dates; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_volunteer_events_dates ON public.volunteer_events USING btree (tenant_id, start_time, end_time);
-
-
---
--- Name: idx_volunteer_events_fts; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_volunteer_events_fts ON public.volunteer_events USING gin (search_vector);
-
-
---
--- Name: idx_volunteer_events_tenant; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_volunteer_events_tenant ON public.volunteer_events USING btree (tenant_id);
-
-
---
--- Name: idx_volunteer_events_tenant_end; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_volunteer_events_tenant_end ON public.volunteer_events USING btree (tenant_id, end_time);
-
-
---
--- Name: idx_volunteer_events_tenant_start; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_volunteer_events_tenant_start ON public.volunteer_events USING btree (tenant_id, start_time);
-
-
---
--- Name: idx_volunteer_events_trgm_location; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_volunteer_events_trgm_location ON public.volunteer_events USING gin (location_address public.gin_trgm_ops);
-
-
---
--- Name: idx_volunteer_events_trgm_name; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_volunteer_events_trgm_name ON public.volunteer_events USING gin (name public.gin_trgm_ops);
-
-
---
--- Name: idx_volunteer_shifts_event; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_volunteer_shifts_event ON public.volunteer_shifts USING btree (tenant_id, event_id);
-
-
---
--- Name: idx_volunteer_shifts_person; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_volunteer_shifts_person ON public.volunteer_shifts USING btree (tenant_id, person_id);
-
-
---
--- Name: idx_volunteer_shifts_tenant; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_volunteer_shifts_tenant ON public.volunteer_shifts USING btree (tenant_id);
-
-
---
--- Name: idx_webhook_events_status_run_at; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_webhook_events_status_run_at ON public.webhook_events USING btree (status, run_at);
-
-
---
--- Name: idx_workflow_enrollments_next_run; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_workflow_enrollments_next_run ON public.workflow_enrollments USING btree (status, next_run_at);
-
-
---
--- Name: idx_workflow_enrollments_tenant_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_workflow_enrollments_tenant_id ON public.workflow_enrollments USING btree (tenant_id);
-
-
---
--- Name: idx_workflow_enrollments_workflow_person; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_workflow_enrollments_workflow_person ON public.workflow_enrollments USING btree (workflow_id, person_id);
-
-
---
--- Name: idx_workflow_steps_tenant_workflow; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_workflow_steps_tenant_workflow ON public.workflow_steps USING btree (tenant_id, workflow_id, step_number);
-
-
---
--- Name: idx_workflows_tenant_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_workflows_tenant_id ON public.workflows USING btree (tenant_id);
-
-
---
--- Name: idx_workflows_trigger_event_id; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX idx_workflows_trigger_event_id ON public.workflows USING btree (trigger_event_id);
-
-
---
--- Name: ms_oauth_tokens_tenant_user_idx; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX ms_oauth_tokens_tenant_user_idx ON public.ms_oauth_tokens USING btree (tenant_id, user_id);
-
-
---
--- Name: newsletters_tenant_idx; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX newsletters_tenant_idx ON public.newsletters USING btree (tenant_id);
-
-
---
--- Name: passkeys_credential_id_idx; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX passkeys_credential_id_idx ON public.passkeys USING btree (credential_id);
-
-
---
--- Name: passkeys_user_id_idx; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX passkeys_user_id_idx ON public.passkeys USING btree (user_id);
-
-
---
--- Name: pc_from_idx; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX pc_from_idx ON public.person_connections USING btree (tenant_id, from_person_id);
-
-
---
--- Name: pc_to_idx; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX pc_to_idx ON public.person_connections USING btree (tenant_id, to_person_id);
-
-
---
--- Name: pc_unique_edge; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE UNIQUE INDEX pc_unique_edge ON public.person_connections USING btree (tenant_id, from_person_id, to_person_id, relation_type);
-
-
---
--- Name: peoples_tag_map_tenant_person_tag_index; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX peoples_tag_map_tenant_person_tag_index ON public.map_peoples_tags USING btree (tenant_id, person_id, tag_id);
-
-
---
--- Name: persons_tenant_campaign_household_index; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX persons_tenant_campaign_household_index ON public.persons USING btree (tenant_id, campaign_id, household_id);
-
-
---
--- Name: sessions_refresh_token_index; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX sessions_refresh_token_index ON public.sessions USING btree (refresh_token);
-
-
---
--- Name: sessions_session_id_index; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX sessions_session_id_index ON public.sessions USING btree (session_id);
-
-
---
--- Name: sessions_user_index; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX sessions_user_index ON public.sessions USING btree (user_id);
-
-
---
--- Name: tasks_tenant_index; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX tasks_tenant_index ON public.tasks USING btree (tenant_id);
-
-
---
--- Name: web_forms_tenant_index; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX web_forms_tenant_index ON public.web_forms USING btree (tenant_id);
-
-
---
--- Name: zapier_subscriptions_tenant_id_idx; Type: INDEX; Schema: public; Owner: zeehamid
---
-
-CREATE INDEX zapier_subscriptions_tenant_id_idx ON public.zapier_subscriptions USING btree (tenant_id);
-
-
---
--- Name: authusers trg_authusers_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_authusers_updated_at BEFORE UPDATE ON public.authusers FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: campaigns trg_campaigns_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_campaigns_updated_at BEFORE UPDATE ON public.campaigns FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: companies trg_companies_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_companies_updated_at BEFORE UPDATE ON public.companies FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: email_bodies trg_email_bodies_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_email_bodies_updated_at BEFORE UPDATE ON public.email_bodies FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: email_comments trg_email_comments_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_email_comments_updated_at BEFORE UPDATE ON public.email_comments FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: email_drafts trg_email_drafts_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_email_drafts_updated_at BEFORE UPDATE ON public.email_drafts FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: email_headers trg_email_headers_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_email_headers_updated_at BEFORE UPDATE ON public.email_headers FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: emails trg_emails_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_emails_updated_at BEFORE UPDATE ON public.emails FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: households trg_households_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_households_updated_at BEFORE UPDATE ON public.households FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: lists trg_lists_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_lists_updated_at BEFORE UPDATE ON public.lists FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: newsletters trg_newsletters_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_newsletters_updated_at BEFORE UPDATE ON public.newsletters FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: notifications trg_notifications_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_notifications_updated_at BEFORE UPDATE ON public.notifications FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: persons trg_persons_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_persons_updated_at BEFORE UPDATE ON public.persons FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: profiles trg_profiles_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_profiles_updated_at BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: settings trg_settings_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_settings_updated_at BEFORE UPDATE ON public.settings FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: tags trg_tags_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_tags_updated_at BEFORE UPDATE ON public.tags FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: task_attachments trg_task_attachments_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_task_attachments_updated_at BEFORE UPDATE ON public.task_attachments FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: task_comments trg_task_comments_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_task_comments_updated_at BEFORE UPDATE ON public.task_comments FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: task_subtasks trg_task_subtasks_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_task_subtasks_updated_at BEFORE UPDATE ON public.task_subtasks FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: tasks trg_tasks_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_tasks_updated_at BEFORE UPDATE ON public.tasks FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: teams trg_teams_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_teams_updated_at BEFORE UPDATE ON public.teams FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: tenants trg_tenants_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_tenants_updated_at BEFORE UPDATE ON public.tenants FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: volunteer_events trg_volunteer_events_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_volunteer_events_updated_at BEFORE UPDATE ON public.volunteer_events FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: volunteer_shifts trg_volunteer_shifts_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_volunteer_shifts_updated_at BEFORE UPDATE ON public.volunteer_shifts FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: web_forms trg_web_forms_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_web_forms_updated_at BEFORE UPDATE ON public.web_forms FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: workflows trg_workflows_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trg_workflows_updated_at BEFORE UPDATE ON public.workflows FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-
---
--- Name: background_jobs trigger_notify_job_inserted; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trigger_notify_job_inserted AFTER INSERT ON public.background_jobs FOR EACH ROW EXECUTE FUNCTION public.notify_job_inserted();
-
-
---
--- Name: webhook_events trigger_notify_webhook_event_inserted; Type: TRIGGER; Schema: public; Owner: zeehamid
---
-
-CREATE TRIGGER trigger_notify_webhook_event_inserted AFTER INSERT ON public.webhook_events FOR EACH ROW EXECUTE FUNCTION public.notify_webhook_event_inserted();
-
-
---
--- Name: email_comments email_comments_email_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_comments
-    ADD CONSTRAINT email_comments_email_id_fkey FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
-
-
---
--- Name: email_trash email_trash_email_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_trash
-    ADD CONSTRAINT email_trash_email_id_fkey FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
-
-
---
--- Name: tenants fk_admin_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tenants
-    ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES public.authusers(id);
-
-
---
--- Name: campaigns fk_admin_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.campaigns
-    ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES public.authusers(id);
-
-
---
--- Name: authusers fk_authusers_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.authusers
-    ADD CONSTRAINT fk_authusers_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: authusers fk_authusers_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.authusers
-    ADD CONSTRAINT fk_authusers_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: background_jobs fk_background_jobs_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.background_jobs
-    ADD CONSTRAINT fk_background_jobs_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: households fk_campaign_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.households
-    ADD CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
-
-
---
--- Name: persons fk_campaign_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.persons
-    ADD CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
-
-
---
--- Name: map_campaigns_users fk_campaign_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_campaigns_users
-    ADD CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
-
-
---
--- Name: campaigns fk_campaigns_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.campaigns
-    ADD CONSTRAINT fk_campaigns_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: campaigns fk_campaigns_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.campaigns
-    ADD CONSTRAINT fk_campaigns_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: companies fk_companies_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.companies
-    ADD CONSTRAINT fk_companies_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: companies fk_companies_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.companies
-    ADD CONSTRAINT fk_companies_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: companies fk_companies_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.companies
-    ADD CONSTRAINT fk_companies_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: tenants fk_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tenants
-    ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: campaigns fk_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.campaigns
-    ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: households fk_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.households
-    ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: persons fk_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.persons
-    ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: data_exports fk_data_exports_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.data_exports
-    ADD CONSTRAINT fk_data_exports_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: data_exports fk_data_exports_user; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.data_exports
-    ADD CONSTRAINT fk_data_exports_user FOREIGN KEY (user_id) REFERENCES public.authusers(id);
-
-
---
--- Name: data_imports fk_data_imports_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.data_imports
-    ADD CONSTRAINT fk_data_imports_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: data_imports fk_data_imports_tag; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.data_imports
-    ADD CONSTRAINT fk_data_imports_tag FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE SET NULL;
-
-
---
--- Name: data_imports fk_data_imports_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.data_imports
-    ADD CONSTRAINT fk_data_imports_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: data_imports fk_data_imports_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.data_imports
-    ADD CONSTRAINT fk_data_imports_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: donation_pledges fk_donation_pledges_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donation_pledges
-    ADD CONSTRAINT fk_donation_pledges_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
-
-
---
--- Name: donations fk_donations_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donations
-    ADD CONSTRAINT fk_donations_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
-
-
---
--- Name: donations fk_donations_pledge; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donations
-    ADD CONSTRAINT fk_donations_pledge FOREIGN KEY (pledge_id) REFERENCES public.donation_pledges(id) ON DELETE SET NULL;
-
-
---
--- Name: donations fk_donations_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.donations
-    ADD CONSTRAINT fk_donations_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: email_attachments fk_email_attachments_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_attachments
-    ADD CONSTRAINT fk_email_attachments_email FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
-
-
---
--- Name: email_attachments fk_email_attachments_file; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_attachments
-    ADD CONSTRAINT fk_email_attachments_file FOREIGN KEY (file_id) REFERENCES public.files(id) ON DELETE SET NULL;
-
-
---
--- Name: email_bodies fk_email_bodies_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_bodies
-    ADD CONSTRAINT fk_email_bodies_email FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
-
-
---
--- Name: email_comments fk_email_comments_author; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_comments
-    ADD CONSTRAINT fk_email_comments_author FOREIGN KEY (author_id) REFERENCES public.authusers(id);
-
-
---
--- Name: email_comments fk_email_comments_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_comments
-    ADD CONSTRAINT fk_email_comments_email FOREIGN KEY (email_id) REFERENCES public.emails(id);
-
-
---
--- Name: email_drafts fk_email_drafts_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_drafts
-    ADD CONSTRAINT fk_email_drafts_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: email_drafts fk_email_drafts_user; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_drafts
-    ADD CONSTRAINT fk_email_drafts_user FOREIGN KEY (user_id) REFERENCES public.authusers(id) ON DELETE CASCADE;
-
-
---
--- Name: email_headers fk_email_headers_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_headers
-    ADD CONSTRAINT fk_email_headers_email FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
-
-
---
--- Name: email_read_states fk_email_read_states_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_read_states
-    ADD CONSTRAINT fk_email_read_states_email FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
-
-
---
--- Name: email_read_states fk_email_read_states_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_read_states
-    ADD CONSTRAINT fk_email_read_states_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: email_read_states fk_email_read_states_user; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_read_states
-    ADD CONSTRAINT fk_email_read_states_user FOREIGN KEY (user_id) REFERENCES public.authusers(id);
-
-
---
--- Name: email_recipients fk_email_recipients_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_recipients
-    ADD CONSTRAINT fk_email_recipients_email FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
-
-
---
--- Name: email_trash fk_email_trash_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_trash
-    ADD CONSTRAINT fk_email_trash_email FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
-
-
---
--- Name: email_trash fk_email_trash_folder; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_trash
-    ADD CONSTRAINT fk_email_trash_folder FOREIGN KEY (from_folder_id) REFERENCES public.email_folders(id) ON DELETE CASCADE;
-
-
---
--- Name: email_trash fk_email_trash_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.email_trash
-    ADD CONSTRAINT fk_email_trash_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: emails fk_emails_assigned; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.emails
-    ADD CONSTRAINT fk_emails_assigned FOREIGN KEY (assigned_to) REFERENCES public.authusers(id);
-
-
---
--- Name: emails fk_emails_folder; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.emails
-    ADD CONSTRAINT fk_emails_folder FOREIGN KEY (folder_id) REFERENCES public.email_folders(id);
-
-
---
--- Name: event_registrations fk_event_registrations_event; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.event_registrations
-    ADD CONSTRAINT fk_event_registrations_event FOREIGN KEY (event_id, tenant_id) REFERENCES public.events(id, tenant_id) ON DELETE CASCADE;
-
-
---
--- Name: event_registrations fk_event_registrations_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.event_registrations
-    ADD CONSTRAINT fk_event_registrations_person FOREIGN KEY (person_id, tenant_id) REFERENCES public.persons(id, tenant_id) ON DELETE CASCADE;
-
-
---
--- Name: event_registrations fk_event_registrations_ticket_type; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.event_registrations
-    ADD CONSTRAINT fk_event_registrations_ticket_type FOREIGN KEY (ticket_type_id) REFERENCES public.event_ticket_types(id) ON DELETE SET NULL;
-
-
---
--- Name: event_ticket_types fk_event_ticket_types_event; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.event_ticket_types
-    ADD CONSTRAINT fk_event_ticket_types_event FOREIGN KEY (event_id, tenant_id) REFERENCES public.events(id, tenant_id) ON DELETE CASCADE;
-
-
---
--- Name: volunteer_events fk_events_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_events
-    ADD CONSTRAINT fk_events_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: volunteer_events fk_events_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_events
-    ADD CONSTRAINT fk_events_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: volunteer_events fk_events_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_events
-    ADD CONSTRAINT fk_events_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: files fk_files_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.files
-    ADD CONSTRAINT fk_files_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: files fk_files_uploaded_by; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.files
-    ADD CONSTRAINT fk_files_uploaded_by FOREIGN KEY (uploaded_by) REFERENCES public.authusers(id) ON DELETE SET NULL;
-
-
---
--- Name: households fk_househods_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.households
-    ADD CONSTRAINT fk_househods_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: persons fk_household_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.persons
-    ADD CONSTRAINT fk_household_id FOREIGN KEY (household_id) REFERENCES public.households(id);
-
-
---
--- Name: households fk_households_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.households
-    ADD CONSTRAINT fk_households_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: lists fk_lists_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.lists
-    ADD CONSTRAINT fk_lists_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: lists fk_lists_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.lists
-    ADD CONSTRAINT fk_lists_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: lists fk_lists_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.lists
-    ADD CONSTRAINT fk_lists_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: map_campaigns_users fk_map_campaigns_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_campaigns_users
-    ADD CONSTRAINT fk_map_campaigns_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: map_households_tags fk_map_household_tags_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_households_tags
-    ADD CONSTRAINT fk_map_household_tags_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: map_lists_households fk_map_lists_households_household; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_lists_households
-    ADD CONSTRAINT fk_map_lists_households_household FOREIGN KEY (household_id) REFERENCES public.households(id);
-
-
---
--- Name: map_lists_households fk_map_lists_households_list; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_lists_households
-    ADD CONSTRAINT fk_map_lists_households_list FOREIGN KEY (list_id) REFERENCES public.lists(id);
-
-
---
--- Name: map_lists_households fk_map_lists_households_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_lists_households
-    ADD CONSTRAINT fk_map_lists_households_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: map_lists_persons fk_map_lists_persons_list; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_lists_persons
-    ADD CONSTRAINT fk_map_lists_persons_list FOREIGN KEY (list_id) REFERENCES public.lists(id);
-
-
---
--- Name: map_lists_persons fk_map_lists_persons_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_lists_persons
-    ADD CONSTRAINT fk_map_lists_persons_person FOREIGN KEY (person_id) REFERENCES public.persons(id);
-
-
---
--- Name: map_lists_persons fk_map_lists_persons_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_lists_persons
-    ADD CONSTRAINT fk_map_lists_persons_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: map_peoples_tags fk_map_peoples_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_peoples_tags
-    ADD CONSTRAINT fk_map_peoples_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: map_teams_lists fk_map_teams_lists_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_lists
-    ADD CONSTRAINT fk_map_teams_lists_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: map_teams_lists fk_map_teams_lists_list; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_lists
-    ADD CONSTRAINT fk_map_teams_lists_list FOREIGN KEY (list_id) REFERENCES public.lists(id);
-
-
---
--- Name: map_teams_lists fk_map_teams_lists_team; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_lists
-    ADD CONSTRAINT fk_map_teams_lists_team FOREIGN KEY (team_id) REFERENCES public.teams(id);
-
-
---
--- Name: map_teams_lists fk_map_teams_lists_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_lists
-    ADD CONSTRAINT fk_map_teams_lists_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: map_teams_lists fk_map_teams_lists_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_lists
-    ADD CONSTRAINT fk_map_teams_lists_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: map_teams_persons fk_map_teams_persons_created; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_persons
-    ADD CONSTRAINT fk_map_teams_persons_created FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: map_teams_persons fk_map_teams_persons_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_persons
-    ADD CONSTRAINT fk_map_teams_persons_person FOREIGN KEY (person_id) REFERENCES public.persons(id);
-
-
---
--- Name: map_teams_persons fk_map_teams_persons_team; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_persons
-    ADD CONSTRAINT fk_map_teams_persons_team FOREIGN KEY (team_id) REFERENCES public.teams(id);
-
-
---
--- Name: map_teams_persons fk_map_teams_persons_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_persons
-    ADD CONSTRAINT fk_map_teams_persons_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: map_teams_persons fk_map_teams_persons_updated; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_persons
-    ADD CONSTRAINT fk_map_teams_persons_updated FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: newsletter_events fk_newsletter_events_newsletter_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.newsletter_events
-    ADD CONSTRAINT fk_newsletter_events_newsletter_id FOREIGN KEY (newsletter_id) REFERENCES public.newsletters(id) ON DELETE CASCADE;
-
-
---
--- Name: newsletter_events fk_newsletter_events_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.newsletter_events
-    ADD CONSTRAINT fk_newsletter_events_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: newsletters fk_newsletters_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.newsletters
-    ADD CONSTRAINT fk_newsletters_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: newsletters fk_newsletters_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.newsletters
-    ADD CONSTRAINT fk_newsletters_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: newsletters fk_newsletters_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.newsletters
-    ADD CONSTRAINT fk_newsletters_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: notifications fk_notifications_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.notifications
-    ADD CONSTRAINT fk_notifications_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: notifications fk_notifications_user; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.notifications
-    ADD CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES public.authusers(id) ON DELETE CASCADE;
-
-
---
--- Name: persons fk_persons_assigned_to; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.persons
-    ADD CONSTRAINT fk_persons_assigned_to FOREIGN KEY (assigned_to) REFERENCES public.authusers(id) ON DELETE SET NULL;
-
-
---
--- Name: persons fk_persons_company; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.persons
-    ADD CONSTRAINT fk_persons_company FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE SET NULL;
-
-
---
--- Name: persons fk_persons_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.persons
-    ADD CONSTRAINT fk_persons_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: persons fk_persons_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.persons
-    ADD CONSTRAINT fk_persons_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: potential_duplicates fk_potential_duplicates_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.potential_duplicates
-    ADD CONSTRAINT fk_potential_duplicates_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
-
-
---
--- Name: potential_duplicates fk_potential_duplicates_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.potential_duplicates
-    ADD CONSTRAINT fk_potential_duplicates_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: profiles fk_profiles_auth_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.profiles
-    ADD CONSTRAINT fk_profiles_auth_id FOREIGN KEY (auth_id) REFERENCES public.authusers(id);
-
-
---
--- Name: profiles fk_profiles_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.profiles
-    ADD CONSTRAINT fk_profiles_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: profiles fk_profiles_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.profiles
-    ADD CONSTRAINT fk_profiles_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: profiles fk_profiles_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.profiles
-    ADD CONSTRAINT fk_profiles_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: settings fk_settings_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.settings
-    ADD CONSTRAINT fk_settings_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: volunteer_shifts fk_shifts_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_shifts
-    ADD CONSTRAINT fk_shifts_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: volunteer_shifts fk_shifts_event; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_shifts
-    ADD CONSTRAINT fk_shifts_event FOREIGN KEY (event_id) REFERENCES public.volunteer_events(id) ON DELETE CASCADE;
-
-
---
--- Name: volunteer_shifts fk_shifts_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_shifts
-    ADD CONSTRAINT fk_shifts_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
-
-
---
--- Name: volunteer_shifts fk_shifts_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_shifts
-    ADD CONSTRAINT fk_shifts_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: volunteer_shifts fk_shifts_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.volunteer_shifts
-    ADD CONSTRAINT fk_shifts_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: tags fk_tags_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tags
-    ADD CONSTRAINT fk_tags_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: task_attachments fk_task_attachments_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.task_attachments
-    ADD CONSTRAINT fk_task_attachments_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: task_comments fk_task_comments_author; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.task_comments
-    ADD CONSTRAINT fk_task_comments_author FOREIGN KEY (author_id) REFERENCES public.authusers(id) ON DELETE CASCADE;
-
-
---
--- Name: task_comments fk_task_comments_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.task_comments
-    ADD CONSTRAINT fk_task_comments_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: task_subtasks fk_task_subtasks_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.task_subtasks
-    ADD CONSTRAINT fk_task_subtasks_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: tasks fk_tasks_assigned_to; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tasks
-    ADD CONSTRAINT fk_tasks_assigned_to FOREIGN KEY (assigned_to) REFERENCES public.authusers(id);
-
-
---
--- Name: tasks fk_tasks_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tasks
-    ADD CONSTRAINT fk_tasks_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: tasks fk_tasks_team_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tasks
-    ADD CONSTRAINT fk_tasks_team_id FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE SET NULL;
-
-
---
--- Name: tasks fk_tasks_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tasks
-    ADD CONSTRAINT fk_tasks_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: tasks fk_tasks_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tasks
-    ADD CONSTRAINT fk_tasks_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: teams fk_teams_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.teams
-    ADD CONSTRAINT fk_teams_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: teams fk_teams_team_captain; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.teams
-    ADD CONSTRAINT fk_teams_team_captain FOREIGN KEY (team_captain_id) REFERENCES public.persons(id) ON DELETE SET NULL;
-
-
---
--- Name: teams fk_teams_team_lead_user; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.teams
-    ADD CONSTRAINT fk_teams_team_lead_user FOREIGN KEY (team_lead_user_id) REFERENCES public.authusers(id);
-
-
---
--- Name: teams fk_teams_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.teams
-    ADD CONSTRAINT fk_teams_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: teams fk_teams_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.teams
-    ADD CONSTRAINT fk_teams_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: user_activity fk_user_activity_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.user_activity
-    ADD CONSTRAINT fk_user_activity_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: user_activity fk_user_activity_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.user_activity
-    ADD CONSTRAINT fk_user_activity_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: user_activity fk_user_activity_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.user_activity
-    ADD CONSTRAINT fk_user_activity_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: user_activity fk_user_activity_user; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.user_activity
-    ADD CONSTRAINT fk_user_activity_user FOREIGN KEY (user_id) REFERENCES public.authusers(id);
-
-
---
--- Name: map_campaigns_users fk_user_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_campaigns_users
-    ADD CONSTRAINT fk_user_id FOREIGN KEY (user_id) REFERENCES public.authusers(id);
-
-
---
--- Name: web_forms fk_web_forms_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.web_forms
-    ADD CONSTRAINT fk_web_forms_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: web_forms fk_web_forms_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.web_forms
-    ADD CONSTRAINT fk_web_forms_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: web_forms fk_web_forms_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.web_forms
-    ADD CONSTRAINT fk_web_forms_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: webhook_events fk_webhook_events_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.webhook_events
-    ADD CONSTRAINT fk_webhook_events_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: workflow_enrollments fk_workflow_enrollments_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflow_enrollments
-    ADD CONSTRAINT fk_workflow_enrollments_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
-
-
---
--- Name: workflow_enrollments fk_workflow_enrollments_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflow_enrollments
-    ADD CONSTRAINT fk_workflow_enrollments_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: workflow_enrollments fk_workflow_enrollments_workflow; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflow_enrollments
-    ADD CONSTRAINT fk_workflow_enrollments_workflow FOREIGN KEY (workflow_id) REFERENCES public.workflows(id) ON DELETE CASCADE;
-
-
---
--- Name: workflow_steps fk_workflow_steps_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflow_steps
-    ADD CONSTRAINT fk_workflow_steps_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: workflow_steps fk_workflow_steps_workflow; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflow_steps
-    ADD CONSTRAINT fk_workflow_steps_workflow FOREIGN KEY (workflow_id) REFERENCES public.workflows(id) ON DELETE CASCADE;
-
-
---
--- Name: workflows fk_workflows_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflows
-    ADD CONSTRAINT fk_workflows_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: workflows fk_workflows_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflows
-    ADD CONSTRAINT fk_workflows_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
-
-
---
--- Name: workflows fk_workflows_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.workflows
-    ADD CONSTRAINT fk_workflows_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
-
-
---
--- Name: map_households_tags map_households_tags_household_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_households_tags
-    ADD CONSTRAINT map_households_tags_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
-
-
---
--- Name: map_households_tags map_households_tags_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_households_tags
-    ADD CONSTRAINT map_households_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE CASCADE;
-
-
---
--- Name: map_lists_households map_lists_households_household_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_lists_households
-    ADD CONSTRAINT map_lists_households_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
-
-
---
--- Name: map_lists_households map_lists_households_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_lists_households
-    ADD CONSTRAINT map_lists_households_list_id_fkey FOREIGN KEY (list_id) REFERENCES public.lists(id) ON DELETE CASCADE;
-
-
---
--- Name: map_lists_persons map_lists_persons_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_lists_persons
-    ADD CONSTRAINT map_lists_persons_list_id_fkey FOREIGN KEY (list_id) REFERENCES public.lists(id) ON DELETE CASCADE;
-
-
---
--- Name: map_lists_persons map_lists_persons_person_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_lists_persons
-    ADD CONSTRAINT map_lists_persons_person_id_fkey FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
-
-
---
--- Name: map_peoples_tags map_peoples_tags_person_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_peoples_tags
-    ADD CONSTRAINT map_peoples_tags_person_id_fkey FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
-
-
---
--- Name: map_peoples_tags map_peoples_tags_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_peoples_tags
-    ADD CONSTRAINT map_peoples_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE CASCADE;
-
-
---
--- Name: map_teams_lists map_teams_lists_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_lists
-    ADD CONSTRAINT map_teams_lists_list_id_fkey FOREIGN KEY (list_id) REFERENCES public.lists(id) ON DELETE CASCADE;
-
-
---
--- Name: map_teams_lists map_teams_lists_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_lists
-    ADD CONSTRAINT map_teams_lists_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE CASCADE;
-
-
---
--- Name: map_teams_persons map_teams_persons_person_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_persons
-    ADD CONSTRAINT map_teams_persons_person_id_fkey FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
-
-
---
--- Name: map_teams_persons map_teams_persons_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.map_teams_persons
-    ADD CONSTRAINT map_teams_persons_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE CASCADE;
-
-
---
--- Name: passkeys passkeys_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.passkeys
-    ADD CONSTRAINT passkeys_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.authusers(id) ON DELETE CASCADE;
-
-
---
--- Name: person_connections pc_from_person_fk; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.person_connections
-    ADD CONSTRAINT pc_from_person_fk FOREIGN KEY (from_person_id, tenant_id) REFERENCES public.persons(id, tenant_id) ON DELETE CASCADE;
-
-
---
--- Name: person_connections pc_to_person_fk; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.person_connections
-    ADD CONSTRAINT pc_to_person_fk FOREIGN KEY (to_person_id, tenant_id) REFERENCES public.persons(id, tenant_id) ON DELETE CASCADE;
-
-
---
--- Name: potential_duplicates potential_duplicates_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.potential_duplicates
-    ADD CONSTRAINT potential_duplicates_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
-
-
---
--- Name: potential_duplicates potential_duplicates_household_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.potential_duplicates
-    ADD CONSTRAINT potential_duplicates_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
-
-
---
--- Name: profiles profiles_auth_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.profiles
-    ADD CONSTRAINT profiles_auth_id_fkey FOREIGN KEY (auth_id) REFERENCES public.authusers(id) ON DELETE CASCADE;
-
-
---
--- Name: profiles profiles_avatar_file_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.profiles
-    ADD CONSTRAINT profiles_avatar_file_id_fkey FOREIGN KEY (avatar_file_id) REFERENCES public.files(id) ON DELETE SET NULL;
-
-
---
--- Name: sessions sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.sessions
-    ADD CONSTRAINT sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.authusers(id) ON DELETE CASCADE;
-
-
---
--- Name: task_attachments task_attachments_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.task_attachments
-    ADD CONSTRAINT task_attachments_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.tasks(id) ON DELETE CASCADE;
-
-
---
--- Name: task_comments task_comments_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.task_comments
-    ADD CONSTRAINT task_comments_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.tasks(id) ON DELETE CASCADE;
-
-
---
--- Name: task_subtasks task_subtasks_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.task_subtasks
-    ADD CONSTRAINT task_subtasks_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.tasks(id) ON DELETE CASCADE;
-
-
---
--- Name: tenants tenants_placeholder_household_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.tenants
-    ADD CONSTRAINT tenants_placeholder_household_id_fkey FOREIGN KEY (placeholder_household_id) REFERENCES public.households(id) ON DELETE SET NULL;
-
-
---
--- Name: zapier_subscriptions zapier_subscriptions_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
---
-
-ALTER TABLE ONLY public.zapier_subscriptions
-    ADD CONSTRAINT zapier_subscriptions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
-
-
---
--- Name: SCHEMA public; Type: ACL; Schema: -; Owner: zee
---
-
-REVOKE USAGE ON SCHEMA public FROM PUBLIC;
-GRANT ALL ON SCHEMA public TO PUBLIC;
-
-
---
--- PostgreSQL database dump complete
---
-
-\unrestrict oPFHGUe6wVNuN0eNnQazqyJQjnNPomJSMJiQZMlpJpzgVIBdJCJVrckJoNfysZW
+## File: apps/backend/src/app/\_migrations/2026-06-25-person-newsletter-engagements.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`
+    CREATE TABLE public.person_newsletter_engagements (
+      tenant_id       bigint      NOT NULL,
+      newsletter_id   bigint      NOT NULL,
+      email           text        NOT NULL,
+      open_count      integer     NOT NULL DEFAULT 0,
+      click_count     integer     NOT NULL DEFAULT 0,
+      has_unsubscribed boolean    NOT NULL DEFAULT false,
+      hard_bounced    boolean     NOT NULL DEFAULT false,
+      soft_bounced    boolean     NOT NULL DEFAULT false,
+      first_opened_at  timestamptz,
+      last_opened_at   timestamptz,
+      first_clicked_at timestamptz,
+      last_clicked_at  timestamptz,
+      bounced_at       timestamptz,
+      unsubscribed_at  timestamptz,
+      PRIMARY KEY (tenant_id, newsletter_id, email)
+    )
+  `.execute(db);
+
+  await sql`
+    CREATE INDEX idx_pne_tenant_email ON public.person_newsletter_engagements (tenant_id, email)
+  `.execute(db);
+
+  await sql`
+    CREATE INDEX idx_pne_newsletter ON public.person_newsletter_engagements (newsletter_id)
+  `.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`DROP TABLE IF EXISTS public.person_newsletter_engagements`.execute(db);
+}
+```
+
+## File: apps/backend/src/app/\_migrations/2026-06-26-email-sync-per-tenant.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+export async function up(db: Kysely<any>): Promise<void> {
+  // For each table, keep only the most recently updated row per tenant before enforcing uniqueness
+  await sql`
+    DELETE FROM google_oauth_tokens
+    WHERE id NOT IN (
+      SELECT DISTINCT ON (tenant_id) id
+      FROM google_oauth_tokens
+      ORDER BY tenant_id, updated_at DESC NULLS LAST
+    )
+  `.execute(db);
+
+  await sql`
+    DELETE FROM ms_oauth_tokens
+    WHERE id NOT IN (
+      SELECT DISTINCT ON (tenant_id) id
+      FROM ms_oauth_tokens
+      ORDER BY tenant_id, updated_at DESC NULLS LAST
+    )
+  `.execute(db);
+
+  // google_oauth_tokens: drop old user_id unique constraint + index, add tenant_id unique
+  await sql`ALTER TABLE google_oauth_tokens DROP CONSTRAINT IF EXISTS google_oauth_tokens_user_id_key`.execute(db);
+  await sql`DROP INDEX IF EXISTS google_oauth_tokens_tenant_user_idx`.execute(db);
+  await sql`ALTER TABLE google_oauth_tokens ALTER COLUMN user_id DROP NOT NULL`.execute(db);
+  await sql`ALTER TABLE google_oauth_tokens ADD CONSTRAINT google_oauth_tokens_tenant_id_key UNIQUE (tenant_id)`.execute(
+    db,
+  );
+  await sql`CREATE INDEX google_oauth_tokens_tenant_idx ON google_oauth_tokens (tenant_id)`.execute(db);
+
+  // ms_oauth_tokens: same
+  await sql`ALTER TABLE ms_oauth_tokens DROP CONSTRAINT IF EXISTS ms_oauth_tokens_user_id_key`.execute(db);
+  await sql`DROP INDEX IF EXISTS ms_oauth_tokens_tenant_user_idx`.execute(db);
+  await sql`ALTER TABLE ms_oauth_tokens ALTER COLUMN user_id DROP NOT NULL`.execute(db);
+  await sql`ALTER TABLE ms_oauth_tokens ADD CONSTRAINT ms_oauth_tokens_tenant_id_key UNIQUE (tenant_id)`.execute(db);
+  await sql`CREATE INDEX ms_oauth_tokens_tenant_idx ON ms_oauth_tokens (tenant_id)`.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE google_oauth_tokens DROP CONSTRAINT IF EXISTS google_oauth_tokens_tenant_id_key`.execute(db);
+  await sql`DROP INDEX IF EXISTS google_oauth_tokens_tenant_idx`.execute(db);
+  await sql`ALTER TABLE google_oauth_tokens ALTER COLUMN user_id SET NOT NULL`.execute(db);
+  await sql`ALTER TABLE google_oauth_tokens ADD CONSTRAINT google_oauth_tokens_user_id_key UNIQUE (user_id)`.execute(
+    db,
+  );
+  await sql`CREATE INDEX google_oauth_tokens_tenant_user_idx ON google_oauth_tokens (tenant_id, user_id)`.execute(db);
+
+  await sql`ALTER TABLE ms_oauth_tokens DROP CONSTRAINT IF EXISTS ms_oauth_tokens_tenant_id_key`.execute(db);
+  await sql`DROP INDEX IF EXISTS ms_oauth_tokens_tenant_idx`.execute(db);
+  await sql`ALTER TABLE ms_oauth_tokens ALTER COLUMN user_id SET NOT NULL`.execute(db);
+  await sql`ALTER TABLE ms_oauth_tokens ADD CONSTRAINT ms_oauth_tokens_user_id_key UNIQUE (user_id)`.execute(db);
+  await sql`CREATE INDEX ms_oauth_tokens_tenant_user_idx ON ms_oauth_tokens (tenant_id, user_id)`.execute(db);
+}
 ```
 
 ## File: apps/backend/src/app/lib/gis/geocoding.ts
@@ -15864,383 +11360,6 @@ export async function processMentions(
 }
 ```
 
-## File: apps/backend/src/app/lib/base.controller.ts
-
-```typescript
-import {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthKeyPayload,
-  getAllOptionsType,
-} from '../../../../../libs/common/src';
-import { env } from '../../env';
-
-import { ReferenceExpression, Transaction } from 'kysely';
-
-import { Models, OperationDataType, TypeTenantId } from '../../../../../libs/common/src/lib/kysely.models';
-import { BaseRepository, QueryParams } from './base.repo';
-import { rowsToCsv } from './csv';
-import { UserActivityRepo } from './user-activity.repo';
-import { TransactionalEmailService } from './mail/transactional-mail.service';
-
-export class BaseController<T extends keyof Models, R extends BaseRepository<T>> {
-  protected readonly userActivity = new UserActivityRepo();
-
-  constructor(private repo: R) {}
-
-  private getEntityLabel(tableName: string, rowObj: any): string {
-    if (!rowObj) return '';
-    if (tableName === 'tasks') {
-      return String(rowObj['name'] || '');
-    }
-    if (tableName === 'persons') {
-      return `${rowObj['first_name'] || ''} ${rowObj['last_name'] || ''}`.trim();
-    }
-    if (tableName === 'households') {
-      const streetParts = [
-        rowObj['apt'] ? `Apt ${rowObj['apt']}` : null,
-        rowObj['street_num'],
-        rowObj['street1'],
-        rowObj['street2'],
-      ].filter(Boolean);
-      const locationParts = [rowObj['city'], rowObj['state'], rowObj['zip']].filter(Boolean);
-      return [streetParts.join(' '), locationParts.join(', ')].filter(Boolean).join(', ').trim() || 'Household';
-    }
-    if (tableName === 'emails') {
-      return String(rowObj['subject'] || '');
-    }
-    return String(rowObj['name'] || rowObj['subject'] || rowObj['title'] || '');
-  }
-
-  public async add(row: OperationDataType<T, 'insert'>, trx?: Transaction<Models>) {
-    const result = await this.repo.add({ row }, trx);
-    try {
-      const rowObj = row as Record<string, unknown>;
-      const actor = rowObj['createdby_id'];
-      const tenant = rowObj['tenant_id'];
-      if (actor != null && tenant != null) {
-        const resultObj = result as Record<string, unknown> | undefined;
-        const resultId = resultObj && 'id' in resultObj ? String(resultObj['id']) : null;
-        const metadata: Record<string, any> = resultId ? { id: resultId } : {};
-        if (resultObj) {
-          const tableName = String(this.repo.getTableName());
-          metadata['entity_label'] = this.getEntityLabel(tableName, resultObj);
-        }
-        if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
-          metadata['task_name'] = String(resultObj['name']);
-        }
-        await this.userActivity.log(
-          {
-            tenant_id: String(tenant),
-            user_id: String(actor),
-            activity: 'create',
-            entity: String(this.repo.getTableName()),
-            entity_id: resultId,
-            quantity: 1,
-            metadata,
-          },
-          trx,
-        );
-      }
-    } catch (e) {
-      console.error('Failed to log create activity', e);
-    }
-    return result;
-  }
-
-  public async addMany(rows: OperationDataType<T, 'insert'>[], trx?: Transaction<Models>) {
-    const result = await this.repo.addMany({ rows }, trx);
-    try {
-      const firstRow = rows[0];
-      if (firstRow) {
-        const rowObj = firstRow as Record<string, unknown>;
-        const actor = rowObj['createdby_id'];
-        const tenant = rowObj['tenant_id'];
-        if (actor != null && tenant != null) {
-          await this.userActivity.log(
-            {
-              tenant_id: String(tenant),
-              user_id: String(actor),
-              activity: 'create',
-              entity: String(this.repo.getTableName()),
-              quantity: rows.length,
-              metadata: { count: rows.length },
-            },
-            trx,
-          );
-        }
-      }
-    } catch (e) {
-      console.error('Failed to log addMany activity', e);
-    }
-    return result;
-  }
-
-  public async delete(tenant_id: TypeTenantId<T>, idToDelete: string, userId?: string) {
-    const result = await this.repo.delete({
-      tenant_id,
-      id: idToDelete,
-    });
-    try {
-      if (userId != null) {
-        await this.userActivity.log({
-          tenant_id: String(tenant_id),
-          user_id: String(userId),
-          activity: 'delete',
-          entity: String(this.repo.getTableName()),
-          entity_id: idToDelete ? String(idToDelete) : null,
-          quantity: 1,
-          metadata: { id: idToDelete },
-        });
-      }
-    } catch (e) {
-      console.error('Failed to log delete activity', e);
-    }
-    return result;
-  }
-
-  public deleteMany(tenant_id: TypeTenantId<T>, idsToDelete: string[]) {
-    return this.repo.deleteMany({
-      ids: idsToDelete,
-      tenant_id,
-    });
-  }
-
-  public find(input: { tenant_id: string; key: string; column: ReferenceExpression<Models, T> }) {
-    return this.repo.find({
-      tenant_id: input.tenant_id,
-      key: input.key,
-      column: input.column,
-    });
-  }
-
-  public getAll(tenant: string, options?: getAllOptionsType) {
-    return this.repo.getAll({
-      tenant_id: tenant,
-      options: options as QueryParams<T>,
-    });
-  }
-
-  public getAllWithCounts(tenant: string, options?: getAllOptionsType) {
-    return this.getRepo().getAllWithCounts({
-      tenant_id: tenant,
-      options: options as QueryParams<any>,
-    });
-  }
-
-  public getCount(tenant_id: string) {
-    return this.repo.count(tenant_id);
-  }
-
-  public getOneById(input: { tenant_id: string; id: string }) {
-    return this.repo.getOneBy('id' as any, { value: input.id as any, tenant_id: input.tenant_id });
-  }
-
-  public async update(input: { tenant_id: string; id: string; row: OperationDataType<T, 'update'> }) {
-    let original: any = null;
-    try {
-      original = await this.repo.getOneBy('id' as any, { value: input.id as any, tenant_id: input.tenant_id });
-    } catch (err) {
-      console.error('Failed to fetch original record for activity log', err);
-    }
-    const result = await this.repo.update({ id: input.id, tenant_id: input.tenant_id, row: input.row });
-    try {
-      const rowObj = input.row as Record<string, unknown>;
-      const actor = rowObj['updatedby_id'];
-      if (actor != null) {
-        const metadata: Record<string, any> = { id: input.id };
-        const resultObj = result as Record<string, unknown> | undefined;
-        if (original && resultObj) {
-          const skipKeys = [
-            'id',
-            'tenant_id',
-            'createdby_id',
-            'updatedby_id',
-            'created_at',
-            'updated_at',
-            'address_fp_street',
-            'address_fp_full',
-            'password',
-            'password_reset_code',
-            'password_reset_code_created_at',
-          ];
-          const changes: Record<string, any> = {};
-          for (const key of Object.keys(rowObj)) {
-            if (skipKeys.includes(key)) continue;
-            const oldVal = (original as any)[key];
-            const newVal = resultObj[key];
-            if (oldVal !== newVal) {
-              changes[key] = { from: oldVal ?? null, to: newVal ?? null };
-            }
-          }
-          metadata['changes'] = changes;
-          metadata['entity_label'] = this.getEntityLabel(String(this.repo.getTableName()), resultObj);
-        }
-        if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
-          metadata['task_name'] = String(resultObj['name']);
-        }
-        let activity = 'update';
-        if (String(this.repo.getTableName()) === 'tasks' && 'due_at' in rowObj) {
-          metadata['action'] = 'change_due_date';
-          metadata['due_at'] = rowObj['due_at'];
-        }
-        if (String(this.repo.getTableName()) === 'tasks' && 'assigned_to' in rowObj) {
-          const assigneeId = rowObj['assigned_to'];
-          if (assigneeId == null || assigneeId === '') {
-            activity = 'unassign';
-          } else {
-            activity = 'assign';
-            try {
-              const assignee = await this.repo.db
-                .selectFrom('authusers')
-                .select(['first_name', 'last_name'])
-                .where('id', '=', Number(assigneeId) as any)
-                .executeTakeFirst();
-              if (assignee) {
-                metadata['assigned_to_name'] = `${assignee.first_name} ${assignee.last_name || ''}`.trim();
-              }
-            } catch (err) {
-              console.error('Failed to look up assignee name', err);
-            }
-          }
-        }
-        await this.userActivity.log({
-          tenant_id: String(input.tenant_id),
-          user_id: String(actor),
-          activity: activity as any,
-          entity: String(this.repo.getTableName()),
-          entity_id: input.id ? String(input.id) : null,
-          quantity: 1,
-          metadata,
-        });
-      }
-    } catch (e) {
-      console.error('Failed to log update activity', e);
-    }
-    return result;
-  }
-
-  protected getRepo() {
-    return this.repo;
-  }
-
-  public async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    const options = (input?.options ?? {}) as QueryParams<T>;
-    const rows = await this.repo.getAll({ tenant_id: input.tenant_id, options });
-    const records = rows.map((row) => ({ ...(row as Record<string, unknown>) }));
-    const response = this.buildCsvResponse(records, input) as {
-      csv: string;
-      fileName: string;
-      columns: string[];
-      rowCount: number;
-    };
-
-    if (auth) {
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'export',
-          entity: String(this.repo.getTableName()),
-          quantity: response.rowCount,
-          metadata: {
-            requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-            returned_columns: response.columns.slice(0, 12),
-            file_name: response.fileName,
-          },
-        });
-
-        const user = await this.repo.db
-          .selectFrom('authusers')
-          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-          .select(['authusers.email', 'profiles.json as profile_json'])
-          .where('authusers.id', '=', auth.user_id as any)
-          .executeTakeFirst();
-        if (user && user.email) {
-          let optedIn = true;
-          const profileJson = user.profile_json;
-          if (profileJson) {
-            try {
-              const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-              if (json?.notifications?.export_ready === false) {
-                optedIn = false;
-              }
-            } catch (e) {
-              console.error('Failed to parse profile json in exportCsv', e);
-            }
-          }
-
-          if (optedIn) {
-            const mailService = new TransactionalEmailService();
-            await mailService.sendMail({
-              to: user.email,
-              subject: `Your Export is Ready: ${response.fileName}`,
-              text: `Hi ${auth.name},\n\nYour export of ${response.rowCount} records from the ${String(this.repo.getTableName())} table is ready.\n\nFile Name: ${response.fileName}\nDownload Link: ${env.appUrl}/downloads/${response.fileName}`,
-              html: `<p>Hi ${auth.name},</p><p>Your export of <strong>${response.rowCount}</strong> records from the <strong>${String(this.repo.getTableName())}</strong> table is ready.</p><p><strong>File Name:</strong> ${response.fileName}<br><strong>Download Link:</strong> <a href="${env.appUrl}/downloads/${response.fileName}">Download CSV</a></p>`,
-            });
-          }
-        }
-      } catch (err) {
-        // Logging failures should never break export flow; swallow silently
-        console.error('Failed to log export activity or send email alert', err);
-      }
-    }
-
-    return response;
-  }
-
-  protected buildCsvResponse(
-    rows: Array<Record<string, unknown>>,
-    input: ExportCsvInputType & { tenant_id: string },
-  ): ExportCsvResponseType {
-    const requestedColumns = Array.isArray(input?.columns)
-      ? (input.columns.filter((c): c is string => Boolean(c)) ?? [])
-      : [];
-    const columns = requestedColumns.length
-      ? requestedColumns
-      : rows.length > 0
-        ? Object.keys(rows[0] as Record<string, unknown>)
-        : [];
-    const fileName = input?.fileName?.trim() || `${String(this.repo.getTableName())}-export.csv`;
-    const csv = columns.length ? rowsToCsv(rows as Array<Record<string, any>>, columns) : '';
-    return {
-      csv,
-      columns,
-      fileName,
-      rowCount: rows.length,
-    };
-  }
-
-  protected async resolveCreatorAndUpdater(tenantId: string, record: any, trx?: any) {
-    if (!record) return record;
-    const db = trx || this.repo.db;
-    const userIds = [record.createdby_id, record.updatedby_id].filter(Boolean);
-    if (userIds.length === 0) return record;
-
-    const users = await db
-      .selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name'])
-      .where('id', 'in', userIds as any)
-      .where('tenant_id', '=', tenantId as any)
-      .execute();
-
-    const userMap: Record<string, string> = {};
-    for (const u of users) {
-      userMap[String(u.id)] = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || 'Unknown User';
-    }
-
-    return {
-      ...record,
-      created_by_name: record.createdby_id ? (userMap[String(record.createdby_id)] ?? 'Unknown User') : null,
-      updated_by_name: record.updatedby_id ? (userMap[String(record.updatedby_id)] ?? 'Unknown User') : null,
-    };
-  }
-}
-```
-
 ## File: apps/backend/src/app/lib/common-passwords.ts
 
 ```typescript
@@ -16352,50 +11471,6 @@ export const COMMON_PASSWORDS = new Set([
 ]);
 ```
 
-## File: apps/backend/src/app/lib/csv-stream.ts
-
-```typescript
-import { Transform } from 'stream';
-
-export class CsvTransformStream extends Transform {
-  private isFirst = true;
-  private columns: string[];
-  public rowCount = 0;
-
-  constructor(columns: string[] = []) {
-    super({ objectMode: true });
-    this.columns = columns;
-  }
-
-  override _transform(row: any, _encoding: string, callback: (err?: Error | null, chunk?: any) => void) {
-    this.rowCount++;
-    let chunk = '';
-
-    if (this.isFirst) {
-      if (!this.columns || this.columns.length === 0) {
-        this.columns = Object.keys(row);
-      }
-      chunk += this.columns.join(',') + '\n';
-      this.isFirst = false;
-    }
-
-    const escape = (value: unknown) => {
-      if (value === null || value === undefined) return '';
-      if (value instanceof Date) return value.toISOString();
-      const str = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
-      return str.includes(',') || str.includes('"') || str.includes('\n') ? '"' + str.replace(/"/g, '""') + '"' : str;
-    };
-
-    chunk += this.columns.map((col) => escape(row[col])).join(',') + '\n';
-    callback(null, chunk);
-  }
-
-  override _flush(callback: (err?: Error | null) => void) {
-    callback();
-  }
-}
-```
-
 ## File: apps/backend/src/app/lib/hibp.ts
 
 ```typescript
@@ -16422,93 +11497,6 @@ export async function getPwnedCount(password: string): Promise<number> {
 }
 ```
 
-## File: apps/backend/src/app/lib/storage.service.ts
-
-```typescript
-import { BlobServiceClient, BlobSASPermissions } from '@azure/storage-blob';
-import { env } from '../../env';
-import { Readable } from 'stream';
-
-export class StorageService {
-  private serviceClient: BlobServiceClient;
-  private containerClient;
-
-  constructor() {
-    const connectionString = env.azureStorageConnectionString || 'UseDevelopmentStorage=true';
-    const containerName = env.azureStorageContainer || 'uploads';
-    this.serviceClient = BlobServiceClient.fromConnectionString(connectionString);
-    this.containerClient = this.serviceClient.getContainerClient(containerName);
-  }
-
-  public async upload(key: string, data: Buffer, contentType: string): Promise<void> {
-    await this.containerClient.createIfNotExists();
-    const blockBlobClient = this.containerClient.getBlockBlobClient(key);
-    await blockBlobClient.upload(data, data.length, {
-      blobHTTPHeaders: { blobContentType: contentType },
-    });
-  }
-
-  public async uploadStream(key: string, stream: Readable, contentType: string): Promise<void> {
-    await this.containerClient.createIfNotExists();
-    const blockBlobClient = this.containerClient.getBlockBlobClient(key);
-    await blockBlobClient.uploadStream(stream, undefined, undefined, {
-      blobHTTPHeaders: { blobContentType: contentType },
-    });
-  }
-
-  public async generateWriteSasUrl(key: string, expiryMinutes = 15): Promise<string> {
-    await this.containerClient.createIfNotExists();
-
-    try {
-      await this.serviceClient.setProperties({
-        cors: [
-          {
-            allowedOrigins: '*',
-            allowedMethods: 'GET,HEAD,POST,PUT,DELETE,OPTIONS',
-            allowedHeaders: '*',
-            exposedHeaders: '*',
-            maxAgeInSeconds: 3600,
-          },
-        ],
-      });
-    } catch (err) {
-      console.warn('Failed to set storage service CORS properties:', err);
-    }
-
-    const blockBlobClient = this.containerClient.getBlockBlobClient(key);
-    const permissions = BlobSASPermissions.parse('w');
-    const expiresOn = new Date();
-    expiresOn.setMinutes(expiresOn.getMinutes() + expiryMinutes);
-    return await blockBlobClient.generateSasUrl({
-      permissions,
-      expiresOn,
-    });
-  }
-
-  public async download(key: string): Promise<Buffer> {
-    const blockBlobClient = this.containerClient.getBlockBlobClient(key);
-    const downloadBlockBlobResponse = await blockBlobClient.download(0);
-
-    return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      const stream = downloadBlockBlobResponse.readableStreamBody;
-      if (!stream) {
-        reject(new Error('No readable stream body in blob response'));
-        return;
-      }
-      stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
-      stream.on('end', () => resolve(Buffer.concat(chunks)));
-      stream.on('error', (err) => reject(err));
-    });
-  }
-
-  public async delete(key: string): Promise<void> {
-    const blockBlobClient = this.containerClient.getBlockBlobClient(key);
-    await blockBlobClient.deleteIfExists();
-  }
-}
-```
-
 ## File: apps/backend/src/app/lib/webauthn-challenges.ts
 
 ```typescript
@@ -16527,117 +11515,6 @@ export function consumeChallenge(key: string): string | null {
   store.delete(key);
   if (Date.now() > entry.expiresAt) return null;
   return entry.challenge;
-}
-```
-
-## File: apps/backend/src/app/modules/activity/controller.ts
-
-```typescript
-import { TRPCError } from '@trpc/server';
-import { BaseController } from '../../lib/base.controller';
-import { UserActivityRepo } from '../../lib/user-activity.repo';
-import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
-import { ExportsRepo } from '../exports/repositories/exports.repo';
-
-export class ActivityController extends BaseController<'user_activity', UserActivityRepo> {
-  constructor() {
-    super(new UserActivityRepo());
-  }
-
-  public async getFeed(auth: IAuthKeyPayload, options?: any) {
-    return this.getRepo().getAllWithUser(auth.tenant_id, options || {});
-  }
-
-  public async getActivities(
-    tenant_id: string,
-    entity: string,
-    entityId: string,
-    options?: { startRow?: number; endRow?: number },
-  ) {
-    return this.getRepo().getForEntity(tenant_id, entity, entityId, options);
-  }
-
-  public async deleteOldActivities(): Promise<void> {
-    const tenants = await this.getRepo().db.selectFrom('tenants').select(['id', 'subscription_plan']).execute();
-
-    for (const tenant of tenants) {
-      const isHigherPlan = tenant.subscription_plan && tenant.subscription_plan !== 'free';
-      const days = isHigherPlan ? 28 : 7;
-      const thresholdDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-
-      await this.getRepo()
-        .db.deleteFrom('user_activity')
-        .where('tenant_id', '=', tenant.id as any)
-        .where('created_at', '<', thresholdDate)
-        .execute();
-    }
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (!auth) {
-      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Authentication required' });
-    }
-
-    const options = (input?.options ?? {}) as any;
-    // Remove pagination options to export all matching records
-    const { startRow, endRow, ...restOptions } = options;
-
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-    const fileName = input?.fileName?.trim() || `activity-feed-export-${ts}.csv`;
-    const columns = input?.columns || [
-      'id',
-      'created_at',
-      'user',
-      'email',
-      'activity',
-      'entity',
-      'entity_id',
-      'quantity',
-      'metadata',
-    ];
-
-    const exportsRepo = new ExportsRepo();
-    const exportRecord = await exportsRepo.create({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entity: 'user_activity',
-      file_name: fileName,
-      columns,
-    });
-
-    const exportId = String((exportRecord as any).id);
-
-    await this.getRepo()
-      .db.insertInto('background_jobs' as any)
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'export_csv',
-          export_id: exportId,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          entity: 'user_activity',
-          table: 'user_activity',
-          options: restOptions,
-          columns,
-          file_name: fileName,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      })
-      .execute();
-
-    return {
-      status: 'processing',
-    } as any;
-  }
 }
 ```
 
@@ -16761,345 +11638,560 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
 }
 ```
 
-## File: apps/backend/src/app/modules/emails/repositories/email.repo.ts
+## File: apps/backend/src/app/modules/emails/controller.ts
 
 ```typescript
-import { EmailStatus, SPECIAL_FOLDERS } from '../../../../../../../libs/common/src';
+import { env } from '../../../env';
+import { getAllEmailFolders } from '../../config/email-folders.config';
+import { AppError, BadRequestError, InternalError, NotFoundError } from '../../errors/app-errors';
+import { EmailAttachmentsRepo } from './repositories/email-attachments.repo';
+import { EmailBodiesRepo } from './repositories/email-body.repo';
+import { EmailCommentsRepo } from './repositories/email-comments.repo';
+import { EmailDraftsRepo } from './repositories/email-drafts.repo';
+import { EmailRepo } from './repositories/email.repo';
+import { BaseController } from '../../lib/base.controller';
+import type { EmailStatus } from '../../../../../../libs/common/src/lib/emails';
+import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
+import type { TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { EmailDraftType } from '../../../../../../libs/common/src/lib/models';
+import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
+import { UserActivityRepo } from '../../lib/user-activity.repo';
+import { processMentions } from '../../lib/mail/mentions-util';
+import { sanitizeHtml } from '../../lib/mail/sanitize-util';
+import { StorageService } from '../../lib/storage.service';
+import { sql } from 'kysely';
 
-import { UpdateResult, sql } from 'kysely';
-
-import { BaseRepository } from '../../../lib/base.repo';
-import { EmailAttachmentsRepo } from './email-attachments.repo';
-import { EmailHeadersRepo } from './email-headers.repo';
-import { EmailRecipientsRepo } from './email-recipients.repo';
-import { EmailTrashRepo } from './email-trash.repo';
-import { ALL_FOLDERS } from '../../../../../../../libs/common/src/lib/emails';
-
-export class EmailRepo extends BaseRepository<'emails'> {
-  private emailAttachmentsRepo = new EmailAttachmentsRepo();
-  private emailHeadersRepo = new EmailHeadersRepo();
-  private emailRecipientsRepo = new EmailRecipientsRepo();
-  private emailTrashRepo = new EmailTrashRepo();
+export class EmailsController extends BaseController<'emails', EmailRepo> {
+  private attachmentsRepo = new EmailAttachmentsRepo();
+  private bodiesRepo = new EmailBodiesRepo();
+  private commentsRepo = new EmailCommentsRepo();
+  private draftsRepo = new EmailDraftsRepo();
+  private activityRepo = new UserActivityRepo();
+  private storageService = new StorageService();
 
   constructor() {
-    super('emails');
+    super(new EmailRepo());
   }
 
-  public async emptyTrash(tenantId: string) {
-    return this.transaction().execute(async (trx) => {
-      const trashId = ALL_FOLDERS.TRASH;
+  public async addComment(tenant_id: string, email_id: string, author_id: string, comment: string) {
+    if (!comment?.trim()) {
+      throw new BadRequestError('Comment cannot be empty');
+    }
+    try {
+      const row = await this.commentsRepo.add({
+        row: {
+          tenant_id,
+          email_id,
+          author_id,
+          comment,
+          createdby_id: author_id,
+          updatedby_id: author_id,
+        },
+      });
+      if (!row) throw new InternalError('Failed to add comment');
 
-      const res = await this.getDelete(trx)
-        .where('tenant_id', '=', tenantId)
-        .where('folder_id', '=', trashId)
-        .executeTakeFirst();
+      const commentLink = `${env.appUrl}/emails/${email_id}`;
+      processMentions(this.commentsRepo.db, tenant_id, comment, commentLink, author_id).catch((err) =>
+        console.error('Failed to process email comment mentions', err),
+      );
 
-      // email_trash rows should be cleaned via FK ON DELETE CASCADE
-      return Number(res.numDeletedRows ?? 0);
-    });
+      return row;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to add comment', undefined, { cause: err });
+    }
+  }
+
+  public async assignEmail(
+    tenant_id: string,
+    id: string,
+    user_id: string | null,
+    actor_id?: string,
+    assigned_to_name?: string | null,
+  ) {
+    try {
+      const updated = await this.getRepo().assignEmail(tenant_id, id, user_id);
+
+      if (!updated) throw new NotFoundError('Email not found');
+
+      // --- Log activity ---
+      if (actor_id) {
+        const activityType = user_id ? 'assign' : 'unassign';
+        const metadata: Record<string, unknown> = {};
+        if (user_id) metadata['assigned_to_id'] = user_id;
+        if (assigned_to_name) metadata['assigned_to_name'] = assigned_to_name;
+
+        this.activityRepo
+          .log({
+            tenant_id,
+            user_id: actor_id,
+            activity: activityType,
+            entity: 'email',
+            entity_id: id,
+            metadata,
+          })
+          .catch((e) => console.error('Failed to log email assign activity', e));
+      }
+
+      if (user_id) {
+        try {
+          const email = (await this.getRepo().getOneBy('id', { tenant_id, value: id })) as any;
+          if (email) {
+            const subject = email.subject || '(No Subject)';
+            const notificationsRepo = new NotificationsRepo();
+            await notificationsRepo.pushNotification({
+              tenant_id,
+              user_id,
+              title: 'Email Assigned',
+              message: `You have been assigned the email: "${subject}"`,
+              type: 'email',
+              link: `/inbox?email=${id}`,
+            });
+          }
+        } catch (nErr) {
+          console.error('Failed to push notification for email assignment', nErr);
+        }
+      }
+
+      return updated;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to assign email', undefined, { cause: err });
+    }
+  }
+
+  public async getActivitiesForEmail(tenant_id: string, email_id: string) {
+    try {
+      const res = await this.activityRepo.getForEntity(tenant_id, 'email', email_id);
+      return res.rows;
+    } catch (err) {
+      throw new InternalError('Failed to fetch email activities', undefined, { cause: err });
+    }
+  }
+
+  public override async delete(tenant_id: TypeTenantId<'emails'>, idToDelete: string) {
+    return this.deleteMany(tenant_id, [idToDelete]);
+  }
+
+  public async deleteComment(tenant_id: string, _email_id: string, comment_id: string) {
+    try {
+      const deleted = await this.commentsRepo.delete({ tenant_id, id: comment_id /*, email_id */ });
+      if (!deleted) throw new NotFoundError('Comment not found');
+      return deleted;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to delete comment', undefined, { cause: err });
+    }
+  }
+
+  public async deleteDraft(tenant_id: string, _user_id: string, id: string) {
+    try {
+      const deleted = await this.draftsRepo.delete({ tenant_id, id });
+      if (!deleted) throw new NotFoundError('Draft not found');
+      return deleted;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to delete draft', undefined, { cause: err });
+    }
+  }
+
+  public override async deleteMany(tenant_id: TypeTenantId<'emails'>, idsToDelete: string[]) {
+    // Go through idsToDelete and check which ones are in the trash folder (hard delete)
+    // and which ones are not (soft delete - move to trash)
+    const emailsInTrash = await this.getRepo().getByIdsInFolder(tenant_id as string, idsToDelete, ALL_FOLDERS.TRASH);
+    const idsInTrash = emailsInTrash.map((e) => String(e.id));
+    const idsNotInTrash = idsToDelete.filter((id) => !idsInTrash.includes(id));
+
+    const numTrashed =
+      idsNotInTrash.length > 0 ? await this.getRepo().moveToTrash(tenant_id as string, idsNotInTrash) : 0;
+
+    let numDeleted: number | boolean = false;
+    if (idsInTrash.length > 0) {
+      // Capture the attachment file references BEFORE the cascade removes the
+      // email_attachments rows, so we can clean up storage afterwards.
+      const fileIds = await this.getAttachmentFileIds(tenant_id as string, idsInTrash);
+      numDeleted = await super.deleteMany(tenant_id, idsInTrash);
+      // Hard delete is permanent — purge orphaned attachment blobs + file rows.
+      await this.purgeOrphanedFiles(tenant_id as string, fileIds);
+    }
+
+    return numTrashed !== 0 || numDeleted;
+  }
+
+  /** Distinct, non-null file_ids referenced by the given emails' attachments. */
+  private async getAttachmentFileIds(tenant_id: string, emailIds: string[]): Promise<string[]> {
+    if (emailIds.length === 0) return [];
+    const rows = await this.attachmentsRepo.db
+      .selectFrom('email_attachments')
+      .select('file_id')
+      .distinct()
+      .where('tenant_id', '=', tenant_id)
+      .where('email_id', 'in', emailIds)
+      .where('file_id', 'is not', null)
+      .execute();
+    return rows.map((r) => String(r.file_id)).filter((id) => id !== 'null');
+  }
+
+  /**
+   * Delete file rows + storage blobs for files that are no longer referenced by
+   * any remaining email attachment (files are sha256-deduped and can be shared).
+   * Storage deletion is best-effort: a failed blob delete must not abort the txn.
+   */
+  private async purgeOrphanedFiles(tenant_id: string, fileIds: string[]): Promise<void> {
+    if (fileIds.length === 0) return;
+
+    const db = this.attachmentsRepo.db;
+    for (const fileId of fileIds) {
+      try {
+        const stillReferenced = await db
+          .selectFrom('email_attachments')
+          .select('id')
+          .where('tenant_id', '=', tenant_id)
+          .where('file_id', '=', fileId)
+          .limit(1)
+          .executeTakeFirst();
+
+        if (stillReferenced) continue;
+
+        const file = await db
+          .selectFrom('files')
+          .select(['id', 'storage_key'])
+          .where('tenant_id', '=', tenant_id)
+          .where('id', '=', fileId)
+          .executeTakeFirst();
+
+        if (!file) continue;
+
+        await db.deleteFrom('files').where('tenant_id', '=', tenant_id).where('id', '=', fileId).execute();
+
+        if (file.storage_key) {
+          try {
+            await this.storageService.delete(file.storage_key);
+          } catch (err) {
+            console.error(`Failed to delete storage blob ${file.storage_key} for file ${fileId}`, err);
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to purge orphaned file ${fileId}`, err);
+      }
+    }
+  }
+
+  public async getAllAttachments(tenant_id: string, email_id: string, options?: { includeInline: boolean }) {
+    try {
+      return await this.attachmentsRepo.getAllAttachments(tenant_id, email_id, options);
+    } catch (err) {
+      throw new InternalError('Failed to fetch attachments', undefined, { cause: err });
+    }
   }
 
   public async getAttachmentsByEmailId(tenant_id: string, email_id: string) {
-    return this.emailAttachmentsRepo.getByEmailId(tenant_id, email_id);
-  }
-
-  public async getByFolder(user_id: string, tenant_id: string, folder_id: string) {
-    const whereForFolder = this.buildFolderPredicate(folder_id, user_id);
-
-    const query = this.getSelect()
-      .selectAll()
-      .where('tenant_id', '=', tenant_id)
-      .where((eb) => whereForFolder(eb));
-
-    return query.execute();
-  }
-
-  public async getByFolderWithAttachmentFlag(
-    user_id: string,
-    tenant_id: string,
-    folder_id: string,
-    limit?: number,
-    offset?: number,
-  ): Promise<any[]> {
-    const whereForFolder = this.buildFolderPredicate(folder_id, user_id);
-
-    // Subquery: SELECT email_id, COUNT(*)::int AS att_count FROM email_attachments ... GROUP BY email_id
-    const ea = this.emailAttachmentsRepo.getSelectForCountByEmails(tenant_id); // should be aliased as 'ea'
-
-    let q = this.getSelect()
-      .leftJoin(ea, 'ea.email_id', 'emails.id')
-      .leftJoin('email_headers as eh', 'eh.email_id', 'emails.id')
-      .leftJoin('email_read_states as ers', (join) =>
-        join
-          .onRef('ers.email_id', '=', 'emails.id')
-          .on('ers.user_id', '=', user_id)
-          .on('ers.tenant_id', '=', tenant_id),
-      )
-      .leftJoin('persons as p_sender', (join) =>
-        join
-          .onRef('p_sender.tenant_id', '=', 'emails.tenant_id')
-          .on(
-            sql`lower(p_sender.email) = lower(emails.from_email) or lower(p_sender.email2) = lower(emails.from_email)`,
-          ),
-      )
-      .selectAll('emails')
-      .select('eh.date_sent as date_sent')
-      .select('p_sender.first_name as sender_first_name')
-      .select('p_sender.last_name as sender_last_name')
-      // numeric count (coalesced to 0)
-      .select((eb) => eb.fn.coalesce(eb.ref('ea.att_count' as any), eb.val(0)).as('attachment_count'))
-      // boolean has_attachment via EXISTS (fast)
-      .select((eb) =>
-        eb
-          .exists(
-            eb
-              .selectFrom('email_attachments as a')
-              .select('a.id')
-              .whereRef('a.tenant_id', '=', 'emails.tenant_id')
-              .whereRef('a.email_id', '=', 'emails.id'),
-          )
-          .as('has_attachment'),
-      )
-      .select((eb) => eb.fn.coalesce(eb.ref('ers.is_read'), eb.val(false)).as('is_read'))
-      .where('emails.tenant_id', '=', tenant_id)
-      .where((eb) => whereForFolder(eb))
-      .orderBy(sql`coalesce(eh.date_sent, emails.created_at)`, 'desc');
-
-    if (typeof limit === 'number') q = q.limit(limit);
-    if (typeof offset === 'number') q = q.offset(offset);
-
-    return q.execute();
-  }
-
-  public async getByIdsInFolder(tenant_id: string, emailIds: string[], folder_id: string) {
-    if (!emailIds?.length) return [];
-    return this.getSelect()
-      .selectAll()
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', folder_id)
-      .where('id', 'in', emailIds)
-      .execute();
-  }
-
-  public async getEmailCountsByFolder(user_id: string, tenant_id: string): Promise<Record<string, number>> {
-    // 1) Regular per-folder counts
-    const regular = await this.getSelect()
-      .select(['folder_id'])
-      .select((eb) => eb.fn.count('id').as('count'))
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('folder_id')
-      .execute();
-
-    // 2) Virtual counts (tenant-wide, not grouped) + Inbox unread count
-    const virtual = await this.getSelect()
-      .leftJoin('email_read_states as ers', (join) =>
-        join
-          .onRef('ers.email_id', '=', 'emails.id')
-          .on('ers.user_id', '=', user_id)
-          .on('ers.tenant_id', '=', tenant_id),
-      )
-      .select(() => [
-        sql<number>`count(*) filter (where status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as('all_open'),
-        sql<number>`count(*) filter (where status = 'closed' and folder_id = ${ALL_FOLDERS.INBOX})`.as('closed'),
-        sql<number>`count(*) filter (where assigned_to = ${user_id} and status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
-          'assigned',
-        ),
-        sql<number>`count(*) filter (where assigned_to is null and status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
-          'unassigned',
-        ),
-        sql<number>`count(*) filter (where is_favourite = true and status = 'open' and folder_id = ${ALL_FOLDERS.INBOX})`.as(
-          'favourites',
-        ),
-        sql<number>`count(*) filter (where folder_id = ${ALL_FOLDERS.INBOX} and (ers.is_read is not true))`.as(
-          'inbox_unread',
-        ),
-      ])
-      .where('emails.tenant_id', '=', tenant_id)
-      .executeTakeFirst();
-
-    const counts: Record<string, number> = {};
-
-    // Real folders
-    for (const row of regular) {
-      counts[row.folder_id as unknown as string] = Number((row as any).count ?? 0);
+    try {
+      return await this.attachmentsRepo.getByEmailId(tenant_id, email_id);
+    } catch (err) {
+      throw new InternalError('Failed to fetch attachments for email', undefined, { cause: err });
     }
-
-    // Override Inbox count with the unread count
-    counts[ALL_FOLDERS.INBOX] = Number((virtual as any)?.inbox_unread ?? 0);
-
-    // Virtual folders (COALESCE to 0 if tenant has no emails)
-    counts[SPECIAL_FOLDERS.ALL_OPEN] = Number((virtual as any)?.all_open ?? 0);
-    counts[SPECIAL_FOLDERS.CLOSED] = Number((virtual as any)?.closed ?? 0);
-    counts[SPECIAL_FOLDERS.ASSIGNED_TO_ME] = Number((virtual as any)?.assigned ?? 0);
-    counts[SPECIAL_FOLDERS.UNASSIGNED] = Number((virtual as any)?.unassigned ?? 0);
-    counts[SPECIAL_FOLDERS.FAVOURITES] = Number((virtual as any)?.favourites ?? 0);
-
-    return counts;
   }
 
-  public async getEmailWithHeadersAndRecipients(tenant_id: string, email_id: string, user_id?: string) {
-    let query = this.getSelect()
-      .selectAll('emails')
-      .where('emails.tenant_id', '=', tenant_id)
-      .where('emails.id', '=', email_id);
-
-    if (user_id) {
-      query = query
-        .leftJoin('email_read_states as ers', (join) =>
-          join
-            .onRef('ers.email_id', '=', 'emails.id')
-            .on('ers.user_id', '=', user_id)
-            .on('ers.tenant_id', '=', tenant_id),
-        )
-        .select((eb) => eb.fn.coalesce(eb.ref('ers.is_read'), eb.val(false)).as('is_read'));
+  public async getDraft(tenant_id: string, _user_id: string, value: string) {
+    try {
+      const draft = await this.draftsRepo.getOneBy('id', { tenant_id, value });
+      if (!draft) throw new NotFoundError('Draft not found');
+      return draft;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to fetch draft', undefined, { cause: err });
     }
-
-    const email = await query.executeTakeFirst();
-    if (!email) return null;
-
-    const emailHeaders = await this.emailHeadersRepo.getByEmailId(tenant_id, email_id);
-
-    const [toRecipients, ccRecipients, bccRecipients] = await Promise.all([
-      this.emailRecipientsRepo.getByEmailIdAndKind(tenant_id, email_id, 'to'),
-      this.emailRecipientsRepo.getByEmailIdAndKind(tenant_id, email_id, 'cc'),
-      this.emailRecipientsRepo.getByEmailIdAndKind(tenant_id, email_id, 'bcc'),
-    ]);
-
-    return {
-      ...email,
-      headers_json: emailHeaders?.headers_json ?? null,
-      raw_headers: emailHeaders?.raw_headers ?? null,
-      date_sent: emailHeaders?.date_sent ?? null,
-      to_list: toRecipients,
-      cc_list: ccRecipients,
-      bcc_list: bccRecipients,
-    };
   }
 
-  public async hasAttachments(tenant_id: string, email_id: string): Promise<boolean> {
-    return this.emailAttachmentsRepo.hasAttachment(tenant_id, email_id);
+  public async getEmailBody(tenant_id: string, value: string) {
+    try {
+      const email = await this.bodiesRepo.getOneBy('email_id', { tenant_id, value });
+      if (email) {
+        return {
+          ...email,
+          body_html: sanitizeHtml((email as any).body_html),
+        };
+      }
+
+      // If no body exists, attempt to load from drafts table
+      const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, value })) as EmailDraftType | undefined;
+      if (draft)
+        return {
+          email_id: value,
+          body_html: sanitizeHtml(draft.body_html),
+          body_delta: (draft as any).body_delta ?? null,
+        } as any;
+
+      throw new NotFoundError('Failed to fetch email body');
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to fetch email body', undefined, { cause: err });
+    }
   }
 
-  public async assignEmail(tenant_id: string, id: string, user_id: string | null) {
-    return this.getUpdate()
-      .set({ assigned_to: user_id })
-      .where('tenant_id', '=', tenant_id)
-      .where('id', '=', id)
-      .returningAll()
-      .executeTakeFirst();
+  public async getEmailHeader(tenant_id: string, id: string, user_id?: string) {
+    try {
+      const [emailWithHeaders, comments, attachments] = await Promise.all([
+        this.getRepo().getEmailWithHeadersAndRecipients(tenant_id, id, user_id),
+        this.commentsRepo.getForEmail(tenant_id, id),
+        this.attachmentsRepo.getByEmailId(tenant_id, id),
+      ]);
+      if (emailWithHeaders) {
+        let person: any = null;
+        if (emailWithHeaders.from_email) {
+          const fromEmail = emailWithHeaders.from_email.trim().toLowerCase();
+          const matchedPerson = await this.getRepo()
+            .db.selectFrom('persons')
+            .leftJoin('companies', 'companies.id', 'persons.company_id')
+            .select([
+              'persons.id',
+              'persons.first_name',
+              'persons.last_name',
+              'persons.email',
+              'persons.mobile',
+              'persons.notes',
+              'companies.name as company_name',
+            ])
+            .where('persons.tenant_id', '=', tenant_id)
+            .where((eb) =>
+              eb.or([eb(sql`lower(persons.email)`, '=', fromEmail), eb(sql`lower(persons.email2)`, '=', fromEmail)]),
+            )
+            .executeTakeFirst();
+
+          if (matchedPerson) {
+            const tagsAndIssues = await this.getRepo()
+              .db.selectFrom('map_peoples_tags')
+              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+              .select(['tags.name', 'tags.color', 'tags.type'])
+              .where('map_peoples_tags.tenant_id', '=', tenant_id)
+              .where('map_peoples_tags.person_id', '=', matchedPerson.id)
+              .execute();
+
+            person = {
+              ...matchedPerson,
+              tags: tagsAndIssues.filter((t) => t.type === 'tag').map((t) => ({ name: t.name, color: t.color })),
+              issues: tagsAndIssues.filter((t) => t.type === 'issue').map((t) => ({ name: t.name, color: t.color })),
+            };
+          }
+        }
+        return { email: emailWithHeaders, comments, attachments, person };
+      }
+
+      // Fallback to draft if regular email not found
+      const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, value: id })) as EmailDraftType | undefined;
+      if (draft)
+        return {
+          email: {
+            id: draft.id,
+            to_list: (draft.to_list || []).map((e: string) => ({ email: e })),
+            cc_list: (draft.cc_list || []).map((e: string) => ({ email: e })),
+            bcc_list: (draft.bcc_list || []).map((e: string) => ({ email: e })),
+            from_email: null,
+            subject: draft.subject,
+          },
+          comments: [],
+          attachments: [],
+        } as any;
+
+      throw new NotFoundError('Email not found');
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to fetch email header', undefined, { cause: err });
+    }
   }
 
-  public async getAssignmentStats(input: { tenant_id: string; user_id: string }) {
-    const row = await this.getSelect()
-      .select(() => [
-        sql<number>`count(*)`.as('total'),
-        sql<number>`count(*) filter (where status = 'open')`.as('open'),
-        sql<number>`count(*) filter (where status = 'closed')`.as('closed'),
-      ])
-      .where('tenant_id', '=', input.tenant_id)
-      .where('assigned_to', '=', input.user_id)
-      .executeTakeFirst();
-
-    return {
-      total: Number((row as any)?.total ?? 0),
-      open: Number((row as any)?.open ?? 0),
-      closed: Number((row as any)?.closed ?? 0),
-    };
+  public async getEmails(user_id: string, tenant_id: string, folder_id: string, limit?: number, offset?: number) {
+    try {
+      if (folder_id === ALL_FOLDERS.DRAFTS) {
+        const drafts = await this.draftsRepo.listByUser(tenant_id, user_id, limit, offset);
+        return drafts.map((d: any) => ({
+          id: d.id,
+          folder_id,
+          from_email: '',
+          to_email: Array.isArray(d.to_list) ? d.to_list.join(', ') : '',
+          subject: d.subject,
+          preview: '',
+          assigned_to: undefined,
+          updated_at: d.updated_at,
+          date_sent: d.updated_at,
+          is_favourite: false,
+          attachment_count: 0,
+          has_attachment: false,
+          status: 'open',
+        }));
+      }
+      return await this.getRepo().getByFolderWithAttachmentFlag(user_id, tenant_id, folder_id, limit, offset);
+    } catch (err) {
+      throw new InternalError('Failed to fetch emails', undefined, { cause: err });
+    }
   }
 
-  public async moveToTrash(tenant_id: string, emailIds: string[]) {
-    if (!emailIds?.length) return 0;
+  public getFolders(_tenant_id: string) {
+    // Return hardcoded folders configuration (same for all tenants)
+    return Promise.resolve(getAllEmailFolders());
+  }
 
-    return this.transaction().execute(async (trx) => {
-      const trashFolderId = ALL_FOLDERS.TRASH;
+  public async getFoldersWithCounts(user_id: string, tenant_id: string) {
+    try {
+      const [folders, emailCounts, draftCount] = await Promise.all([
+        this.getFolders(tenant_id),
+        this.getRepo().getEmailCountsByFolder(user_id, tenant_id),
+        this.draftsRepo.countByUser(tenant_id, user_id),
+      ]);
 
-      // Remember provenance (skip ones already in Trash)
-      await this.emailTrashRepo.addFromEmails({ tenant_id, emailIds, folder_id: trashFolderId }, trx);
+      return folders.map((folder: any) => ({
+        ...folder,
+        email_count: folder.id === ALL_FOLDERS.DRAFTS ? draftCount : emailCounts[folder.id] || 0,
+      }));
+    } catch (err) {
+      throw new InternalError('Failed to fetch folder counts', undefined, { cause: err });
+    }
+  }
 
-      const res = (await this.getUpdate(trx)
-        .set({ folder_id: trashFolderId, deleted_at: new Date() })
+  public async hasAttachment(tenant_id: string, email_id: string) {
+    try {
+      return await this.attachmentsRepo.hasAttachment(tenant_id, email_id);
+    } catch (err) {
+      throw new InternalError('Failed to check attachment flag', undefined, { cause: err });
+    }
+  }
+
+  public async hasAttachmentByEmailIds(tenant_id: string, email_ids: string[]) {
+    if (!email_ids?.length) return Promise.resolve([]);
+
+    try {
+      return this.attachmentsRepo.hasAttachmentByEmailIds(tenant_id, email_ids);
+    } catch (err) {
+      throw new InternalError('Failed to check attachment flags', undefined, { cause: err });
+    }
+  }
+
+  public restoreFromTrash(tenant_id: string, idsToRestore: string[]) {
+    return this.getRepo().restoreFromTrash(tenant_id, idsToRestore);
+  }
+
+  public async moveToFolder(tenant_id: string, id: string, folder_id: string, actor_id?: string) {
+    try {
+      const isTrash = folder_id === ALL_FOLDERS.TRASH;
+      const deleted_at = isTrash ? new Date() : null;
+
+      const updated = await this.getRepo()
+        .getUpdate()
+        .set({ folder_id, deleted_at })
         .where('tenant_id', '=', tenant_id)
-        .where('id', 'in', emailIds)
-        .executeTakeFirst()) as unknown as UpdateResult;
+        .where('id', '=', id)
+        .returningAll()
+        .executeTakeFirst();
 
-      return Number(res.numUpdatedRows ?? 0);
-    });
+      if (!updated) throw new NotFoundError('Email not found');
+
+      // --- Log activity ---
+      if (actor_id) {
+        this.activityRepo
+          .log({
+            tenant_id,
+            user_id: actor_id,
+            activity: isTrash ? 'delete' : 'update',
+            entity: 'email',
+            entity_id: id,
+            metadata: { folder_id },
+          })
+          .catch((e) => console.error('Failed to log email move activity', e));
+      }
+
+      return updated;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to move email to folder', undefined, { cause: err });
+    }
   }
 
-  public async restoreFromTrash(tenantId: string, emailIds: string[]): Promise<number> {
-    if (!emailIds?.length) return 0;
+  public async saveDraft(
+    tenant_id: string,
+    user_id: string,
+    draft: {
+      id?: string;
+      to_list: string[];
+      cc_list?: string[];
+      bcc_list?: string[];
+      subject?: string;
+      body_html?: string;
+    },
+  ) {
+    try {
+      if (draft.body_html) {
+        draft.body_html = sanitizeHtml(draft.body_html);
+      }
+      const saved = await this.draftsRepo.saveDraft(tenant_id, user_id, draft);
+      if (!saved) throw new InternalError('Failed to save draft');
+      return saved;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to save draft', undefined, { cause: err });
+    }
+  }
 
-    return this.transaction().execute(async (trx) => {
-      // UPDATE emails e
-      // SET folder_id = et.from_folder_id, deleted_at = null
-      // FROM email_trash et
-      // WHERE e.tenant_id = et.tenant_id AND e.id = et.email_id
-      //   AND e.tenant_id = :tenantId AND e.id IN (:emailIds)
+  public async setFavourite(tenant_id: string, id: string, favourite: boolean) {
+    try {
+      return this.getRepo().setFavourite(tenant_id, id, favourite);
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to set favourite', undefined, { cause: err });
+    }
+  }
 
-      const updated = (await this.getUpdate(trx)
-        .set({
-          folder_id: sql`et.from_folder_id`,
-          deleted_at: null,
+  public async setStatus(tenant_id: string, id: string, status: EmailStatus, actor_id?: string) {
+    try {
+      const updated = await this.getRepo().setStatus(tenant_id, id, status);
+      if (!updated) throw new NotFoundError('Email not found');
+
+      // --- Log activity ---
+      if (actor_id) {
+        const activityType = status === 'closed' ? 'close' : 'reopen';
+        this.activityRepo
+          .log({
+            tenant_id,
+            user_id: actor_id,
+            activity: activityType,
+            entity: 'email',
+            entity_id: id,
+            metadata: { status },
+          })
+          .catch((e) => console.error('Failed to log email status activity', e));
+      }
+
+      return updated;
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to set status', undefined, { cause: err });
+    }
+  }
+
+  public async setEmailReadStatus(tenant_id: string, user_id: string, email_id: string, is_read: boolean) {
+    try {
+      const email = await this.getRepo().getOneBy('id', { tenant_id, value: email_id });
+      if (!email) throw new NotFoundError('Email not found');
+
+      await this.getRepo()
+        .db.insertInto('email_read_states')
+        .values({
+          tenant_id,
+          user_id,
+          email_id,
+          is_read,
         })
-        .from('email_trash as et')
-        .whereRef('et.tenant_id', '=', 'emails.tenant_id')
-        .whereRef('et.email_id', '=', 'emails.id')
-        .where('emails.tenant_id', '=', tenantId)
-        .where('emails.id', 'in', emailIds)
-        .executeTakeFirst()) as unknown as UpdateResult;
+        .onConflict((oc: any) =>
+          oc.columns(['tenant_id', 'user_id', 'email_id']).doUpdateSet({
+            is_read,
+          }),
+        )
+        .execute();
 
-      // Clean up only the provenance rows we used
-      await this.emailTrashRepo.deleteByEmailIds({ tenant_id: tenantId as any, emailIds }, trx);
-
-      return Number(updated?.numUpdatedRows ?? 0);
-    });
-  }
-
-  public async setFavourite(tenant_id: string, id: string, is_favourite: boolean) {
-    await this.getUpdate()
-      .set({ is_favourite })
-      .where('tenant_id', '=', tenant_id)
-      .where('id', '=', id)
-      .executeTakeFirst();
-
-    return is_favourite;
-  }
-
-  public async setStatus(tenant_id: string, id: string, status: EmailStatus) {
-    await this.getUpdate().set({ status }).where('tenant_id', '=', tenant_id).where('id', '=', id).executeTakeFirst();
-    return status;
-  }
-
-  private buildFolderPredicate(folder_id: string, user_id: string): (eb: any) => any {
-    switch (folder_id) {
-      case SPECIAL_FOLDERS.ALL_OPEN:
-        return (eb) => eb.and([eb('emails.status', '=', 'open'), eb('emails.folder_id', '=', ALL_FOLDERS.INBOX)]);
-      case SPECIAL_FOLDERS.CLOSED:
-        return (eb) => eb.and([eb('emails.status', '=', 'closed'), eb('emails.folder_id', '=', ALL_FOLDERS.INBOX)]);
-      case SPECIAL_FOLDERS.ASSIGNED_TO_ME:
-        return (eb) =>
-          eb.and([
-            eb('emails.assigned_to', '=', user_id),
-            eb('emails.status', '=', 'open'),
-            eb('emails.folder_id', '=', ALL_FOLDERS.INBOX),
-          ]);
-      case SPECIAL_FOLDERS.UNASSIGNED:
-        return (eb) =>
-          eb.and([
-            eb('emails.assigned_to', 'is', null),
-            eb('emails.status', '=', 'open'),
-            eb('emails.folder_id', '=', ALL_FOLDERS.INBOX),
-          ]);
-      case SPECIAL_FOLDERS.FAVOURITES:
-        return (eb) =>
-          eb.and([
-            eb('emails.is_favourite', '=', true),
-            eb('emails.status', '=', 'open'),
-            eb('emails.folder_id', '=', ALL_FOLDERS.INBOX),
-          ]);
-      default:
-        // Real folder
-        return (eb) => eb('emails.folder_id', '=', folder_id);
+      return { success: true, email_id, is_read };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new InternalError('Failed to set email read status', undefined, { cause: err });
     }
   }
 }
@@ -18153,6 +13245,523 @@ export class ListsRepo extends BaseRepository<'lists'> {
 }
 ```
 
+## File: apps/backend/src/app/modules/lists/controller.ts
+
+```typescript
+import type {
+  AddListType,
+  IAuthKeyPayload,
+  UpdateListType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+import { TRPCError } from '@trpc/server';
+
+import { BaseController } from '../../lib/base.controller';
+import { HouseholdsController } from '../households/controller';
+import { PersonsController } from '../persons/controller';
+import { ListsRepo } from './repositories/lists.repo';
+import { MapListsHouseholdsRepo } from './repositories/map-lists-households.repo';
+import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { WorkflowsController } from '../workflows/controller';
+
+export class ListsController extends BaseController<'lists', ListsRepo> {
+  private householdsController = new HouseholdsController();
+  private mapListsHouseholdsRepo = new MapListsHouseholdsRepo();
+  private mapListsPersonsRepo = new MapListsPersonsRepo();
+  private personsController = new PersonsController();
+
+  constructor() {
+    super(new ListsRepo());
+  }
+
+  public async addList(payload: AddListType, auth: IAuthKeyPayload) {
+    // Enforce unique list names per tenant
+    const existing = await this.getRepo().getOneBy('name', {
+      tenant_id: auth.tenant_id,
+      value: payload.name,
+    });
+    if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'A list with this name already exists.' });
+
+    const row = {
+      name: payload.name,
+      description: payload.description,
+      object: payload.object,
+      is_dynamic: payload.is_dynamic ?? false,
+      definition: payload.definition ?? null,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      status: (payload.is_dynamic ?? false) ? 'refreshing' : 'idle',
+    };
+
+    const list = await this.add(row as OperationDataType<'lists', 'insert'>);
+
+    // For dynamic lists, trigger an immediate initial refresh via background job
+    if (row.is_dynamic) {
+      await this.getRepo()
+        .db.insertInto('background_jobs' as any)
+        .values({
+          tenant_id: auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'refresh_list',
+            list_id: list.id,
+            tenant_id: auth.tenant_id,
+            user_id: auth.user_id,
+          }),
+          run_at: new Date(),
+        } as any)
+        .execute();
+    } else {
+      // For static lists, populate membership by explicit IDs if provided; otherwise by definition
+      const ids = payload.member_ids ?? [];
+
+      if (ids.length && payload.object === 'people') {
+        const rows = ids.map((person_id) => ({
+          tenant_id: auth.tenant_id,
+          list_id: list.id,
+          person_id,
+          createdby_id: auth.user_id,
+          updatedby_id: auth.user_id,
+        }));
+        await this.mapListsPersonsRepo.addMany({ rows: rows as OperationDataType<'map_lists_persons', 'insert'>[] });
+        try {
+          const workflowsController = new WorkflowsController();
+          for (const person_id of ids) {
+            await workflowsController.triggerWorkflow(auth.tenant_id, person_id, 'list_joined', list.id);
+          }
+        } catch (err) {
+          console.error('Failed to trigger list_joined workflow in addList (explicit IDs):', err);
+        }
+      } else if (ids.length && payload.object === 'households') {
+        const rows = ids.map((household_id) => ({
+          tenant_id: auth.tenant_id,
+          list_id: list.id,
+          household_id,
+          createdby_id: auth.user_id,
+          updatedby_id: auth.user_id,
+        }));
+        await this.mapListsHouseholdsRepo.addMany({
+          rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+        });
+      } else if (payload.definition) {
+        if (payload.object === 'people') {
+          const result = await this.personsController.getAllWithAddress(auth, payload.definition as getAllOptionsType);
+          const rows = result.rows.map((p) => ({
+            tenant_id: auth.tenant_id,
+            list_id: list.id,
+            person_id: String(p['id']),
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          }));
+          if (rows.length) {
+            await this.mapListsPersonsRepo.addMany({
+              rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
+            });
+            try {
+              const workflowsController = new WorkflowsController();
+              for (const r of rows) {
+                await workflowsController.triggerWorkflow(auth.tenant_id, r.person_id, 'list_joined', list.id);
+              }
+            } catch (err) {
+              console.error('Failed to trigger list_joined workflow in addList (definition):', err);
+            }
+          }
+        } else if (payload.object === 'households') {
+          const result = await this.householdsController.getAllWithPeopleCount(
+            auth,
+            payload.definition as getAllOptionsType,
+          );
+          const rows = result.rows.map((h) => ({
+            tenant_id: auth.tenant_id,
+            list_id: list.id,
+            household_id: h['id'],
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          }));
+          if (rows.length) {
+            await this.mapListsHouseholdsRepo.addMany({
+              rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+            });
+          }
+        }
+      }
+    }
+
+    return list;
+  }
+
+  public async refreshList(auth: IAuthKeyPayload, id: string): Promise<any> {
+    const list = (await super.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (!list) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
+    }
+    if (!list.is_dynamic) {
+      return list;
+    }
+
+    // Set list status to refreshing
+    await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: {
+        status: 'refreshing',
+        updatedby_id: auth.user_id,
+        updated_at: new Date(),
+      } as any,
+    });
+
+    // Queue background job
+    await this.getRepo()
+      .db.insertInto('background_jobs' as any)
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'refresh_list',
+          list_id: id,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+        }),
+        run_at: new Date(),
+      } as any)
+      .execute();
+
+    return { ...list, status: 'refreshing' };
+  }
+
+  public async executeListRefresh(tenant_id: string, id: string, user_id: string): Promise<any> {
+    const auth: IAuthKeyPayload = {
+      tenant_id,
+      user_id,
+      name: 'System Worker',
+      session_id: 'worker-session',
+    };
+
+    const list = (await this.getOneById({ tenant_id, id })) as any;
+    if (!list) {
+      throw new Error(`List ${id} not found`);
+    }
+    if (!list.is_dynamic) {
+      return list;
+    }
+
+    const definition = list.definition as getAllOptionsType;
+    if (!definition) {
+      // Set back to idle if no definition
+      await this.update({
+        tenant_id,
+        id,
+        row: {
+          status: 'idle',
+          updated_at: new Date(),
+          updatedby_id: user_id,
+        } as any,
+      });
+      return list;
+    }
+
+    try {
+      if (list.object === 'people') {
+        // Clear current mappings
+        await this.mapListsPersonsRepo.db
+          .deleteFrom('map_lists_persons')
+          .where('tenant_id', '=', tenant_id)
+          .where('list_id', '=', id)
+          .execute();
+
+        // Resolve and insert new mappings
+        const result = await this.personsController.getAllWithAddress(auth, definition);
+        const rows = result.rows.map((p) => ({
+          tenant_id: tenant_id,
+          list_id: list.id,
+          person_id: p['id'],
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        }));
+        if (rows.length) {
+          await this.mapListsPersonsRepo.addMany({
+            rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
+          });
+        }
+      } else if (list.object === 'households') {
+        // Clear current mappings
+        await this.mapListsHouseholdsRepo.db
+          .deleteFrom('map_lists_households')
+          .where('tenant_id', '=', tenant_id)
+          .where('list_id', '=', id)
+          .execute();
+
+        // Resolve and insert new mappings
+        const result = await this.householdsController.getAllWithPeopleCount(auth, definition);
+        const rows = result.rows.map((h) => ({
+          tenant_id: tenant_id,
+          list_id: list.id,
+          household_id: h['id'],
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        }));
+        if (rows.length) {
+          await this.mapListsHouseholdsRepo.addMany({
+            rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+          });
+        }
+      }
+
+      // Update refreshed timestamp and status back to idle
+      const updated = await this.update({
+        tenant_id,
+        id,
+        row: {
+          status: 'idle',
+          last_refreshed_at: new Date(),
+          updated_at: new Date(),
+          updatedby_id: user_id,
+        } as any,
+      });
+
+      return updated;
+    } catch (error) {
+      // Set status to failed
+      await this.update({
+        tenant_id,
+        id,
+        row: {
+          status: 'failed',
+          updated_at: new Date(),
+          updatedby_id: user_id,
+        } as any,
+      });
+      throw error;
+    }
+  }
+
+  public async getListStats(auth: IAuthKeyPayload, id: string): Promise<any> {
+    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (!list) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
+    }
+
+    // Fetch all newsletters that are sent
+    const newsletters = await this.getRepo()
+      .db.selectFrom('newsletters')
+      .selectAll()
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('status', '=', 'sent')
+      .execute();
+
+    // Filter newsletters in JS where their target_lists matches this list
+    const targetedNewsletters = newsletters.filter((n) => {
+      if (!n.target_lists) return false;
+      // After migration 2026-07-01-a-schema-improvements, target_lists is a jsonb column returned as a parsed object.
+      // Support legacy string values too (pre-migration rows or test data).
+      let parsed: unknown = n.target_lists;
+      if (typeof parsed === 'string') {
+        try {
+          parsed = JSON.parse(parsed);
+        } catch {
+          /* fall through */
+        }
+      }
+      if (Array.isArray(parsed)) {
+        return parsed.includes(id);
+      }
+      if (parsed && typeof parsed === 'object') {
+        const obj = parsed as Record<string, unknown>;
+        const include = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
+        return include.includes(id);
+      }
+      if (typeof parsed === 'string') {
+        return parsed
+          .split(',')
+          .map((s) => s.trim())
+          .includes(id);
+      }
+      return false;
+    });
+
+    // Compute aggregated metrics
+    const totalNewsletters = targetedNewsletters.length;
+    let totalDelivered = 0;
+    let totalOpens = 0;
+    let totalClicks = 0;
+
+    for (const n of targetedNewsletters) {
+      totalDelivered += Number(n.delivered_count ?? 0);
+      totalOpens += Number(n.unique_opens ?? 0);
+      totalClicks += Number(n.unique_clicks ?? 0);
+    }
+
+    const avgOpenRate = totalDelivered > 0 ? (totalOpens / totalDelivered) * 100 : 0;
+    const avgClickRate = totalDelivered > 0 ? (totalClicks / totalDelivered) * 100 : 0;
+
+    return {
+      totalNewsletters,
+      totalDelivered,
+      avgOpenRate,
+      avgClickRate,
+      newsletters: targetedNewsletters.map((n) => ({
+        id: n.id,
+        name: n.name,
+        subject: n.subject,
+        send_date: n.send_date,
+        total_recipients: n.total_recipients,
+        delivered_count: n.delivered_count,
+        open_rate: n.open_rate,
+        click_rate: n.click_rate,
+      })),
+    };
+  }
+
+  public getHouseholdsByListId(auth: IAuthKeyPayload, list_id: string) {
+    return this.getRepo().getHouseholdsByListId({ tenant_id: auth.tenant_id, list_id });
+  }
+
+  public getPersonsByListId(auth: IAuthKeyPayload, list_id: string) {
+    return this.getRepo().getPersonsByListId({ tenant_id: auth.tenant_id, list_id });
+  }
+
+  public async getMemberCount(auth: IAuthKeyPayload, id: string): Promise<number> {
+    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (!list) return 0;
+    if (list.is_dynamic && list.definition) {
+      const opts = { ...(list.definition as getAllOptionsType), startRow: 0, endRow: 0 };
+      if (list.object === 'people') {
+        const data = await this.personsController.getAllWithAddress(auth, opts);
+        return data.count;
+      } else {
+        const data = await this.householdsController.getAllWithPeopleCount(auth, opts);
+        return data.count;
+      }
+    } else {
+      if (list.object === 'people') {
+        const result = await this.mapListsPersonsRepo.db
+          .selectFrom('map_lists_persons')
+          .select(({ fn }) => fn.countAll().as('count'))
+          .where('tenant_id', '=', auth.tenant_id as any)
+          .where('list_id', '=', id as any)
+          .executeTakeFirst();
+        return Number(result?.count ?? 0);
+      } else {
+        const result = await this.mapListsHouseholdsRepo.db
+          .selectFrom('map_lists_households')
+          .select(({ fn }) => fn.countAll().as('count'))
+          .where('tenant_id', '=', auth.tenant_id as any)
+          .where('list_id', '=', id as any)
+          .executeTakeFirst();
+        return Number(result?.count ?? 0);
+      }
+    }
+  }
+
+  public async updateList(id: string, row: UpdateListType, auth: IAuthKeyPayload) {
+    const rowWithUpdatedBy = {
+      ...row,
+      updatedby_id: auth.user_id,
+    };
+    const result = await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: rowWithUpdatedBy as OperationDataType<'lists', 'update'>,
+    });
+
+    // If the list is dynamic and definition or dynamics was updated, queue a refresh job
+    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (list && list.is_dynamic && (row.definition !== undefined || row.is_dynamic === true)) {
+      // Update status to refreshing
+      await this.update({
+        tenant_id: auth.tenant_id,
+        id,
+        row: {
+          status: 'refreshing',
+          updatedby_id: auth.user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+
+      await this.getRepo()
+        .db.insertInto('background_jobs' as any)
+        .values({
+          tenant_id: auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'refresh_list',
+            list_id: id,
+            tenant_id: auth.tenant_id,
+            user_id: auth.user_id,
+          }),
+          run_at: new Date(),
+        } as any)
+        .execute();
+    }
+
+    return result;
+  }
+
+  public override async delete(tenant_id: string, idToDelete: string, userId?: string) {
+    await this.mapListsPersonsRepo.db
+      .deleteFrom('map_lists_persons')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('list_id', '=', idToDelete as any)
+      .execute();
+
+    await this.mapListsHouseholdsRepo.db
+      .deleteFrom('map_lists_households')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('list_id', '=', idToDelete as any)
+      .execute();
+
+    return super.delete(tenant_id as any, idToDelete, userId);
+  }
+
+  public override async deleteMany(tenant_id: string, idsToDelete: string[]) {
+    if (idsToDelete.length === 0) return false;
+
+    await this.mapListsPersonsRepo.db
+      .deleteFrom('map_lists_persons')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('list_id', 'in', idsToDelete)
+      .execute();
+
+    await this.mapListsHouseholdsRepo.db
+      .deleteFrom('map_lists_households')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('list_id', 'in', idsToDelete)
+      .execute();
+
+    return super.deleteMany(tenant_id as any, idsToDelete);
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const list = (await super.getOneById(input)) as any;
+    if (list && list.is_dynamic) {
+      const oneDayAgo = new Date(Date.now() - 24 * 3600 * 1000);
+      if (!list.last_refreshed_at || new Date(list.last_refreshed_at) < oneDayAgo) {
+        if (list.status !== 'refreshing') {
+          // Lazily trigger refresh in background
+          const mockAuth: IAuthKeyPayload = {
+            tenant_id: input.tenant_id,
+            user_id: list.createdby_id,
+            name: 'System Worker',
+            session_id: 'lazy-refresh',
+          };
+          const promise = this.refreshList(mockAuth, input.id).catch((err) =>
+            console.error(`Failed to lazily queue refresh for list ${input.id}:`, err),
+          );
+          (this as any)._lastLazyRefreshPromise = promise;
+        }
+      }
+    }
+    if (!list) return list;
+    return this.resolveCreatorAndUpdater(input.tenant_id, list);
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/newsletters/routes/newsletters-webhook.route.ts
 
 ```typescript
@@ -18344,276 +13953,6 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
 };
 
 export default newslettersWebhookRoute;
-```
-
-## File: apps/backend/src/app/modules/newsletters/controller.ts
-
-```typescript
-import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
-import { sql } from 'kysely';
-
-import { BaseController } from '../../lib/base.controller';
-import { NewslettersRepo } from './repositories/newsletters.repo';
-import { BadRequestError, NotFoundError } from '../../errors/app-errors';
-
-export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
-  constructor() {
-    super(new NewslettersRepo());
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const result = await this.getRepo().getAllWithCount(auth.tenant_id, input?.options as any);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'export',
-        entity: 'newsletters',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-        },
-      });
-      return response;
-    }
-    return super.exportCsv(input, auth);
-  }
-
-  public buildRecipientQuery(tenant_id: string, newsletter: any): any {
-    let includeListIds: string[] = [];
-    let excludeListIds: string[] = [];
-    let includeTags: string[] = [];
-    let excludeTags: string[] = [];
-
-    // target_lists is jsonb (returns pre-parsed object from Kysely) or legacy text string.
-    const parseJsonField = (value: unknown): unknown => {
-      if (value == null) return null;
-      if (typeof value === 'string') {
-        try {
-          return JSON.parse(value);
-        } catch {
-          return value;
-        }
-      }
-      return value; // already parsed object from jsonb column
-    };
-
-    const listsObj = parseJsonField(newsletter.target_lists);
-    if (Array.isArray(listsObj)) {
-      includeListIds = listsObj as string[];
-    } else if (listsObj && typeof listsObj === 'object') {
-      const obj = listsObj as Record<string, unknown>;
-      includeListIds = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
-      excludeListIds = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
-    } else if (typeof listsObj === 'string' && listsObj) {
-      includeListIds = (listsObj as string)
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-
-    const segmentsObj = parseJsonField(newsletter.segments);
-    if (Array.isArray(segmentsObj)) {
-      includeTags = segmentsObj as string[];
-    } else if (segmentsObj && typeof segmentsObj === 'object') {
-      const obj = segmentsObj as Record<string, unknown>;
-      includeTags = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
-      excludeTags = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
-    } else if (typeof segmentsObj === 'string' && segmentsObj) {
-      includeTags = (segmentsObj as string)
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-
-    const db = this.getRepo().db;
-    let query = db
-      .selectFrom('persons')
-      .where('persons.tenant_id', '=', tenant_id as any)
-      .where('persons.email', 'is not', null)
-      .where('persons.email', '!=', '');
-
-    query = query.where((eb) => {
-      const conditions = [];
-      if (includeListIds.length > 0) {
-        conditions.push(
-          eb.exists(
-            db
-              .selectFrom('map_lists_persons')
-              .select('person_id')
-              .where('map_lists_persons.tenant_id', '=', tenant_id as any)
-              .whereRef('map_lists_persons.person_id' as any, '=', 'persons.id' as any)
-              .where('map_lists_persons.list_id', 'in', includeListIds),
-          ),
-        );
-      }
-      if (includeTags.length > 0) {
-        conditions.push(
-          eb.exists(
-            db
-              .selectFrom('map_peoples_tags')
-              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-              .select('map_peoples_tags.person_id')
-              .where('map_peoples_tags.tenant_id', '=', tenant_id as any)
-              .whereRef('map_peoples_tags.person_id' as any, '=', 'persons.id' as any)
-              .where('tags.name', 'in', includeTags),
-          ),
-        );
-      }
-
-      if (conditions.length === 0) {
-        return eb.val(false);
-      }
-      return eb.or(conditions);
-    });
-
-    if (excludeListIds.length > 0) {
-      query = query.where((eb) =>
-        eb.not(
-          eb.exists(
-            db
-              .selectFrom('map_lists_persons')
-              .select('person_id')
-              .where('map_lists_persons.tenant_id', '=', tenant_id as any)
-              .whereRef('map_lists_persons.person_id' as any, '=', 'persons.id' as any)
-              .where('map_lists_persons.list_id', 'in', excludeListIds),
-          ),
-        ),
-      );
-    }
-
-    if (excludeTags.length > 0) {
-      query = query.where((eb) =>
-        eb.not(
-          eb.exists(
-            db
-              .selectFrom('map_peoples_tags')
-              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-              .select('map_peoples_tags.person_id')
-              .where('map_peoples_tags.tenant_id', '=', tenant_id as any)
-              .whereRef('map_peoples_tags.person_id' as any, '=', 'persons.id' as any)
-              .where('tags.name', 'in', excludeTags),
-          ),
-        ),
-      );
-    }
-
-    return query;
-  }
-
-  public async sendNewsletter(tenant_id: string, id: string, userId: string): Promise<any> {
-    const newsletter = (await this.getOneById({ tenant_id, id })) as any;
-    if (!newsletter) {
-      throw new NotFoundError('Newsletter not found');
-    }
-    if (newsletter.status === 'sent' || newsletter.status === 'queuing' || newsletter.status === 'sending') {
-      throw new BadRequestError('Newsletter has already been sent or is currently sending');
-    }
-
-    const db = this.getRepo().db;
-    const baseQuery = this.buildRecipientQuery(tenant_id, newsletter);
-
-    // Get total count of unique recipients using a distinct count query
-    const countResult = await baseQuery
-      .select(({ fn }: any) => fn.count(sql`DISTINCT persons.email`).as('count'))
-      .executeTakeFirst();
-    const totalRecipients = Number((countResult as any)?.count || 0);
-
-    if (totalRecipients === 0) {
-      throw new BadRequestError('No recipients found for the selected lists or tags');
-    }
-
-    const updated = await this.update({
-      tenant_id,
-      id,
-      row: {
-        status: 'queuing',
-        total_recipients: totalRecipients,
-        delivered_count: 0,
-        updatedby_id: userId,
-        updated_at: new Date(),
-      },
-    });
-
-    await db
-      .insertInto('background_jobs' as any)
-      .values({
-        tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'send-newsletter',
-          newsletterId: id,
-          tenantId: tenant_id,
-          userId: userId,
-          offset: 0,
-          deliveredCount: 0,
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return updated;
-  }
-
-  public async getEngagementStats(tenant_id: string, id: string): Promise<any> {
-    const db = this.getRepo().db;
-
-    // 1. Fetch recent events (limit 100)
-    const activities = await db
-      .selectFrom('newsletter_events')
-      .select(['email', 'event_type', 'timestamp', 'url', 'ip', 'user_agent'])
-      .where('newsletter_id', '=', id as any)
-      .where('tenant_id', '=', tenant_id as any)
-      .where('event_type', 'in', ['open', 'click', 'bounce', 'dropped', 'unsubscribe', 'spamreport'])
-      .orderBy('timestamp', 'desc')
-      .limit(100)
-      .execute();
-
-    // 2. Fetch timeline data grouped by date/hour
-    const timeline = await db
-      .selectFrom('newsletter_events')
-      .select([
-        sql<string>`to_char(timestamp, 'YYYY-MM-DD HH24:00')`.as('time_bucket'),
-        sql<number>`COUNT(id) FILTER (WHERE event_type = 'open')`.as('opens'),
-        sql<number>`COUNT(id) FILTER (WHERE event_type = 'click')`.as('clicks'),
-      ])
-      .where('newsletter_id', '=', id as any)
-      .where('tenant_id', '=', tenant_id as any)
-      .where('event_type', 'in', ['open', 'click'])
-      .groupBy('time_bucket')
-      .orderBy('time_bucket', 'asc')
-      .execute();
-
-    return {
-      activities: activities.map((a) => ({
-        email: a.email,
-        event_type: a.event_type,
-        timestamp: a.timestamp,
-        url: a.url,
-        ip: a.ip,
-        user_agent: a.user_agent,
-      })),
-      timeline: timeline.map((t) => ({
-        time: t.time_bucket,
-        opens: Number(t.opens),
-        clicks: Number(t.clicks),
-      })),
-    };
-  }
-}
 ```
 
 ## File: apps/backend/src/app/modules/person-connections/repositories/person-connections.repo.ts
@@ -18827,6 +14166,223 @@ export const PersonConnectionsRouter = router({
 
   remove: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.removeConnection(input, ctx.auth)),
 });
+```
+
+## File: apps/backend/src/app/modules/persons/controller.ts
+
+```typescript
+import type {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+import { TRPCError } from '@trpc/server';
+import { BaseController } from '../../lib/base.controller';
+import type { QueryParams } from '../../lib/base.repo';
+import { MapListsPersonsRepo } from '../lists/repositories/map-lists-persons.repo';
+import { MapPersonsTagRepo } from './repositories/map-persons-tags.repo';
+import { PersonsRepo } from './repositories/persons.repo';
+import { MapTeamsPersonsRepo } from '../teams/repositories/map-teams-persons.repo';
+import { queueZapierTrigger } from '../zapier/zapier.service';
+
+export class PersonsController extends BaseController<'persons', PersonsRepo> {
+  private mapPersonsTagRepo = new MapPersonsTagRepo();
+  private mapListsPersonsRepo = new MapListsPersonsRepo();
+  private mapTeamsPersonsRepo = new MapTeamsPersonsRepo();
+
+  constructor() {
+    super(new PersonsRepo());
+  }
+
+  public getAllWithAddress(
+    auth: IAuthKeyPayload,
+    options?: getAllOptionsType,
+  ): Promise<{ rows: { [x: string]: unknown }[]; count: number }> {
+    const { tags, ...queryParams } = options || {};
+    return this.getRepo().getAllWithAddress({
+      tenant_id: auth.tenant_id,
+      options: queryParams as QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>,
+      tags,
+    });
+  }
+
+  public getByHouseholdId(household_id: string, auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getByHouseholdId({
+      id: household_id,
+      tenant_id: auth.tenant_id,
+      options: options as QueryParams<'persons'>,
+    });
+  }
+
+  public getByCompanyId(company_id: string, auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getByCompanyId({
+      id: company_id,
+      tenant_id: auth.tenant_id,
+      options: options as QueryParams<'persons'>,
+    });
+  }
+
+  public countByCompanyId(company_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().countByCompanyId({ id: company_id, tenant_id: auth.tenant_id });
+  }
+
+  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getDistinctTags(auth.tenant_id, type);
+  }
+
+  public getTags(person_id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getTags({ id: person_id, tenant_id: auth.tenant_id, type });
+  }
+
+  public async moveEntireHousehold(oldHouseholdId: string, newHouseholdId: string, tenantId: string) {
+    return this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        return await trx
+          .updateTable('persons')
+          .set({ household_id: newHouseholdId })
+          .where('household_id', '=', oldHouseholdId)
+          .where('tenant_id', '=', tenantId)
+          .returningAll()
+          .execute();
+      });
+  }
+
+  public override async deleteMany(tenant_id: string, idsToDelete: string[], force?: boolean): Promise<boolean> {
+    if (!idsToDelete?.length) return false;
+
+    let personSnapshots: any[] = [];
+    try {
+      personSnapshots = await this.getRepo()
+        .db.selectFrom('persons')
+        .select(['id', 'email', 'first_name', 'last_name'])
+        .where('tenant_id', '=', tenant_id)
+        .where('id', 'in', idsToDelete)
+        .execute();
+    } catch {
+      /* ignore — snapshots are best-effort */
+    }
+
+    const result = await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        // Check if any person is a team captain
+        const captainedTeams = await trx
+          .selectFrom('teams')
+          .select(['id', 'name', 'team_captain_id'])
+          .where('tenant_id', '=', tenant_id)
+          .where('team_captain_id', 'in', idsToDelete)
+          .execute();
+
+        if (captainedTeams.length > 0 && !force) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'One or more selected people are team captains. Deleting them will remove them as captain. Do you want to proceed?',
+          });
+        }
+
+        // Unlink captaincy if forced and captained teams exist
+        if (captainedTeams.length > 0) {
+          await trx
+            .updateTable('teams')
+            .set({ team_captain_id: null })
+            .where('tenant_id', '=', tenant_id)
+            .where('team_captain_id', 'in', idsToDelete)
+            .execute();
+        }
+
+        // Delete volunteer shifts
+        await trx
+          .deleteFrom('volunteer_shifts')
+          .where('tenant_id', '=', tenant_id)
+          .where('person_id', 'in', idsToDelete)
+          .execute();
+
+        // Delete team mappings
+        await this.mapTeamsPersonsRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
+        // Delete tag mappings
+        await this.mapPersonsTagRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
+        // Delete list mappings
+        await this.mapListsPersonsRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
+        // Delete persons within the same transaction
+        const result = await this.getRepo().deleteMany({ tenant_id: tenant_id as any, ids: idsToDelete as any }, trx);
+
+        return result;
+      });
+
+    try {
+      for (const p of personSnapshots) {
+        await queueZapierTrigger(this.getRepo().db, tenant_id, 'person_deleted', {
+          id: String(p.id),
+          email: p.email,
+          first_name: p.first_name,
+          last_name: p.last_name,
+        });
+      }
+    } catch (e) {
+      console.error('[Zapier] Failed to queue person_deleted trigger(s)', e);
+    }
+
+    return result;
+  }
+
+  public override async delete(
+    tenant_id: string,
+    idToDelete: string,
+    userId?: string,
+    force?: boolean,
+  ): Promise<boolean> {
+    const result = await this.deleteMany(tenant_id, [idToDelete], force);
+    try {
+      if (userId) {
+        await this.userActivity.log({
+          tenant_id: tenant_id,
+          user_id: userId,
+          activity: 'delete',
+          entity: 'persons',
+          entity_id: idToDelete ? String(idToDelete) : null,
+          quantity: 1,
+          metadata: { id: idToDelete },
+        });
+      }
+    } catch (e) {
+      console.error('Failed to log delete person activity', e);
+    }
+    return result;
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const result = await this.getAllWithAddress(auth, input?.options);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: 'persons',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+        },
+      });
+      return response;
+    }
+    return super.exportCsv(input, auth);
+  }
+}
 ```
 
 ## File: apps/backend/src/app/modules/persons/trpc.router.ts
@@ -20006,437 +15562,6 @@ export class TagsRepo extends BaseRepository<'tags'> {
       .where('type', '=', input.type)
       .limit(3)
       .execute();
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/tasks/controller.ts
-
-```typescript
-import type {
-  AddTaskType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  UpdateTaskType,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import { env } from '../../../env';
-import { BaseController } from '../../lib/base.controller';
-
-import { TasksRepo } from './repositories/tasks.repo';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { ImportsRepo } from '../imports/repositories/imports.repo';
-import { StorageService } from '../../lib/storage.service';
-import { TRPCError } from '@trpc/server';
-
-export class TasksController extends BaseController<'tasks', TasksRepo> {
-  private mailService = new TransactionalEmailService();
-
-  constructor() {
-    super(new TasksRepo());
-  }
-
-  public async addTask(payload: AddTaskType, auth: IAuthKeyPayload) {
-    const row = {
-      name: payload.name,
-      details: payload.details,
-      due_at: payload.due_at ?? null,
-      status: payload.status ?? 'todo',
-      priority: payload.priority ?? null,
-      completed_at: payload.completed_at ?? null,
-      position: payload.position ?? 0,
-      assigned_to: payload.assigned_to ?? null,
-      team_id: payload.team_id ?? null,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'tasks', 'insert'>;
-    const task = await this.add(row);
-    if (task && payload.assigned_to) {
-      try {
-        const notificationsRepo = new NotificationsRepo();
-        await notificationsRepo.pushNotification({
-          tenant_id: auth.tenant_id,
-          user_id: payload.assigned_to,
-          title: 'Task Assigned',
-          message: `You have been assigned the task: "${payload.name}"`,
-          type: 'task',
-          link: `/tasks/${task.id}`,
-        });
-
-        const assignedToNum = Number(payload.assigned_to);
-        if (!isNaN(assignedToNum)) {
-          const assignee = await this.getRepo()
-            .db.selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-            .where('authusers.id', '=', assignedToNum as any)
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            let optedIn = true;
-            const profileJson = assignee.profile_json;
-            if (profileJson) {
-              try {
-                const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-                if (json?.notifications?.task_assigned === false) {
-                  optedIn = false;
-                }
-              } catch (e) {
-                console.error('Failed to parse profile json in addTask', e);
-              }
-            }
-
-            if (optedIn) {
-              await this.mailService.sendMail({
-                to: assignee.email,
-                subject: `New Task Assigned: ${payload.name}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${payload.name}" by ${auth.name}.\n\nDetails:\n${payload.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${task.id}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${payload.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${payload.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${task.id}">View Task Details</a></p>`,
-              });
-            }
-          }
-        }
-      } catch (nErr) {
-        console.error('Failed to process task assignment alert/notification', nErr);
-      }
-    }
-    return task;
-  }
-
-  public async getAllTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getAllExcludingArchivedWithCount(auth.tenant_id, options as any);
-  }
-
-  public async getArchivedTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getAllArchivedWithCount(auth.tenant_id, options as any);
-  }
-
-  public async updateTask(id: string, row: UpdateTaskType, auth: IAuthKeyPayload) {
-    const existingTask = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
-    const rowWithUpdatedBy = { ...row, updatedby_id: auth.user_id } as OperationDataType<'tasks', 'update'>;
-    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
-
-    if (updated && row.assigned_to && row.assigned_to !== existingTask?.assigned_to) {
-      try {
-        const notificationsRepo = new NotificationsRepo();
-        await notificationsRepo.pushNotification({
-          tenant_id: auth.tenant_id,
-          user_id: row.assigned_to,
-          title: 'Task Assigned',
-          message: `You have been assigned the task: "${updated.name}"`,
-          type: 'task',
-          link: `/tasks/${id}`,
-        });
-
-        const assignedToNum = Number(row.assigned_to);
-        if (!isNaN(assignedToNum)) {
-          const assignee = await this.getRepo()
-            .db.selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-            .where('authusers.id', '=', assignedToNum as any)
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            let optedIn = true;
-            const profileJson = assignee.profile_json;
-            if (profileJson) {
-              try {
-                const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-                if (json?.notifications?.task_assigned === false) {
-                  optedIn = false;
-                }
-              } catch (e) {
-                console.error('Failed to parse profile json in updateTask', e);
-              }
-            }
-
-            if (optedIn) {
-              await this.mailService.sendMail({
-                to: assignee.email,
-                subject: `Task Assigned: ${updated.name}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned the task: "${updated.name}" by ${auth.name}.\n\nDetails:\n${updated.details || 'None'}\n\nView details: ${env.appUrl}/tasks/${id}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned the task: <strong>"${updated.name}"</strong> by ${auth.name}.</p><p><strong>Details:</strong><br>${updated.details || 'None'}</p><p><a href="${env.appUrl}/tasks/${id}">View Task Details</a></p>`,
-              });
-            }
-          }
-        }
-      } catch (nErr) {
-        console.error('Failed to process task assignment alert/notification', nErr);
-      }
-    }
-    return updated;
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const includeArchived = Boolean(input?.options && (input.options as any)?.includeArchived);
-      const result = includeArchived
-        ? await this.getArchivedTasks(auth, input?.options)
-        : await this.getAllTasks(auth, input?.options);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'export',
-        entity: includeArchived ? 'tasks_archived' : 'tasks',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-          include_archived: includeArchived,
-        },
-      });
-      return response;
-    }
-    return super.exportCsv(input, auth);
-  }
-
-  private readonly importsRepo = new ImportsRepo();
-  private readonly storageService = new StorageService();
-
-  public async importRows(
-    input: {
-      rows: Array<{
-        name: string;
-        details?: string | null;
-        status?: string | null;
-        priority?: string | null;
-        due_at?: string | null;
-        assigned_to?: string | null;
-      }>;
-      skipped?: number;
-      file_name?: string | null;
-    },
-    auth: IAuthKeyPayload,
-  ) {
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const autoTag = `Imported-Tasks-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-
-    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
-    const requestedFileName = (input.file_name ?? '').trim();
-    const baseFileName = requestedFileName || `${autoTag}.csv`;
-    const totalRows = input.rows.length + skippedFromClient;
-
-    const importRow = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      file_name: baseFileName,
-      source: 'tasks',
-      tag_name: null,
-      tag_id: null,
-      row_count: totalRows,
-      inserted_count: 0,
-      error_count: 0,
-      skipped_count: skippedFromClient,
-      households_created: 0,
-      status: 'pending',
-      metadata: null,
-      processed_at: now,
-    } as any;
-
-    const savedImport = await this.importsRepo.add({ row: importRow });
-    if (!savedImport || !savedImport.id) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create data import record',
-      });
-    }
-
-    const importRecordId = String(savedImport.id);
-    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
-
-    try {
-      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
-      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
-    } catch (err) {
-      console.error('Failed to upload import payload to storage', err);
-      await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to store import payload on server storage',
-      });
-    }
-
-    await this.importsRepo.update({
-      tenant_id: auth.tenant_id as any,
-      id: importRecordId as any,
-      row: {
-        metadata: JSON.stringify({ storage_key: storageKey }),
-      } as any,
-    });
-
-    await this.importsRepo.db
-      .insertInto('background_jobs' as any)
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          import_id: importRecordId,
-          storage_key: storageKey,
-          skipped: skippedFromClient,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          file_name: baseFileName,
-          source: 'tasks',
-        }),
-        run_at: new Date(),
-      } as any)
-      .execute();
-
-    return {
-      inserted: 0,
-      errors: 0,
-      skipped: skippedFromClient,
-      file_name: baseFileName,
-      import_id: importRecordId,
-      tenant_id: auth.tenant_id,
-      status: 'pending',
-    } as any;
-  }
-
-  public async processImportRows(import_id: string, tenant_id: string, user_id: string, skipped: number, rows: any[]) {
-    const results = { inserted: 0, errors: 0, skipped: 0 };
-    const errorMessages: string[] = [];
-
-    // Parse status and priority to validate choices
-    const normalize = (v?: string) =>
-      (v || '')
-        .toLowerCase()
-        .trim()
-        .replace(/[_\s-]+/g, '');
-    const validStatuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
-    const validPriorities = ['low', 'medium', 'high', 'urgent'];
-
-    // Map names to users for assigned_to
-    const users = await this.getRepo()
-      .db.selectFrom('authusers')
-      .select(['id', 'first_name', 'last_name', 'email'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-
-    const userMap = new Map<string, string>();
-    for (const u of users) {
-      const idStr = String(u.id);
-      userMap.set(idStr, idStr);
-      if (u.email) userMap.set(u.email.toLowerCase().trim(), idStr);
-      if (u.first_name) {
-        userMap.set(u.first_name.toLowerCase().trim(), idStr);
-        if (u.last_name) {
-          userMap.set(`${u.first_name.toLowerCase().trim()} ${u.last_name.toLowerCase().trim()}`, idStr);
-        }
-      }
-    }
-
-    const chunkSize = 100;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-
-      // 1. Normalize and filter valid rows upfront
-      const taskRows: any[] = [];
-      for (const raw of chunk) {
-        if (!raw.name || !raw.name.trim()) {
-          results.skipped += 1;
-          continue;
-        }
-
-        let status: any = 'todo';
-        if (raw.status) {
-          const normStatus = normalize(raw.status);
-          const matchedStatus = validStatuses.find((s) => normalize(s) === normStatus);
-          if (matchedStatus) status = matchedStatus;
-        }
-
-        let priority: any = null;
-        if (raw.priority) {
-          const normPriority = normalize(raw.priority);
-          const matchedPriority = validPriorities.find((p) => normalize(p) === normPriority);
-          if (matchedPriority) priority = matchedPriority;
-        }
-
-        let assigned_to: string | null = null;
-        if (raw.assigned_to) {
-          assigned_to = userMap.get(raw.assigned_to.toLowerCase().trim()) ?? null;
-        }
-
-        let due_at: Date | null = null;
-        if (raw.due_at) {
-          const parsedDate = new Date(raw.due_at);
-          if (!isNaN(parsedDate.getTime())) due_at = parsedDate;
-        }
-
-        taskRows.push({
-          tenant_id,
-          createdby_id: user_id,
-          updatedby_id: user_id,
-          name: raw.name.trim(),
-          details: raw.details ?? null,
-          status,
-          priority,
-          assigned_to,
-          due_at,
-          file_id: import_id,
-        });
-      }
-
-      if (taskRows.length > 0) {
-        try {
-          await this.getRepo()
-            .transaction()
-            .execute(async (trx) => {
-              // Chunk inserts to a safe limit (e.g., 2000 rows * 10 cols = 20,000 params)
-              const CHUNK_SIZE = 2000;
-              for (let i = 0; i < taskRows.length; i += CHUNK_SIZE) {
-                const chunk = taskRows.slice(i, i + CHUNK_SIZE);
-                await (trx as any)
-                  .insertInto('tasks')
-                  .values(chunk)
-                  .returningAll() // Adheres to repository rules
-                  .execute();
-              }
-            });
-          results.inserted += taskRows.length;
-        } catch (err: any) {
-          results.errors += taskRows.length;
-          errorMessages.push(err?.message || String(err));
-        }
-      }
-
-      await this.importsRepo.update({
-        tenant_id: tenant_id as any,
-        id: import_id as any,
-        row: {
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skipped + results.skipped,
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        } as any,
-      });
-    }
-
-    return {
-      inserted: results.inserted,
-      errors: results.errors,
-      skipped: skipped + results.skipped,
-      errorMessages,
-    };
   }
 }
 ```
@@ -22410,6 +17535,79 @@ export const ZapierRouter = router({
 });
 ```
 
+## File: apps/backend/src/app/kyselyinit.ts
+
+```typescript
+import { sql } from 'kysely';
+import { BaseRepository } from './lib/base.repo';
+import '../env';
+
+async function ensureMigrationTableUpdated(): Promise<void> {
+  try {
+    await sql`
+      UPDATE kysely_migration
+      SET name = '2026-07-01-a-schema-improvements'
+      WHERE name IN ('2026-06-31-schema-improvements', '2026-07-01-schema-improvements')
+    `.execute(BaseRepository.dbInstance);
+
+    await sql`
+      UPDATE kysely_migration
+      SET name = '2026-07-01-b-security-ops-improvements'
+      WHERE name IN ('2026-06-31-security-ops-improvements', '2026-07-01-security-ops-improvements')
+    `.execute(BaseRepository.dbInstance);
+  } catch (err) {
+    // Ignore if table doesn't exist or update fails
+  }
+}
+
+export async function migrateDown(): Promise<void> {
+  await ensureMigrationTableUpdated();
+  const { error, results } = await BaseRepository.migrator.migrateDown();
+
+  results?.forEach((it) => {
+    if (it.status === 'Success') {
+      console.log(`migration down"${it.migrationName}" successsful`);
+    } else if (it.status === 'Error') {
+      console.error(`failed to execute migration down"${it.migrationName}"`);
+    }
+  });
+
+  if (error) {
+    console.error('failed to migrate down: ', error);
+    process.exit(1);
+  }
+}
+
+export async function migrateToLatest(): Promise<void> {
+  console.log('Migration starting');
+
+  await ensureMigrationTableUpdated();
+  const { error, results } = await BaseRepository.migrator.migrateToLatest();
+
+  results?.forEach((it) => {
+    if (it.status === 'Success') {
+      console.log(`migration up:"${it.migrationName}" successful`);
+    } else if (it.status === 'Error') {
+      console.error(`failed to execute migration up"${it.migrationName}"`);
+    }
+  });
+
+  if (error) {
+    console.error('failed to migrate up: ', error);
+    process.exit(1);
+  }
+}
+
+// Automatically run migration when script is executed directly
+const isMain =
+  typeof process !== 'undefined' &&
+  process.argv[1] &&
+  (process.argv[1].endsWith('kyselyinit.ts') || process.argv[1].endsWith('kyselyinit.js'));
+if (isMain) {
+  void migrateToLatest();
+}
+```
+
 ## File: apps/backend/src/test-assign3.ts
 
 ```typescript
@@ -22493,6 +17691,6246 @@ const query = db.updateTable('emails').set({ assigned_to: '1' }).where('id', '='
 
 console.log(query.compile().sql);
 console.log(query.compile().parameters);
+```
+
+## File: apps/backend/vite.config.ts
+
+```typescript
+/// <reference types='vitest' />
+import { defineConfig } from 'vite';
+export default defineConfig(() => ({
+  root: __dirname,
+  cacheDir: '../../node_modules/.vite/apps/backend',
+  resolve: {
+    tsconfigPaths: true,
+  },
+  plugins: [],
+  test: {
+    name: 'backend',
+    watch: false,
+    globals: true,
+    passWithNoTests: true,
+    environment: 'node',
+    env: {
+      DB_USER: 'zeehamid',
+      DB_NAME: 'pplcrm',
+      DB_PASSWORD: 'Eternity#1',
+      JWT_SECRET: 'dev-secret',
+      SHARED_SECRET: 'dev-secret',
+      DB_PORT: '5432',
+      DB_HOST: 'localhost',
+      DB_SSL: 'false',
+    },
+    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    reporters: ['default'],
+    coverage: {
+      reportsDirectory: '../../coverage/apps/backend',
+      provider: 'v8' as const,
+    },
+  },
+}));
+```
+
+## File: apps/backend/src/app/\_migrations/schema.sql
+
+```sql
+--
+-- PostgreSQL database dump
+--
+
+\restrict oPFHGUe6wVNuN0eNnQazqyJQjnNPomJSMJiQZMlpJpzgVIBdJCJVrckJoNfysZW
+
+-- Dumped from database version 14.18 (Homebrew)
+-- Dumped by pg_dump version 17.6
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- Name: public; Type: SCHEMA; Schema: -; Owner: zee
+--
+
+-- *not* creating schema, since initdb creates it
+
+
+ALTER SCHEMA public OWNER TO zee;
+
+--
+-- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner:
+--
+
+COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
+
+
+--
+-- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner:
+--
+
+COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
+
+
+--
+-- Name: recipient_kind; Type: TYPE; Schema: public; Owner: zeehamid
+--
+
+CREATE TYPE public.recipient_kind AS ENUM (
+    'to',
+    'cc',
+    'bcc'
+);
+
+
+ALTER TYPE public.recipient_kind OWNER TO zeehamid;
+
+--
+-- Name: notify_job_inserted(); Type: FUNCTION; Schema: public; Owner: zeehamid
+--
+
+CREATE FUNCTION public.notify_job_inserted() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+      PERFORM pg_notify('background_jobs_channel', '');
+      RETURN NEW;
+    END;
+    $$;
+
+
+ALTER FUNCTION public.notify_job_inserted() OWNER TO zeehamid;
+
+--
+-- Name: notify_webhook_event_inserted(); Type: FUNCTION; Schema: public; Owner: zeehamid
+--
+
+CREATE FUNCTION public.notify_webhook_event_inserted() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+      PERFORM pg_notify('webhook_events_channel', '');
+      RETURN NEW;
+    END;
+    $$;
+
+
+ALTER FUNCTION public.notify_webhook_event_inserted() OWNER TO zeehamid;
+
+--
+-- Name: set_updated_at(); Type: FUNCTION; Schema: public; Owner: zeehamid
+--
+
+CREATE FUNCTION public.set_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+      NEW.updated_at = now();
+      RETURN NEW;
+    END;
+    $$;
+
+
+ALTER FUNCTION public.set_updated_at() OWNER TO zeehamid;
+
+--
+-- Name: sync_email_has_attachments(); Type: FUNCTION; Schema: public; Owner: zeehamid
+--
+
+CREATE FUNCTION public.sync_email_has_attachments() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  UPDATE email_headers h
+  SET has_attachments = EXISTS (
+    SELECT 1 FROM email_attachments a
+    WHERE a.tenant_id = COALESCE(NEW.tenant_id, OLD.tenant_id)
+      AND a.email_id  = COALESCE(NEW.email_id,  OLD.email_id)
+  )
+  WHERE h.tenant_id = COALESCE(NEW.tenant_id, OLD.tenant_id)
+    AND h.email_id  = COALESCE(NEW.email_id,  OLD.email_id);
+  RETURN NULL;
+END$$;
+
+
+ALTER FUNCTION public.sync_email_has_attachments() OWNER TO zeehamid;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: authusers; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.authusers (
+    id bigint NOT NULL,
+    tenant_id bigint,
+    verified boolean DEFAULT false,
+    role text,
+    first_name text,
+    last_name text,
+    email text NOT NULL,
+    password text NOT NULL,
+    password_reset_code text,
+    password_reset_code_created_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    createdby_id bigint,
+    updatedby_id bigint,
+    two_factor_enabled boolean DEFAULT false NOT NULL,
+    two_factor_code text,
+    two_factor_expires_at timestamp with time zone,
+    deletion_scheduled_at timestamp with time zone,
+    previous_email text,
+    previous_role text,
+    CONSTRAINT chk_authusers_role CHECK (((role IS NULL) OR (role = ANY (ARRAY['owner'::text, 'admin'::text, 'user'::text, 'viewer'::text]))))
+);
+
+
+ALTER TABLE public.authusers OWNER TO zeehamid;
+
+--
+-- Name: authusers_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.authusers_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.authusers_id_seq OWNER TO zeehamid;
+
+--
+-- Name: authusers_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.authusers_id_seq OWNED BY public.authusers.id;
+
+
+--
+-- Name: background_jobs; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.background_jobs (
+    id bigint NOT NULL,
+    tenant_id bigint,
+    queue text DEFAULT 'default'::text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    payload jsonb NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    max_attempts integer DEFAULT 3 NOT NULL,
+    error text,
+    run_at timestamp with time zone DEFAULT now() NOT NULL,
+    locked_at timestamp with time zone,
+    locked_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_background_jobs_status CHECK ((status = ANY (ARRAY['pending'::text, 'processing'::text, 'completed'::text, 'failed'::text])))
+);
+
+
+ALTER TABLE public.background_jobs OWNER TO zeehamid;
+
+--
+-- Name: background_jobs_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.background_jobs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.background_jobs_id_seq OWNER TO zeehamid;
+
+--
+-- Name: background_jobs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.background_jobs_id_seq OWNED BY public.background_jobs.id;
+
+
+--
+-- Name: campaigns; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.campaigns (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    admin_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    name text NOT NULL,
+    description text,
+    notes text,
+    "json" jsonb,
+    startdate date,
+    enddate date,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updatedby_id bigint
+);
+
+
+ALTER TABLE public.campaigns OWNER TO zeehamid;
+
+--
+-- Name: campaigns_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.campaigns_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.campaigns_id_seq OWNER TO zeehamid;
+
+--
+-- Name: campaigns_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.campaigns_id_seq OWNED BY public.campaigns.id;
+
+
+--
+-- Name: companies; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.companies (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    name text NOT NULL,
+    description text,
+    website text,
+    email text,
+    phone text,
+    industry text,
+    notes text,
+    "json" jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    file_id bigint,
+    search_vector tsvector GENERATED ALWAYS AS (((((setweight(to_tsvector('simple'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(email, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(website, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(phone, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(industry, ''::text)), 'C'::"char"))) STORED
+);
+
+
+ALTER TABLE public.companies OWNER TO zeehamid;
+
+--
+-- Name: companies_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.companies_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.companies_id_seq OWNER TO zeehamid;
+
+--
+-- Name: companies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.companies_id_seq OWNED BY public.companies.id;
+
+
+--
+-- Name: data_exports; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.data_exports (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    entity text NOT NULL,
+    file_name text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    row_count integer DEFAULT 0,
+    storage_key text,
+    columns jsonb,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.data_exports OWNER TO zeehamid;
+
+--
+-- Name: data_exports_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.data_exports_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.data_exports_id_seq OWNER TO zeehamid;
+
+--
+-- Name: data_exports_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.data_exports_id_seq OWNED BY public.data_exports.id;
+
+
+--
+-- Name: data_imports; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.data_imports (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    file_name text NOT NULL,
+    source text DEFAULT 'persons'::text NOT NULL,
+    tag_name text,
+    tag_id bigint,
+    row_count integer DEFAULT 0 NOT NULL,
+    inserted_count integer DEFAULT 0 NOT NULL,
+    error_count integer DEFAULT 0 NOT NULL,
+    skipped_count integer DEFAULT 0 NOT NULL,
+    households_created integer DEFAULT 0 NOT NULL,
+    metadata jsonb,
+    processed_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    status text DEFAULT 'completed'::text NOT NULL,
+    error_message text
+);
+
+
+ALTER TABLE public.data_imports OWNER TO zeehamid;
+
+--
+-- Name: data_imports_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.data_imports_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.data_imports_id_seq OWNER TO zeehamid;
+
+--
+-- Name: data_imports_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.data_imports_id_seq OWNED BY public.data_imports.id;
+
+
+--
+-- Name: donation_periods; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.donation_periods (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    name text NOT NULL,
+    start_date date NOT NULL,
+    end_date date,
+    limit_amount integer NOT NULL,
+    is_active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    CONSTRAINT donation_periods_dates_check CHECK (((end_date IS NULL) OR (end_date > start_date))),
+    CONSTRAINT donation_periods_limit_check CHECK ((limit_amount > 0))
+);
+
+
+ALTER TABLE public.donation_periods OWNER TO zeehamid;
+
+--
+-- Name: donation_periods_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.donation_periods_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.donation_periods_id_seq OWNER TO zeehamid;
+
+--
+-- Name: donation_periods_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.donation_periods_id_seq OWNED BY public.donation_periods.id;
+
+
+--
+-- Name: donation_pledges; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.donation_pledges (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    person_id bigint,
+    stripe_subscription_id text,
+    stripe_customer_id text,
+    monthly_amount integer NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    cancelled_at timestamp with time zone,
+    next_billing_date date,
+    first_name text,
+    last_name text,
+    email text,
+    state text,
+    country text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    CONSTRAINT donation_pledges_status_check CHECK ((status = ANY (ARRAY['active'::text, 'past_due'::text, 'cancelled'::text, 'unpaid'::text])))
+);
+
+
+ALTER TABLE public.donation_pledges OWNER TO zeehamid;
+
+--
+-- Name: donation_pledges_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.donation_pledges_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.donation_pledges_id_seq OWNER TO zeehamid;
+
+--
+-- Name: donation_pledges_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.donation_pledges_id_seq OWNED BY public.donation_pledges.id;
+
+
+--
+-- Name: donations; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.donations (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    person_id bigint,
+    amount integer NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    stripe_session_id text,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    first_name text,
+    last_name text,
+    email text,
+    street text,
+    apt text,
+    city text,
+    state text,
+    zip text,
+    country text,
+    pledge_id bigint
+);
+
+
+ALTER TABLE public.donations OWNER TO zeehamid;
+
+--
+-- Name: donations_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.donations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.donations_id_seq OWNER TO zeehamid;
+
+--
+-- Name: donations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.donations_id_seq OWNED BY public.donations.id;
+
+
+--
+-- Name: email_attachments; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.email_attachments (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    email_id bigint NOT NULL,
+    filename text NOT NULL,
+    content_type text NOT NULL,
+    size_bytes bigint NOT NULL,
+    cid text,
+    is_inline boolean DEFAULT false NOT NULL,
+    pos integer DEFAULT 0 NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    file_id bigint
+);
+
+
+ALTER TABLE public.email_attachments OWNER TO zeehamid;
+
+--
+-- Name: email_attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.email_attachments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.email_attachments_id_seq OWNER TO zeehamid;
+
+--
+-- Name: email_attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.email_attachments_id_seq OWNED BY public.email_attachments.id;
+
+
+--
+-- Name: email_bodies; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.email_bodies (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    email_id bigint NOT NULL,
+    body_html text NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.email_bodies OWNER TO zeehamid;
+
+--
+-- Name: email_bodies_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.email_bodies_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.email_bodies_id_seq OWNER TO zeehamid;
+
+--
+-- Name: email_bodies_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.email_bodies_id_seq OWNED BY public.email_bodies.id;
+
+
+--
+-- Name: email_comments; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.email_comments (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    email_id bigint NOT NULL,
+    author_id bigint NOT NULL,
+    comment text NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.email_comments OWNER TO zeehamid;
+
+--
+-- Name: email_comments_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.email_comments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.email_comments_id_seq OWNER TO zeehamid;
+
+--
+-- Name: email_comments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.email_comments_id_seq OWNED BY public.email_comments.id;
+
+
+--
+-- Name: email_drafts; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.email_drafts (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    thread_id text,
+    to_list jsonb,
+    cc_list jsonb,
+    bcc_list jsonb,
+    subject text,
+    body_html text,
+    body_delta jsonb,
+    meta jsonb,
+    is_locked boolean DEFAULT false NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.email_drafts OWNER TO zeehamid;
+
+--
+-- Name: email_drafts_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.email_drafts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.email_drafts_id_seq OWNER TO zeehamid;
+
+--
+-- Name: email_drafts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.email_drafts_id_seq OWNED BY public.email_drafts.id;
+
+
+--
+-- Name: email_folders; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.email_folders (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    name text NOT NULL,
+    icon text,
+    sort_order integer DEFAULT 0,
+    is_default boolean DEFAULT false,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.email_folders OWNER TO zeehamid;
+
+--
+-- Name: email_folders_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.email_folders_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.email_folders_id_seq OWNER TO zeehamid;
+
+--
+-- Name: email_folders_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.email_folders_id_seq OWNED BY public.email_folders.id;
+
+
+--
+-- Name: email_headers; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.email_headers (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    email_id bigint NOT NULL,
+    headers_json jsonb,
+    raw_headers text,
+    date_sent timestamp without time zone,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.email_headers OWNER TO zeehamid;
+
+--
+-- Name: email_headers_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.email_headers_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.email_headers_id_seq OWNER TO zeehamid;
+
+--
+-- Name: email_headers_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.email_headers_id_seq OWNED BY public.email_headers.id;
+
+
+--
+-- Name: email_read_states; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.email_read_states (
+    tenant_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    email_id bigint NOT NULL,
+    is_read boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.email_read_states OWNER TO zeehamid;
+
+--
+-- Name: email_recipients; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.email_recipients (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    email_id bigint NOT NULL,
+    kind text NOT NULL,
+    name text,
+    email text NOT NULL,
+    pos integer DEFAULT 0 NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    CONSTRAINT email_recipients_kind_check CHECK ((kind = ANY (ARRAY['to'::text, 'cc'::text, 'bcc'::text])))
+);
+
+
+ALTER TABLE public.email_recipients OWNER TO zeehamid;
+
+--
+-- Name: email_recipients_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.email_recipients_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.email_recipients_id_seq OWNER TO zeehamid;
+
+--
+-- Name: email_recipients_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.email_recipients_id_seq OWNED BY public.email_recipients.id;
+
+
+--
+-- Name: email_trash; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.email_trash (
+    tenant_id bigint NOT NULL,
+    email_id bigint NOT NULL,
+    from_folder_id bigint NOT NULL,
+    trashed_at timestamp without time zone DEFAULT now() NOT NULL,
+    createdby_id bigint,
+    updatedby_id bigint,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    id bigint NOT NULL
+);
+
+
+ALTER TABLE public.email_trash OWNER TO zeehamid;
+
+--
+-- Name: email_trash_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.email_trash_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.email_trash_id_seq OWNER TO zeehamid;
+
+--
+-- Name: email_trash_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.email_trash_id_seq OWNED BY public.email_trash.id;
+
+
+--
+-- Name: emails; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.emails (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    folder_id bigint NOT NULL,
+    from_email text,
+    to_email text,
+    subject text,
+    body text,
+    preview text,
+    assigned_to bigint,
+    is_favourite boolean DEFAULT false NOT NULL,
+    deleted_at timestamp without time zone,
+    status text DEFAULT 'open'::text,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.emails OWNER TO zeehamid;
+
+--
+-- Name: emails_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.emails_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.emails_id_seq OWNER TO zeehamid;
+
+--
+-- Name: emails_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.emails_id_seq OWNED BY public.emails.id;
+
+
+--
+-- Name: event_registrations; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.event_registrations (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    event_id bigint NOT NULL,
+    person_id bigint NOT NULL,
+    ticket_type_id bigint,
+    status text DEFAULT 'registered'::text NOT NULL,
+    checked_in_at timestamp with time zone,
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    CONSTRAINT event_registrations_status_check CHECK ((status = ANY (ARRAY['registered'::text, 'attended'::text, 'no_show'::text, 'cancelled'::text])))
+);
+
+
+ALTER TABLE public.event_registrations OWNER TO zeehamid;
+
+--
+-- Name: event_registrations_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.event_registrations_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.event_registrations_id_seq OWNER TO zeehamid;
+
+--
+-- Name: event_registrations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.event_registrations_id_seq OWNED BY public.event_registrations.id;
+
+
+--
+-- Name: event_ticket_types; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.event_ticket_types (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    event_id bigint NOT NULL,
+    name text NOT NULL,
+    description text,
+    price_cents integer DEFAULT 0 NOT NULL,
+    capacity integer,
+    sort_order integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    CONSTRAINT event_ticket_types_capacity_check CHECK (((capacity IS NULL) OR (capacity > 0))),
+    CONSTRAINT event_ticket_types_price_check CHECK ((price_cents >= 0))
+);
+
+
+ALTER TABLE public.event_ticket_types OWNER TO zeehamid;
+
+--
+-- Name: event_ticket_types_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.event_ticket_types_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.event_ticket_types_id_seq OWNER TO zeehamid;
+
+--
+-- Name: event_ticket_types_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.event_ticket_types_id_seq OWNED BY public.event_ticket_types.id;
+
+
+--
+-- Name: events; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.events (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    name text NOT NULL,
+    description text,
+    location_address text,
+    start_time timestamp with time zone NOT NULL,
+    end_time timestamp with time zone NOT NULL,
+    capacity integer,
+    contact_email text,
+    contact_phone text,
+    slug text NOT NULL,
+    is_published boolean DEFAULT false NOT NULL,
+    send_reminder boolean DEFAULT true NOT NULL,
+    send_registration_confirmation boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    search_vector tsvector GENERATED ALWAYS AS (((setweight(to_tsvector('english'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(location_address, ''::text)), 'B'::"char")) || setweight(to_tsvector('english'::regconfig, COALESCE(description, ''::text)), 'C'::"char"))) STORED,
+    fields jsonb DEFAULT '["first_name", "last_name", "email", "mobile", "notes"]'::jsonb NOT NULL,
+    CONSTRAINT events_capacity_check CHECK (((capacity IS NULL) OR (capacity > 0))),
+    CONSTRAINT events_end_after_start_check CHECK ((end_time > start_time))
+);
+
+
+ALTER TABLE public.events OWNER TO zeehamid;
+
+--
+-- Name: events_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.events_id_seq OWNER TO zeehamid;
+
+--
+-- Name: events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.events_id_seq OWNED BY public.events.id;
+
+
+--
+-- Name: files; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.files (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    filename text NOT NULL,
+    mime_type text,
+    size_bytes bigint,
+    storage_key text NOT NULL,
+    sha256_hex text,
+    uploaded_by bigint,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.files OWNER TO zeehamid;
+
+--
+-- Name: files_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.files_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.files_id_seq OWNER TO zeehamid;
+
+--
+-- Name: files_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.files_id_seq OWNED BY public.files.id;
+
+
+--
+-- Name: google_oauth_tokens; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.google_oauth_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id text NOT NULL,
+    user_id text,
+    access_token text NOT NULL,
+    refresh_token text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    google_email text,
+    delta_link text,
+    synced_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    last_sync_error text,
+    last_sync_error_at timestamp with time zone
+);
+
+
+ALTER TABLE public.google_oauth_tokens OWNER TO zeehamid;
+
+--
+-- Name: households; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.households (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    campaign_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    file_id bigint,
+    home_phone text,
+    apt text,
+    street_num text,
+    street1 text,
+    street2 text,
+    city text,
+    state text,
+    zip text,
+    country text,
+    notes text,
+    "json" jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    address_fp_street text,
+    address_fp_full text,
+    is_placeholder boolean DEFAULT false NOT NULL,
+    updatedby_id bigint,
+    lat double precision,
+    lng double precision,
+    formatted_address text,
+    type text,
+    district text,
+    precinct text,
+    ward text,
+    geocoding_status text DEFAULT 'pending'::text,
+    search_vector tsvector GENERATED ALWAYS AS ((((((((((setweight(to_tsvector('simple'::regconfig, COALESCE(street1, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(city, ''::text)), 'A'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(address_fp_full, ''::text)), 'A'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(zip, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(state, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(home_phone, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(street_num, ''::text)), 'C'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(apt, ''::text)), 'C'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(street2, ''::text)), 'C'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(country, ''::text)), 'C'::"char"))) STORED
+);
+
+
+ALTER TABLE public.households OWNER TO zeehamid;
+
+--
+-- Name: households_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.households_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.households_id_seq OWNER TO zeehamid;
+
+--
+-- Name: households_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.households_id_seq OWNED BY public.households.id;
+
+
+--
+-- Name: kysely_migration; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.kysely_migration (
+    name character varying(255) NOT NULL,
+    "timestamp" character varying(255) NOT NULL
+);
+
+
+ALTER TABLE public.kysely_migration OWNER TO zeehamid;
+
+--
+-- Name: kysely_migration_lock; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.kysely_migration_lock (
+    id character varying(255) NOT NULL,
+    is_locked integer DEFAULT 0 NOT NULL
+);
+
+
+ALTER TABLE public.kysely_migration_lock OWNER TO zeehamid;
+
+--
+-- Name: lists; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.lists (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    name text NOT NULL,
+    description text,
+    object text NOT NULL,
+    is_dynamic boolean DEFAULT false,
+    definition jsonb,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_refreshed_at timestamp with time zone,
+    status text DEFAULT 'idle'::text NOT NULL,
+    CONSTRAINT chk_lists_status CHECK ((status = ANY (ARRAY['idle'::text, 'refreshing'::text, 'failed'::text]))),
+    CONSTRAINT lists_object_check CHECK ((object = ANY (ARRAY['people'::text, 'households'::text])))
+);
+
+
+ALTER TABLE public.lists OWNER TO zeehamid;
+
+--
+-- Name: lists_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.lists_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.lists_id_seq OWNER TO zeehamid;
+
+--
+-- Name: lists_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.lists_id_seq OWNED BY public.lists.id;
+
+
+--
+-- Name: map_campaigns_users; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.map_campaigns_users (
+    tenant_id bigint NOT NULL,
+    campaign_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.map_campaigns_users OWNER TO zeehamid;
+
+--
+-- Name: map_households_tags; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.map_households_tags (
+    tenant_id bigint NOT NULL,
+    household_id bigint NOT NULL,
+    tag_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.map_households_tags OWNER TO zeehamid;
+
+--
+-- Name: map_lists_households; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.map_lists_households (
+    tenant_id bigint NOT NULL,
+    list_id bigint NOT NULL,
+    household_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.map_lists_households OWNER TO zeehamid;
+
+--
+-- Name: map_lists_persons; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.map_lists_persons (
+    tenant_id bigint NOT NULL,
+    list_id bigint NOT NULL,
+    person_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.map_lists_persons OWNER TO zeehamid;
+
+--
+-- Name: map_peoples_tags; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.map_peoples_tags (
+    tenant_id bigint NOT NULL,
+    person_id bigint NOT NULL,
+    tag_id bigint NOT NULL,
+    deletable boolean DEFAULT true,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.map_peoples_tags OWNER TO zeehamid;
+
+--
+-- Name: map_teams_lists; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.map_teams_lists (
+    tenant_id bigint NOT NULL,
+    team_id bigint NOT NULL,
+    list_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.map_teams_lists OWNER TO zeehamid;
+
+--
+-- Name: map_teams_persons; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.map_teams_persons (
+    tenant_id bigint NOT NULL,
+    team_id bigint NOT NULL,
+    person_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.map_teams_persons OWNER TO zeehamid;
+
+--
+-- Name: ms_oauth_tokens; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.ms_oauth_tokens (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id text NOT NULL,
+    user_id text,
+    access_token text NOT NULL,
+    refresh_token text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    ms_email text,
+    delta_link text,
+    synced_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    last_sync_error text,
+    last_sync_error_at timestamp with time zone
+);
+
+
+ALTER TABLE public.ms_oauth_tokens OWNER TO zeehamid;
+
+--
+-- Name: newsletter_events; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.newsletter_events (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    newsletter_id bigint NOT NULL,
+    email text NOT NULL,
+    event_type text NOT NULL,
+    sg_event_id text NOT NULL,
+    sg_message_id text,
+    url text,
+    ip text,
+    user_agent text,
+    "timestamp" timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.newsletter_events OWNER TO zeehamid;
+
+--
+-- Name: newsletter_events_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.newsletter_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.newsletter_events_id_seq OWNER TO zeehamid;
+
+--
+-- Name: newsletter_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.newsletter_events_id_seq OWNED BY public.newsletter_events.id;
+
+
+--
+-- Name: newsletters; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.newsletters (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    name text NOT NULL,
+    status text DEFAULT 'sent'::text NOT NULL,
+    subject text,
+    preview_text text,
+    audience_description text,
+    target_lists jsonb,
+    segments jsonb,
+    total_recipients integer DEFAULT 0 NOT NULL,
+    delivered_count integer DEFAULT 0 NOT NULL,
+    bounce_count integer DEFAULT 0 NOT NULL,
+    open_rate numeric DEFAULT 0 NOT NULL,
+    click_rate numeric DEFAULT 0 NOT NULL,
+    unique_opens integer DEFAULT 0 NOT NULL,
+    unique_clicks integer DEFAULT 0 NOT NULL,
+    unsubscribe_count integer DEFAULT 0 NOT NULL,
+    spam_complaint_count integer DEFAULT 0 NOT NULL,
+    reply_count integer DEFAULT 0 NOT NULL,
+    send_date timestamp with time zone,
+    last_engagement_at timestamp with time zone,
+    summary text,
+    html_content text,
+    plain_text_content text,
+    top_links jsonb,
+    attachments jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_newsletters_click_rate_range CHECK (((click_rate >= (0)::numeric) AND (click_rate <= (100)::numeric))),
+    CONSTRAINT chk_newsletters_open_rate_range CHECK (((open_rate >= (0)::numeric) AND (open_rate <= (100)::numeric)))
+);
+
+
+ALTER TABLE public.newsletters OWNER TO zeehamid;
+
+--
+-- Name: newsletters_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.newsletters_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.newsletters_id_seq OWNER TO zeehamid;
+
+--
+-- Name: newsletters_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.newsletters_id_seq OWNED BY public.newsletters.id;
+
+
+--
+-- Name: notifications; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.notifications (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    title text NOT NULL,
+    message text NOT NULL,
+    type text DEFAULT 'info'::text NOT NULL,
+    read boolean DEFAULT false NOT NULL,
+    link text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.notifications OWNER TO zeehamid;
+
+--
+-- Name: notifications_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.notifications_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.notifications_id_seq OWNER TO zeehamid;
+
+--
+-- Name: notifications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.notifications_id_seq OWNED BY public.notifications.id;
+
+
+--
+-- Name: passkeys; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.passkeys (
+    id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    credential_id text NOT NULL,
+    public_key text NOT NULL,
+    counter bigint DEFAULT 0 NOT NULL,
+    device_type text NOT NULL,
+    backed_up boolean DEFAULT false NOT NULL,
+    transports text[],
+    aaguid text,
+    friendly_name text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.passkeys OWNER TO zeehamid;
+
+--
+-- Name: passkeys_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE public.passkeys ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.passkeys_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: person_connections; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.person_connections (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    from_person_id bigint NOT NULL,
+    to_person_id bigint NOT NULL,
+    relation_type text NOT NULL,
+    custom_label text,
+    is_mutual boolean DEFAULT false NOT NULL,
+    notes text,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT pc_custom_label_required CHECK (((relation_type <> 'custom'::text) OR ((custom_label IS NOT NULL) AND (custom_label <> ''::text)))),
+    CONSTRAINT pc_no_self_loop CHECK ((from_person_id <> to_person_id)),
+    CONSTRAINT pc_relation_type_check CHECK ((relation_type = ANY (ARRAY['referred_by'::text, 'referred_to'::text, 'close_friend'::text, 'family_member'::text, 'spouse'::text, 'colleague'::text, 'org_affiliation'::text, 'introduced_by'::text, 'introduced_to'::text, 'custom'::text])))
+);
+
+
+ALTER TABLE public.person_connections OWNER TO zeehamid;
+
+--
+-- Name: person_connections_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.person_connections_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.person_connections_id_seq OWNER TO zeehamid;
+
+--
+-- Name: person_connections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.person_connections_id_seq OWNED BY public.person_connections.id;
+
+
+--
+-- Name: persons; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.persons (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    campaign_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    household_id bigint NOT NULL,
+    file_id bigint,
+    first_name text,
+    middle_names text,
+    last_name text,
+    home_phone text,
+    mobile text,
+    email text,
+    email2 text,
+    notes text,
+    "json" jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updatedby_id bigint,
+    company_id bigint,
+    linkedin text,
+    twitter text,
+    facebook text,
+    instagram text,
+    assigned_to bigint,
+    search_vector tsvector GENERATED ALWAYS AS ((((((setweight(to_tsvector('simple'::regconfig, COALESCE(first_name, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(last_name, ''::text)), 'A'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(email, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(email2, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(mobile, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(home_phone, ''::text)), 'C'::"char"))) STORED
+);
+
+
+ALTER TABLE public.persons OWNER TO zeehamid;
+
+--
+-- Name: persons_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.persons_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.persons_id_seq OWNER TO zeehamid;
+
+--
+-- Name: persons_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.persons_id_seq OWNED BY public.persons.id;
+
+
+--
+-- Name: potential_duplicates; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.potential_duplicates (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    group_key text NOT NULL,
+    person_id bigint,
+    reason text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    household_id bigint,
+    company_id bigint
+);
+
+
+ALTER TABLE public.potential_duplicates OWNER TO zeehamid;
+
+--
+-- Name: potential_duplicates_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.potential_duplicates_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.potential_duplicates_id_seq OWNER TO zeehamid;
+
+--
+-- Name: potential_duplicates_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.potential_duplicates_id_seq OWNED BY public.potential_duplicates.id;
+
+
+--
+-- Name: profiles; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.profiles (
+    id bigint NOT NULL,
+    tenant_id bigint,
+    auth_id bigint,
+    middle_names text,
+    last_name text,
+    home_phone text,
+    mobile text,
+    email2 text,
+    apt text,
+    street_num text,
+    street1 text,
+    street2 text,
+    city text,
+    state text,
+    zip text,
+    country text,
+    "json" jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    createdby_id bigint,
+    updatedby_id bigint,
+    avatar_file_id bigint
+);
+
+
+ALTER TABLE public.profiles OWNER TO zeehamid;
+
+--
+-- Name: profiles_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.profiles_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.profiles_id_seq OWNER TO zeehamid;
+
+--
+-- Name: profiles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.profiles_id_seq OWNED BY public.profiles.id;
+
+
+--
+-- Name: sessions; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.sessions (
+    id bigint NOT NULL,
+    session_id text NOT NULL,
+    refresh_token text,
+    user_id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_accessed timestamp with time zone DEFAULT now() NOT NULL,
+    ip_address text NOT NULL,
+    user_agent text,
+    status text DEFAULT 'active'::text,
+    other_properties jsonb,
+    expires_at timestamp with time zone,
+    last_used_at timestamp with time zone
+);
+
+
+ALTER TABLE public.sessions OWNER TO zeehamid;
+
+--
+-- Name: sessions_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.sessions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.sessions_id_seq OWNER TO zeehamid;
+
+--
+-- Name: sessions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.sessions_id_seq OWNED BY public.sessions.id;
+
+
+--
+-- Name: sessions_user_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.sessions_user_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.sessions_user_id_seq OWNER TO zeehamid;
+
+--
+-- Name: sessions_user_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.sessions_user_id_seq OWNED BY public.sessions.user_id;
+
+
+--
+-- Name: settings; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.settings (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    key text NOT NULL,
+    value jsonb NOT NULL,
+    createdby_id bigint,
+    updatedby_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.settings OWNER TO zeehamid;
+
+--
+-- Name: settings_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.settings_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.settings_id_seq OWNER TO zeehamid;
+
+--
+-- Name: settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.settings_id_seq OWNED BY public.settings.id;
+
+
+--
+-- Name: tags; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.tags (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    name text NOT NULL,
+    description text,
+    deletable boolean DEFAULT true,
+    color character varying(7),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    type text DEFAULT 'tag'::text NOT NULL
+);
+
+
+ALTER TABLE public.tags OWNER TO zeehamid;
+
+--
+-- Name: tags_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.tags_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.tags_id_seq OWNER TO zeehamid;
+
+--
+-- Name: tags_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.tags_id_seq OWNED BY public.tags.id;
+
+
+--
+-- Name: task_attachments; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.task_attachments (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    task_id bigint NOT NULL,
+    filename text NOT NULL,
+    content_type text,
+    size_bytes bigint,
+    url text,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.task_attachments OWNER TO zeehamid;
+
+--
+-- Name: task_attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.task_attachments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.task_attachments_id_seq OWNER TO zeehamid;
+
+--
+-- Name: task_attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.task_attachments_id_seq OWNED BY public.task_attachments.id;
+
+
+--
+-- Name: task_comments; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.task_comments (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    task_id bigint NOT NULL,
+    author_id bigint NOT NULL,
+    comment text NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.task_comments OWNER TO zeehamid;
+
+--
+-- Name: task_comments_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.task_comments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.task_comments_id_seq OWNER TO zeehamid;
+
+--
+-- Name: task_comments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.task_comments_id_seq OWNED BY public.task_comments.id;
+
+
+--
+-- Name: task_subtasks; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.task_subtasks (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    task_id bigint NOT NULL,
+    name text NOT NULL,
+    status text DEFAULT 'todo'::text,
+    "position" integer DEFAULT 0,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.task_subtasks OWNER TO zeehamid;
+
+--
+-- Name: task_subtasks_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.task_subtasks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.task_subtasks_id_seq OWNER TO zeehamid;
+
+--
+-- Name: task_subtasks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.task_subtasks_id_seq OWNED BY public.task_subtasks.id;
+
+
+--
+-- Name: tasks; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.tasks (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    name text NOT NULL,
+    details text,
+    due_at timestamp with time zone,
+    status text DEFAULT 'todo'::text,
+    priority text,
+    assigned_to bigint,
+    completed_at timestamp with time zone,
+    "position" integer DEFAULT 0,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    team_id bigint,
+    file_id bigint,
+    CONSTRAINT chk_tasks_status CHECK ((status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'blocked'::text, 'done'::text, 'canceled'::text, 'archived'::text])))
+);
+
+
+ALTER TABLE public.tasks OWNER TO zeehamid;
+
+--
+-- Name: tasks_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.tasks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.tasks_id_seq OWNER TO zeehamid;
+
+--
+-- Name: tasks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.tasks_id_seq OWNED BY public.tasks.id;
+
+
+--
+-- Name: teams; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.teams (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    name text NOT NULL,
+    description text,
+    team_captain_id bigint,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    team_lead_user_id bigint
+);
+
+
+ALTER TABLE public.teams OWNER TO zeehamid;
+
+--
+-- Name: teams_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.teams_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.teams_id_seq OWNER TO zeehamid;
+
+--
+-- Name: teams_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.teams_id_seq OWNED BY public.teams.id;
+
+
+--
+-- Name: tenants; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.tenants (
+    id bigint NOT NULL,
+    admin_id bigint,
+    createdby_id bigint,
+    name text NOT NULL,
+    mobile text,
+    email text,
+    email2 text,
+    apt text,
+    street_num text,
+    street1 text,
+    street2 text,
+    city text,
+    state text,
+    zip text,
+    country text,
+    billing_street_num text,
+    billing_street1 text,
+    billing_street2 text,
+    billing_city text,
+    billing_state text,
+    billing_zip text,
+    billing_country text,
+    notes text,
+    "json" jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    placeholder_household_id bigint,
+    stripe_customer_id text,
+    stripe_subscription_id text,
+    subscription_plan text DEFAULT 'free'::text NOT NULL,
+    subscription_status text,
+    subscription_ends_at timestamp with time zone,
+    deletion_scheduled_at timestamp with time zone,
+    suspended_at timestamp with time zone,
+    paused_at timestamp with time zone
+);
+
+
+ALTER TABLE public.tenants OWNER TO zeehamid;
+
+--
+-- Name: tenants_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.tenants_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.tenants_id_seq OWNER TO zeehamid;
+
+--
+-- Name: tenants_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.tenants_id_seq OWNED BY public.tenants.id;
+
+
+--
+-- Name: user_activity; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.user_activity (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    user_id bigint NOT NULL,
+    activity text NOT NULL,
+    entity text NOT NULL,
+    quantity integer DEFAULT 0 NOT NULL,
+    metadata jsonb,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    entity_id text
+);
+
+
+ALTER TABLE public.user_activity OWNER TO zeehamid;
+
+--
+-- Name: user_activity_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.user_activity_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.user_activity_id_seq OWNER TO zeehamid;
+
+--
+-- Name: user_activity_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.user_activity_id_seq OWNED BY public.user_activity.id;
+
+
+--
+-- Name: volunteer_events; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.volunteer_events (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    name text NOT NULL,
+    description text,
+    location_address text,
+    start_time timestamp with time zone NOT NULL,
+    end_time timestamp with time zone NOT NULL,
+    capacity integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    contact_email text,
+    contact_phone text,
+    is_private boolean DEFAULT false NOT NULL,
+    send_reminder boolean DEFAULT true NOT NULL,
+    slug text NOT NULL,
+    send_signup_confirmation boolean DEFAULT true NOT NULL,
+    send_volunteer_alert boolean DEFAULT true NOT NULL,
+    search_vector tsvector GENERATED ALWAYS AS ((((setweight(to_tsvector('simple'::regconfig, COALESCE(name, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(location_address, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(contact_email, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(description, ''::text)), 'C'::"char"))) STORED,
+    fields jsonb DEFAULT '["first_name", "last_name", "email", "mobile", "notes"]'::jsonb NOT NULL
+);
+
+
+ALTER TABLE public.volunteer_events OWNER TO zeehamid;
+
+--
+-- Name: volunteer_events_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.volunteer_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.volunteer_events_id_seq OWNER TO zeehamid;
+
+--
+-- Name: volunteer_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.volunteer_events_id_seq OWNED BY public.volunteer_events.id;
+
+
+--
+-- Name: volunteer_shifts; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.volunteer_shifts (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    event_id bigint NOT NULL,
+    person_id bigint NOT NULL,
+    status text DEFAULT 'signed_up'::text NOT NULL,
+    hours_worked numeric(5,2),
+    notes text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_volunteer_shifts_status CHECK ((status = ANY (ARRAY['signed_up'::text, 'attended'::text, 'no_show'::text, 'cancelled'::text])))
+);
+
+
+ALTER TABLE public.volunteer_shifts OWNER TO zeehamid;
+
+--
+-- Name: volunteer_shifts_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.volunteer_shifts_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.volunteer_shifts_id_seq OWNER TO zeehamid;
+
+--
+-- Name: volunteer_shifts_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.volunteer_shifts_id_seq OWNED BY public.volunteer_shifts.id;
+
+
+--
+-- Name: web_forms; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.web_forms (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    name text NOT NULL,
+    description text,
+    redirect_url text,
+    target_tags jsonb,
+    target_lists jsonb,
+    status text DEFAULT 'active'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    fields jsonb,
+    send_confirmation boolean DEFAULT true NOT NULL,
+    send_alert boolean DEFAULT true NOT NULL,
+    form_type text DEFAULT 'standard'::text NOT NULL,
+    CONSTRAINT chk_web_forms_status CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text])))
+);
+
+
+ALTER TABLE public.web_forms OWNER TO zeehamid;
+
+--
+-- Name: webhook_events; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.webhook_events (
+    id bigint NOT NULL,
+    tenant_id bigint,
+    stripe_event_id text NOT NULL,
+    type text NOT NULL,
+    payload jsonb NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    max_attempts integer DEFAULT 3 NOT NULL,
+    error text,
+    run_at timestamp with time zone DEFAULT now() NOT NULL,
+    locked_at timestamp with time zone,
+    locked_by text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    processed_at timestamp with time zone
+);
+
+
+ALTER TABLE public.webhook_events OWNER TO zeehamid;
+
+--
+-- Name: webhook_events_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.webhook_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.webhook_events_id_seq OWNER TO zeehamid;
+
+--
+-- Name: webhook_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.webhook_events_id_seq OWNED BY public.webhook_events.id;
+
+
+--
+-- Name: workflow_enrollments; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.workflow_enrollments (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    workflow_id bigint NOT NULL,
+    person_id bigint NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    current_step_number integer DEFAULT 0 NOT NULL,
+    next_run_at timestamp with time zone,
+    enrolled_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.workflow_enrollments OWNER TO zeehamid;
+
+--
+-- Name: workflow_enrollments_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.workflow_enrollments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.workflow_enrollments_id_seq OWNER TO zeehamid;
+
+--
+-- Name: workflow_enrollments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.workflow_enrollments_id_seq OWNED BY public.workflow_enrollments.id;
+
+
+--
+-- Name: workflow_steps; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.workflow_steps (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    workflow_id bigint NOT NULL,
+    step_number integer NOT NULL,
+    delay_days integer NOT NULL,
+    subject text NOT NULL,
+    preview_text text,
+    html_content text,
+    plain_text_content text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    delay_unit text DEFAULT 'days'::text NOT NULL
+);
+
+
+ALTER TABLE public.workflow_steps OWNER TO zeehamid;
+
+--
+-- Name: workflow_steps_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.workflow_steps_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.workflow_steps_id_seq OWNER TO zeehamid;
+
+--
+-- Name: workflow_steps_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.workflow_steps_id_seq OWNED BY public.workflow_steps.id;
+
+
+--
+-- Name: workflows; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.workflows (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    createdby_id bigint NOT NULL,
+    updatedby_id bigint NOT NULL,
+    name text NOT NULL,
+    description text,
+    trigger_type text NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    trigger_event_id text
+);
+
+
+ALTER TABLE public.workflows OWNER TO zeehamid;
+
+--
+-- Name: workflows_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+CREATE SEQUENCE public.workflows_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.workflows_id_seq OWNER TO zeehamid;
+
+--
+-- Name: workflows_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: zeehamid
+--
+
+ALTER SEQUENCE public.workflows_id_seq OWNED BY public.workflows.id;
+
+
+--
+-- Name: zapier_subscriptions; Type: TABLE; Schema: public; Owner: zeehamid
+--
+
+CREATE TABLE public.zapier_subscriptions (
+    id bigint NOT NULL,
+    tenant_id bigint NOT NULL,
+    event_type text NOT NULL,
+    webhook_url text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.zapier_subscriptions OWNER TO zeehamid;
+
+--
+-- Name: zapier_subscriptions_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE public.zapier_subscriptions ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.zapier_subscriptions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: authusers id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.authusers ALTER COLUMN id SET DEFAULT nextval('public.authusers_id_seq'::regclass);
+
+
+--
+-- Name: background_jobs id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.background_jobs ALTER COLUMN id SET DEFAULT nextval('public.background_jobs_id_seq'::regclass);
+
+
+--
+-- Name: campaigns id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.campaigns ALTER COLUMN id SET DEFAULT nextval('public.campaigns_id_seq'::regclass);
+
+
+--
+-- Name: companies id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.companies ALTER COLUMN id SET DEFAULT nextval('public.companies_id_seq'::regclass);
+
+
+--
+-- Name: data_exports id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.data_exports ALTER COLUMN id SET DEFAULT nextval('public.data_exports_id_seq'::regclass);
+
+
+--
+-- Name: data_imports id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.data_imports ALTER COLUMN id SET DEFAULT nextval('public.data_imports_id_seq'::regclass);
+
+
+--
+-- Name: donation_periods id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donation_periods ALTER COLUMN id SET DEFAULT nextval('public.donation_periods_id_seq'::regclass);
+
+
+--
+-- Name: donation_pledges id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donation_pledges ALTER COLUMN id SET DEFAULT nextval('public.donation_pledges_id_seq'::regclass);
+
+
+--
+-- Name: donations id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donations ALTER COLUMN id SET DEFAULT nextval('public.donations_id_seq'::regclass);
+
+
+--
+-- Name: email_attachments id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_attachments ALTER COLUMN id SET DEFAULT nextval('public.email_attachments_id_seq'::regclass);
+
+
+--
+-- Name: email_bodies id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_bodies ALTER COLUMN id SET DEFAULT nextval('public.email_bodies_id_seq'::regclass);
+
+
+--
+-- Name: email_comments id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_comments ALTER COLUMN id SET DEFAULT nextval('public.email_comments_id_seq'::regclass);
+
+
+--
+-- Name: email_drafts id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_drafts ALTER COLUMN id SET DEFAULT nextval('public.email_drafts_id_seq'::regclass);
+
+
+--
+-- Name: email_folders id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_folders ALTER COLUMN id SET DEFAULT nextval('public.email_folders_id_seq'::regclass);
+
+
+--
+-- Name: email_headers id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_headers ALTER COLUMN id SET DEFAULT nextval('public.email_headers_id_seq'::regclass);
+
+
+--
+-- Name: email_recipients id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_recipients ALTER COLUMN id SET DEFAULT nextval('public.email_recipients_id_seq'::regclass);
+
+
+--
+-- Name: email_trash id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_trash ALTER COLUMN id SET DEFAULT nextval('public.email_trash_id_seq'::regclass);
+
+
+--
+-- Name: emails id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.emails ALTER COLUMN id SET DEFAULT nextval('public.emails_id_seq'::regclass);
+
+
+--
+-- Name: event_registrations id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.event_registrations ALTER COLUMN id SET DEFAULT nextval('public.event_registrations_id_seq'::regclass);
+
+
+--
+-- Name: event_ticket_types id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.event_ticket_types ALTER COLUMN id SET DEFAULT nextval('public.event_ticket_types_id_seq'::regclass);
+
+
+--
+-- Name: events id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.events ALTER COLUMN id SET DEFAULT nextval('public.events_id_seq'::regclass);
+
+
+--
+-- Name: files id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.files ALTER COLUMN id SET DEFAULT nextval('public.files_id_seq'::regclass);
+
+
+--
+-- Name: households id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.households ALTER COLUMN id SET DEFAULT nextval('public.households_id_seq'::regclass);
+
+
+--
+-- Name: lists id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.lists ALTER COLUMN id SET DEFAULT nextval('public.lists_id_seq'::regclass);
+
+
+--
+-- Name: newsletter_events id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.newsletter_events ALTER COLUMN id SET DEFAULT nextval('public.newsletter_events_id_seq'::regclass);
+
+
+--
+-- Name: newsletters id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.newsletters ALTER COLUMN id SET DEFAULT nextval('public.newsletters_id_seq'::regclass);
+
+
+--
+-- Name: notifications id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.notifications ALTER COLUMN id SET DEFAULT nextval('public.notifications_id_seq'::regclass);
+
+
+--
+-- Name: person_connections id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.person_connections ALTER COLUMN id SET DEFAULT nextval('public.person_connections_id_seq'::regclass);
+
+
+--
+-- Name: persons id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.persons ALTER COLUMN id SET DEFAULT nextval('public.persons_id_seq'::regclass);
+
+
+--
+-- Name: potential_duplicates id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.potential_duplicates ALTER COLUMN id SET DEFAULT nextval('public.potential_duplicates_id_seq'::regclass);
+
+
+--
+-- Name: profiles id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.profiles ALTER COLUMN id SET DEFAULT nextval('public.profiles_id_seq'::regclass);
+
+
+--
+-- Name: sessions id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.sessions ALTER COLUMN id SET DEFAULT nextval('public.sessions_id_seq'::regclass);
+
+
+--
+-- Name: sessions user_id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.sessions ALTER COLUMN user_id SET DEFAULT nextval('public.sessions_user_id_seq'::regclass);
+
+
+--
+-- Name: settings id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.settings ALTER COLUMN id SET DEFAULT nextval('public.settings_id_seq'::regclass);
+
+
+--
+-- Name: tags id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tags ALTER COLUMN id SET DEFAULT nextval('public.tags_id_seq'::regclass);
+
+
+--
+-- Name: task_attachments id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.task_attachments ALTER COLUMN id SET DEFAULT nextval('public.task_attachments_id_seq'::regclass);
+
+
+--
+-- Name: task_comments id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.task_comments ALTER COLUMN id SET DEFAULT nextval('public.task_comments_id_seq'::regclass);
+
+
+--
+-- Name: task_subtasks id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.task_subtasks ALTER COLUMN id SET DEFAULT nextval('public.task_subtasks_id_seq'::regclass);
+
+
+--
+-- Name: tasks id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tasks ALTER COLUMN id SET DEFAULT nextval('public.tasks_id_seq'::regclass);
+
+
+--
+-- Name: teams id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.teams ALTER COLUMN id SET DEFAULT nextval('public.teams_id_seq'::regclass);
+
+
+--
+-- Name: tenants id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tenants ALTER COLUMN id SET DEFAULT nextval('public.tenants_id_seq'::regclass);
+
+
+--
+-- Name: user_activity id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.user_activity ALTER COLUMN id SET DEFAULT nextval('public.user_activity_id_seq'::regclass);
+
+
+--
+-- Name: volunteer_events id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_events ALTER COLUMN id SET DEFAULT nextval('public.volunteer_events_id_seq'::regclass);
+
+
+--
+-- Name: volunteer_shifts id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_shifts ALTER COLUMN id SET DEFAULT nextval('public.volunteer_shifts_id_seq'::regclass);
+
+
+--
+-- Name: webhook_events id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.webhook_events ALTER COLUMN id SET DEFAULT nextval('public.webhook_events_id_seq'::regclass);
+
+
+--
+-- Name: workflow_enrollments id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflow_enrollments ALTER COLUMN id SET DEFAULT nextval('public.workflow_enrollments_id_seq'::regclass);
+
+
+--
+-- Name: workflow_steps id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflow_steps ALTER COLUMN id SET DEFAULT nextval('public.workflow_steps_id_seq'::regclass);
+
+
+--
+-- Name: workflows id; Type: DEFAULT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflows ALTER COLUMN id SET DEFAULT nextval('public.workflows_id_seq'::regclass);
+
+
+--
+-- Name: authusers authusers_email_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.authusers
+    ADD CONSTRAINT authusers_email_key UNIQUE (email);
+
+
+--
+-- Name: authusers authusers_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.authusers
+    ADD CONSTRAINT authusers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: background_jobs background_jobs_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.background_jobs
+    ADD CONSTRAINT background_jobs_pk PRIMARY KEY (id);
+
+
+--
+-- Name: campaigns campaigns_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.campaigns
+    ADD CONSTRAINT campaigns_id_key UNIQUE (id);
+
+
+--
+-- Name: campaigns campaigns_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.campaigns
+    ADD CONSTRAINT campaigns_id_tenantid PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: companies companies_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.companies
+    ADD CONSTRAINT companies_id_key UNIQUE (id);
+
+
+--
+-- Name: companies companies_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.companies
+    ADD CONSTRAINT companies_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: data_exports data_exports_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.data_exports
+    ADD CONSTRAINT data_exports_id_key UNIQUE (id);
+
+
+--
+-- Name: data_exports data_exports_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.data_exports
+    ADD CONSTRAINT data_exports_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: data_imports data_imports_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.data_imports
+    ADD CONSTRAINT data_imports_id_key UNIQUE (id);
+
+
+--
+-- Name: data_imports data_imports_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.data_imports
+    ADD CONSTRAINT data_imports_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: donation_periods donation_periods_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donation_periods
+    ADD CONSTRAINT donation_periods_pkey PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: donation_pledges donation_pledges_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donation_pledges
+    ADD CONSTRAINT donation_pledges_id_key UNIQUE (id);
+
+
+--
+-- Name: donation_pledges donation_pledges_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donation_pledges
+    ADD CONSTRAINT donation_pledges_pkey PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: donation_pledges donation_pledges_stripe_subscription_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donation_pledges
+    ADD CONSTRAINT donation_pledges_stripe_subscription_id_key UNIQUE (stripe_subscription_id);
+
+
+--
+-- Name: donations donations_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donations
+    ADD CONSTRAINT donations_id_key UNIQUE (id);
+
+
+--
+-- Name: donations donations_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donations
+    ADD CONSTRAINT donations_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: donations donations_stripe_session_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donations
+    ADD CONSTRAINT donations_stripe_session_id_key UNIQUE (stripe_session_id);
+
+
+--
+-- Name: email_attachments email_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_attachments
+    ADD CONSTRAINT email_attachments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_bodies email_bodies_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_bodies
+    ADD CONSTRAINT email_bodies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_comments email_comments_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_comments
+    ADD CONSTRAINT email_comments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_drafts email_drafts_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_drafts
+    ADD CONSTRAINT email_drafts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_folders email_folders_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_folders
+    ADD CONSTRAINT email_folders_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_headers email_headers_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_headers
+    ADD CONSTRAINT email_headers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_read_states email_read_states_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_read_states
+    ADD CONSTRAINT email_read_states_pk PRIMARY KEY (tenant_id, user_id, email_id);
+
+
+--
+-- Name: email_recipients email_recipients_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_recipients
+    ADD CONSTRAINT email_recipients_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_trash email_trash_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_trash
+    ADD CONSTRAINT email_trash_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: emails emails_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.emails
+    ADD CONSTRAINT emails_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: event_registrations event_registrations_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.event_registrations
+    ADD CONSTRAINT event_registrations_pkey PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: event_registrations event_registrations_unique; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.event_registrations
+    ADD CONSTRAINT event_registrations_unique UNIQUE (tenant_id, event_id, person_id);
+
+
+--
+-- Name: event_ticket_types event_ticket_types_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.event_ticket_types
+    ADD CONSTRAINT event_ticket_types_id_key UNIQUE (id);
+
+
+--
+-- Name: event_ticket_types event_ticket_types_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.event_ticket_types
+    ADD CONSTRAINT event_ticket_types_pkey PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: events events_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT events_pkey PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: files files_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.files
+    ADD CONSTRAINT files_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: google_oauth_tokens google_oauth_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.google_oauth_tokens
+    ADD CONSTRAINT google_oauth_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: google_oauth_tokens google_oauth_tokens_tenant_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.google_oauth_tokens
+    ADD CONSTRAINT google_oauth_tokens_tenant_id_key UNIQUE (tenant_id);
+
+
+--
+-- Name: households households_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.households
+    ADD CONSTRAINT households_id_key UNIQUE (id);
+
+
+--
+-- Name: households households_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.households
+    ADD CONSTRAINT households_id_tenantid PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: kysely_migration_lock kysely_migration_lock_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.kysely_migration_lock
+    ADD CONSTRAINT kysely_migration_lock_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: kysely_migration kysely_migration_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.kysely_migration
+    ADD CONSTRAINT kysely_migration_pkey PRIMARY KEY (name);
+
+
+--
+-- Name: lists lists_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.lists
+    ADD CONSTRAINT lists_id_key UNIQUE (id);
+
+
+--
+-- Name: lists lists_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.lists
+    ADD CONSTRAINT lists_id_tenantid PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: map_campaigns_users map_campaigns_users_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_campaigns_users
+    ADD CONSTRAINT map_campaigns_users_pk PRIMARY KEY (tenant_id, campaign_id, user_id);
+
+
+--
+-- Name: map_households_tags map_households_tags_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_households_tags
+    ADD CONSTRAINT map_households_tags_pk PRIMARY KEY (tenant_id, household_id, tag_id);
+
+
+--
+-- Name: map_lists_households map_lists_households_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_lists_households
+    ADD CONSTRAINT map_lists_households_pk PRIMARY KEY (tenant_id, list_id, household_id);
+
+
+--
+-- Name: map_lists_persons map_lists_persons_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_lists_persons
+    ADD CONSTRAINT map_lists_persons_pk PRIMARY KEY (tenant_id, list_id, person_id);
+
+
+--
+-- Name: map_peoples_tags map_peoples_tags_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_peoples_tags
+    ADD CONSTRAINT map_peoples_tags_pk PRIMARY KEY (tenant_id, person_id, tag_id);
+
+
+--
+-- Name: map_teams_lists map_teams_lists_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_lists
+    ADD CONSTRAINT map_teams_lists_pk PRIMARY KEY (tenant_id, team_id, list_id);
+
+
+--
+-- Name: map_teams_persons map_teams_persons_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_persons
+    ADD CONSTRAINT map_teams_persons_pk PRIMARY KEY (tenant_id, team_id, person_id);
+
+
+--
+-- Name: ms_oauth_tokens ms_oauth_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.ms_oauth_tokens
+    ADD CONSTRAINT ms_oauth_tokens_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ms_oauth_tokens ms_oauth_tokens_tenant_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.ms_oauth_tokens
+    ADD CONSTRAINT ms_oauth_tokens_tenant_id_key UNIQUE (tenant_id);
+
+
+--
+-- Name: newsletter_events newsletter_events_id_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.newsletter_events
+    ADD CONSTRAINT newsletter_events_id_pk PRIMARY KEY (id);
+
+
+--
+-- Name: newsletter_events newsletter_events_sg_event_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.newsletter_events
+    ADD CONSTRAINT newsletter_events_sg_event_id_key UNIQUE (sg_event_id);
+
+
+--
+-- Name: newsletters newsletters_id_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.newsletters
+    ADD CONSTRAINT newsletters_id_pk PRIMARY KEY (id);
+
+
+--
+-- Name: notifications notifications_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_id_key UNIQUE (id);
+
+
+--
+-- Name: notifications notifications_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: passkeys passkeys_credential_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.passkeys
+    ADD CONSTRAINT passkeys_credential_id_key UNIQUE (credential_id);
+
+
+--
+-- Name: passkeys passkeys_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.passkeys
+    ADD CONSTRAINT passkeys_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: person_connections person_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.person_connections
+    ADD CONSTRAINT person_connections_pkey PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: persons persons_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.persons
+    ADD CONSTRAINT persons_id_key UNIQUE (id);
+
+
+--
+-- Name: persons persons_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.persons
+    ADD CONSTRAINT persons_id_tenantid PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: potential_duplicates potential_duplicates_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.potential_duplicates
+    ADD CONSTRAINT potential_duplicates_pk PRIMARY KEY (id);
+
+
+--
+-- Name: profiles profiles_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_id_key UNIQUE (id);
+
+
+--
+-- Name: sessions sessions_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.sessions
+    ADD CONSTRAINT sessions_id_key UNIQUE (id);
+
+
+--
+-- Name: sessions sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.sessions
+    ADD CONSTRAINT sessions_pkey PRIMARY KEY (session_id);
+
+
+--
+-- Name: sessions sessions_refresh_token_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.sessions
+    ADD CONSTRAINT sessions_refresh_token_key UNIQUE (refresh_token);
+
+
+--
+-- Name: settings settings_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.settings
+    ADD CONSTRAINT settings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tags tags_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tags
+    ADD CONSTRAINT tags_id_key UNIQUE (id);
+
+
+--
+-- Name: tags tags_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tags
+    ADD CONSTRAINT tags_id_tenantid PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: tags tags_tenant_name_type_unique; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tags
+    ADD CONSTRAINT tags_tenant_name_type_unique UNIQUE (tenant_id, name, type);
+
+
+--
+-- Name: task_attachments task_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.task_attachments
+    ADD CONSTRAINT task_attachments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: task_comments task_comments_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.task_comments
+    ADD CONSTRAINT task_comments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: task_subtasks task_subtasks_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.task_subtasks
+    ADD CONSTRAINT task_subtasks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: tasks tasks_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tasks
+    ADD CONSTRAINT tasks_id_key UNIQUE (id);
+
+
+--
+-- Name: tasks tasks_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tasks
+    ADD CONSTRAINT tasks_id_tenantid PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: teams teams_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.teams
+    ADD CONSTRAINT teams_id_key UNIQUE (id);
+
+
+--
+-- Name: teams teams_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.teams
+    ADD CONSTRAINT teams_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: tenants tenants_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tenants
+    ADD CONSTRAINT tenants_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: email_bodies unique_email_bodies_email_id; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_bodies
+    ADD CONSTRAINT unique_email_bodies_email_id UNIQUE (email_id);
+
+
+--
+-- Name: email_headers unique_email_headers_email_id; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_headers
+    ADD CONSTRAINT unique_email_headers_email_id UNIQUE (email_id);
+
+
+--
+-- Name: settings uq_settings_tenant_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.settings
+    ADD CONSTRAINT uq_settings_tenant_key UNIQUE (tenant_id, key);
+
+
+--
+-- Name: user_activity user_activity_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.user_activity
+    ADD CONSTRAINT user_activity_id_key UNIQUE (id);
+
+
+--
+-- Name: user_activity user_activity_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.user_activity
+    ADD CONSTRAINT user_activity_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: volunteer_events volunteer_events_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_events
+    ADD CONSTRAINT volunteer_events_id_key UNIQUE (id);
+
+
+--
+-- Name: volunteer_events volunteer_events_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_events
+    ADD CONSTRAINT volunteer_events_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: volunteer_events volunteer_events_slug_unique; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_events
+    ADD CONSTRAINT volunteer_events_slug_unique UNIQUE (slug);
+
+
+--
+-- Name: volunteer_shifts volunteer_shifts_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_shifts
+    ADD CONSTRAINT volunteer_shifts_id_key UNIQUE (id);
+
+
+--
+-- Name: volunteer_shifts volunteer_shifts_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_shifts
+    ADD CONSTRAINT volunteer_shifts_pk PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: web_forms web_forms_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.web_forms
+    ADD CONSTRAINT web_forms_id_key UNIQUE (id);
+
+
+--
+-- Name: web_forms web_forms_id_tenantid; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.web_forms
+    ADD CONSTRAINT web_forms_id_tenantid PRIMARY KEY (id, tenant_id);
+
+
+--
+-- Name: webhook_events webhook_events_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.webhook_events
+    ADD CONSTRAINT webhook_events_pk PRIMARY KEY (id);
+
+
+--
+-- Name: webhook_events webhook_events_stripe_event_id_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.webhook_events
+    ADD CONSTRAINT webhook_events_stripe_event_id_key UNIQUE (stripe_event_id);
+
+
+--
+-- Name: workflow_enrollments workflow_enrollments_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflow_enrollments
+    ADD CONSTRAINT workflow_enrollments_pk PRIMARY KEY (id);
+
+
+--
+-- Name: workflow_steps workflow_steps_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflow_steps
+    ADD CONSTRAINT workflow_steps_pk PRIMARY KEY (id);
+
+
+--
+-- Name: workflows workflows_pk; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflows
+    ADD CONSTRAINT workflows_pk PRIMARY KEY (id);
+
+
+--
+-- Name: zapier_subscriptions zapier_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.zapier_subscriptions
+    ADD CONSTRAINT zapier_subscriptions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: zapier_subscriptions zapier_subscriptions_tenant_id_event_type_key; Type: CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.zapier_subscriptions
+    ADD CONSTRAINT zapier_subscriptions_tenant_id_event_type_key UNIQUE (tenant_id, event_type);
+
+
+--
+-- Name: authusers_email_index; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX authusers_email_index ON public.authusers USING btree (email);
+
+
+--
+-- Name: campaigns_map_tenant_campaign_index; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX campaigns_map_tenant_campaign_index ON public.map_campaigns_users USING btree (tenant_id, campaign_id);
+
+
+--
+-- Name: campaigns_map_tenant_user_index; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX campaigns_map_tenant_user_index ON public.map_campaigns_users USING btree (tenant_id, user_id);
+
+
+--
+-- Name: campaigns_tenant_index; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX campaigns_tenant_index ON public.campaigns USING btree (tenant_id);
+
+
+--
+-- Name: event_registrations_event_idx; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX event_registrations_event_idx ON public.event_registrations USING btree (tenant_id, event_id);
+
+
+--
+-- Name: event_registrations_person_idx; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX event_registrations_person_idx ON public.event_registrations USING btree (tenant_id, person_id);
+
+
+--
+-- Name: events_search_vector_idx; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX events_search_vector_idx ON public.events USING gin (search_vector);
+
+
+--
+-- Name: events_tenant_slug_unique; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE UNIQUE INDEX events_tenant_slug_unique ON public.events USING btree (tenant_id, slug);
+
+
+--
+-- Name: google_oauth_tokens_tenant_idx; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX google_oauth_tokens_tenant_idx ON public.google_oauth_tokens USING btree (tenant_id);
+
+
+--
+-- Name: households_tag_map_tenant_person_tag_index; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX households_tag_map_tenant_person_tag_index ON public.map_households_tags USING btree (tenant_id, household_id, tag_id);
+
+
+--
+-- Name: idx_background_jobs_queue_status; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_background_jobs_queue_status ON public.background_jobs USING btree (queue, status, run_at);
+
+
+--
+-- Name: idx_background_jobs_status_run_at; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_background_jobs_status_run_at ON public.background_jobs USING btree (status, run_at);
+
+
+--
+-- Name: idx_background_jobs_tenant_status; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_background_jobs_tenant_status ON public.background_jobs USING btree (tenant_id, status) WHERE (tenant_id IS NOT NULL);
+
+
+--
+-- Name: idx_companies_file_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_companies_file_id ON public.companies USING btree (file_id);
+
+
+--
+-- Name: idx_companies_fts; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_companies_fts ON public.companies USING gin (search_vector);
+
+
+--
+-- Name: idx_companies_tenant; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_companies_tenant ON public.companies USING btree (tenant_id);
+
+
+--
+-- Name: idx_companies_tenant_email; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_companies_tenant_email ON public.companies USING btree (tenant_id, email);
+
+
+--
+-- Name: idx_companies_tenant_industry; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_companies_tenant_industry ON public.companies USING btree (tenant_id, industry);
+
+
+--
+-- Name: idx_companies_trgm_email; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_companies_trgm_email ON public.companies USING gin (email public.gin_trgm_ops);
+
+
+--
+-- Name: idx_companies_trgm_industry; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_companies_trgm_industry ON public.companies USING gin (industry public.gin_trgm_ops);
+
+
+--
+-- Name: idx_companies_trgm_name; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_companies_trgm_name ON public.companies USING gin (name public.gin_trgm_ops);
+
+
+--
+-- Name: idx_data_exports_tenant_created; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_data_exports_tenant_created ON public.data_exports USING btree (tenant_id, created_at);
+
+
+--
+-- Name: idx_data_exports_tenant_pending; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_data_exports_tenant_pending ON public.data_exports USING btree (tenant_id, created_at) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: idx_data_imports_tag; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_data_imports_tag ON public.data_imports USING btree (tag_id);
+
+
+--
+-- Name: idx_data_imports_tenant_processed; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_data_imports_tenant_processed ON public.data_imports USING btree (tenant_id, processed_at);
+
+
+--
+-- Name: idx_donations_person; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_donations_person ON public.donations USING btree (tenant_id, person_id);
+
+
+--
+-- Name: idx_donations_stripe_session; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_donations_stripe_session ON public.donations USING btree (stripe_session_id);
+
+
+--
+-- Name: idx_donations_tenant; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_donations_tenant ON public.donations USING btree (tenant_id);
+
+
+--
+-- Name: idx_email_attachments_email_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_email_attachments_email_id ON public.email_attachments USING btree (email_id);
+
+
+--
+-- Name: idx_email_attachments_file_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_email_attachments_file_id ON public.email_attachments USING btree (file_id);
+
+
+--
+-- Name: idx_email_bodies_email_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_email_bodies_email_id ON public.email_bodies USING btree (email_id);
+
+
+--
+-- Name: idx_email_drafts_user_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_email_drafts_user_id ON public.email_drafts USING btree (tenant_id, user_id);
+
+
+--
+-- Name: idx_email_headers_email_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_email_headers_email_id ON public.email_headers USING btree (email_id);
+
+
+--
+-- Name: idx_email_read_states_email; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_email_read_states_email ON public.email_read_states USING btree (tenant_id, email_id);
+
+
+--
+-- Name: idx_email_read_states_user; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_email_read_states_user ON public.email_read_states USING btree (tenant_id, user_id);
+
+
+--
+-- Name: idx_email_recipients_email_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_email_recipients_email_id ON public.email_recipients USING btree (email_id);
+
+
+--
+-- Name: idx_email_recipients_kind; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_email_recipients_kind ON public.email_recipients USING btree (email_id, kind, pos);
+
+
+--
+-- Name: idx_email_trash_tenant_email_unique; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE UNIQUE INDEX idx_email_trash_tenant_email_unique ON public.email_trash USING btree (tenant_id, email_id);
+
+
+--
+-- Name: idx_emails_tenant_active; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_emails_tenant_active ON public.emails USING btree (tenant_id, folder_id) WHERE (deleted_at IS NULL);
+
+
+--
+-- Name: idx_emails_tenant_assigned; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_emails_tenant_assigned ON public.emails USING btree (tenant_id, assigned_to);
+
+
+--
+-- Name: idx_emails_tenant_folder; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_emails_tenant_folder ON public.emails USING btree (tenant_id, folder_id);
+
+
+--
+-- Name: idx_emails_tenant_status; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_emails_tenant_status ON public.emails USING btree (tenant_id, status);
+
+
+--
+-- Name: idx_files_sha256; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_files_sha256 ON public.files USING btree (sha256_hex) WHERE (sha256_hex IS NOT NULL);
+
+
+--
+-- Name: idx_files_tenant; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_files_tenant ON public.files USING btree (tenant_id);
+
+
+--
+-- Name: idx_households_file_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_households_file_id ON public.households USING btree (file_id);
+
+
+--
+-- Name: idx_households_fp_full; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_households_fp_full ON public.households USING btree (address_fp_full);
+
+
+--
+-- Name: idx_households_fp_street; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_households_fp_street ON public.households USING btree (address_fp_street);
+
+
+--
+-- Name: idx_households_fts; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_households_fts ON public.households USING gin (search_vector);
+
+
+--
+-- Name: idx_households_tenant_campaign; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_households_tenant_campaign ON public.households USING btree (tenant_id, campaign_id);
+
+
+--
+-- Name: idx_households_tenant_geocoding; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_households_tenant_geocoding ON public.households USING btree (tenant_id, geocoding_status);
+
+
+--
+-- Name: idx_households_tenant_is_placeholder; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_households_tenant_is_placeholder ON public.households USING btree (tenant_id, is_placeholder);
+
+
+--
+-- Name: idx_households_tenant_type; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_households_tenant_type ON public.households USING btree (tenant_id, type);
+
+
+--
+-- Name: idx_households_trgm_city; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_households_trgm_city ON public.households USING gin (city public.gin_trgm_ops);
+
+
+--
+-- Name: idx_households_trgm_state; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_households_trgm_state ON public.households USING gin (state public.gin_trgm_ops);
+
+
+--
+-- Name: idx_households_trgm_street1; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_households_trgm_street1 ON public.households USING gin (street1 public.gin_trgm_ops);
+
+
+--
+-- Name: idx_households_trgm_zip; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_households_trgm_zip ON public.households USING gin (zip public.gin_trgm_ops);
+
+
+--
+-- Name: idx_lists_tenant_is_dynamic; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_lists_tenant_is_dynamic ON public.lists USING btree (tenant_id, is_dynamic);
+
+
+--
+-- Name: idx_lists_tenant_object; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_lists_tenant_object ON public.lists USING btree (tenant_id, object);
+
+
+--
+-- Name: idx_lists_tenant_status; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_lists_tenant_status ON public.lists USING btree (tenant_id, status);
+
+
+--
+-- Name: idx_lists_trgm_description; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_lists_trgm_description ON public.lists USING gin (description public.gin_trgm_ops);
+
+
+--
+-- Name: idx_lists_trgm_name; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_lists_trgm_name ON public.lists USING gin (name public.gin_trgm_ops);
+
+
+--
+-- Name: idx_map_lists_households; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_map_lists_households ON public.map_lists_households USING btree (tenant_id, list_id, household_id);
+
+
+--
+-- Name: idx_map_lists_persons; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_map_lists_persons ON public.map_lists_persons USING btree (tenant_id, list_id, person_id);
+
+
+--
+-- Name: idx_map_teams_lists_team; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_map_teams_lists_team ON public.map_teams_lists USING btree (tenant_id, team_id);
+
+
+--
+-- Name: idx_map_teams_persons_person; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_map_teams_persons_person ON public.map_teams_persons USING btree (tenant_id, person_id);
+
+
+--
+-- Name: idx_map_teams_persons_team; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_map_teams_persons_team ON public.map_teams_persons USING btree (tenant_id, team_id);
+
+
+--
+-- Name: idx_newsletter_events_newsletter_event; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_newsletter_events_newsletter_event ON public.newsletter_events USING btree (newsletter_id, event_type);
+
+
+--
+-- Name: idx_newsletter_events_tenant_newsletter; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_newsletter_events_tenant_newsletter ON public.newsletter_events USING btree (tenant_id, newsletter_id);
+
+
+--
+-- Name: idx_newsletter_events_type; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_newsletter_events_type ON public.newsletter_events USING btree (tenant_id, newsletter_id, event_type);
+
+
+--
+-- Name: idx_notifications_read; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_notifications_read ON public.notifications USING btree (tenant_id, user_id, read);
+
+
+--
+-- Name: idx_notifications_tenant_user; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_notifications_tenant_user ON public.notifications USING btree (tenant_id, user_id);
+
+
+--
+-- Name: idx_persons_company_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_persons_company_id ON public.persons USING btree (company_id);
+
+
+--
+-- Name: idx_persons_file_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_persons_file_id ON public.persons USING btree (file_id);
+
+
+--
+-- Name: idx_persons_fts; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_persons_fts ON public.persons USING gin (search_vector);
+
+
+--
+-- Name: idx_persons_tenant_assigned; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_persons_tenant_assigned ON public.persons USING btree (tenant_id, assigned_to);
+
+
+--
+-- Name: idx_persons_tenant_company; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_persons_tenant_company ON public.persons USING btree (tenant_id, company_id);
+
+
+--
+-- Name: idx_persons_tenant_email_btree; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_persons_tenant_email_btree ON public.persons USING btree (tenant_id, email);
+
+
+--
+-- Name: idx_persons_tenant_email_unique; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE UNIQUE INDEX idx_persons_tenant_email_unique ON public.persons USING btree (tenant_id, lower(email)) WHERE ((email IS NOT NULL) AND (TRIM(BOTH FROM email) <> ''::text));
+
+
+--
+-- Name: idx_persons_trgm_email; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_persons_trgm_email ON public.persons USING gin (email public.gin_trgm_ops);
+
+
+--
+-- Name: idx_persons_trgm_first_name; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_persons_trgm_first_name ON public.persons USING gin (first_name public.gin_trgm_ops);
+
+
+--
+-- Name: idx_persons_trgm_last_name; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_persons_trgm_last_name ON public.persons USING gin (last_name public.gin_trgm_ops);
+
+
+--
+-- Name: idx_persons_trgm_mobile; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_persons_trgm_mobile ON public.persons USING gin (mobile public.gin_trgm_ops);
+
+
+--
+-- Name: idx_potential_duplicates_company_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_potential_duplicates_company_id ON public.potential_duplicates USING btree (company_id) WHERE (company_id IS NOT NULL);
+
+
+--
+-- Name: idx_potential_duplicates_household_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_potential_duplicates_household_id ON public.potential_duplicates USING btree (household_id) WHERE (household_id IS NOT NULL);
+
+
+--
+-- Name: idx_potential_duplicates_person_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_potential_duplicates_person_id ON public.potential_duplicates USING btree (person_id);
+
+
+--
+-- Name: idx_potential_duplicates_tenant_group; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_potential_duplicates_tenant_group ON public.potential_duplicates USING btree (tenant_id, group_key);
+
+
+--
+-- Name: idx_potential_duplicates_unique_group_company; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE UNIQUE INDEX idx_potential_duplicates_unique_group_company ON public.potential_duplicates USING btree (group_key, company_id) WHERE (company_id IS NOT NULL);
+
+
+--
+-- Name: idx_potential_duplicates_unique_group_household; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE UNIQUE INDEX idx_potential_duplicates_unique_group_household ON public.potential_duplicates USING btree (group_key, household_id) WHERE (household_id IS NOT NULL);
+
+
+--
+-- Name: idx_potential_duplicates_unique_group_person; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE UNIQUE INDEX idx_potential_duplicates_unique_group_person ON public.potential_duplicates USING btree (group_key, person_id);
+
+
+--
+-- Name: idx_profiles_avatar_file_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_profiles_avatar_file_id ON public.profiles USING btree (avatar_file_id);
+
+
+--
+-- Name: idx_tags_tenant_type; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_tags_tenant_type ON public.tags USING btree (tenant_id, type);
+
+
+--
+-- Name: idx_tags_trgm_name; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_tags_trgm_name ON public.tags USING gin (name public.gin_trgm_ops);
+
+
+--
+-- Name: idx_task_attachments_task_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_task_attachments_task_id ON public.task_attachments USING btree (task_id);
+
+
+--
+-- Name: idx_task_comments_task_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_task_comments_task_id ON public.task_comments USING btree (task_id);
+
+
+--
+-- Name: idx_task_subtasks_task_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_task_subtasks_task_id ON public.task_subtasks USING btree (task_id);
+
+
+--
+-- Name: idx_tasks_file_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_tasks_file_id ON public.tasks USING btree (file_id);
+
+
+--
+-- Name: idx_tasks_team_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_tasks_team_id ON public.tasks USING btree (team_id);
+
+
+--
+-- Name: idx_tasks_tenant_assigned; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_tasks_tenant_assigned ON public.tasks USING btree (tenant_id, assigned_to);
+
+
+--
+-- Name: idx_tasks_tenant_due; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_tasks_tenant_due ON public.tasks USING btree (tenant_id, due_at);
+
+
+--
+-- Name: idx_tasks_tenant_status; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_tasks_tenant_status ON public.tasks USING btree (tenant_id, status);
+
+
+--
+-- Name: idx_teams_lead_user; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_teams_lead_user ON public.teams USING btree (team_lead_user_id);
+
+
+--
+-- Name: idx_teams_tenant; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_teams_tenant ON public.teams USING btree (tenant_id);
+
+
+--
+-- Name: idx_teams_tenant_captain; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_teams_tenant_captain ON public.teams USING btree (tenant_id, team_captain_id);
+
+
+--
+-- Name: idx_user_activity_activity; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_user_activity_activity ON public.user_activity USING btree (activity);
+
+
+--
+-- Name: idx_user_activity_entity_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_user_activity_entity_id ON public.user_activity USING btree (tenant_id, entity, entity_id);
+
+
+--
+-- Name: idx_user_activity_tenant_entity; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_user_activity_tenant_entity ON public.user_activity USING btree (tenant_id, entity, entity_id);
+
+
+--
+-- Name: idx_user_activity_tenant_user; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_user_activity_tenant_user ON public.user_activity USING btree (tenant_id, user_id);
+
+
+--
+-- Name: idx_user_activity_user; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_user_activity_user ON public.user_activity USING btree (tenant_id, user_id);
+
+
+--
+-- Name: idx_volunteer_events_dates; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_volunteer_events_dates ON public.volunteer_events USING btree (tenant_id, start_time, end_time);
+
+
+--
+-- Name: idx_volunteer_events_fts; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_volunteer_events_fts ON public.volunteer_events USING gin (search_vector);
+
+
+--
+-- Name: idx_volunteer_events_tenant; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_volunteer_events_tenant ON public.volunteer_events USING btree (tenant_id);
+
+
+--
+-- Name: idx_volunteer_events_tenant_end; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_volunteer_events_tenant_end ON public.volunteer_events USING btree (tenant_id, end_time);
+
+
+--
+-- Name: idx_volunteer_events_tenant_start; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_volunteer_events_tenant_start ON public.volunteer_events USING btree (tenant_id, start_time);
+
+
+--
+-- Name: idx_volunteer_events_trgm_location; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_volunteer_events_trgm_location ON public.volunteer_events USING gin (location_address public.gin_trgm_ops);
+
+
+--
+-- Name: idx_volunteer_events_trgm_name; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_volunteer_events_trgm_name ON public.volunteer_events USING gin (name public.gin_trgm_ops);
+
+
+--
+-- Name: idx_volunteer_shifts_event; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_volunteer_shifts_event ON public.volunteer_shifts USING btree (tenant_id, event_id);
+
+
+--
+-- Name: idx_volunteer_shifts_person; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_volunteer_shifts_person ON public.volunteer_shifts USING btree (tenant_id, person_id);
+
+
+--
+-- Name: idx_volunteer_shifts_tenant; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_volunteer_shifts_tenant ON public.volunteer_shifts USING btree (tenant_id);
+
+
+--
+-- Name: idx_webhook_events_status_run_at; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_webhook_events_status_run_at ON public.webhook_events USING btree (status, run_at);
+
+
+--
+-- Name: idx_workflow_enrollments_next_run; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_workflow_enrollments_next_run ON public.workflow_enrollments USING btree (status, next_run_at);
+
+
+--
+-- Name: idx_workflow_enrollments_tenant_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_workflow_enrollments_tenant_id ON public.workflow_enrollments USING btree (tenant_id);
+
+
+--
+-- Name: idx_workflow_enrollments_workflow_person; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_workflow_enrollments_workflow_person ON public.workflow_enrollments USING btree (workflow_id, person_id);
+
+
+--
+-- Name: idx_workflow_steps_tenant_workflow; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_workflow_steps_tenant_workflow ON public.workflow_steps USING btree (tenant_id, workflow_id, step_number);
+
+
+--
+-- Name: idx_workflows_tenant_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_workflows_tenant_id ON public.workflows USING btree (tenant_id);
+
+
+--
+-- Name: idx_workflows_trigger_event_id; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX idx_workflows_trigger_event_id ON public.workflows USING btree (trigger_event_id);
+
+
+--
+-- Name: ms_oauth_tokens_tenant_idx; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX ms_oauth_tokens_tenant_idx ON public.ms_oauth_tokens USING btree (tenant_id);
+
+
+--
+-- Name: newsletters_tenant_idx; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX newsletters_tenant_idx ON public.newsletters USING btree (tenant_id);
+
+
+--
+-- Name: passkeys_credential_id_idx; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX passkeys_credential_id_idx ON public.passkeys USING btree (credential_id);
+
+
+--
+-- Name: passkeys_user_id_idx; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX passkeys_user_id_idx ON public.passkeys USING btree (user_id);
+
+
+--
+-- Name: pc_from_idx; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX pc_from_idx ON public.person_connections USING btree (tenant_id, from_person_id);
+
+
+--
+-- Name: pc_to_idx; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX pc_to_idx ON public.person_connections USING btree (tenant_id, to_person_id);
+
+
+--
+-- Name: pc_unique_edge; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE UNIQUE INDEX pc_unique_edge ON public.person_connections USING btree (tenant_id, from_person_id, to_person_id, relation_type);
+
+
+--
+-- Name: peoples_tag_map_tenant_person_tag_index; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX peoples_tag_map_tenant_person_tag_index ON public.map_peoples_tags USING btree (tenant_id, person_id, tag_id);
+
+
+--
+-- Name: persons_tenant_campaign_household_index; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX persons_tenant_campaign_household_index ON public.persons USING btree (tenant_id, campaign_id, household_id);
+
+
+--
+-- Name: sessions_refresh_token_index; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX sessions_refresh_token_index ON public.sessions USING btree (refresh_token);
+
+
+--
+-- Name: sessions_session_id_index; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX sessions_session_id_index ON public.sessions USING btree (session_id);
+
+
+--
+-- Name: sessions_user_index; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX sessions_user_index ON public.sessions USING btree (user_id);
+
+
+--
+-- Name: tasks_tenant_index; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX tasks_tenant_index ON public.tasks USING btree (tenant_id);
+
+
+--
+-- Name: web_forms_tenant_index; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX web_forms_tenant_index ON public.web_forms USING btree (tenant_id);
+
+
+--
+-- Name: zapier_subscriptions_tenant_id_idx; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE INDEX zapier_subscriptions_tenant_id_idx ON public.zapier_subscriptions USING btree (tenant_id);
+
+
+--
+-- Name: authusers trg_authusers_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_authusers_updated_at BEFORE UPDATE ON public.authusers FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: campaigns trg_campaigns_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_campaigns_updated_at BEFORE UPDATE ON public.campaigns FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: companies trg_companies_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_companies_updated_at BEFORE UPDATE ON public.companies FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: email_bodies trg_email_bodies_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_email_bodies_updated_at BEFORE UPDATE ON public.email_bodies FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: email_comments trg_email_comments_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_email_comments_updated_at BEFORE UPDATE ON public.email_comments FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: email_drafts trg_email_drafts_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_email_drafts_updated_at BEFORE UPDATE ON public.email_drafts FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: email_headers trg_email_headers_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_email_headers_updated_at BEFORE UPDATE ON public.email_headers FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: emails trg_emails_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_emails_updated_at BEFORE UPDATE ON public.emails FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: households trg_households_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_households_updated_at BEFORE UPDATE ON public.households FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: lists trg_lists_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_lists_updated_at BEFORE UPDATE ON public.lists FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: newsletters trg_newsletters_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_newsletters_updated_at BEFORE UPDATE ON public.newsletters FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: notifications trg_notifications_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_notifications_updated_at BEFORE UPDATE ON public.notifications FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: persons trg_persons_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_persons_updated_at BEFORE UPDATE ON public.persons FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: profiles trg_profiles_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_profiles_updated_at BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: settings trg_settings_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_settings_updated_at BEFORE UPDATE ON public.settings FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: tags trg_tags_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_tags_updated_at BEFORE UPDATE ON public.tags FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: task_attachments trg_task_attachments_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_task_attachments_updated_at BEFORE UPDATE ON public.task_attachments FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: task_comments trg_task_comments_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_task_comments_updated_at BEFORE UPDATE ON public.task_comments FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: task_subtasks trg_task_subtasks_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_task_subtasks_updated_at BEFORE UPDATE ON public.task_subtasks FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: tasks trg_tasks_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_tasks_updated_at BEFORE UPDATE ON public.tasks FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: teams trg_teams_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_teams_updated_at BEFORE UPDATE ON public.teams FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: tenants trg_tenants_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_tenants_updated_at BEFORE UPDATE ON public.tenants FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: volunteer_events trg_volunteer_events_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_volunteer_events_updated_at BEFORE UPDATE ON public.volunteer_events FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: volunteer_shifts trg_volunteer_shifts_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_volunteer_shifts_updated_at BEFORE UPDATE ON public.volunteer_shifts FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: web_forms trg_web_forms_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_web_forms_updated_at BEFORE UPDATE ON public.web_forms FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: workflows trg_workflows_updated_at; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trg_workflows_updated_at BEFORE UPDATE ON public.workflows FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+
+--
+-- Name: background_jobs trigger_notify_job_inserted; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trigger_notify_job_inserted AFTER INSERT ON public.background_jobs FOR EACH ROW EXECUTE FUNCTION public.notify_job_inserted();
+
+
+--
+-- Name: webhook_events trigger_notify_webhook_event_inserted; Type: TRIGGER; Schema: public; Owner: zeehamid
+--
+
+CREATE TRIGGER trigger_notify_webhook_event_inserted AFTER INSERT ON public.webhook_events FOR EACH ROW EXECUTE FUNCTION public.notify_webhook_event_inserted();
+
+
+--
+-- Name: email_comments email_comments_email_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_comments
+    ADD CONSTRAINT email_comments_email_id_fkey FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_trash email_trash_email_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_trash
+    ADD CONSTRAINT email_trash_email_id_fkey FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tenants fk_admin_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tenants
+    ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: campaigns fk_admin_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.campaigns
+    ADD CONSTRAINT fk_admin_id FOREIGN KEY (admin_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: authusers fk_authusers_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.authusers
+    ADD CONSTRAINT fk_authusers_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: authusers fk_authusers_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.authusers
+    ADD CONSTRAINT fk_authusers_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: background_jobs fk_background_jobs_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.background_jobs
+    ADD CONSTRAINT fk_background_jobs_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: households fk_campaign_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.households
+    ADD CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
+-- Name: persons fk_campaign_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.persons
+    ADD CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+
+
+--
+-- Name: map_campaigns_users fk_campaign_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_campaigns_users
+    ADD CONSTRAINT fk_campaign_id FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+
+
+--
+-- Name: campaigns fk_campaigns_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.campaigns
+    ADD CONSTRAINT fk_campaigns_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: campaigns fk_campaigns_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.campaigns
+    ADD CONSTRAINT fk_campaigns_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: companies fk_companies_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.companies
+    ADD CONSTRAINT fk_companies_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: companies fk_companies_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.companies
+    ADD CONSTRAINT fk_companies_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: companies fk_companies_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.companies
+    ADD CONSTRAINT fk_companies_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: tenants fk_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tenants
+    ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: campaigns fk_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.campaigns
+    ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: households fk_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.households
+    ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: persons fk_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.persons
+    ADD CONSTRAINT fk_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: data_exports fk_data_exports_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.data_exports
+    ADD CONSTRAINT fk_data_exports_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: data_exports fk_data_exports_user; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.data_exports
+    ADD CONSTRAINT fk_data_exports_user FOREIGN KEY (user_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: data_imports fk_data_imports_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.data_imports
+    ADD CONSTRAINT fk_data_imports_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: data_imports fk_data_imports_tag; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.data_imports
+    ADD CONSTRAINT fk_data_imports_tag FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE SET NULL;
+
+
+--
+-- Name: data_imports fk_data_imports_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.data_imports
+    ADD CONSTRAINT fk_data_imports_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: data_imports fk_data_imports_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.data_imports
+    ADD CONSTRAINT fk_data_imports_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: donation_pledges fk_donation_pledges_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donation_pledges
+    ADD CONSTRAINT fk_donation_pledges_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+
+
+--
+-- Name: donations fk_donations_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donations
+    ADD CONSTRAINT fk_donations_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+
+
+--
+-- Name: donations fk_donations_pledge; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donations
+    ADD CONSTRAINT fk_donations_pledge FOREIGN KEY (pledge_id) REFERENCES public.donation_pledges(id) ON DELETE SET NULL;
+
+
+--
+-- Name: donations fk_donations_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.donations
+    ADD CONSTRAINT fk_donations_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: email_attachments fk_email_attachments_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_attachments
+    ADD CONSTRAINT fk_email_attachments_email FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_attachments fk_email_attachments_file; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_attachments
+    ADD CONSTRAINT fk_email_attachments_file FOREIGN KEY (file_id) REFERENCES public.files(id) ON DELETE SET NULL;
+
+
+--
+-- Name: email_bodies fk_email_bodies_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_bodies
+    ADD CONSTRAINT fk_email_bodies_email FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_comments fk_email_comments_author; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_comments
+    ADD CONSTRAINT fk_email_comments_author FOREIGN KEY (author_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: email_comments fk_email_comments_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_comments
+    ADD CONSTRAINT fk_email_comments_email FOREIGN KEY (email_id) REFERENCES public.emails(id);
+
+
+--
+-- Name: email_drafts fk_email_drafts_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_drafts
+    ADD CONSTRAINT fk_email_drafts_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_drafts fk_email_drafts_user; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_drafts
+    ADD CONSTRAINT fk_email_drafts_user FOREIGN KEY (user_id) REFERENCES public.authusers(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_headers fk_email_headers_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_headers
+    ADD CONSTRAINT fk_email_headers_email FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_read_states fk_email_read_states_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_read_states
+    ADD CONSTRAINT fk_email_read_states_email FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_read_states fk_email_read_states_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_read_states
+    ADD CONSTRAINT fk_email_read_states_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: email_read_states fk_email_read_states_user; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_read_states
+    ADD CONSTRAINT fk_email_read_states_user FOREIGN KEY (user_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: email_recipients fk_email_recipients_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_recipients
+    ADD CONSTRAINT fk_email_recipients_email FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_trash fk_email_trash_email; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_trash
+    ADD CONSTRAINT fk_email_trash_email FOREIGN KEY (email_id) REFERENCES public.emails(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_trash fk_email_trash_folder; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_trash
+    ADD CONSTRAINT fk_email_trash_folder FOREIGN KEY (from_folder_id) REFERENCES public.email_folders(id) ON DELETE CASCADE;
+
+
+--
+-- Name: email_trash fk_email_trash_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.email_trash
+    ADD CONSTRAINT fk_email_trash_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: emails fk_emails_assigned; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.emails
+    ADD CONSTRAINT fk_emails_assigned FOREIGN KEY (assigned_to) REFERENCES public.authusers(id);
+
+
+--
+-- Name: emails fk_emails_folder; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.emails
+    ADD CONSTRAINT fk_emails_folder FOREIGN KEY (folder_id) REFERENCES public.email_folders(id);
+
+
+--
+-- Name: event_registrations fk_event_registrations_event; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.event_registrations
+    ADD CONSTRAINT fk_event_registrations_event FOREIGN KEY (event_id, tenant_id) REFERENCES public.events(id, tenant_id) ON DELETE CASCADE;
+
+
+--
+-- Name: event_registrations fk_event_registrations_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.event_registrations
+    ADD CONSTRAINT fk_event_registrations_person FOREIGN KEY (person_id, tenant_id) REFERENCES public.persons(id, tenant_id) ON DELETE CASCADE;
+
+
+--
+-- Name: event_registrations fk_event_registrations_ticket_type; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.event_registrations
+    ADD CONSTRAINT fk_event_registrations_ticket_type FOREIGN KEY (ticket_type_id) REFERENCES public.event_ticket_types(id) ON DELETE SET NULL;
+
+
+--
+-- Name: event_ticket_types fk_event_ticket_types_event; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.event_ticket_types
+    ADD CONSTRAINT fk_event_ticket_types_event FOREIGN KEY (event_id, tenant_id) REFERENCES public.events(id, tenant_id) ON DELETE CASCADE;
+
+
+--
+-- Name: volunteer_events fk_events_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_events
+    ADD CONSTRAINT fk_events_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: volunteer_events fk_events_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_events
+    ADD CONSTRAINT fk_events_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: volunteer_events fk_events_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_events
+    ADD CONSTRAINT fk_events_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: files fk_files_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.files
+    ADD CONSTRAINT fk_files_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: files fk_files_uploaded_by; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.files
+    ADD CONSTRAINT fk_files_uploaded_by FOREIGN KEY (uploaded_by) REFERENCES public.authusers(id) ON DELETE SET NULL;
+
+
+--
+-- Name: households fk_househods_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.households
+    ADD CONSTRAINT fk_househods_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: persons fk_household_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.persons
+    ADD CONSTRAINT fk_household_id FOREIGN KEY (household_id) REFERENCES public.households(id);
+
+
+--
+-- Name: households fk_households_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.households
+    ADD CONSTRAINT fk_households_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: lists fk_lists_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.lists
+    ADD CONSTRAINT fk_lists_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: lists fk_lists_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.lists
+    ADD CONSTRAINT fk_lists_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: lists fk_lists_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.lists
+    ADD CONSTRAINT fk_lists_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: map_campaigns_users fk_map_campaigns_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_campaigns_users
+    ADD CONSTRAINT fk_map_campaigns_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: map_households_tags fk_map_household_tags_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_households_tags
+    ADD CONSTRAINT fk_map_household_tags_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: map_lists_households fk_map_lists_households_household; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_lists_households
+    ADD CONSTRAINT fk_map_lists_households_household FOREIGN KEY (household_id) REFERENCES public.households(id);
+
+
+--
+-- Name: map_lists_households fk_map_lists_households_list; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_lists_households
+    ADD CONSTRAINT fk_map_lists_households_list FOREIGN KEY (list_id) REFERENCES public.lists(id);
+
+
+--
+-- Name: map_lists_households fk_map_lists_households_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_lists_households
+    ADD CONSTRAINT fk_map_lists_households_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: map_lists_persons fk_map_lists_persons_list; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_lists_persons
+    ADD CONSTRAINT fk_map_lists_persons_list FOREIGN KEY (list_id) REFERENCES public.lists(id);
+
+
+--
+-- Name: map_lists_persons fk_map_lists_persons_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_lists_persons
+    ADD CONSTRAINT fk_map_lists_persons_person FOREIGN KEY (person_id) REFERENCES public.persons(id);
+
+
+--
+-- Name: map_lists_persons fk_map_lists_persons_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_lists_persons
+    ADD CONSTRAINT fk_map_lists_persons_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: map_peoples_tags fk_map_peoples_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_peoples_tags
+    ADD CONSTRAINT fk_map_peoples_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: map_teams_lists fk_map_teams_lists_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_lists
+    ADD CONSTRAINT fk_map_teams_lists_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: map_teams_lists fk_map_teams_lists_list; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_lists
+    ADD CONSTRAINT fk_map_teams_lists_list FOREIGN KEY (list_id) REFERENCES public.lists(id);
+
+
+--
+-- Name: map_teams_lists fk_map_teams_lists_team; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_lists
+    ADD CONSTRAINT fk_map_teams_lists_team FOREIGN KEY (team_id) REFERENCES public.teams(id);
+
+
+--
+-- Name: map_teams_lists fk_map_teams_lists_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_lists
+    ADD CONSTRAINT fk_map_teams_lists_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: map_teams_lists fk_map_teams_lists_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_lists
+    ADD CONSTRAINT fk_map_teams_lists_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: map_teams_persons fk_map_teams_persons_created; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_persons
+    ADD CONSTRAINT fk_map_teams_persons_created FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: map_teams_persons fk_map_teams_persons_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_persons
+    ADD CONSTRAINT fk_map_teams_persons_person FOREIGN KEY (person_id) REFERENCES public.persons(id);
+
+
+--
+-- Name: map_teams_persons fk_map_teams_persons_team; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_persons
+    ADD CONSTRAINT fk_map_teams_persons_team FOREIGN KEY (team_id) REFERENCES public.teams(id);
+
+
+--
+-- Name: map_teams_persons fk_map_teams_persons_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_persons
+    ADD CONSTRAINT fk_map_teams_persons_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: map_teams_persons fk_map_teams_persons_updated; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_persons
+    ADD CONSTRAINT fk_map_teams_persons_updated FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: newsletter_events fk_newsletter_events_newsletter_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.newsletter_events
+    ADD CONSTRAINT fk_newsletter_events_newsletter_id FOREIGN KEY (newsletter_id) REFERENCES public.newsletters(id) ON DELETE CASCADE;
+
+
+--
+-- Name: newsletter_events fk_newsletter_events_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.newsletter_events
+    ADD CONSTRAINT fk_newsletter_events_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: newsletters fk_newsletters_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.newsletters
+    ADD CONSTRAINT fk_newsletters_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: newsletters fk_newsletters_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.newsletters
+    ADD CONSTRAINT fk_newsletters_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: newsletters fk_newsletters_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.newsletters
+    ADD CONSTRAINT fk_newsletters_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: notifications fk_notifications_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT fk_notifications_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: notifications fk_notifications_user; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES public.authusers(id) ON DELETE CASCADE;
+
+
+--
+-- Name: persons fk_persons_assigned_to; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.persons
+    ADD CONSTRAINT fk_persons_assigned_to FOREIGN KEY (assigned_to) REFERENCES public.authusers(id) ON DELETE SET NULL;
+
+
+--
+-- Name: persons fk_persons_company; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.persons
+    ADD CONSTRAINT fk_persons_company FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE SET NULL;
+
+
+--
+-- Name: persons fk_persons_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.persons
+    ADD CONSTRAINT fk_persons_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: persons fk_persons_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.persons
+    ADD CONSTRAINT fk_persons_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: potential_duplicates fk_potential_duplicates_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.potential_duplicates
+    ADD CONSTRAINT fk_potential_duplicates_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: potential_duplicates fk_potential_duplicates_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.potential_duplicates
+    ADD CONSTRAINT fk_potential_duplicates_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: profiles fk_profiles_auth_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT fk_profiles_auth_id FOREIGN KEY (auth_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: profiles fk_profiles_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT fk_profiles_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: profiles fk_profiles_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT fk_profiles_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: profiles fk_profiles_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT fk_profiles_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: settings fk_settings_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.settings
+    ADD CONSTRAINT fk_settings_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: volunteer_shifts fk_shifts_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_shifts
+    ADD CONSTRAINT fk_shifts_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: volunteer_shifts fk_shifts_event; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_shifts
+    ADD CONSTRAINT fk_shifts_event FOREIGN KEY (event_id) REFERENCES public.volunteer_events(id) ON DELETE CASCADE;
+
+
+--
+-- Name: volunteer_shifts fk_shifts_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_shifts
+    ADD CONSTRAINT fk_shifts_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: volunteer_shifts fk_shifts_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_shifts
+    ADD CONSTRAINT fk_shifts_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: volunteer_shifts fk_shifts_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.volunteer_shifts
+    ADD CONSTRAINT fk_shifts_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: tags fk_tags_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tags
+    ADD CONSTRAINT fk_tags_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: task_attachments fk_task_attachments_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.task_attachments
+    ADD CONSTRAINT fk_task_attachments_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: task_comments fk_task_comments_author; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.task_comments
+    ADD CONSTRAINT fk_task_comments_author FOREIGN KEY (author_id) REFERENCES public.authusers(id) ON DELETE CASCADE;
+
+
+--
+-- Name: task_comments fk_task_comments_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.task_comments
+    ADD CONSTRAINT fk_task_comments_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: task_subtasks fk_task_subtasks_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.task_subtasks
+    ADD CONSTRAINT fk_task_subtasks_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tasks fk_tasks_assigned_to; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tasks
+    ADD CONSTRAINT fk_tasks_assigned_to FOREIGN KEY (assigned_to) REFERENCES public.authusers(id);
+
+
+--
+-- Name: tasks fk_tasks_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tasks
+    ADD CONSTRAINT fk_tasks_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: tasks fk_tasks_team_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tasks
+    ADD CONSTRAINT fk_tasks_team_id FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE SET NULL;
+
+
+--
+-- Name: tasks fk_tasks_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tasks
+    ADD CONSTRAINT fk_tasks_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: tasks fk_tasks_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tasks
+    ADD CONSTRAINT fk_tasks_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: teams fk_teams_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.teams
+    ADD CONSTRAINT fk_teams_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: teams fk_teams_team_captain; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.teams
+    ADD CONSTRAINT fk_teams_team_captain FOREIGN KEY (team_captain_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+
+
+--
+-- Name: teams fk_teams_team_lead_user; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.teams
+    ADD CONSTRAINT fk_teams_team_lead_user FOREIGN KEY (team_lead_user_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: teams fk_teams_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.teams
+    ADD CONSTRAINT fk_teams_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: teams fk_teams_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.teams
+    ADD CONSTRAINT fk_teams_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: user_activity fk_user_activity_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.user_activity
+    ADD CONSTRAINT fk_user_activity_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: user_activity fk_user_activity_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.user_activity
+    ADD CONSTRAINT fk_user_activity_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: user_activity fk_user_activity_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.user_activity
+    ADD CONSTRAINT fk_user_activity_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: user_activity fk_user_activity_user; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.user_activity
+    ADD CONSTRAINT fk_user_activity_user FOREIGN KEY (user_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: map_campaigns_users fk_user_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_campaigns_users
+    ADD CONSTRAINT fk_user_id FOREIGN KEY (user_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: web_forms fk_web_forms_createdby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.web_forms
+    ADD CONSTRAINT fk_web_forms_createdby_id FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: web_forms fk_web_forms_tenant_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.web_forms
+    ADD CONSTRAINT fk_web_forms_tenant_id FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: web_forms fk_web_forms_updatedby_id; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.web_forms
+    ADD CONSTRAINT fk_web_forms_updatedby_id FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: webhook_events fk_webhook_events_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.webhook_events
+    ADD CONSTRAINT fk_webhook_events_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: workflow_enrollments fk_workflow_enrollments_person; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflow_enrollments
+    ADD CONSTRAINT fk_workflow_enrollments_person FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_enrollments fk_workflow_enrollments_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflow_enrollments
+    ADD CONSTRAINT fk_workflow_enrollments_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: workflow_enrollments fk_workflow_enrollments_workflow; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflow_enrollments
+    ADD CONSTRAINT fk_workflow_enrollments_workflow FOREIGN KEY (workflow_id) REFERENCES public.workflows(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflow_steps fk_workflow_steps_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflow_steps
+    ADD CONSTRAINT fk_workflow_steps_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: workflow_steps fk_workflow_steps_workflow; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflow_steps
+    ADD CONSTRAINT fk_workflow_steps_workflow FOREIGN KEY (workflow_id) REFERENCES public.workflows(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workflows fk_workflows_createdby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflows
+    ADD CONSTRAINT fk_workflows_createdby FOREIGN KEY (createdby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: workflows fk_workflows_tenant; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflows
+    ADD CONSTRAINT fk_workflows_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id);
+
+
+--
+-- Name: workflows fk_workflows_updatedby; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.workflows
+    ADD CONSTRAINT fk_workflows_updatedby FOREIGN KEY (updatedby_id) REFERENCES public.authusers(id);
+
+
+--
+-- Name: map_households_tags map_households_tags_household_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_households_tags
+    ADD CONSTRAINT map_households_tags_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
+
+
+--
+-- Name: map_households_tags map_households_tags_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_households_tags
+    ADD CONSTRAINT map_households_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE CASCADE;
+
+
+--
+-- Name: map_lists_households map_lists_households_household_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_lists_households
+    ADD CONSTRAINT map_lists_households_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
+
+
+--
+-- Name: map_lists_households map_lists_households_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_lists_households
+    ADD CONSTRAINT map_lists_households_list_id_fkey FOREIGN KEY (list_id) REFERENCES public.lists(id) ON DELETE CASCADE;
+
+
+--
+-- Name: map_lists_persons map_lists_persons_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_lists_persons
+    ADD CONSTRAINT map_lists_persons_list_id_fkey FOREIGN KEY (list_id) REFERENCES public.lists(id) ON DELETE CASCADE;
+
+
+--
+-- Name: map_lists_persons map_lists_persons_person_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_lists_persons
+    ADD CONSTRAINT map_lists_persons_person_id_fkey FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: map_peoples_tags map_peoples_tags_person_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_peoples_tags
+    ADD CONSTRAINT map_peoples_tags_person_id_fkey FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: map_peoples_tags map_peoples_tags_tag_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_peoples_tags
+    ADD CONSTRAINT map_peoples_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE CASCADE;
+
+
+--
+-- Name: map_teams_lists map_teams_lists_list_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_lists
+    ADD CONSTRAINT map_teams_lists_list_id_fkey FOREIGN KEY (list_id) REFERENCES public.lists(id) ON DELETE CASCADE;
+
+
+--
+-- Name: map_teams_lists map_teams_lists_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_lists
+    ADD CONSTRAINT map_teams_lists_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE CASCADE;
+
+
+--
+-- Name: map_teams_persons map_teams_persons_person_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_persons
+    ADD CONSTRAINT map_teams_persons_person_id_fkey FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: map_teams_persons map_teams_persons_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.map_teams_persons
+    ADD CONSTRAINT map_teams_persons_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE CASCADE;
+
+
+--
+-- Name: passkeys passkeys_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.passkeys
+    ADD CONSTRAINT passkeys_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.authusers(id) ON DELETE CASCADE;
+
+
+--
+-- Name: person_connections pc_from_person_fk; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.person_connections
+    ADD CONSTRAINT pc_from_person_fk FOREIGN KEY (from_person_id, tenant_id) REFERENCES public.persons(id, tenant_id) ON DELETE CASCADE;
+
+
+--
+-- Name: person_connections pc_to_person_fk; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.person_connections
+    ADD CONSTRAINT pc_to_person_fk FOREIGN KEY (to_person_id, tenant_id) REFERENCES public.persons(id, tenant_id) ON DELETE CASCADE;
+
+
+--
+-- Name: potential_duplicates potential_duplicates_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.potential_duplicates
+    ADD CONSTRAINT potential_duplicates_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: potential_duplicates potential_duplicates_household_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.potential_duplicates
+    ADD CONSTRAINT potential_duplicates_household_id_fkey FOREIGN KEY (household_id) REFERENCES public.households(id) ON DELETE CASCADE;
+
+
+--
+-- Name: profiles profiles_auth_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_auth_id_fkey FOREIGN KEY (auth_id) REFERENCES public.authusers(id) ON DELETE CASCADE;
+
+
+--
+-- Name: profiles profiles_avatar_file_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_avatar_file_id_fkey FOREIGN KEY (avatar_file_id) REFERENCES public.files(id) ON DELETE SET NULL;
+
+
+--
+-- Name: sessions sessions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.sessions
+    ADD CONSTRAINT sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.authusers(id) ON DELETE CASCADE;
+
+
+--
+-- Name: task_attachments task_attachments_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.task_attachments
+    ADD CONSTRAINT task_attachments_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.tasks(id) ON DELETE CASCADE;
+
+
+--
+-- Name: task_comments task_comments_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.task_comments
+    ADD CONSTRAINT task_comments_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.tasks(id) ON DELETE CASCADE;
+
+
+--
+-- Name: task_subtasks task_subtasks_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.task_subtasks
+    ADD CONSTRAINT task_subtasks_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.tasks(id) ON DELETE CASCADE;
+
+
+--
+-- Name: tenants tenants_placeholder_household_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.tenants
+    ADD CONSTRAINT tenants_placeholder_household_id_fkey FOREIGN KEY (placeholder_household_id) REFERENCES public.households(id) ON DELETE SET NULL;
+
+
+--
+-- Name: zapier_subscriptions zapier_subscriptions_tenant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: zeehamid
+--
+
+ALTER TABLE ONLY public.zapier_subscriptions
+    ADD CONSTRAINT zapier_subscriptions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: SCHEMA public; Type: ACL; Schema: -; Owner: zee
+--
+
+REVOKE USAGE ON SCHEMA public FROM PUBLIC;
+GRANT ALL ON SCHEMA public TO PUBLIC;
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+\unrestrict oPFHGUe6wVNuN0eNnQazqyJQjnNPomJSMJiQZMlpJpzgVIBdJCJVrckJoNfysZW
 ```
 
 ## File: apps/backend/src/app/lib/password-hash.ts
@@ -23029,1325 +24467,6 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 
 export default donationsWebhookRoute;
-```
-
-## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { StorageService } from '../../../lib/storage.service';
-import { BaseRepository } from '../../../lib/base.repo';
-import { verifyAuthToken } from '../../../lib/auth-util';
-import { env } from '../../../../env';
-import crypto from 'crypto';
-import { Client } from '@microsoft/microsoft-graph-client';
-import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
-import { MsSyncService } from '../../ms-sync/ms-sync.service';
-import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
-import { GoogleSyncService } from '../../google-sync/google-sync.service';
-import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
-
-function buildRawMime(options: {
-  fromName: string;
-  fromEmail: string;
-  to: string[];
-  cc: string[];
-  bcc: string[];
-  subject: string;
-  html: string;
-  attachments: { filename: string; content: Buffer; contentType: string }[];
-}): Buffer {
-  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
-  const headers: string[] = [];
-
-  const safeFromName = options.fromName.replace(/"/g, '\\"');
-  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
-  headers.push(`To: ${options.to.join(', ')}`);
-  if (options.cc.length > 0) {
-    headers.push(`Cc: ${options.cc.join(', ')}`);
-  }
-  if (options.bcc.length > 0) {
-    headers.push(`Bcc: ${options.bcc.join(', ')}`);
-  }
-
-  const base64Subject = Buffer.from(options.subject).toString('base64');
-  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
-
-  headers.push(`MIME-Version: 1.0`);
-  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-  headers.push('');
-
-  const bodyParts: string[] = [];
-
-  bodyParts.push(`--${boundary}`);
-  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
-  bodyParts.push(`Content-Transfer-Encoding: base64`);
-  bodyParts.push('');
-  bodyParts.push(Buffer.from(options.html).toString('base64'));
-  bodyParts.push('');
-
-  for (const att of options.attachments) {
-    bodyParts.push(`--${boundary}`);
-    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Transfer-Encoding: base64`);
-    bodyParts.push('');
-    bodyParts.push(att.content.toString('base64'));
-    bodyParts.push('');
-  }
-
-  bodyParts.push(`--${boundary}--`);
-
-  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
-  return Buffer.from(rawMimeString, 'utf-8');
-}
-
-const storageService = new StorageService();
-
-let _oauthSvc: MsOAuthService | null = null;
-
-function getOAuthService(db: any) {
-  if (!_oauthSvc) {
-    _oauthSvc = new MsOAuthService(db, {
-      clientId: env.msClientId ?? '',
-      clientSecret: env.msClientSecret ?? '',
-      tenantId: env.msTenantId ?? 'common',
-      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-    });
-  }
-  return _oauthSvc;
-}
-
-export async function saveLocalEmail(
-  db: any,
-  tenantId: string,
-  userId: string,
-  fromEmail: string,
-  fromName: string,
-  toList: string[],
-  ccList: string[],
-  bccList: string[],
-  subject: string,
-  html: string,
-  uploadedFiles: any[],
-  previewKey: string,
-) {
-  return db.transaction().execute(async (trx: any) => {
-    // Ensure the Outbox folder row exists. email_folders uses global hardcoded
-    // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
-    // email_folders(id) — not tenant_id — so the existence check must be by id
-    // alone. onConflict guards against a concurrent/global row already present.
-
-    const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
-
-    if (!existingOutbox) {
-      await trx
-        .insertInto('email_folders')
-        .values({
-          id: '10',
-          tenant_id: tenantId,
-          name: 'Outbox',
-          createdby_id: userId,
-          updatedby_id: userId,
-          icon: 'clock',
-          sort_order: 10,
-          is_default: false,
-        })
-        .onConflict((oc: any) => oc.column('id').doNothing())
-        .execute();
-    }
-
-    // 1. Insert into emails table (using Outbox folder: '10')
-    const createdEmail = await trx
-      .insertInto('emails')
-      .values({
-        tenant_id: tenantId,
-        folder_id: '10', // Outbox folder is '10'
-        from_email: fromEmail,
-        to_email: toList.join(', '),
-        subject: subject,
-        preview: previewKey,
-        assigned_to: userId,
-        is_favourite: false,
-        deleted_at: null,
-        status: 'open',
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    const emailId = String(createdEmail.id);
-
-    // 2. Insert html into email_bodies
-    await trx
-      .insertInto('email_bodies')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        body_html: html,
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // 3. Insert files and email_attachments metadata
-    for (let i = 0; i < uploadedFiles.length; i++) {
-      const uFile = uploadedFiles[i];
-      let fileId: string;
-
-      // Persist (or reuse, via sha256 dedup) the file row, then link the
-      // attachment to it so downloads can resolve the stored blob.
-      const existingFile = await trx
-        .selectFrom('files')
-        .select('id')
-        .where('tenant_id', '=', tenantId)
-        .where('sha256_hex', '=', uFile.sha256_hex)
-        .executeTakeFirst();
-
-      if (existingFile) {
-        fileId = String(existingFile.id);
-      } else {
-        const fileResult = await trx
-          .insertInto('files')
-          .values({
-            tenant_id: tenantId,
-            filename: uFile.filename,
-            mime_type: uFile.content_type,
-            size_bytes: uFile.size_bytes,
-            storage_key: uFile.storage_key,
-            sha256_hex: uFile.sha256_hex,
-            uploaded_by: userId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-        fileId = String(fileResult.id);
-      }
-
-      await trx
-        .insertInto('email_attachments')
-        .values({
-          tenant_id: tenantId,
-          email_id: emailId,
-          filename: uFile.filename,
-          content_type: uFile.content_type,
-          size_bytes: uFile.size_bytes,
-          cid: uFile.cid,
-          is_inline: uFile.is_inline,
-          pos: i + 1,
-          file_id: fileId,
-          createdby_id: userId,
-          updatedby_id: userId,
-        })
-        .execute();
-    }
-
-    // 4. Insert headers
-    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
-    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-
-    await trx
-      .insertInto('email_headers')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        headers_json: JSON.stringify({ internetMessageId }),
-        raw_headers: rawHeaders,
-        date_sent: new Date(),
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // 5. Insert recipients
-    const recipientRows: any[] = [];
-    toList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'to',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    ccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'cc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    bccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'bcc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-
-    if (recipientRows.length > 0) {
-      await trx.insertInto('email_recipients').values(recipientRows).execute();
-    }
-
-    return createdEmail;
-  });
-}
-
-const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Send composed email
-  fastify.post('/send', async (req: any, reply) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing Authorization header' });
-    }
-    const token = authHeader.split(' ')[1];
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token format' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
-    }
-
-    if (!payload?.tenant_id || !payload?.user_id) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token payload' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const userId = payload.user_id;
-    const db = (BaseRepository as any)['_db'];
-
-    // Retrieve sender user details
-    const user = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', userId)
-      .executeTakeFirst();
-
-    if (!user) {
-      return reply.status(401).send({ error: 'Unauthorized: User not found' });
-    }
-
-    const fromEmail = user.email;
-    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
-
-    // Parse multipart request parts
-    const parts = req.parts();
-    const fields: any = {};
-    const files: any[] = [];
-
-    for await (const part of parts) {
-      if (part.file) {
-        const buffer = await part.toBuffer();
-        files.push({
-          filename: part.filename,
-          fieldname: part.fieldname,
-          mimetype: part.mimetype,
-          buffer,
-        });
-      } else {
-        fields[part.fieldname] = part.value;
-      }
-    }
-
-    // Parse recipient lists and content fields
-    const toList = fields.to ? JSON.parse(fields.to) : [];
-    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
-    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
-    const subject = fields.subject || '';
-    const html = sanitizeHtml(fields.html || '');
-
-    // Upload attachment files to storage outside transaction
-    const uploadedFiles: Array<{
-      filename: string;
-      content_type: string;
-      size_bytes: number;
-      storage_key: string;
-      sha256_hex: string;
-      cid: string | null;
-      is_inline: boolean;
-    }> = [];
-
-    for (const file of files) {
-      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
-      const fileUUID = crypto.randomUUID();
-      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
-
-      await storageService.upload(storage_key, file.buffer, file.mimetype);
-
-      uploadedFiles.push({
-        filename: file.filename,
-        content_type: file.mimetype,
-        size_bytes: file.buffer.length,
-        storage_key,
-        sha256_hex,
-        cid: null,
-        is_inline: false,
-      });
-    }
-
-    // Check if user has connected Microsoft and/or Google accounts
-    const msToken = await db
-      .selectFrom('ms_oauth_tokens')
-      .select(['user_id', 'ms_email'])
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const googleToken = await db
-      .selectFrom('google_oauth_tokens')
-      .select(['user_id', 'google_email'])
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const hasMsConnected = !!msToken;
-    const hasGoogleConnected = !!googleToken;
-
-    // Fail immediately if no send method is configured
-    if (!hasMsConnected && !hasGoogleConnected) {
-      return reply.status(400).send({
-        status: 'error',
-        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
-      });
-    }
-
-    // Save outbound email to database under Outbox folder '10' initially
-    const fallbackPreview =
-      html
-        .replace(/<[^>]*>/g, '')
-        .substring(0, 100)
-        .trim() || '';
-    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
-    try {
-      emailRow = await saveLocalEmail(
-        db,
-        tenantId,
-        userId,
-        fromEmail,
-        fromName,
-        toList,
-        ccList,
-        bccList,
-        subject,
-        html,
-        uploadedFiles,
-        fallbackPreview,
-      );
-    } catch (err: any) {
-      fastify.log.error(err, 'Failed to save outbound email to database');
-      return reply.jsendError(err.message || 'Failed to save email', 500);
-    }
-
-    // Determine send method prioritizing matching address
-    let sendMethod: 'ms' | 'google' = 'ms';
-    if (hasMsConnected && hasGoogleConnected) {
-      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
-        sendMethod = 'google';
-      } else {
-        sendMethod = 'ms';
-      }
-    } else if (hasMsConnected) {
-      sendMethod = 'ms';
-    } else if (hasGoogleConnected) {
-      sendMethod = 'google';
-    }
-
-    // Dispatch the email synchronously
-    try {
-      if (sendMethod === 'ms') {
-        const oauthSvc = getOAuthService(db);
-        let msDraftId: string | null = null;
-        try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-          const client = Client.init({
-            authProvider: (done) => done(null, accessToken),
-          });
-
-          const msDraftMessage: any = {
-            subject: subject,
-            body: {
-              contentType: 'html',
-              content: html,
-            },
-            toRecipients: toList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            ccRecipients: ccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            bccRecipients: bccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-          };
-
-          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
-          msDraftId = createdDraft.id;
-          const graphInternetMessageId = createdDraft.internetMessageId;
-
-          // Update local email preview/dedupe key to `ms:${msDraftId}`
-          await db
-            .updateTable('emails')
-            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          if (graphInternetMessageId) {
-            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-            await db
-              .updateTable('email_headers')
-              .set({
-                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
-                raw_headers: rawHeaders,
-                updated_at: new Date(),
-              })
-              .where('tenant_id', '=', tenantId)
-              .where('email_id', '=', String(emailRow.id))
-              .execute();
-          }
-
-          // Upload attachments
-          for (const file of files) {
-            await client.api(`/me/messages/${msDraftId}/attachments`).post({
-              '@odata.type': '#microsoft.graph.fileAttachment',
-              name: file.filename,
-              contentType: file.mimetype,
-              contentBytes: file.buffer.toString('base64'),
-            });
-          }
-
-          // Send draft
-          await client.api(`/me/messages/${msDraftId}/send`).post({});
-
-          // Update local email folder to '3' (Sent) on success
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          // Trigger background sync to get folders/Sent items synchronized
-          const syncSvc = new MsSyncService(db, oauthSvc);
-          syncSvc.syncUser(userId, tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
-          });
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (err) {
-            fastify.log.error(err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
-          }
-
-          return reply.jsendSuccess(finalEmail);
-        } catch (err: any) {
-          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
-          // Clean up local email
-          await db
-            .deleteFrom('emails')
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-          return reply.jsendError(err.message || 'Failed to send email via Microsoft Graph', 400);
-        }
-      } else if (sendMethod === 'google') {
-        const oauthSvc = new GoogleOAuthService(db, {
-          clientId: env.googleClientId ?? '',
-          clientSecret: env.googleClientSecret ?? '',
-          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-        });
-
-        try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-
-          const rawMessageBuffer = buildRawMime({
-            fromName,
-            fromEmail,
-            to: toList,
-            cc: ccList,
-            bcc: bccList,
-            subject,
-            html,
-            attachments: files.map((file) => ({
-              filename: file.filename,
-              content: file.buffer,
-              contentType: file.mimetype,
-            })),
-          });
-
-          const rawBase64Url = rawMessageBuffer
-            .toString('base64')
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=+$/, '');
-
-          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              raw: rawBase64Url,
-            }),
-          });
-
-          if (!gmailRes.ok) {
-            const errText = await gmailRes.text();
-            throw new Error(`Gmail API send failed: ${errText}`);
-          }
-
-          const gmailData: any = await gmailRes.json();
-          const googleMsgId = gmailData.id;
-
-          await db
-            .updateTable('emails')
-            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
-          googleSyncSvc.syncUser(userId, tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
-          });
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (err) {
-            fastify.log.error(err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
-          }
-
-          return reply.jsendSuccess(finalEmail);
-        } catch (err: any) {
-          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
-          await db
-            .updateTable('emails')
-            .set({
-              // Revert back to the Drafts folder (folder_id '2' or '4' depending on schema)
-              folder_id: '4',
-              updated_at: new Date(),
-            })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          return reply.jsendError(err.message || 'Failed to send email via Google. Saved to Drafts.', 400);
-        }
-      }
-    } catch (err: any) {
-      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
-      // Clean up local email
-      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
-      return reply.jsendError(err.message || 'Unexpected error in send task', 500);
-    }
-  });
-
-  // Download attachment by ID
-  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const { id, attachmentId } = req.params;
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachmentId)
-      .where('email_id', '=', id)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
-      return reply.send(buffer);
-    } catch (err) {
-      fastify.log.error(err);
-      return reply.status(500).send({ error: 'Failed to download attachment' });
-    }
-  });
-
-  // Serve inline attachment by CID
-  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const { id, cid } = req.params;
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('email_id', '=', id)
-      .where('cid', '=', cid)
-      .where('is_inline', '=', true)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Inline attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Cache-Control', 'public, max-age=31536000');
-      return reply.send(buffer);
-    } catch (err) {
-      fastify.log.error(err);
-      return reply.status(500).send({ error: 'Failed to load inline image' });
-    }
-  });
-
-  done();
-};
-
-export default emailsApiRoute;
-```
-
-## File: apps/backend/src/app/modules/emails/controller.ts
-
-```typescript
-import { env } from '../../../env';
-import { getAllEmailFolders } from '../../config/email-folders.config';
-import { AppError, BadRequestError, InternalError, NotFoundError } from '../../errors/app-errors';
-import { EmailAttachmentsRepo } from './repositories/email-attachments.repo';
-import { EmailBodiesRepo } from './repositories/email-body.repo';
-import { EmailCommentsRepo } from './repositories/email-comments.repo';
-import { EmailDraftsRepo } from './repositories/email-drafts.repo';
-import { EmailRepo } from './repositories/email.repo';
-import { BaseController } from '../../lib/base.controller';
-import type { EmailStatus } from '../../../../../../libs/common/src/lib/emails';
-import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
-import type { TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { EmailDraftType } from '../../../../../../libs/common/src/lib/models';
-import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
-import { UserActivityRepo } from '../../lib/user-activity.repo';
-import { processMentions } from '../../lib/mail/mentions-util';
-import { sanitizeHtml } from '../../lib/mail/sanitize-util';
-import { StorageService } from '../../lib/storage.service';
-import { sql } from 'kysely';
-
-export class EmailsController extends BaseController<'emails', EmailRepo> {
-  private attachmentsRepo = new EmailAttachmentsRepo();
-  private bodiesRepo = new EmailBodiesRepo();
-  private commentsRepo = new EmailCommentsRepo();
-  private draftsRepo = new EmailDraftsRepo();
-  private activityRepo = new UserActivityRepo();
-  private storageService = new StorageService();
-
-  constructor() {
-    super(new EmailRepo());
-  }
-
-  public async addComment(tenant_id: string, email_id: string, author_id: string, comment: string) {
-    if (!comment?.trim()) {
-      throw new BadRequestError('Comment cannot be empty');
-    }
-    try {
-      const row = await this.commentsRepo.add({
-        row: {
-          tenant_id,
-          email_id,
-          author_id,
-          comment,
-          createdby_id: author_id,
-          updatedby_id: author_id,
-        },
-      });
-      if (!row) throw new InternalError('Failed to add comment');
-
-      const commentLink = `${env.appUrl}/emails/${email_id}`;
-      processMentions(this.commentsRepo.db, tenant_id, comment, commentLink, author_id).catch((err) =>
-        console.error('Failed to process email comment mentions', err),
-      );
-
-      return row;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to add comment', undefined, { cause: err });
-    }
-  }
-
-  public async assignEmail(
-    tenant_id: string,
-    id: string,
-    user_id: string | null,
-    actor_id?: string,
-    assigned_to_name?: string | null,
-  ) {
-    try {
-      const updated = await this.getRepo().assignEmail(tenant_id, id, user_id);
-
-      if (!updated) throw new NotFoundError('Email not found');
-
-      // --- Log activity ---
-      if (actor_id) {
-        const activityType = user_id ? 'assign' : 'unassign';
-        const metadata: Record<string, unknown> = {};
-        if (user_id) metadata['assigned_to_id'] = user_id;
-        if (assigned_to_name) metadata['assigned_to_name'] = assigned_to_name;
-
-        this.activityRepo
-          .log({
-            tenant_id,
-            user_id: actor_id,
-            activity: activityType,
-            entity: 'email',
-            entity_id: id,
-            metadata,
-          })
-          .catch((e) => console.error('Failed to log email assign activity', e));
-      }
-
-      if (user_id) {
-        try {
-          const email = (await this.getRepo().getOneBy('id', { tenant_id, value: id })) as any;
-          if (email) {
-            const subject = email.subject || '(No Subject)';
-            const notificationsRepo = new NotificationsRepo();
-            await notificationsRepo.pushNotification({
-              tenant_id,
-              user_id,
-              title: 'Email Assigned',
-              message: `You have been assigned the email: "${subject}"`,
-              type: 'email',
-              link: `/inbox?email=${id}`,
-            });
-          }
-        } catch (nErr) {
-          console.error('Failed to push notification for email assignment', nErr);
-        }
-      }
-
-      return updated;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to assign email', undefined, { cause: err });
-    }
-  }
-
-  public async getActivitiesForEmail(tenant_id: string, email_id: string) {
-    try {
-      const res = await this.activityRepo.getForEntity(tenant_id, 'email', email_id);
-      return res.rows;
-    } catch (err) {
-      throw new InternalError('Failed to fetch email activities', undefined, { cause: err });
-    }
-  }
-
-  public override async delete(tenant_id: TypeTenantId<'emails'>, idToDelete: string) {
-    return this.deleteMany(tenant_id, [idToDelete]);
-  }
-
-  public async deleteComment(tenant_id: string, _email_id: string, comment_id: string) {
-    try {
-      const deleted = await this.commentsRepo.delete({ tenant_id, id: comment_id /*, email_id */ });
-      if (!deleted) throw new NotFoundError('Comment not found');
-      return deleted;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to delete comment', undefined, { cause: err });
-    }
-  }
-
-  public async deleteDraft(tenant_id: string, _user_id: string, id: string) {
-    try {
-      const deleted = await this.draftsRepo.delete({ tenant_id, id });
-      if (!deleted) throw new NotFoundError('Draft not found');
-      return deleted;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to delete draft', undefined, { cause: err });
-    }
-  }
-
-  public override async deleteMany(tenant_id: TypeTenantId<'emails'>, idsToDelete: string[]) {
-    // Go through idsToDelete and check which ones are in the trash folder (hard delete)
-    // and which ones are not (soft delete - move to trash)
-    const emailsInTrash = await this.getRepo().getByIdsInFolder(tenant_id as string, idsToDelete, ALL_FOLDERS.TRASH);
-    const idsInTrash = emailsInTrash.map((e) => String(e.id));
-    const idsNotInTrash = idsToDelete.filter((id) => !idsInTrash.includes(id));
-
-    const numTrashed =
-      idsNotInTrash.length > 0 ? await this.getRepo().moveToTrash(tenant_id as string, idsNotInTrash) : 0;
-
-    let numDeleted: number | boolean = false;
-    if (idsInTrash.length > 0) {
-      // Capture the attachment file references BEFORE the cascade removes the
-      // email_attachments rows, so we can clean up storage afterwards.
-      const fileIds = await this.getAttachmentFileIds(tenant_id as string, idsInTrash);
-      numDeleted = await super.deleteMany(tenant_id, idsInTrash);
-      // Hard delete is permanent — purge orphaned attachment blobs + file rows.
-      await this.purgeOrphanedFiles(tenant_id as string, fileIds);
-    }
-
-    return numTrashed !== 0 || numDeleted;
-  }
-
-  /** Distinct, non-null file_ids referenced by the given emails' attachments. */
-  private async getAttachmentFileIds(tenant_id: string, emailIds: string[]): Promise<string[]> {
-    if (emailIds.length === 0) return [];
-    const rows = await this.attachmentsRepo.db
-      .selectFrom('email_attachments')
-      .select('file_id')
-      .distinct()
-      .where('tenant_id', '=', tenant_id)
-      .where('email_id', 'in', emailIds)
-      .where('file_id', 'is not', null)
-      .execute();
-    return rows.map((r) => String(r.file_id)).filter((id) => id !== 'null');
-  }
-
-  /**
-   * Delete file rows + storage blobs for files that are no longer referenced by
-   * any remaining email attachment (files are sha256-deduped and can be shared).
-   * Storage deletion is best-effort: a failed blob delete must not abort the txn.
-   */
-  private async purgeOrphanedFiles(tenant_id: string, fileIds: string[]): Promise<void> {
-    if (fileIds.length === 0) return;
-
-    const db = this.attachmentsRepo.db;
-    for (const fileId of fileIds) {
-      try {
-        const stillReferenced = await db
-          .selectFrom('email_attachments')
-          .select('id')
-          .where('tenant_id', '=', tenant_id)
-          .where('file_id', '=', fileId)
-          .limit(1)
-          .executeTakeFirst();
-
-        if (stillReferenced) continue;
-
-        const file = await db
-          .selectFrom('files')
-          .select(['id', 'storage_key'])
-          .where('tenant_id', '=', tenant_id)
-          .where('id', '=', fileId)
-          .executeTakeFirst();
-
-        if (!file) continue;
-
-        await db.deleteFrom('files').where('tenant_id', '=', tenant_id).where('id', '=', fileId).execute();
-
-        if (file.storage_key) {
-          try {
-            await this.storageService.delete(file.storage_key);
-          } catch (err) {
-            console.error(`Failed to delete storage blob ${file.storage_key} for file ${fileId}`, err);
-          }
-        }
-      } catch (err) {
-        console.error(`Failed to purge orphaned file ${fileId}`, err);
-      }
-    }
-  }
-
-  public async getAllAttachments(tenant_id: string, email_id: string, options?: { includeInline: boolean }) {
-    try {
-      return await this.attachmentsRepo.getAllAttachments(tenant_id, email_id, options);
-    } catch (err) {
-      throw new InternalError('Failed to fetch attachments', undefined, { cause: err });
-    }
-  }
-
-  public async getAttachmentsByEmailId(tenant_id: string, email_id: string) {
-    try {
-      return await this.attachmentsRepo.getByEmailId(tenant_id, email_id);
-    } catch (err) {
-      throw new InternalError('Failed to fetch attachments for email', undefined, { cause: err });
-    }
-  }
-
-  public async getDraft(tenant_id: string, _user_id: string, value: string) {
-    try {
-      const draft = await this.draftsRepo.getOneBy('id', { tenant_id, value });
-      if (!draft) throw new NotFoundError('Draft not found');
-      return draft;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to fetch draft', undefined, { cause: err });
-    }
-  }
-
-  public async getEmailBody(tenant_id: string, value: string) {
-    try {
-      const email = await this.bodiesRepo.getOneBy('email_id', { tenant_id, value });
-      if (email) {
-        return {
-          ...email,
-          body_html: sanitizeHtml((email as any).body_html),
-        };
-      }
-
-      // If no body exists, attempt to load from drafts table
-      const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, value })) as EmailDraftType | undefined;
-      if (draft)
-        return {
-          email_id: value,
-          body_html: sanitizeHtml(draft.body_html),
-          body_delta: (draft as any).body_delta ?? null,
-        } as any;
-
-      throw new NotFoundError('Failed to fetch email body');
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to fetch email body', undefined, { cause: err });
-    }
-  }
-
-  public async getEmailHeader(tenant_id: string, id: string, user_id?: string) {
-    try {
-      const [emailWithHeaders, comments, attachments] = await Promise.all([
-        this.getRepo().getEmailWithHeadersAndRecipients(tenant_id, id, user_id),
-        this.commentsRepo.getForEmail(tenant_id, id),
-        this.attachmentsRepo.getByEmailId(tenant_id, id),
-      ]);
-      if (emailWithHeaders) {
-        let person: any = null;
-        if (emailWithHeaders.from_email) {
-          const fromEmail = emailWithHeaders.from_email.trim().toLowerCase();
-          const matchedPerson = await this.getRepo()
-            .db.selectFrom('persons')
-            .leftJoin('companies', 'companies.id', 'persons.company_id')
-            .select([
-              'persons.id',
-              'persons.first_name',
-              'persons.last_name',
-              'persons.email',
-              'persons.mobile',
-              'persons.notes',
-              'companies.name as company_name',
-            ])
-            .where('persons.tenant_id', '=', tenant_id)
-            .where((eb) =>
-              eb.or([eb(sql`lower(persons.email)`, '=', fromEmail), eb(sql`lower(persons.email2)`, '=', fromEmail)]),
-            )
-            .executeTakeFirst();
-
-          if (matchedPerson) {
-            const tagsAndIssues = await this.getRepo()
-              .db.selectFrom('map_peoples_tags')
-              .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-              .select(['tags.name', 'tags.color', 'tags.type'])
-              .where('map_peoples_tags.tenant_id', '=', tenant_id)
-              .where('map_peoples_tags.person_id', '=', matchedPerson.id)
-              .execute();
-
-            person = {
-              ...matchedPerson,
-              tags: tagsAndIssues.filter((t) => t.type === 'tag').map((t) => ({ name: t.name, color: t.color })),
-              issues: tagsAndIssues.filter((t) => t.type === 'issue').map((t) => ({ name: t.name, color: t.color })),
-            };
-          }
-        }
-        return { email: emailWithHeaders, comments, attachments, person };
-      }
-
-      // Fallback to draft if regular email not found
-      const draft = (await this.draftsRepo.getOneBy('id', { tenant_id, value: id })) as EmailDraftType | undefined;
-      if (draft)
-        return {
-          email: {
-            id: draft.id,
-            to_list: (draft.to_list || []).map((e: string) => ({ email: e })),
-            cc_list: (draft.cc_list || []).map((e: string) => ({ email: e })),
-            bcc_list: (draft.bcc_list || []).map((e: string) => ({ email: e })),
-            from_email: null,
-            subject: draft.subject,
-          },
-          comments: [],
-          attachments: [],
-        } as any;
-
-      throw new NotFoundError('Email not found');
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to fetch email header', undefined, { cause: err });
-    }
-  }
-
-  public async getEmails(user_id: string, tenant_id: string, folder_id: string, limit?: number, offset?: number) {
-    try {
-      if (folder_id === ALL_FOLDERS.DRAFTS) {
-        const drafts = await this.draftsRepo.listByUser(tenant_id, user_id, limit, offset);
-        return drafts.map((d: any) => ({
-          id: d.id,
-          folder_id,
-          from_email: '',
-          to_email: Array.isArray(d.to_list) ? d.to_list.join(', ') : '',
-          subject: d.subject,
-          preview: '',
-          assigned_to: undefined,
-          updated_at: d.updated_at,
-          date_sent: d.updated_at,
-          is_favourite: false,
-          attachment_count: 0,
-          has_attachment: false,
-          status: 'open',
-        }));
-      }
-      return await this.getRepo().getByFolderWithAttachmentFlag(user_id, tenant_id, folder_id, limit, offset);
-    } catch (err) {
-      throw new InternalError('Failed to fetch emails', undefined, { cause: err });
-    }
-  }
-
-  public getFolders(_tenant_id: string) {
-    // Return hardcoded folders configuration (same for all tenants)
-    return Promise.resolve(getAllEmailFolders());
-  }
-
-  public async getFoldersWithCounts(user_id: string, tenant_id: string) {
-    try {
-      const [folders, emailCounts, draftCount] = await Promise.all([
-        this.getFolders(tenant_id),
-        this.getRepo().getEmailCountsByFolder(user_id, tenant_id),
-        this.draftsRepo.countByUser(tenant_id, user_id),
-      ]);
-
-      return folders.map((folder: any) => ({
-        ...folder,
-        email_count: folder.id === ALL_FOLDERS.DRAFTS ? draftCount : emailCounts[folder.id] || 0,
-      }));
-    } catch (err) {
-      throw new InternalError('Failed to fetch folder counts', undefined, { cause: err });
-    }
-  }
-
-  public async hasAttachment(tenant_id: string, email_id: string) {
-    try {
-      return await this.attachmentsRepo.hasAttachment(tenant_id, email_id);
-    } catch (err) {
-      throw new InternalError('Failed to check attachment flag', undefined, { cause: err });
-    }
-  }
-
-  public async hasAttachmentByEmailIds(tenant_id: string, email_ids: string[]) {
-    if (!email_ids?.length) return Promise.resolve([]);
-
-    try {
-      return this.attachmentsRepo.hasAttachmentByEmailIds(tenant_id, email_ids);
-    } catch (err) {
-      throw new InternalError('Failed to check attachment flags', undefined, { cause: err });
-    }
-  }
-
-  public restoreFromTrash(tenant_id: string, idsToRestore: string[]) {
-    return this.getRepo().restoreFromTrash(tenant_id, idsToRestore);
-  }
-
-  public async moveToFolder(tenant_id: string, id: string, folder_id: string, actor_id?: string) {
-    try {
-      const isTrash = folder_id === ALL_FOLDERS.TRASH;
-      const deleted_at = isTrash ? new Date() : null;
-
-      const updated = await this.getRepo()
-        .getUpdate()
-        .set({ folder_id, deleted_at })
-        .where('tenant_id', '=', tenant_id)
-        .where('id', '=', id)
-        .returningAll()
-        .executeTakeFirst();
-
-      if (!updated) throw new NotFoundError('Email not found');
-
-      // --- Log activity ---
-      if (actor_id) {
-        this.activityRepo
-          .log({
-            tenant_id,
-            user_id: actor_id,
-            activity: isTrash ? 'delete' : 'update',
-            entity: 'email',
-            entity_id: id,
-            metadata: { folder_id },
-          })
-          .catch((e) => console.error('Failed to log email move activity', e));
-      }
-
-      return updated;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to move email to folder', undefined, { cause: err });
-    }
-  }
-
-  public async saveDraft(
-    tenant_id: string,
-    user_id: string,
-    draft: {
-      id?: string;
-      to_list: string[];
-      cc_list?: string[];
-      bcc_list?: string[];
-      subject?: string;
-      body_html?: string;
-    },
-  ) {
-    try {
-      if (draft.body_html) {
-        draft.body_html = sanitizeHtml(draft.body_html);
-      }
-      const saved = await this.draftsRepo.saveDraft(tenant_id, user_id, draft);
-      if (!saved) throw new InternalError('Failed to save draft');
-      return saved;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to save draft', undefined, { cause: err });
-    }
-  }
-
-  public async setFavourite(tenant_id: string, id: string, favourite: boolean) {
-    try {
-      return this.getRepo().setFavourite(tenant_id, id, favourite);
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to set favourite', undefined, { cause: err });
-    }
-  }
-
-  public async setStatus(tenant_id: string, id: string, status: EmailStatus, actor_id?: string) {
-    try {
-      const updated = await this.getRepo().setStatus(tenant_id, id, status);
-      if (!updated) throw new NotFoundError('Email not found');
-
-      // --- Log activity ---
-      if (actor_id) {
-        const activityType = status === 'closed' ? 'close' : 'reopen';
-        this.activityRepo
-          .log({
-            tenant_id,
-            user_id: actor_id,
-            activity: activityType,
-            entity: 'email',
-            entity_id: id,
-            metadata: { status },
-          })
-          .catch((e) => console.error('Failed to log email status activity', e));
-      }
-
-      return updated;
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to set status', undefined, { cause: err });
-    }
-  }
-
-  public async setEmailReadStatus(tenant_id: string, user_id: string, email_id: string, is_read: boolean) {
-    try {
-      const email = await this.getRepo().getOneBy('id', { tenant_id, value: email_id });
-      if (!email) throw new NotFoundError('Email not found');
-
-      await this.getRepo()
-        .db.insertInto('email_read_states')
-        .values({
-          tenant_id,
-          user_id,
-          email_id,
-          is_read,
-        })
-        .onConflict((oc: any) =>
-          oc.columns(['tenant_id', 'user_id', 'email_id']).doUpdateSet({
-            is_read,
-          }),
-        )
-        .execute();
-
-      return { success: true, email_id, is_read };
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new InternalError('Failed to set email read status', undefined, { cause: err });
-    }
-  }
-}
 ```
 
 ## File: apps/backend/src/app/modules/events/routes/events-public.route.ts
@@ -25097,916 +25216,6 @@ const googleSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) =>
 export default googleSyncCallbackRoute;
 ```
 
-## File: apps/backend/src/app/modules/google-sync/google-oauth.service.ts
-
-```typescript
-import { Kysely } from 'kysely';
-import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-
-export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
-
-const GOOGLE_SCOPES = [
-  'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.send',
-  'https://www.googleapis.com/auth/userinfo.email',
-];
-
-export class GoogleOAuthService {
-  private readonly db: Kysely<Models>;
-  private readonly clientId: string;
-  private readonly clientSecret: string;
-  private readonly redirectUri: string;
-
-  constructor(db: Kysely<Models>, config: { clientId: string; clientSecret: string; redirectUri: string }) {
-    this.db = db;
-    this.clientId = config.clientId;
-    this.clientSecret = config.clientSecret;
-    this.redirectUri = config.redirectUri;
-  }
-
-  public getAuthUrl(state: string): string {
-    const params = new URLSearchParams({
-      client_id: this.clientId,
-      redirect_uri: this.redirectUri,
-      response_type: 'code',
-      scope: GOOGLE_SCOPES.join(' '),
-      access_type: 'offline',
-      prompt: 'consent', // force consent to ensure refresh token is returned
-      state,
-    });
-    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-  }
-
-  public async handleCallback(code: string, userId: string, tenantId: string): Promise<void> {
-    const res = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code,
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        redirect_uri: this.redirectUri,
-        grant_type: 'authorization_code',
-      }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to acquire token from Google: ${errorText}`);
-    }
-
-    const data: any = await res.json();
-    const accessToken = data.access_token;
-    const refreshToken = data.refresh_token; // Google only returns this on initial consent
-    const expiresIn = data.expires_in ?? 3600;
-    const expiresAt = new Date(Date.now() + expiresIn * 1000);
-
-    // Fetch user profile to get Google email
-    const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    let googleEmail: string | null = null;
-    if (profileRes.ok) {
-      const profile: any = await profileRes.json();
-      googleEmail = profile.email ?? null;
-    }
-
-    const insertObj: any = {
-      tenant_id: tenantId,
-      user_id: userId,
-      access_token: accessToken,
-      expires_at: expiresAt,
-      google_email: googleEmail,
-      delta_link: NEEDS_FULL_SYNC,
-      synced_at: null,
-    };
-
-    if (!refreshToken) {
-      // If we don't have refresh token in this callback, try keeping the existing one
-      const existing = await this.db
-        .selectFrom('google_oauth_tokens')
-        .select('refresh_token')
-        .where('user_id', '=', userId)
-        .executeTakeFirst();
-      insertObj.refresh_token = existing?.refresh_token ?? '';
-    } else {
-      insertObj.refresh_token = refreshToken;
-    }
-
-    if (!insertObj.refresh_token) {
-      throw new Error('Consent required to obtain refresh token. Please disconnect and reconnect.');
-    }
-
-    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
-    await this.db.transaction().execute(async (trx) => {
-      await trx
-        .insertInto('google_oauth_tokens')
-        .values(insertObj)
-        .onConflict((oc) =>
-          oc.column('user_id').doUpdateSet({
-            access_token: insertObj.access_token,
-            refresh_token: insertObj.refresh_token,
-            expires_at: insertObj.expires_at,
-            google_email: insertObj.google_email,
-            delta_link: NEEDS_FULL_SYNC,
-            synced_at: null,
-            last_sync_error: null,
-            last_sync_error_at: null,
-            updated_at: new Date(),
-          }),
-        )
-        .execute();
-
-      await trx
-        .insertInto('background_jobs' as any)
-        .values({
-          tenant_id: tenantId,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({ type: 'google_sync', userId, tenantId, requestedBy: userId }),
-          run_at: new Date(),
-          max_attempts: 3,
-        })
-        .execute();
-    });
-  }
-
-  public async getValidToken(userId: string): Promise<string> {
-    const row = await this.db
-      .selectFrom('google_oauth_tokens')
-      .selectAll()
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    if (!row) {
-      throw new Error('No Google account connected for this user');
-    }
-
-    const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
-    if (!isExpired) {
-      return row.access_token;
-    }
-
-    // Refresh token
-    const res = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        refresh_token: row.refresh_token,
-        grant_type: 'refresh_token',
-      }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Token refresh failed: ${errorText} — user must reconnect their Google account`);
-    }
-
-    const data: any = await res.json();
-    const newAccessToken = data.access_token;
-    const newExpiresIn = data.expires_in ?? 3600;
-    const newExpiry = new Date(Date.now() + newExpiresIn * 1000);
-    const newRefreshToken = data.refresh_token ?? row.refresh_token;
-
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({
-        access_token: newAccessToken,
-        refresh_token: newRefreshToken,
-        expires_at: newExpiry,
-        updated_at: new Date(),
-      })
-      .where('user_id', '=', userId)
-      .execute();
-
-    return newAccessToken;
-  }
-
-  public async getConnectionStatus(
-    userId: string,
-  ): Promise<{
-    connected: boolean;
-    googleEmail: string | null;
-    syncedAt: Date | null;
-    lastSyncError: string | null;
-    lastSyncErrorAt: Date | null;
-  }> {
-    const row = await this.db
-      .selectFrom('google_oauth_tokens')
-      .select(['google_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    return {
-      connected: !!row,
-      googleEmail: row?.google_email ?? null,
-      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
-      lastSyncError: row?.last_sync_error ?? null,
-      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
-    };
-  }
-
-  public async disconnect(userId: string): Promise<void> {
-    await this.db.deleteFrom('google_oauth_tokens').where('user_id', '=', userId).execute();
-  }
-
-  public async resetDeltaLinkForTenant(tenantId: string): Promise<void> {
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-
-  public async saveDeltaLink(userId: string, deltaLink: string): Promise<void> {
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({
-        delta_link: deltaLink,
-        synced_at: new Date(),
-        last_sync_error: null,
-        last_sync_error_at: null,
-        updated_at: new Date(),
-      })
-      .where('user_id', '=', userId)
-      .execute();
-  }
-
-  public async recordSyncError(userId: string, error: string): Promise<void> {
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
-      .where('user_id', '=', userId)
-      .execute();
-  }
-
-  public async getDeltaLink(userId: string): Promise<string | null> {
-    const row = await this.db
-      .selectFrom('google_oauth_tokens')
-      .select('delta_link')
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-    return row?.delta_link ?? null;
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/google-sync/trpc.router.ts
-
-```typescript
-import { authProcedure, router } from '../../../trpc';
-import { GoogleOAuthService, NEEDS_FULL_SYNC } from './google-oauth.service';
-import { GoogleSyncService } from './google-sync.service';
-import { BaseRepository } from '../../lib/base.repo';
-import { env } from '../../../env';
-import { z } from 'zod';
-import { sql } from 'kysely';
-
-let _oauthSvc: GoogleOAuthService | null = null;
-let _syncSvc: GoogleSyncService | null = null;
-
-function getServices() {
-  if (!_oauthSvc || !_syncSvc) {
-    const db = (BaseRepository as any)['_db']; // reuse the shared Kysely instance
-    _oauthSvc = new GoogleOAuthService(db, {
-      clientId: env.googleClientId ?? '',
-      clientSecret: env.googleClientSecret ?? '',
-      redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-    });
-    _syncSvc = new GoogleSyncService(db, _oauthSvc);
-  }
-  return { oauthSvc: _oauthSvc, syncSvc: _syncSvc };
-}
-
-function getAuthUrl() {
-  return authProcedure.input(z.object({ returnTo: z.string().optional() })).query(async ({ ctx, input }) => {
-    const { oauthSvc } = getServices();
-    const state = Buffer.from(
-      JSON.stringify({ userId: ctx.auth.user_id, tenantId: ctx.auth.tenant_id, returnTo: input.returnTo }),
-    ).toString('base64');
-    const url = oauthSvc.getAuthUrl(state);
-    return { url };
-  });
-}
-
-function getConnectionStatus() {
-  return authProcedure.query(async ({ ctx }) => {
-    const { oauthSvc } = getServices();
-    const db = (BaseRepository as any)['_db'];
-    const status = await oauthSvc.getConnectionStatus(ctx.auth.user_id);
-
-    const activeJob = await db
-      .selectFrom('background_jobs' as any)
-      .select('id')
-      .where('status', 'in', ['pending', 'processing'])
-      .where('tenant_id', '=', ctx.auth.tenant_id)
-      .where(sql`payload->>'type'`, '=', 'google_sync')
-      .where(sql`payload->>'userId'`, '=', ctx.auth.user_id)
-      .executeTakeFirst();
-
-    return {
-      ...status,
-      syncing: !!activeJob,
-    };
-  });
-}
-
-function syncNow() {
-  return authProcedure.mutation(async ({ ctx }) => {
-    const db = (BaseRepository as any)['_db'];
-
-    const existing = await db
-      .selectFrom('background_jobs' as any)
-      .select('id')
-      .where('status', 'in', ['pending', 'processing'])
-      .where('tenant_id', '=', ctx.auth.tenant_id)
-      .where(sql`payload->>'type'`, '=', 'google_sync')
-      .where(sql`payload->>'userId'`, '=', ctx.auth.user_id)
-      .executeTakeFirst();
-
-    if (!existing) {
-      await db
-        .insertInto('background_jobs' as any)
-        .values({
-          tenant_id: ctx.auth.tenant_id,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({
-            type: 'google_sync',
-            userId: ctx.auth.user_id,
-            tenantId: ctx.auth.tenant_id,
-            requestedBy: ctx.auth.user_id,
-          }),
-          run_at: new Date(),
-          max_attempts: 3,
-        })
-        .execute();
-    }
-
-    return { inserted: 0, queued: true };
-  });
-}
-
-function disconnect() {
-  return authProcedure
-    .input(
-      z.object({
-        removeLocalEmails: z.boolean().default(false),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const { oauthSvc, syncSvc } = getServices();
-
-      if (input.removeLocalEmails) {
-        await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id);
-        // Signal all remaining connected users in this tenant to do a full resync next time,
-        // since their locally-stored emails were just deleted.
-        await oauthSvc.resetDeltaLinkForTenant(ctx.auth.tenant_id);
-      }
-
-      await oauthSvc.disconnect(ctx.auth.user_id);
-      return { success: true };
-    });
-}
-
-function resetSync() {
-  return authProcedure.mutation(async ({ ctx }) => {
-    const { oauthSvc } = getServices();
-    await oauthSvc.saveDeltaLink(ctx.auth.user_id, NEEDS_FULL_SYNC);
-    return { success: true };
-  });
-}
-
-export const GoogleSyncRouter = router({
-  getAuthUrl: getAuthUrl(),
-  getConnectionStatus: getConnectionStatus(),
-  syncNow: syncNow(),
-  disconnect: disconnect(),
-  resetSync: resetSync(),
-});
-export type GoogleSyncRouterType = typeof GoogleSyncRouter;
-```
-
-## File: apps/backend/src/app/modules/lists/controller.ts
-
-```typescript
-import type {
-  AddListType,
-  IAuthKeyPayload,
-  UpdateListType,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-import { TRPCError } from '@trpc/server';
-
-import { BaseController } from '../../lib/base.controller';
-import { HouseholdsController } from '../households/controller';
-import { PersonsController } from '../persons/controller';
-import { ListsRepo } from './repositories/lists.repo';
-import { MapListsHouseholdsRepo } from './repositories/map-lists-households.repo';
-import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { WorkflowsController } from '../workflows/controller';
-
-export class ListsController extends BaseController<'lists', ListsRepo> {
-  private householdsController = new HouseholdsController();
-  private mapListsHouseholdsRepo = new MapListsHouseholdsRepo();
-  private mapListsPersonsRepo = new MapListsPersonsRepo();
-  private personsController = new PersonsController();
-
-  constructor() {
-    super(new ListsRepo());
-  }
-
-  public async addList(payload: AddListType, auth: IAuthKeyPayload) {
-    // Enforce unique list names per tenant
-    const existing = await this.getRepo().getOneBy('name', {
-      tenant_id: auth.tenant_id,
-      value: payload.name,
-    });
-    if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'A list with this name already exists.' });
-
-    const row = {
-      name: payload.name,
-      description: payload.description,
-      object: payload.object,
-      is_dynamic: payload.is_dynamic ?? false,
-      definition: payload.definition ?? null,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      status: (payload.is_dynamic ?? false) ? 'refreshing' : 'idle',
-    };
-
-    const list = await this.add(row as OperationDataType<'lists', 'insert'>);
-
-    // For dynamic lists, trigger an immediate initial refresh via background job
-    if (row.is_dynamic) {
-      await this.getRepo()
-        .db.insertInto('background_jobs' as any)
-        .values({
-          tenant_id: auth.tenant_id,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({
-            type: 'refresh_list',
-            list_id: list.id,
-            tenant_id: auth.tenant_id,
-            user_id: auth.user_id,
-          }),
-          run_at: new Date(),
-        } as any)
-        .execute();
-    } else {
-      // For static lists, populate membership by explicit IDs if provided; otherwise by definition
-      const ids = payload.member_ids ?? [];
-
-      if (ids.length && payload.object === 'people') {
-        const rows = ids.map((person_id) => ({
-          tenant_id: auth.tenant_id,
-          list_id: list.id,
-          person_id,
-          createdby_id: auth.user_id,
-          updatedby_id: auth.user_id,
-        }));
-        await this.mapListsPersonsRepo.addMany({ rows: rows as OperationDataType<'map_lists_persons', 'insert'>[] });
-        try {
-          const workflowsController = new WorkflowsController();
-          for (const person_id of ids) {
-            await workflowsController.triggerWorkflow(auth.tenant_id, person_id, 'list_joined', list.id);
-          }
-        } catch (err) {
-          console.error('Failed to trigger list_joined workflow in addList (explicit IDs):', err);
-        }
-      } else if (ids.length && payload.object === 'households') {
-        const rows = ids.map((household_id) => ({
-          tenant_id: auth.tenant_id,
-          list_id: list.id,
-          household_id,
-          createdby_id: auth.user_id,
-          updatedby_id: auth.user_id,
-        }));
-        await this.mapListsHouseholdsRepo.addMany({
-          rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
-        });
-      } else if (payload.definition) {
-        if (payload.object === 'people') {
-          const result = await this.personsController.getAllWithAddress(auth, payload.definition as getAllOptionsType);
-          const rows = result.rows.map((p) => ({
-            tenant_id: auth.tenant_id,
-            list_id: list.id,
-            person_id: String(p['id']),
-            createdby_id: auth.user_id,
-            updatedby_id: auth.user_id,
-          }));
-          if (rows.length) {
-            await this.mapListsPersonsRepo.addMany({
-              rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
-            });
-            try {
-              const workflowsController = new WorkflowsController();
-              for (const r of rows) {
-                await workflowsController.triggerWorkflow(auth.tenant_id, r.person_id, 'list_joined', list.id);
-              }
-            } catch (err) {
-              console.error('Failed to trigger list_joined workflow in addList (definition):', err);
-            }
-          }
-        } else if (payload.object === 'households') {
-          const result = await this.householdsController.getAllWithPeopleCount(
-            auth,
-            payload.definition as getAllOptionsType,
-          );
-          const rows = result.rows.map((h) => ({
-            tenant_id: auth.tenant_id,
-            list_id: list.id,
-            household_id: h['id'],
-            createdby_id: auth.user_id,
-            updatedby_id: auth.user_id,
-          }));
-          if (rows.length) {
-            await this.mapListsHouseholdsRepo.addMany({
-              rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
-            });
-          }
-        }
-      }
-    }
-
-    return list;
-  }
-
-  public async refreshList(auth: IAuthKeyPayload, id: string): Promise<any> {
-    const list = (await super.getOneById({ tenant_id: auth.tenant_id, id })) as any;
-    if (!list) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
-    }
-    if (!list.is_dynamic) {
-      return list;
-    }
-
-    // Set list status to refreshing
-    await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: {
-        status: 'refreshing',
-        updatedby_id: auth.user_id,
-        updated_at: new Date(),
-      } as any,
-    });
-
-    // Queue background job
-    await this.getRepo()
-      .db.insertInto('background_jobs' as any)
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'refresh_list',
-          list_id: id,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-        }),
-        run_at: new Date(),
-      } as any)
-      .execute();
-
-    return { ...list, status: 'refreshing' };
-  }
-
-  public async executeListRefresh(tenant_id: string, id: string, user_id: string): Promise<any> {
-    const auth: IAuthKeyPayload = {
-      tenant_id,
-      user_id,
-      name: 'System Worker',
-      session_id: 'worker-session',
-    };
-
-    const list = (await this.getOneById({ tenant_id, id })) as any;
-    if (!list) {
-      throw new Error(`List ${id} not found`);
-    }
-    if (!list.is_dynamic) {
-      return list;
-    }
-
-    const definition = list.definition as getAllOptionsType;
-    if (!definition) {
-      // Set back to idle if no definition
-      await this.update({
-        tenant_id,
-        id,
-        row: {
-          status: 'idle',
-          updated_at: new Date(),
-          updatedby_id: user_id,
-        } as any,
-      });
-      return list;
-    }
-
-    try {
-      if (list.object === 'people') {
-        // Clear current mappings
-        await this.mapListsPersonsRepo.db
-          .deleteFrom('map_lists_persons')
-          .where('tenant_id', '=', tenant_id)
-          .where('list_id', '=', id)
-          .execute();
-
-        // Resolve and insert new mappings
-        const result = await this.personsController.getAllWithAddress(auth, definition);
-        const rows = result.rows.map((p) => ({
-          tenant_id: tenant_id,
-          list_id: list.id,
-          person_id: p['id'],
-          createdby_id: user_id,
-          updatedby_id: user_id,
-        }));
-        if (rows.length) {
-          await this.mapListsPersonsRepo.addMany({
-            rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
-          });
-        }
-      } else if (list.object === 'households') {
-        // Clear current mappings
-        await this.mapListsHouseholdsRepo.db
-          .deleteFrom('map_lists_households')
-          .where('tenant_id', '=', tenant_id)
-          .where('list_id', '=', id)
-          .execute();
-
-        // Resolve and insert new mappings
-        const result = await this.householdsController.getAllWithPeopleCount(auth, definition);
-        const rows = result.rows.map((h) => ({
-          tenant_id: tenant_id,
-          list_id: list.id,
-          household_id: h['id'],
-          createdby_id: user_id,
-          updatedby_id: user_id,
-        }));
-        if (rows.length) {
-          await this.mapListsHouseholdsRepo.addMany({
-            rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
-          });
-        }
-      }
-
-      // Update refreshed timestamp and status back to idle
-      const updated = await this.update({
-        tenant_id,
-        id,
-        row: {
-          status: 'idle',
-          last_refreshed_at: new Date(),
-          updated_at: new Date(),
-          updatedby_id: user_id,
-        } as any,
-      });
-
-      return updated;
-    } catch (error) {
-      // Set status to failed
-      await this.update({
-        tenant_id,
-        id,
-        row: {
-          status: 'failed',
-          updated_at: new Date(),
-          updatedby_id: user_id,
-        } as any,
-      });
-      throw error;
-    }
-  }
-
-  public async getListStats(auth: IAuthKeyPayload, id: string): Promise<any> {
-    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
-    if (!list) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
-    }
-
-    // Fetch all newsletters that are sent
-    const newsletters = await this.getRepo()
-      .db.selectFrom('newsletters')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('status', '=', 'sent')
-      .execute();
-
-    // Filter newsletters in JS where their target_lists matches this list
-    const targetedNewsletters = newsletters.filter((n) => {
-      if (!n.target_lists) return false;
-      // After migration 2026-07-01-a-schema-improvements, target_lists is a jsonb column returned as a parsed object.
-      // Support legacy string values too (pre-migration rows or test data).
-      let parsed: unknown = n.target_lists;
-      if (typeof parsed === 'string') {
-        try {
-          parsed = JSON.parse(parsed);
-        } catch {
-          /* fall through */
-        }
-      }
-      if (Array.isArray(parsed)) {
-        return parsed.includes(id);
-      }
-      if (parsed && typeof parsed === 'object') {
-        const obj = parsed as Record<string, unknown>;
-        const include = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
-        return include.includes(id);
-      }
-      if (typeof parsed === 'string') {
-        return parsed
-          .split(',')
-          .map((s) => s.trim())
-          .includes(id);
-      }
-      return false;
-    });
-
-    // Compute aggregated metrics
-    const totalNewsletters = targetedNewsletters.length;
-    let totalDelivered = 0;
-    let totalOpens = 0;
-    let totalClicks = 0;
-
-    for (const n of targetedNewsletters) {
-      totalDelivered += Number(n.delivered_count ?? 0);
-      totalOpens += Number(n.unique_opens ?? 0);
-      totalClicks += Number(n.unique_clicks ?? 0);
-    }
-
-    const avgOpenRate = totalDelivered > 0 ? (totalOpens / totalDelivered) * 100 : 0;
-    const avgClickRate = totalDelivered > 0 ? (totalClicks / totalDelivered) * 100 : 0;
-
-    return {
-      totalNewsletters,
-      totalDelivered,
-      avgOpenRate,
-      avgClickRate,
-      newsletters: targetedNewsletters.map((n) => ({
-        id: n.id,
-        name: n.name,
-        subject: n.subject,
-        send_date: n.send_date,
-        total_recipients: n.total_recipients,
-        delivered_count: n.delivered_count,
-        open_rate: n.open_rate,
-        click_rate: n.click_rate,
-      })),
-    };
-  }
-
-  public getHouseholdsByListId(auth: IAuthKeyPayload, list_id: string) {
-    return this.getRepo().getHouseholdsByListId({ tenant_id: auth.tenant_id, list_id });
-  }
-
-  public getPersonsByListId(auth: IAuthKeyPayload, list_id: string) {
-    return this.getRepo().getPersonsByListId({ tenant_id: auth.tenant_id, list_id });
-  }
-
-  public async getMemberCount(auth: IAuthKeyPayload, id: string): Promise<number> {
-    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
-    if (!list) return 0;
-    if (list.is_dynamic && list.definition) {
-      const opts = { ...(list.definition as getAllOptionsType), startRow: 0, endRow: 0 };
-      if (list.object === 'people') {
-        const data = await this.personsController.getAllWithAddress(auth, opts);
-        return data.count;
-      } else {
-        const data = await this.householdsController.getAllWithPeopleCount(auth, opts);
-        return data.count;
-      }
-    } else {
-      if (list.object === 'people') {
-        const result = await this.mapListsPersonsRepo.db
-          .selectFrom('map_lists_persons')
-          .select(({ fn }) => fn.countAll().as('count'))
-          .where('tenant_id', '=', auth.tenant_id as any)
-          .where('list_id', '=', id as any)
-          .executeTakeFirst();
-        return Number(result?.count ?? 0);
-      } else {
-        const result = await this.mapListsHouseholdsRepo.db
-          .selectFrom('map_lists_households')
-          .select(({ fn }) => fn.countAll().as('count'))
-          .where('tenant_id', '=', auth.tenant_id as any)
-          .where('list_id', '=', id as any)
-          .executeTakeFirst();
-        return Number(result?.count ?? 0);
-      }
-    }
-  }
-
-  public async updateList(id: string, row: UpdateListType, auth: IAuthKeyPayload) {
-    const rowWithUpdatedBy = {
-      ...row,
-      updatedby_id: auth.user_id,
-    };
-    const result = await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: rowWithUpdatedBy as OperationDataType<'lists', 'update'>,
-    });
-
-    // If the list is dynamic and definition or dynamics was updated, queue a refresh job
-    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
-    if (list && list.is_dynamic && (row.definition !== undefined || row.is_dynamic === true)) {
-      // Update status to refreshing
-      await this.update({
-        tenant_id: auth.tenant_id,
-        id,
-        row: {
-          status: 'refreshing',
-          updatedby_id: auth.user_id,
-          updated_at: new Date(),
-        } as any,
-      });
-
-      await this.getRepo()
-        .db.insertInto('background_jobs' as any)
-        .values({
-          tenant_id: auth.tenant_id,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({
-            type: 'refresh_list',
-            list_id: id,
-            tenant_id: auth.tenant_id,
-            user_id: auth.user_id,
-          }),
-          run_at: new Date(),
-        } as any)
-        .execute();
-    }
-
-    return result;
-  }
-
-  public override async delete(tenant_id: string, idToDelete: string, userId?: string) {
-    await this.mapListsPersonsRepo.db
-      .deleteFrom('map_lists_persons')
-      .where('tenant_id', '=', tenant_id as any)
-      .where('list_id', '=', idToDelete as any)
-      .execute();
-
-    await this.mapListsHouseholdsRepo.db
-      .deleteFrom('map_lists_households')
-      .where('tenant_id', '=', tenant_id as any)
-      .where('list_id', '=', idToDelete as any)
-      .execute();
-
-    return super.delete(tenant_id as any, idToDelete, userId);
-  }
-
-  public override async deleteMany(tenant_id: string, idsToDelete: string[]) {
-    if (idsToDelete.length === 0) return false;
-
-    await this.mapListsPersonsRepo.db
-      .deleteFrom('map_lists_persons')
-      .where('tenant_id', '=', tenant_id as any)
-      .where('list_id', 'in', idsToDelete)
-      .execute();
-
-    await this.mapListsHouseholdsRepo.db
-      .deleteFrom('map_lists_households')
-      .where('tenant_id', '=', tenant_id as any)
-      .where('list_id', 'in', idsToDelete)
-      .execute();
-
-    return super.deleteMany(tenant_id as any, idsToDelete);
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const list = (await super.getOneById(input)) as any;
-    if (list && list.is_dynamic) {
-      const oneDayAgo = new Date(Date.now() - 24 * 3600 * 1000);
-      if (!list.last_refreshed_at || new Date(list.last_refreshed_at) < oneDayAgo) {
-        if (list.status !== 'refreshing') {
-          // Lazily trigger refresh in background
-          const mockAuth: IAuthKeyPayload = {
-            tenant_id: input.tenant_id,
-            user_id: list.createdby_id,
-            name: 'System Worker',
-            session_id: 'lazy-refresh',
-          };
-          const promise = this.refreshList(mockAuth, input.id).catch((err) =>
-            console.error(`Failed to lazily queue refresh for list ${input.id}:`, err),
-          );
-          (this as any)._lastLazyRefreshPromise = promise;
-        }
-      }
-    }
-    if (!list) return list;
-    return this.resolveCreatorAndUpdater(input.tenant_id, list);
-  }
-}
-```
-
 ## File: apps/backend/src/app/modules/ms-sync/ms-callback.route.ts
 
 ```typescript
@@ -26079,490 +25288,6 @@ const msSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 
 export default msSyncCallbackRoute;
-```
-
-## File: apps/backend/src/app/modules/ms-sync/ms-oauth.service.ts
-
-```typescript
-import { ConfidentialClientApplication, AuthorizationCodeRequest } from '@azure/msal-node';
-import { Kysely } from 'kysely';
-import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-
-export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
-
-const MS_SCOPES = [
-  'https://graph.microsoft.com/Mail.Read',
-  'https://graph.microsoft.com/Mail.ReadWrite',
-  'https://graph.microsoft.com/Mail.Send',
-  'offline_access',
-];
-
-export class MsOAuthService {
-  private readonly msalApp: ConfidentialClientApplication;
-  private readonly db: Kysely<Models>;
-  private readonly redirectUri: string;
-
-  constructor(
-    db: Kysely<Models>,
-    config: { clientId: string; clientSecret: string; tenantId: string; redirectUri: string },
-  ) {
-    this.db = db;
-    this.redirectUri = config.redirectUri;
-    this.msalApp = new ConfidentialClientApplication({
-      auth: {
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-        authority: `https://login.microsoftonline.com/${config.tenantId}`,
-      },
-    });
-  }
-
-  public async getAuthUrl(state: string): Promise<string> {
-    return this.msalApp.getAuthCodeUrl({
-      scopes: MS_SCOPES,
-      redirectUri: this.redirectUri,
-      state,
-      prompt: 'select_account',
-    });
-  }
-
-  public async handleCallback(code: string, userId: string, tenantId: string): Promise<void> {
-    const request: AuthorizationCodeRequest = {
-      code,
-      scopes: MS_SCOPES,
-      redirectUri: this.redirectUri,
-    };
-
-    const response = await this.msalApp.acquireTokenByCode(request);
-    if (!response?.accessToken || !response.account) {
-      throw new Error('Failed to acquire token from Microsoft');
-    }
-
-    const expiresAt = response.expiresOn ?? new Date(Date.now() + 3600 * 1000);
-
-    // Retrieve the refresh token from the MSAL cache
-    const cache = this.msalApp.getTokenCache().serialize();
-    const parsedCache = JSON.parse(cache);
-    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
-    const refreshToken = refreshTokenEntry[0]?.secret ?? '';
-
-    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
-    await this.db.transaction().execute(async (trx) => {
-      await trx
-        .insertInto('ms_oauth_tokens')
-        .values({
-          tenant_id: tenantId,
-          user_id: userId,
-          access_token: response.accessToken,
-          refresh_token: refreshToken,
-          expires_at: expiresAt,
-          ms_email: response.account?.username ?? null,
-          delta_link: NEEDS_FULL_SYNC,
-          synced_at: null,
-        })
-        .onConflict((oc) =>
-          oc.column('user_id').doUpdateSet({
-            access_token: response.accessToken,
-            refresh_token: refreshToken,
-            expires_at: expiresAt,
-            ms_email: response.account?.username ?? null,
-            delta_link: NEEDS_FULL_SYNC,
-            synced_at: null,
-            last_sync_error: null,
-            last_sync_error_at: null,
-            updated_at: new Date(),
-          }),
-        )
-        .execute();
-
-      await trx
-        .insertInto('background_jobs' as any)
-        .values({
-          tenant_id: tenantId,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({ type: 'ms_sync', userId, tenantId, requestedBy: userId }),
-          run_at: new Date(),
-          max_attempts: 3,
-        })
-        .execute();
-    });
-  }
-
-  public async getValidToken(userId: string): Promise<string> {
-    const row = await this.db
-      .selectFrom('ms_oauth_tokens')
-      .selectAll()
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    if (!row) {
-      throw new Error('No Microsoft account connected for this user');
-    }
-
-    const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
-    if (!isExpired) {
-      return row.access_token;
-    }
-
-    // Refresh via MSAL silent flow
-    const response = await this.msalApp.acquireTokenByRefreshToken({
-      refreshToken: row.refresh_token,
-      scopes: MS_SCOPES,
-    });
-
-    if (!response?.accessToken) {
-      throw new Error('Token refresh failed — user must reconnect their Microsoft account');
-    }
-
-    const newExpiry = response.expiresOn ?? new Date(Date.now() + 3600 * 1000);
-
-    // Retrieve fresh refresh token from cache
-    const cache = this.msalApp.getTokenCache().serialize();
-    const parsedCache = JSON.parse(cache);
-    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
-    const newRefreshToken = refreshTokenEntry[0]?.secret ?? row.refresh_token;
-
-    await this.db
-      .updateTable('ms_oauth_tokens')
-      .set({
-        access_token: response.accessToken,
-        refresh_token: newRefreshToken,
-        expires_at: newExpiry,
-        updated_at: new Date(),
-      })
-      .where('user_id', '=', userId)
-      .execute();
-
-    return response.accessToken;
-  }
-
-  public async getConnectionStatus(
-    userId: string,
-  ): Promise<{
-    connected: boolean;
-    msEmail: string | null;
-    syncedAt: Date | null;
-    lastSyncError: string | null;
-    lastSyncErrorAt: Date | null;
-  }> {
-    const row = await this.db
-      .selectFrom('ms_oauth_tokens')
-      .select(['ms_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    return {
-      connected: !!row,
-      msEmail: row?.ms_email ?? null,
-      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
-      lastSyncError: row?.last_sync_error ?? null,
-      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
-    };
-  }
-
-  public async disconnect(userId: string): Promise<void> {
-    await this.db.deleteFrom('ms_oauth_tokens').where('user_id', '=', userId).execute();
-  }
-
-  public async resetDeltaLinkForTenant(tenantId: string): Promise<void> {
-    await this.db
-      .updateTable('ms_oauth_tokens')
-      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-
-  public async saveDeltaLink(userId: string, deltaLink: string): Promise<void> {
-    await this.db
-      .updateTable('ms_oauth_tokens')
-      .set({
-        delta_link: deltaLink,
-        synced_at: new Date(),
-        last_sync_error: null,
-        last_sync_error_at: null,
-        updated_at: new Date(),
-      })
-      .where('user_id', '=', userId)
-      .execute();
-  }
-
-  public async recordSyncError(userId: string, error: string): Promise<void> {
-    await this.db
-      .updateTable('ms_oauth_tokens')
-      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
-      .where('user_id', '=', userId)
-      .execute();
-  }
-
-  public async getDeltaLink(userId: string): Promise<string | null> {
-    const row = await this.db
-      .selectFrom('ms_oauth_tokens')
-      .select('delta_link')
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-    return row?.delta_link ?? null;
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/ms-sync/ms-sync.service.ts
-
-```typescript
-import { Client } from '@microsoft/microsoft-graph-client';
-import { Kysely } from 'kysely';
-import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { MsOAuthService } from './ms-oauth.service';
-import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
-import { EmailIngesterService, IngestableEmail } from '../emails/services/email-ingester.service';
-
-const MAX_MESSAGES_PER_SYNC = 50;
-
-async function graphCallWithRetry<T>(callFn: () => Promise<T>, maxRetries = 3): Promise<T> {
-  let attempt = 0;
-  while (true) {
-    attempt++;
-    try {
-      return await callFn();
-    } catch (err: any) {
-      if (err?.statusCode === 429 && attempt <= maxRetries) {
-        let delayMs = 5000;
-        const retryAfter = err?.headers?.get?.('Retry-After') || err?.headers?.['retry-after'];
-        if (retryAfter) {
-          const parsed = parseInt(retryAfter, 10);
-          if (!isNaN(parsed)) {
-            delayMs = parsed * 1000;
-          }
-        } else {
-          delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
-        }
-        console.warn(`MS Graph API rate limited (429). Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        continue;
-      }
-      throw err;
-    }
-  }
-}
-
-export class MsSyncService {
-  private readonly ingester: EmailIngesterService;
-
-  constructor(
-    private readonly db: Kysely<Models>,
-    private readonly oauthSvc: MsOAuthService,
-  ) {
-    this.ingester = new EmailIngesterService(db, 'ms');
-  }
-
-  public async syncUser(userId: string, tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
-    const accessToken = await this.oauthSvc.getValidToken(userId);
-    const client = this.buildGraphClient(accessToken);
-
-    const syncFolders = [
-      { wellKnownName: 'inbox', pplcrmId: ALL_FOLDERS.INBOX },
-      { wellKnownName: 'sentitems', pplcrmId: ALL_FOLDERS.SENT },
-      { wellKnownName: 'deleteditems', pplcrmId: ALL_FOLDERS.TRASH },
-      { wellKnownName: 'junkemail', pplcrmId: ALL_FOLDERS.SPAM },
-    ];
-
-    // Read stored delta map.
-    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
-    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
-    // positions after a successful sync, so no explicit clear is needed.
-    const dbDeltaLink = await this.oauthSvc.getDeltaLink(userId);
-    let deltaMap: Record<string, string> = {};
-    if (dbDeltaLink) {
-      try {
-        const parsed = JSON.parse(dbDeltaLink);
-        if (!parsed._needs_full_sync) {
-          deltaMap = parsed;
-        }
-        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
-      } catch {
-        // If not valid JSON, it's a legacy plain URL string. Clear it.
-        deltaMap = {};
-      }
-    }
-
-    let inserted = 0;
-    const nextDeltaMap: Record<string, string> = { ...deltaMap };
-
-    for (const folder of syncFolders) {
-      const folderDeltaLink = deltaMap[folder.wellKnownName] || null;
-
-      let pageUrl: string | null =
-        folderDeltaLink ??
-        `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
-
-      const allMessages: any[] = [];
-      let isInitialSync = folderDeltaLink === null;
-      let hasMore = true;
-
-      while (pageUrl && hasMore) {
-        const url = pageUrl;
-        try {
-          const response: any = await graphCallWithRetry(() => client.api(url).get());
-          const messages = response.value ?? [];
-          allMessages.push(...messages);
-
-          const nextLink = response['@odata.nextLink'] ?? null;
-          const deltaLink = response['@odata.deltaLink'] ?? null;
-
-          if (deltaLink) {
-            nextDeltaMap[folder.wellKnownName] = deltaLink;
-            hasMore = false;
-          } else if (nextLink) {
-            pageUrl = nextLink;
-          } else {
-            hasMore = false;
-          }
-        } catch (err: any) {
-          if (err?.statusCode === 410) {
-            // Delta link expired for this folder, clear it
-            delete nextDeltaMap[folder.wellKnownName];
-            isInitialSync = true;
-            allMessages.length = 0; // clear any partially loaded pages before restarting
-            pageUrl = `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
-          } else {
-            throw err;
-          }
-        }
-      }
-
-      // Process all messages fetched in this sync run
-      for (const msg of allMessages) {
-        if (msg['@removed']) {
-          const msId = msg.id;
-          if (msId) {
-            await this.ingester.deleteMessage(tenantId, msId);
-          }
-          continue;
-        }
-
-        try {
-          const wasSaved = await this.saveMessage(client, msg, tenantId, requestedBy, folder.pplcrmId);
-          if (wasSaved) inserted++;
-        } catch (err) {
-          console.error(`Failed to ingest MS Graph message ${msg.id}:`, err);
-        }
-      }
-
-      // If it was an initial/full sync (meaning we started with no delta link, or it expired and we retried),
-      // we have retrieved the entire list of active server messages.
-      // Therefore, any local email that has an MS preview key but is NOT in the server's list must have been deleted or moved.
-      if (isInitialSync) {
-        const serverMsIds = new Set(allMessages.filter((m) => !m['@removed']).map((m) => String(m.id)));
-        const localEmails = await this.db
-          .selectFrom('emails')
-          .select(['id', 'preview'])
-          .where('tenant_id', '=', tenantId)
-          .where('folder_id', '=', folder.pplcrmId)
-          .where('preview', 'like', 'ms:%')
-          .execute();
-
-        for (const localEmail of localEmails) {
-          const previewKey = localEmail.preview ?? '';
-          const msId = previewKey.replace(/^ms:/, '');
-          if (!serverMsIds.has(msId)) {
-            await this.ingester.deleteMessage(tenantId, msId);
-          }
-        }
-      }
-    }
-
-    // Save updated delta map back to database
-    await this.oauthSvc.saveDeltaLink(userId, JSON.stringify(nextDeltaMap));
-
-    return { inserted };
-  }
-
-  public async removeAllLocalEmails(tenantId: string): Promise<void> {
-    await this.ingester.removeAllLocalEmails(tenantId);
-  }
-
-  private async saveMessage(
-    client: Client,
-    msg: any,
-    tenantId: string,
-    requestedBy: string,
-    folderId: string,
-  ): Promise<boolean> {
-    const msId: string = msg.id ?? '';
-    if (!msId) return false;
-
-    const fromEmail = msg.from?.emailAddress?.address ?? null;
-    const toEmail = msg.toRecipients?.[0]?.emailAddress?.address ?? null;
-    const subject = msg.subject ?? null;
-    let dateSent = msg.receivedDateTime ? new Date(msg.receivedDateTime) : new Date();
-    if (isNaN(dateSent.getTime())) {
-      dateSent = new Date();
-    }
-    const bodyHtml = msg.body?.content ?? '';
-
-    // Fetch Graph attachments if any
-    let graphAttachments: any[] = [];
-    const hasCid = bodyHtml && bodyHtml.includes('cid:');
-    if (msg.hasAttachments || hasCid) {
-      try {
-        const attRes = await graphCallWithRetry(() => client.api(`/me/messages/${msId}/attachments`).get());
-        graphAttachments = attRes.value ?? [];
-      } catch (err) {
-        console.error(`Failed to fetch attachments for message ${msId}:`, err);
-      }
-    }
-
-    const fileAttachments = graphAttachments.filter(
-      (att: any) => att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes,
-    );
-
-    // Map MS Graph attachments to IngestableEmail attachments
-    const attachments = fileAttachments.map((att: any) => ({
-      name: att.name,
-      contentType: att.contentType,
-      size: att.size,
-      contentId: att.contentId ?? null,
-      isInline: att.isInline ?? false,
-      fetchContent: async () => Buffer.from(att.contentBytes, 'base64'),
-    }));
-
-    // Map recipients
-    const recipients: Array<{ kind: 'to' | 'cc' | 'bcc'; name: string | null; email: string }> = [];
-    const toList: any[] = msg.toRecipients ?? [];
-    const ccList: any[] = msg.ccRecipients ?? [];
-    const bccList: any[] = msg.bccRecipients ?? [];
-
-    toList.forEach((r) => {
-      recipients.push({ kind: 'to', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
-    });
-    ccList.forEach((r) => {
-      recipients.push({ kind: 'cc', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
-    });
-    bccList.forEach((r) => {
-      recipients.push({ kind: 'bcc', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
-    });
-
-    const ingestable: IngestableEmail = {
-      id: msId,
-      internetMessageId: msg.internetMessageId ?? null,
-      fromEmail,
-      toEmail,
-      subject,
-      dateSent,
-      bodyHtml,
-      recipients,
-      attachments,
-    };
-
-    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
-  }
-
-  private buildGraphClient(accessToken: string): Client {
-    return Client.init({
-      authProvider: (done) => done(null, accessToken),
-    });
-  }
-}
 ```
 
 ## File: apps/backend/src/app/modules/persons/services/persons.service.ts
@@ -27715,296 +26440,6 @@ export class PersonsService {
 }
 ```
 
-## File: apps/backend/src/app/modules/persons/controller.ts
-
-```typescript
-import type {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthKeyPayload,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-import { TRPCError } from '@trpc/server';
-import { BaseController } from '../../lib/base.controller';
-import type { QueryParams } from '../../lib/base.repo';
-import { MapListsPersonsRepo } from '../lists/repositories/map-lists-persons.repo';
-import { MapPersonsTagRepo } from './repositories/map-persons-tags.repo';
-import { PersonsRepo } from './repositories/persons.repo';
-import { MapTeamsPersonsRepo } from '../teams/repositories/map-teams-persons.repo';
-import { queueZapierTrigger } from '../zapier/zapier.service';
-
-export class PersonsController extends BaseController<'persons', PersonsRepo> {
-  private mapPersonsTagRepo = new MapPersonsTagRepo();
-  private mapListsPersonsRepo = new MapListsPersonsRepo();
-  private mapTeamsPersonsRepo = new MapTeamsPersonsRepo();
-
-  constructor() {
-    super(new PersonsRepo());
-  }
-
-  public getAllWithAddress(
-    auth: IAuthKeyPayload,
-    options?: getAllOptionsType,
-  ): Promise<{ rows: { [x: string]: unknown }[]; count: number }> {
-    const { tags, ...queryParams } = options || {};
-    return this.getRepo().getAllWithAddress({
-      tenant_id: auth.tenant_id,
-      options: queryParams as QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>,
-      tags,
-    });
-  }
-
-  public getByHouseholdId(household_id: string, auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getByHouseholdId({
-      id: household_id,
-      tenant_id: auth.tenant_id,
-      options: options as QueryParams<'persons'>,
-    });
-  }
-
-  public getByCompanyId(company_id: string, auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getByCompanyId({
-      id: company_id,
-      tenant_id: auth.tenant_id,
-      options: options as QueryParams<'persons'>,
-    });
-  }
-
-  public countByCompanyId(company_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().countByCompanyId({ id: company_id, tenant_id: auth.tenant_id });
-  }
-
-  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getDistinctTags(auth.tenant_id, type);
-  }
-
-  public getTags(person_id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getTags({ id: person_id, tenant_id: auth.tenant_id, type });
-  }
-
-  public async moveEntireHousehold(oldHouseholdId: string, newHouseholdId: string, tenantId: string) {
-    return this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        return await trx
-          .updateTable('persons')
-          .set({ household_id: newHouseholdId })
-          .where('household_id', '=', oldHouseholdId)
-          .where('tenant_id', '=', tenantId)
-          .returningAll()
-          .execute();
-      });
-  }
-
-  public override async deleteMany(tenant_id: string, idsToDelete: string[], force?: boolean): Promise<boolean> {
-    if (!idsToDelete?.length) return false;
-
-    let personSnapshots: any[] = [];
-    try {
-      personSnapshots = await this.getRepo()
-        .db.selectFrom('persons')
-        .select(['id', 'email', 'first_name', 'last_name'])
-        .where('tenant_id', '=', tenant_id)
-        .where('id', 'in', idsToDelete)
-        .execute();
-    } catch {
-      /* ignore — snapshots are best-effort */
-    }
-
-    const result = await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        // Check if any person is a team captain
-        const captainedTeams = await trx
-          .selectFrom('teams')
-          .select(['id', 'name', 'team_captain_id'])
-          .where('tenant_id', '=', tenant_id)
-          .where('team_captain_id', 'in', idsToDelete)
-          .execute();
-
-        if (captainedTeams.length > 0 && !force) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message:
-              'One or more selected people are team captains. Deleting them will remove them as captain. Do you want to proceed?',
-          });
-        }
-
-        // Unlink captaincy if forced and captained teams exist
-        if (captainedTeams.length > 0) {
-          await trx
-            .updateTable('teams')
-            .set({ team_captain_id: null })
-            .where('tenant_id', '=', tenant_id)
-            .where('team_captain_id', 'in', idsToDelete)
-            .execute();
-        }
-
-        // Delete volunteer shifts
-        await trx
-          .deleteFrom('volunteer_shifts')
-          .where('tenant_id', '=', tenant_id)
-          .where('person_id', 'in', idsToDelete)
-          .execute();
-
-        // Delete team mappings
-        await this.mapTeamsPersonsRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
-        // Delete tag mappings
-        await this.mapPersonsTagRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
-        // Delete list mappings
-        await this.mapListsPersonsRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
-        // Delete persons within the same transaction
-        const result = await this.getRepo().deleteMany({ tenant_id: tenant_id as any, ids: idsToDelete as any }, trx);
-
-        return result;
-      });
-
-    try {
-      for (const p of personSnapshots) {
-        await queueZapierTrigger(this.getRepo().db, tenant_id, 'person_deleted', {
-          id: String(p.id),
-          email: p.email,
-          first_name: p.first_name,
-          last_name: p.last_name,
-        });
-      }
-    } catch (e) {
-      console.error('[Zapier] Failed to queue person_deleted trigger(s)', e);
-    }
-
-    return result;
-  }
-
-  public override async delete(
-    tenant_id: string,
-    idToDelete: string,
-    userId?: string,
-    force?: boolean,
-  ): Promise<boolean> {
-    const result = await this.deleteMany(tenant_id, [idToDelete], force);
-    try {
-      if (userId) {
-        await this.userActivity.log({
-          tenant_id: tenant_id,
-          user_id: userId,
-          activity: 'delete',
-          entity: 'persons',
-          entity_id: idToDelete ? String(idToDelete) : null,
-          quantity: 1,
-          metadata: { id: idToDelete },
-        });
-      }
-    } catch (e) {
-      console.error('Failed to log delete person activity', e);
-    }
-    return result;
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const result = await this.getAllWithAddress(auth, input?.options);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'export',
-        entity: 'persons',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-        },
-      });
-      return response;
-    }
-    return super.exportCsv(input, auth);
-  }
-}
-```
-
-## File: apps/backend/src/app/kyselyinit.ts
-
-```typescript
-import { sql } from 'kysely';
-import { BaseRepository } from './lib/base.repo';
-import '../env';
-
-async function ensureMigrationTableUpdated(): Promise<void> {
-  try {
-    await sql`
-      UPDATE kysely_migration
-      SET name = '2026-07-01-a-schema-improvements'
-      WHERE name IN ('2026-06-31-schema-improvements', '2026-07-01-schema-improvements')
-    `.execute(BaseRepository.dbInstance);
-
-    await sql`
-      UPDATE kysely_migration
-      SET name = '2026-07-01-b-security-ops-improvements'
-      WHERE name IN ('2026-06-31-security-ops-improvements', '2026-07-01-security-ops-improvements')
-    `.execute(BaseRepository.dbInstance);
-  } catch (err) {
-    // Ignore if table doesn't exist or update fails
-  }
-}
-
-export async function migrateDown(): Promise<void> {
-  await ensureMigrationTableUpdated();
-  const { error, results } = await BaseRepository.migrator.migrateDown();
-
-  results?.forEach((it) => {
-    if (it.status === 'Success') {
-      console.log(`migration down"${it.migrationName}" successsful`);
-    } else if (it.status === 'Error') {
-      console.error(`failed to execute migration down"${it.migrationName}"`);
-    }
-  });
-
-  if (error) {
-    console.error('failed to migrate down: ', error);
-    process.exit(1);
-  }
-}
-
-export async function migrateToLatest(): Promise<void> {
-  console.log('Migration starting');
-
-  await ensureMigrationTableUpdated();
-  const { error, results } = await BaseRepository.migrator.migrateToLatest();
-
-  results?.forEach((it) => {
-    if (it.status === 'Success') {
-      console.log(`migration up:"${it.migrationName}" successful`);
-    } else if (it.status === 'Error') {
-      console.error(`failed to execute migration up"${it.migrationName}"`);
-    }
-  });
-
-  if (error) {
-    console.error('failed to migrate up: ', error);
-    process.exit(1);
-  }
-}
-
-// Automatically run migration when script is executed directly
-const isMain =
-  typeof process !== 'undefined' &&
-  process.argv[1] &&
-  (process.argv[1].endsWith('kyselyinit.ts') || process.argv[1].endsWith('kyselyinit.js'));
-if (isMain) {
-  void migrateToLatest();
-}
-```
-
 ## File: apps/backend/src/env.ts
 
 ```typescript
@@ -28328,102 +26763,6 @@ export const adminOrOwnerProcedure = authProcedure.use(async (opts) => {
 });
 ```
 
-## File: apps/backend/project.json
-
-```json
-{
-  "name": "backend",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "apps/backend/src",
-  "projectType": "application",
-  "tags": [],
-  "targets": {
-    "generate-context": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "npx repomix --output apps/backend/STRUCTURE.md --include \"apps/backend/src/**/*\" --ignore \"apps/frontend/**,apps/libs/**,libs/**,**/STRUCTURE.md,**/_migrations/schema_dump.sql,**/*.spec.ts\""
-      }
-    },
-    "build": {
-      "executor": "@nx/esbuild:esbuild",
-      "dependsOn": ["generate-context"],
-      "outputs": ["{options.outputPath}"],
-      "defaultConfiguration": "production",
-      "options": {
-        "platform": "node",
-        "outputPath": "dist/apps/backend",
-        "format": ["esm"],
-        "main": "apps/backend/src/main.ts",
-        "tsConfig": "apps/backend/tsconfig.app.json",
-        "assets": ["apps/backend/src/assets"],
-        "generatePackageJson": false,
-        "esbuildOptions": {
-          "packages": "external",
-          "external": ["aws-sdk", "nock", "mock-aws-s3"],
-          "loader": {
-            ".html": "text"
-          },
-          "sourcemap": "inline",
-          "outExtension": {
-            ".js": ".js"
-          }
-        }
-      },
-      "configurations": {
-        "development": {
-          "bundle": true
-        },
-        "production": {
-          "bundle": true,
-          "esbuildOptions": {
-            "sourcemap": false,
-            "external": ["aws-sdk", "nock", "mock-aws-s3"],
-            "loader": {
-              ".html": "text"
-            },
-            "outExtension": {
-              ".js": ".js"
-            }
-          }
-        }
-      }
-    },
-    "serve": {
-      "executor": "@nx/js:node",
-      "defaultConfiguration": "development",
-      "options": {
-        "buildTarget": "backend:build"
-      },
-      "configurations": {
-        "development": {
-          "buildTarget": "backend:build:development",
-          "runtimeArgs": ["--inspect=9229", "--enable-source-maps", "--env-file=.env.development"]
-        },
-        "production": {
-          "buildTarget": "backend:build:production",
-          "runtimeArgs": ["--enable-source-maps", "--env-file=.env.production"]
-        }
-      }
-    },
-    "lint": {
-      "executor": "@nx/eslint:lint",
-      "outputs": ["{options.outputFile}"],
-      "options": {
-        "lintFilePatterns": ["apps/backend/**/*.ts"]
-      }
-    },
-    "test": {
-      "executor": "@nx/vitest:test",
-      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
-      "options": {
-        "passWithNoTests": true,
-        "reportsDirectory": "../../coverage/apps/backend"
-      }
-    }
-  }
-}
-```
-
 ## File: apps/backend/src/app/\_migrations/0001_baseline.ts
 
 ```typescript
@@ -28489,760 +26828,6 @@ export async function down(_db: Kysely<any>): Promise<void> {
   // as dropping the entire public schema is highly destructive.
   // We throw an error here to prevent accidental database wiping.
   throw new Error('This is a baseline migration and cannot be safely rolled back.');
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/worker.ts
-
-```typescript
-import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
-import { sql } from 'kysely';
-import { executeJob } from './job-handlers';
-import { Client } from 'pg';
-import { env } from '../../../env';
-
-export class BackgroundJobWorker {
-  private isRunning = false;
-  private timer: NodeJS.Timeout | null = null;
-  private recoveryInterval: NodeJS.Timeout | null = null;
-  private activeJobsCount = 0;
-  private shutdownResolver: (() => void) | null = null;
-  private pgClient: Client | null = null;
-  private reconnectTimer: NodeJS.Timeout | null = null;
-
-  private readonly importsRepo = new ImportsRepo();
-  private readonly db = this.importsRepo.db; // Kysely DB instance
-
-  public start() {
-    if (this.isRunning) return;
-    this.isRunning = true;
-    console.log('Background Job Worker started.');
-
-    this.ensureCleanupJobScheduled().catch((err) => console.error('Failed to ensure cleanup job scheduled:', err));
-    this.ensureSyncSchedulerJobScheduled().catch((err) =>
-      console.error('Failed to ensure sync scheduler job scheduled:', err),
-    );
-    this.ensureDuplicatesRecomputeJobScheduled().catch((err) =>
-      console.error('Failed to ensure duplicates recompute job scheduled:', err),
-    );
-    this.ensureAddressFingerprintsJobScheduled().catch((err) =>
-      console.error('Failed to ensure address fingerprints job scheduled:', err),
-    );
-    this.ensureWorkflowsJobScheduled().catch((err) => console.error('Failed to ensure workflows job scheduled:', err));
-    this.ensurePerformScheduledDeletionsJobScheduled().catch((err) =>
-      console.error('Failed to ensure perform scheduled deletions job scheduled:', err),
-    );
-    this.ensureUsageLimitChecksScheduled().catch((err) =>
-      console.error('Failed to ensure usage limit checks scheduled:', err),
-    );
-    this.ensureDueTasksCheckScheduled().catch((err) =>
-      console.error('Failed to ensure due tasks check scheduled:', err),
-    );
-    this.ensureCompaniesGoogleRefreshJobScheduled().catch((err) =>
-      console.error('Failed to ensure companies google refresh job scheduled:', err),
-    );
-    this.ensurePruneNewsletterEventsJobScheduled().catch((err) =>
-      console.error('Failed to ensure prune newsletter events job scheduled:', err),
-    );
-
-    // Run stale job recovery on startup and then every 5 minutes
-    this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs on startup:', err));
-    this.recoveryInterval = setInterval(
-      () => {
-        this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs:', err));
-      },
-      5 * 60 * 1000,
-    );
-
-    this.setupListener();
-    this.poll();
-  }
-
-  public async stop(): Promise<void> {
-    this.isRunning = false;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.recoveryInterval) {
-      clearInterval(this.recoveryInterval);
-      this.recoveryInterval = null;
-    }
-    if (this.pgClient) {
-      try {
-        await this.pgClient.end();
-      } catch (err) {
-        console.error('Error closing Postgres listener client on shutdown:', err);
-      }
-      this.pgClient = null;
-    }
-
-    if (this.activeJobsCount > 0) {
-      console.log(
-        `Background Job Worker: Waiting for ${this.activeJobsCount} active jobs to complete before shutting down...`,
-      );
-      await new Promise<void>((resolve) => {
-        this.shutdownResolver = resolve;
-      });
-    }
-    console.log('Background Job Worker stopped.');
-  }
-
-  private async setupListener() {
-    if (!this.isRunning) return;
-    try {
-      this.pgClient = new Client(env.db);
-      await this.pgClient.connect();
-
-      this.pgClient.on('notification', (msg) => {
-        if (msg.channel === 'background_jobs_channel') {
-          console.log('Background Job Worker received notify, waking up...');
-          this.wakeUp();
-        }
-      });
-
-      this.pgClient.on('error', (err) => {
-        console.error('Postgres listener client error:', err);
-        this.reconnectListener();
-      });
-
-      this.pgClient.on('end', () => {
-        console.warn('Postgres listener connection closed.');
-        this.reconnectListener();
-      });
-
-      await this.pgClient.query('LISTEN background_jobs_channel');
-      console.log('Listening for background_jobs notifications...');
-    } catch (err) {
-      console.error('Failed to setup Postgres listener:', err);
-      this.reconnectListener();
-    }
-  }
-
-  private reconnectListener() {
-    if (this.pgClient) {
-      this.pgClient.end().catch(() => {});
-      this.pgClient = null;
-    }
-    if (!this.isRunning) return;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = setTimeout(() => {
-      this.setupListener();
-    }, 5000);
-  }
-
-  private wakeUp() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    this.poll();
-  }
-
-  private poll() {
-    if (!this.isRunning) return;
-
-    this.timer = setTimeout(async () => {
-      let processedAJob = false;
-      try {
-        this.activeJobsCount++;
-        processedAJob = await this.processNextJob();
-      } catch (err) {
-        console.error('Error in background job worker poll cycle:', err);
-      } finally {
-        this.activeJobsCount--;
-
-        // If shutdown was requested and no active jobs remain, resolve the stop() promise
-        if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
-          this.shutdownResolver();
-          return;
-        }
-
-        // Poll again immediately (10ms) if we processed a job (to drain the queue),
-        // or back off to 30 seconds if no jobs were found.
-        const delay = processedAJob ? 10 : 30000;
-        this.pollWithDelay(delay);
-      }
-    }, 0);
-  }
-
-  private pollWithDelay(ms: number) {
-    if (!this.isRunning) return;
-    this.timer = setTimeout(() => this.poll(), ms);
-  }
-
-  private async processNextJob(): Promise<boolean> {
-    const workerId = `worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
-
-    // Try to find and lock a job using SKIP LOCKED
-    const job = await this.db.transaction().execute(async (trx: any) => {
-      const pendingJob = (await trx
-        .selectFrom('background_jobs' as any)
-        .selectAll()
-        .where('status', '=', 'pending')
-        .where('run_at', '<=', new Date())
-        .orderBy('id', 'asc')
-        .limit(1)
-        .forUpdate()
-        .skipLocked()
-        .executeTakeFirst()) as any;
-
-      if (!pendingJob) return null;
-
-      const updatedJob = await trx
-        .updateTable('background_jobs' as any)
-        .set({
-          status: 'processing',
-          locked_at: new Date(),
-          locked_by: workerId,
-          attempts: Number(pendingJob.attempts || 0) + 1,
-          updated_at: new Date(),
-        })
-        .where('id', '=', pendingJob.id)
-        .returningAll()
-        .executeTakeFirst();
-
-      return updatedJob;
-    });
-
-    if (!job) return false;
-
-    console.log(`Processing job ${job.id} (Queue: ${job.queue}, Status: ${job.status})`);
-
-    const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
-
-    try {
-      await executeJob(payload, this.db, job.id);
-
-      // Mark job as completed
-      await this.db
-        .updateTable('background_jobs' as any)
-        .set({
-          status: 'completed',
-          locked_at: null,
-          locked_by: null,
-          updated_at: new Date(),
-        })
-        .where('id', '=', job.id)
-        .execute();
-
-      console.log(`Job ${job.id} completed successfully.`);
-    } catch (err: any) {
-      const errorMsg = err?.message || String(err);
-      console.error(`Failed to process background job ${job.id}:`, err);
-
-      try {
-        // If it was an import job, mark the import as failed and store the error message
-        if (payload.import_id) {
-          await this.importsRepo.update({
-            tenant_id: payload.tenant_id as any,
-            id: payload.import_id as any,
-            row: {
-              status: 'failed',
-              error_message: errorMsg.substring(0, 1000), // Truncate just in case
-              processed_at: new Date(),
-              updated_at: new Date(),
-            } as any,
-          });
-        }
-      } catch (dbErr) {
-        console.error('Failed to mark data_imports as failed:', dbErr);
-      }
-
-      const attempts = Number(job.attempts || 0);
-      const maxAttempts = Number(job.max_attempts || 3);
-
-      if (attempts < maxAttempts) {
-        // Retry with backoff (exponential backoff for mail, linear for others)
-        const isMail =
-          payload.type === 'send-transactional-email' ||
-          payload.type === 'send-form-notifications' ||
-          payload.type === 'send-webform-notifications' ||
-          payload.type === 'send-shift-reminder' ||
-          payload.type === 'send-newsletter';
-        const delaySeconds = isMail ? Math.pow(2, attempts) * 30 : attempts * 30;
-        const runAt = new Date(Date.now() + delaySeconds * 1000);
-        console.log(`Rescheduling job ${job.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`);
-
-        await this.db
-          .updateTable('background_jobs' as any)
-          .set({
-            status: 'pending',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            run_at: runAt,
-            updated_at: new Date(),
-          })
-          .where('id', '=', job.id)
-          .execute();
-      } else {
-        console.error(`Job ${job.id} exceeded maximum attempts (${maxAttempts}). Marking as failed.`);
-        await this.db
-          .updateTable('background_jobs' as any)
-          .set({
-            status: 'failed',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            updated_at: new Date(),
-          })
-          .where('id', '=', job.id)
-          .execute();
-
-        if (payload.export_id) {
-          try {
-            const { ExportsRepo } = await import('../../modules/exports/repositories/exports.repo');
-            const exportsRepo = new ExportsRepo();
-            await exportsRepo.updateStatus(String(payload.export_id), String(payload.tenant_id), 'failed', {
-              error: `Export failed after all retries. Last error: ${errorMsg.substring(0, 400)}`,
-            });
-          } catch (exportErr) {
-            console.error('Failed to update export status on job permanent failure:', exportErr);
-          }
-        }
-
-        if (payload.type === 'ms_sync' && payload.userId) {
-          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
-          console.error(`[sync-error][${correlationId}] MS sync permanently failed for user ${payload.userId}:`, err);
-          try {
-            const { MsOAuthService } = await import('../../modules/ms-sync/ms-oauth.service');
-            const { env } = await import('../../../env');
-            const oauthSvc = new MsOAuthService(this.db as any, {
-              clientId: env.msClientId ?? '',
-              clientSecret: env.msClientSecret ?? '',
-              tenantId: env.msTenantId ?? 'common',
-              redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-            });
-            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
-          } catch (recordErr) {
-            console.error('Failed to record MS sync error on token:', recordErr);
-          }
-        }
-
-        if (payload.type === 'google_sync' && payload.userId) {
-          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
-          console.error(
-            `[sync-error][${correlationId}] Google sync permanently failed for user ${payload.userId}:`,
-            err,
-          );
-          try {
-            const { GoogleOAuthService } = await import('../../modules/google-sync/google-oauth.service');
-            const { env } = await import('../../../env');
-            const oauthSvc = new GoogleOAuthService(this.db as any, {
-              clientId: env.googleClientId ?? '',
-              clientSecret: env.googleClientSecret ?? '',
-              redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-            });
-            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
-          } catch (recordErr) {
-            console.error('Failed to record Google sync error on token:', recordErr);
-          }
-        }
-
-        // If a recurrent cron-like job fails permanently, schedule the next iteration
-        await this.rescheduleCronJobOnFailure(payload.type);
-      }
-    }
-
-    return true;
-  }
-
-  private async rescheduleCronJobOnFailure(type: string): Promise<void> {
-    let delayMs = 0;
-    if (type === 'cleanup_activities') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'schedule_sync_jobs') {
-      delayMs = 10 * 60 * 1000;
-    } else if (type === 'recompute_all_duplicates') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'recompute_address_fingerprints') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'process_drip_workflows') {
-      delayMs = 10 * 60 * 1000;
-    } else if (type === 'perform_scheduled_deletions') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'check_all_usage_limits') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'refresh_companies_google') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'prune_newsletter_events') {
-      delayMs = 24 * 60 * 60 * 1000;
-    }
-
-    if (delayMs > 0) {
-      try {
-        await this.db
-          .insertInto('background_jobs' as any)
-          .values({
-            tenant_id: null,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({ type }),
-            run_at: new Date(Date.now() + delayMs),
-            max_attempts: 3,
-          })
-          .execute();
-      } catch (schedErr) {
-        console.error(`Failed to reschedule failed cron job (${type}):`, schedErr);
-      }
-    }
-  }
-
-  private async ensureCleanupJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'cleanup_activities')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily activity feed cleanup background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'cleanup_activities' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure cleanup job scheduled:', err);
-    }
-  }
-
-  private async ensureSyncSchedulerJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'schedule_sync_jobs')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling sync scheduler background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'schedule_sync_jobs' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure sync scheduler job scheduled:', err);
-    }
-  }
-
-  private async ensureDuplicatesRecomputeJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling nightly duplicates recomputation background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'recompute_all_duplicates' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure duplicates recompute job scheduled:', err);
-    }
-  }
-
-  private async ensureAddressFingerprintsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling nightly address fingerprints recomputation background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'recompute_address_fingerprints' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure address fingerprints job scheduled:', err);
-    }
-  }
-
-  private async ensureWorkflowsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'process_drip_workflows')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling periodic drip workflows processing background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'process_drip_workflows' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure workflows job scheduled:', err);
-    }
-  }
-
-  private async ensurePerformScheduledDeletionsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'perform_scheduled_deletions')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily scheduled deletions background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'perform_scheduled_deletions' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure perform scheduled deletions job scheduled:', err);
-    }
-  }
-
-  private async ensureUsageLimitChecksScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'check_all_usage_limits')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily usage limits check background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'check_all_usage_limits' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure usage limit checks scheduled:', err);
-    }
-  }
-
-  private async ensureDueTasksCheckScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'check_due_tasks')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily due tasks check background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'check_due_tasks' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure due tasks check scheduled:', err);
-    }
-  }
-
-  private async ensureCompaniesGoogleRefreshJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'refresh_companies_google')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily company google enrichment background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'refresh_companies_google' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure companies google refresh job scheduled:', err);
-    }
-  }
-
-  private async ensurePruneNewsletterEventsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'prune_newsletter_events')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily newsletter events pruning background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'prune_newsletter_events' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure prune newsletter events job scheduled:', err);
-    }
-  }
-
-  private async recoverStaleJobs(): Promise<void> {
-    try {
-      const staleTime = new Date(Date.now() - 30 * 60 * 1000); // 30 minutes
-      await this.db
-        .updateTable('background_jobs' as any)
-        .set({
-          status: 'pending',
-          locked_at: null,
-          locked_by: null,
-          updated_at: new Date(),
-          error: 'Job processing timed out',
-        })
-        .where('status', '=', 'processing')
-        .where('locked_at', '<', staleTime)
-        .execute();
-
-      // Clean up/timeout data exports stuck in pending/processing for more than 1 hour
-      const staleExportTime = new Date(Date.now() - 60 * 60 * 1000); // 1 hour
-      const staleExports = await this.db
-        .selectFrom('data_exports' as any)
-        .select(['id', 'tenant_id'])
-        .where('status', 'in', ['pending', 'processing'])
-        .where('created_at', '<', staleExportTime)
-        .execute();
-
-      if (staleExports.length > 0) {
-        const ids = staleExports.map((e: any) => e.id as any);
-        await this.db
-          .updateTable('data_exports' as any)
-          .set({
-            status: 'failed',
-            error: 'Export processing timed out',
-            updated_at: new Date(),
-          })
-          .where('id', 'in', ids)
-          .execute();
-
-        for (const exp of staleExports) {
-          await this.db
-            .deleteFrom('background_jobs' as any)
-            .where('tenant_id', '=', exp.tenant_id as any)
-            .where(sql`payload->>'type'`, '=', 'export_csv')
-            .where(sql`payload->>'export_id'`, '=', String(exp.id))
-            .execute();
-        }
-      }
-    } catch (err) {
-      console.error('Failed to recover stale background jobs:', err);
-    }
-  }
 }
 ```
 
@@ -30319,6 +27904,766 @@ export const DonationsRouter = router({
     return controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id);
   }),
 });
+```
+
+## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { StorageService } from '../../../lib/storage.service';
+import { BaseRepository } from '../../../lib/base.repo';
+import { verifyAuthToken } from '../../../lib/auth-util';
+import { env } from '../../../../env';
+import crypto from 'crypto';
+import { Client } from '@microsoft/microsoft-graph-client';
+import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
+import { MsSyncService } from '../../ms-sync/ms-sync.service';
+import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
+import { GoogleSyncService } from '../../google-sync/google-sync.service';
+import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+
+function buildRawMime(options: {
+  fromName: string;
+  fromEmail: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  html: string;
+  attachments: { filename: string; content: Buffer; contentType: string }[];
+}): Buffer {
+  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
+  const headers: string[] = [];
+
+  const safeFromName = options.fromName.replace(/"/g, '\\"');
+  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
+  headers.push(`To: ${options.to.join(', ')}`);
+  if (options.cc.length > 0) {
+    headers.push(`Cc: ${options.cc.join(', ')}`);
+  }
+  if (options.bcc.length > 0) {
+    headers.push(`Bcc: ${options.bcc.join(', ')}`);
+  }
+
+  const base64Subject = Buffer.from(options.subject).toString('base64');
+  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
+
+  headers.push(`MIME-Version: 1.0`);
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  headers.push('');
+
+  const bodyParts: string[] = [];
+
+  bodyParts.push(`--${boundary}`);
+  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
+  bodyParts.push(`Content-Transfer-Encoding: base64`);
+  bodyParts.push('');
+  bodyParts.push(Buffer.from(options.html).toString('base64'));
+  bodyParts.push('');
+
+  for (const att of options.attachments) {
+    bodyParts.push(`--${boundary}`);
+    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Transfer-Encoding: base64`);
+    bodyParts.push('');
+    bodyParts.push(att.content.toString('base64'));
+    bodyParts.push('');
+  }
+
+  bodyParts.push(`--${boundary}--`);
+
+  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
+  return Buffer.from(rawMimeString, 'utf-8');
+}
+
+const storageService = new StorageService();
+
+let _oauthSvc: MsOAuthService | null = null;
+
+function getOAuthService(db: any) {
+  if (!_oauthSvc) {
+    _oauthSvc = new MsOAuthService(db, {
+      clientId: env.msClientId ?? '',
+      clientSecret: env.msClientSecret ?? '',
+      tenantId: env.msTenantId ?? 'common',
+      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+    });
+  }
+  return _oauthSvc;
+}
+
+export async function saveLocalEmail(
+  db: any,
+  tenantId: string,
+  userId: string,
+  fromEmail: string,
+  fromName: string,
+  toList: string[],
+  ccList: string[],
+  bccList: string[],
+  subject: string,
+  html: string,
+  uploadedFiles: any[],
+  previewKey: string,
+) {
+  return db.transaction().execute(async (trx: any) => {
+    // Ensure the Outbox folder row exists. email_folders uses global hardcoded
+    // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
+    // email_folders(id) — not tenant_id — so the existence check must be by id
+    // alone. onConflict guards against a concurrent/global row already present.
+
+    const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
+
+    if (!existingOutbox) {
+      await trx
+        .insertInto('email_folders')
+        .values({
+          id: '10',
+          tenant_id: tenantId,
+          name: 'Outbox',
+          createdby_id: userId,
+          updatedby_id: userId,
+          icon: 'clock',
+          sort_order: 10,
+          is_default: false,
+        })
+        .onConflict((oc: any) => oc.column('id').doNothing())
+        .execute();
+    }
+
+    // 1. Insert into emails table (using Outbox folder: '10')
+    const createdEmail = await trx
+      .insertInto('emails')
+      .values({
+        tenant_id: tenantId,
+        folder_id: '10', // Outbox folder is '10'
+        from_email: fromEmail,
+        to_email: toList.join(', '),
+        subject: subject,
+        preview: previewKey,
+        assigned_to: userId,
+        is_favourite: false,
+        deleted_at: null,
+        status: 'open',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    const emailId = String(createdEmail.id);
+
+    // 2. Insert html into email_bodies
+    await trx
+      .insertInto('email_bodies')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        body_html: html,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 3. Insert files and email_attachments metadata
+    for (let i = 0; i < uploadedFiles.length; i++) {
+      const uFile = uploadedFiles[i];
+      let fileId: string;
+
+      // Persist (or reuse, via sha256 dedup) the file row, then link the
+      // attachment to it so downloads can resolve the stored blob.
+      const existingFile = await trx
+        .selectFrom('files')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where('sha256_hex', '=', uFile.sha256_hex)
+        .executeTakeFirst();
+
+      if (existingFile) {
+        fileId = String(existingFile.id);
+      } else {
+        const fileResult = await trx
+          .insertInto('files')
+          .values({
+            tenant_id: tenantId,
+            filename: uFile.filename,
+            mime_type: uFile.content_type,
+            size_bytes: uFile.size_bytes,
+            storage_key: uFile.storage_key,
+            sha256_hex: uFile.sha256_hex,
+            uploaded_by: userId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        fileId = String(fileResult.id);
+      }
+
+      await trx
+        .insertInto('email_attachments')
+        .values({
+          tenant_id: tenantId,
+          email_id: emailId,
+          filename: uFile.filename,
+          content_type: uFile.content_type,
+          size_bytes: uFile.size_bytes,
+          cid: uFile.cid,
+          is_inline: uFile.is_inline,
+          pos: i + 1,
+          file_id: fileId,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+    }
+
+    // 4. Insert headers
+    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
+    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+
+    await trx
+      .insertInto('email_headers')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        headers_json: JSON.stringify({ internetMessageId }),
+        raw_headers: rawHeaders,
+        date_sent: new Date(),
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 5. Insert recipients
+    const recipientRows: any[] = [];
+    toList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'to',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    ccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'cc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    bccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'bcc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+
+    if (recipientRows.length > 0) {
+      await trx.insertInto('email_recipients').values(recipientRows).execute();
+    }
+
+    return createdEmail;
+  });
+}
+
+const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Send composed email
+  fastify.post('/send', async (req: any, reply) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing Authorization header' });
+    }
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token format' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
+    }
+
+    if (!payload?.tenant_id || !payload?.user_id) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token payload' });
+    }
+
+    const tenantId = payload.tenant_id;
+    const userId = payload.user_id;
+    const db = (BaseRepository as any)['_db'];
+
+    // Retrieve sender user details
+    const user = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', userId)
+      .executeTakeFirst();
+
+    if (!user) {
+      return reply.status(401).send({ error: 'Unauthorized: User not found' });
+    }
+
+    const fromEmail = user.email;
+    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
+
+    // Parse multipart request parts
+    const parts = req.parts();
+    const fields: any = {};
+    const files: any[] = [];
+
+    for await (const part of parts) {
+      if (part.file) {
+        const buffer = await part.toBuffer();
+        files.push({
+          filename: part.filename,
+          fieldname: part.fieldname,
+          mimetype: part.mimetype,
+          buffer,
+        });
+      } else {
+        fields[part.fieldname] = part.value;
+      }
+    }
+
+    // Parse recipient lists and content fields
+    const toList = fields.to ? JSON.parse(fields.to) : [];
+    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
+    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
+    const subject = fields.subject || '';
+    const html = sanitizeHtml(fields.html || '');
+
+    // Upload attachment files to storage outside transaction
+    const uploadedFiles: Array<{
+      filename: string;
+      content_type: string;
+      size_bytes: number;
+      storage_key: string;
+      sha256_hex: string;
+      cid: string | null;
+      is_inline: boolean;
+    }> = [];
+
+    for (const file of files) {
+      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
+      const fileUUID = crypto.randomUUID();
+      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
+
+      await storageService.upload(storage_key, file.buffer, file.mimetype);
+
+      uploadedFiles.push({
+        filename: file.filename,
+        content_type: file.mimetype,
+        size_bytes: file.buffer.length,
+        storage_key,
+        sha256_hex,
+        cid: null,
+        is_inline: false,
+      });
+    }
+
+    // Check if user has connected Microsoft and/or Google accounts
+    const msToken = await db
+      .selectFrom('ms_oauth_tokens')
+      .select(['user_id', 'ms_email'])
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const googleToken = await db
+      .selectFrom('google_oauth_tokens')
+      .select(['user_id', 'google_email'])
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const hasMsConnected = !!msToken;
+    const hasGoogleConnected = !!googleToken;
+
+    // Fail immediately if no send method is configured
+    if (!hasMsConnected && !hasGoogleConnected) {
+      return reply.status(400).send({
+        status: 'error',
+        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
+      });
+    }
+
+    // Save outbound email to database under Outbox folder '10' initially
+    const fallbackPreview =
+      html
+        .replace(/<[^>]*>/g, '')
+        .substring(0, 100)
+        .trim() || '';
+    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
+    try {
+      emailRow = await saveLocalEmail(
+        db,
+        tenantId,
+        userId,
+        fromEmail,
+        fromName,
+        toList,
+        ccList,
+        bccList,
+        subject,
+        html,
+        uploadedFiles,
+        fallbackPreview,
+      );
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to save outbound email to database');
+      return reply.jsendError(err.message || 'Failed to save email', 500);
+    }
+
+    // Determine send method prioritizing matching address
+    let sendMethod: 'ms' | 'google' = 'ms';
+    if (hasMsConnected && hasGoogleConnected) {
+      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
+        sendMethod = 'google';
+      } else {
+        sendMethod = 'ms';
+      }
+    } else if (hasMsConnected) {
+      sendMethod = 'ms';
+    } else if (hasGoogleConnected) {
+      sendMethod = 'google';
+    }
+
+    // Dispatch the email synchronously
+    try {
+      if (sendMethod === 'ms') {
+        const oauthSvc = getOAuthService(db);
+        let msDraftId: string | null = null;
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+          const client = Client.init({
+            authProvider: (done) => done(null, accessToken),
+          });
+
+          const msDraftMessage: any = {
+            subject: subject,
+            body: {
+              contentType: 'html',
+              content: html,
+            },
+            toRecipients: toList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            ccRecipients: ccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            bccRecipients: bccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+          };
+
+          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
+          msDraftId = createdDraft.id;
+          const graphInternetMessageId = createdDraft.internetMessageId;
+
+          // Update local email preview/dedupe key to `ms:${msDraftId}`
+          await db
+            .updateTable('emails')
+            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          if (graphInternetMessageId) {
+            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+            await db
+              .updateTable('email_headers')
+              .set({
+                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
+                raw_headers: rawHeaders,
+                updated_at: new Date(),
+              })
+              .where('tenant_id', '=', tenantId)
+              .where('email_id', '=', String(emailRow.id))
+              .execute();
+          }
+
+          // Upload attachments
+          for (const file of files) {
+            await client.api(`/me/messages/${msDraftId}/attachments`).post({
+              '@odata.type': '#microsoft.graph.fileAttachment',
+              name: file.filename,
+              contentType: file.mimetype,
+              contentBytes: file.buffer.toString('base64'),
+            });
+          }
+
+          // Send draft
+          await client.api(`/me/messages/${msDraftId}/send`).post({});
+
+          // Update local email folder to '3' (Sent) on success
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: '3', updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          // Trigger background sync to get folders/Sent items synchronized
+          const syncSvc = new MsSyncService(db, oauthSvc);
+          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (err) {
+            fastify.log.error(err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err: any) {
+          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
+          // Clean up local email
+          await db
+            .deleteFrom('emails')
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+          return reply.jsendError(err.message || 'Failed to send email via Microsoft Graph', 400);
+        }
+      } else if (sendMethod === 'google') {
+        const oauthSvc = new GoogleOAuthService(db, {
+          clientId: env.googleClientId ?? '',
+          clientSecret: env.googleClientSecret ?? '',
+          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+        });
+
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+
+          const rawMessageBuffer = buildRawMime({
+            fromName,
+            fromEmail,
+            to: toList,
+            cc: ccList,
+            bcc: bccList,
+            subject,
+            html,
+            attachments: files.map((file) => ({
+              filename: file.filename,
+              content: file.buffer,
+              contentType: file.mimetype,
+            })),
+          });
+
+          const rawBase64Url = rawMessageBuffer
+            .toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+
+          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              raw: rawBase64Url,
+            }),
+          });
+
+          if (!gmailRes.ok) {
+            const errText = await gmailRes.text();
+            throw new Error(`Gmail API send failed: ${errText}`);
+          }
+
+          const gmailData: any = await gmailRes.json();
+          const googleMsgId = gmailData.id;
+
+          await db
+            .updateTable('emails')
+            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: '3', updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
+          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (err) {
+            fastify.log.error(err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err: any) {
+          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
+          await db
+            .updateTable('emails')
+            .set({
+              // Revert back to the Drafts folder (folder_id '2' or '4' depending on schema)
+              folder_id: '4',
+              updated_at: new Date(),
+            })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          return reply.jsendError(err.message || 'Failed to send email via Google. Saved to Drafts.', 400);
+        }
+      }
+    } catch (err: any) {
+      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
+      // Clean up local email
+      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
+      return reply.jsendError(err.message || 'Unexpected error in send task', 500);
+    }
+  });
+
+  // Download attachment by ID
+  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
+    // Authenticate token via header or query string (for direct link downloading)
+    let token = req.query.token;
+    if (!token && req.headers.authorization) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+    }
+
+    const tenantId = payload.tenant_id;
+    const { id, attachmentId } = req.params;
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachmentId)
+      .where('email_id', '=', id)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
+      return reply.send(buffer);
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Failed to download attachment' });
+    }
+  });
+
+  // Serve inline attachment by CID
+  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
+    // Authenticate token via header or query string (for direct link downloading)
+    let token = req.query.token;
+    if (!token && req.headers.authorization) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+    }
+
+    const tenantId = payload.tenant_id;
+    const { id, cid } = req.params;
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('email_id', '=', id)
+      .where('cid', '=', cid)
+      .where('is_inline', '=', true)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Inline attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      reply.header('Cache-Control', 'public, max-age=31536000');
+      return reply.send(buffer);
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Failed to load inline image' });
+    }
+  });
+
+  done();
+};
+
+export default emailsApiRoute;
 ```
 
 ## File: apps/backend/src/app/modules/emails/services/email-ingester.service.ts
@@ -31468,353 +29813,390 @@ export class EventsController extends BaseController<'events', EventsRepo> {
 }
 ```
 
-## File: apps/backend/src/app/modules/google-sync/google-sync.service.ts
+## File: apps/backend/src/app/modules/google-sync/google-oauth.service.ts
 
 ```typescript
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { GoogleOAuthService } from './google-oauth.service';
-import type { IngestableEmail } from '../emails/services/email-ingester.service';
-import { EmailIngesterService } from '../emails/services/email-ingester.service';
-import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
 
-const MAX_MESSAGES_PER_SYNC = 50;
+export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
 
-async function fetchWithRetry(url: string, init?: RequestInit, maxRetries = 3): Promise<Response> {
-  let attempt = 0;
-  while (true) {
-    attempt++;
-    const res = await fetch(url, init);
-    if (res.status === 429 && attempt <= maxRetries) {
-      const retryAfterHeader = res.headers.get('Retry-After');
-      let delayMs = 5000;
-      if (retryAfterHeader) {
-        const parsed = parseInt(retryAfterHeader, 10);
-        if (!isNaN(parsed)) {
-          delayMs = parsed * 1000;
-        } else {
-          const parsedDate = Date.parse(retryAfterHeader);
-          if (!isNaN(parsedDate)) {
-            delayMs = Math.max(0, parsedDate - Date.now());
-          }
-        }
-      } else {
-        delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
-      }
-      console.warn(
-        `Google API rate limited (429) on ${url}. Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-      continue;
-    }
-    return res;
-  }
-}
+const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/userinfo.email',
+];
 
-export class GoogleSyncService {
-  private readonly ingester: EmailIngesterService;
+export class GoogleOAuthService {
+  private readonly db: Kysely<Models>;
+  private readonly clientId: string;
+  private readonly clientSecret: string;
+  private readonly redirectUri: string;
 
-  constructor(
-    private readonly db: Kysely<Models>,
-    private readonly oauthSvc: GoogleOAuthService,
-  ) {
-    this.ingester = new EmailIngesterService(db, 'google');
+  constructor(db: Kysely<Models>, config: { clientId: string; clientSecret: string; redirectUri: string }) {
+    this.db = db;
+    this.clientId = config.clientId;
+    this.clientSecret = config.clientSecret;
+    this.redirectUri = config.redirectUri;
   }
 
-  public async syncUser(userId: string, tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
-    const accessToken = await this.oauthSvc.getValidToken(userId);
-
-    // Map Gmail label names to pplcrm folder IDs
-    const syncFolders = [
-      { label: 'INBOX', pplcrmId: ALL_FOLDERS.INBOX },
-      { label: 'SENT', pplcrmId: ALL_FOLDERS.SENT },
-      { label: 'TRASH', pplcrmId: ALL_FOLDERS.TRASH },
-      { label: 'SPAM', pplcrmId: ALL_FOLDERS.SPAM },
-    ];
-
-    // Stored delta_link is a JSON-encoded map of label -> last_sync_time (epoch seconds).
-    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
-    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
-    // positions after a successful sync, so no explicit clear is needed.
-    const dbDeltaLink = await this.oauthSvc.getDeltaLink(userId);
-    let deltaMap: Record<string, number> = {};
-    if (dbDeltaLink) {
-      try {
-        const parsed = JSON.parse(dbDeltaLink);
-        if (!parsed._needs_full_sync) {
-          deltaMap = parsed;
-        }
-        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
-      } catch {
-        deltaMap = {};
-      }
-    }
-
-    let inserted = 0;
-    const nextDeltaMap: Record<string, number> = { ...deltaMap };
-    const currentSyncTime = Math.floor(Date.now() / 1000);
-
-    for (const folder of syncFolders) {
-      const folderLastSync = deltaMap[folder.label] || 0;
-
-      let pageToken: string | null = null;
-      let hasMore = true;
-      const allMessageIds: string[] = [];
-
-      // Query Gmail messages: `label:<LABEL>` and `after:<epoch_seconds>` (with a small 60s overlap buffer)
-      const queryParts = [`label:${folder.label}`];
-      if (folderLastSync > 0) {
-        queryParts.push(`after:${folderLastSync - 60}`);
-      }
-      const q = queryParts.join(' ');
-
-      while (hasMore) {
-        const urlParams = new URLSearchParams({
-          maxResults: String(MAX_MESSAGES_PER_SYNC),
-          q,
-        });
-        if (pageToken) urlParams.set('pageToken', pageToken);
-
-        const res = await fetchWithRetry(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages?${urlParams.toString()}`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          },
-        );
-
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`Gmail API error: ${errText}`);
-        }
-
-        const data: any = await res.json();
-        const messages = data.messages ?? [];
-        allMessageIds.push(...messages.map((m: any) => m.id));
-
-        if (data.nextPageToken) {
-          pageToken = data.nextPageToken;
-        } else {
-          hasMore = false;
-        }
-      }
-
-      // Process all messages fetched
-      for (const msgId of allMessageIds) {
-        try {
-          const wasSaved = await this.syncMessageDetails(accessToken, msgId, tenantId, requestedBy, folder.pplcrmId);
-          if (wasSaved) inserted++;
-        } catch (err) {
-          console.error(`Failed to sync Gmail message details for ${msgId}:`, err);
-        }
-      }
-
-      nextDeltaMap[folder.label] = currentSyncTime;
-
-      // Handle clean-up for deleted/moved emails
-      // If we performed a full sync (started with no previous sync time), we compare
-      // messages in Gmail with local emails having `google:` preview prefix in this folder.
-      if (folderLastSync === 0) {
-        const serverGoogleIds = new Set(allMessageIds);
-        const localEmails = await this.db
-          .selectFrom('emails')
-          .select(['id', 'preview'])
-          .where('tenant_id', '=', tenantId)
-          .where('folder_id', '=', folder.pplcrmId)
-          .where('preview', 'like', 'google:%')
-          .execute();
-
-        for (const localEmail of localEmails) {
-          const previewKey = localEmail.preview ?? '';
-          const googleId = previewKey.replace(/^google:/, '');
-          if (!serverGoogleIds.has(googleId)) {
-            await this.ingester.deleteMessage(tenantId, googleId);
-          }
-        }
-      }
-    }
-
-    await this.oauthSvc.saveDeltaLink(userId, JSON.stringify(nextDeltaMap));
-    return { inserted };
+  public getAuthUrl(state: string): string {
+    const params = new URLSearchParams({
+      client_id: this.clientId,
+      redirect_uri: this.redirectUri,
+      response_type: 'code',
+      scope: GOOGLE_SCOPES.join(' '),
+      access_type: 'offline',
+      prompt: 'consent', // force consent to ensure refresh token is returned
+      state,
+    });
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   }
 
-  public async removeAllLocalEmails(tenantId: string): Promise<void> {
-    await this.ingester.removeAllLocalEmails(tenantId);
-  }
-
-  private async syncMessageDetails(
-    accessToken: string,
-    msgId: string,
-    tenantId: string,
-    requestedBy: string,
-    folderId: string,
-  ): Promise<boolean> {
-    const res = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+  public async handleCallback(code: string, connectedBy: string, tenantId: string): Promise<void> {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        redirect_uri: this.redirectUri,
+        grant_type: 'authorization_code',
+      }),
     });
 
     if (!res.ok) {
-      if (res.status === 404) {
-        return false; // message deleted in the meantime
-      }
-      const errText = await res.text();
-      throw new Error(`Failed to fetch Gmail message ${msgId} details: ${errText}`);
+      const errorText = await res.text();
+      throw new Error(`Failed to acquire token from Google: ${errorText}`);
     }
 
     const data: any = await res.json();
-    const payload = data.payload;
-    if (!payload) return false;
+    const accessToken = data.access_token;
+    const refreshToken = data.refresh_token; // Google only returns this on initial consent
+    const expiresIn = data.expires_in ?? 3600;
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
-    const headers = payload.headers ?? [];
-    const getHeader = (name: string) =>
-      headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
+    // Fetch user profile to get Google email
+    const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
 
-    const subject = getHeader('subject');
-    const fromVal = getHeader('from');
-    const toVal = getHeader('to');
-    const dateVal = getHeader('date');
-    const internetMessageId = getHeader('message-id');
-
-    // Parse email addresses from "Name <email@domain.com>" format
-    const extractEmail = (val: string | null): string | null => {
-      if (!val) return null;
-      const match = val.match(/<([^>]+)>/);
-      return match ? match[1]! : val.trim();
-    };
-
-    const fromEmail = extractEmail(fromVal);
-    const toEmail = extractEmail(toVal);
-    let dateSent = dateVal ? new Date(dateVal) : new Date();
-    if (isNaN(dateSent.getTime())) {
-      dateSent = new Date();
+    let googleEmail: string | null = null;
+    if (profileRes.ok) {
+      const profile: any = await profileRes.json();
+      googleEmail = profile.email ?? null;
     }
 
-    // Parse body parts recursively
-    const parts = payload.parts ? payload.parts : [payload];
-    const { html, text, attachments } = this.parseGmailParts(parts);
-    const bodyHtml = html || text || '';
-
-    // Map attachments to the generic ingestable structure
-    const mappedAttachments = attachments.map((att: any) => ({
-      name: att.filename,
-      contentType: att.mimeType,
-      size: att.size,
-      contentId: att.cid,
-      isInline: att.isInline,
-      fetchContent: async () => {
-        const attRes = await fetchWithRetry(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${att.attachmentId}`,
-          { headers: { Authorization: `Bearer ${accessToken}` } },
-        );
-        if (!attRes.ok) {
-          throw new Error(`Failed to fetch attachment ${att.filename} from Gmail`);
-        }
-        const attData: any = await attRes.json();
-        return this.decodeBase64UrlToBuffer(attData.data);
-      },
-    }));
-
-    // Parse recipients
-    const recipients: Array<{ kind: 'to' | 'cc' | 'bcc'; name: string | null; email: string }> = [];
-
-    const parseRecipientHeader = (val: string | null, kind: 'to' | 'cc' | 'bcc') => {
-      if (!val) return;
-      // Split by comma, respecting quotes
-      const list = val.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
-      list.forEach((item) => {
-        const trimmed = item.trim();
-        if (!trimmed) return;
-        const emailMatch = trimmed.match(/<([^>]+)>/);
-        const email = emailMatch ? emailMatch[1]! : trimmed;
-        const nameMatch = trimmed.match(/^([^<]+)/);
-        let name = nameMatch ? nameMatch[1]!.trim() : null;
-        if (name) {
-          name = name.replace(/^["']|["']$/g, ''); // strip quotes
-        }
-        recipients.push({ kind, name, email });
-      });
+    const insertObj: any = {
+      tenant_id: tenantId,
+      user_id: connectedBy,
+      access_token: accessToken,
+      expires_at: expiresAt,
+      google_email: googleEmail,
+      delta_link: NEEDS_FULL_SYNC,
+      synced_at: null,
     };
 
-    parseRecipientHeader(getHeader('to'), 'to');
-    parseRecipientHeader(getHeader('cc'), 'cc');
-    parseRecipientHeader(getHeader('bcc'), 'bcc');
+    if (!refreshToken) {
+      // If we don't have refresh token in this callback, try keeping the existing one
+      const existing = await this.db
+        .selectFrom('google_oauth_tokens')
+        .select('refresh_token')
+        .where('tenant_id', '=', tenantId)
+        .executeTakeFirst();
+      insertObj.refresh_token = existing?.refresh_token ?? '';
+    } else {
+      insertObj.refresh_token = refreshToken;
+    }
 
-    const ingestable: IngestableEmail = {
-      id: msgId,
-      internetMessageId,
-      fromEmail,
-      toEmail,
-      subject,
-      dateSent,
-      bodyHtml,
-      recipients,
-      attachments: mappedAttachments,
-    };
+    if (!insertObj.refresh_token) {
+      throw new Error('Consent required to obtain refresh token. Please disconnect and reconnect.');
+    }
 
-    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
+    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto('google_oauth_tokens')
+        .values(insertObj)
+        .onConflict((oc) =>
+          oc.column('tenant_id').doUpdateSet({
+            user_id: connectedBy,
+            access_token: insertObj.access_token,
+            refresh_token: insertObj.refresh_token,
+            expires_at: insertObj.expires_at,
+            google_email: insertObj.google_email,
+            delta_link: NEEDS_FULL_SYNC,
+            synced_at: null,
+            last_sync_error: null,
+            last_sync_error_at: null,
+            updated_at: new Date(),
+          }),
+        )
+        .execute();
+
+      await trx
+        .insertInto('background_jobs' as any)
+        .values({
+          tenant_id: tenantId,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({ type: 'google_sync', tenantId, requestedBy: connectedBy }),
+          run_at: new Date(),
+          max_attempts: 3,
+        })
+        .execute();
+    });
   }
 
-  private parseGmailParts(parts: any[]): { html: string; text: string; attachments: any[] } {
-    let html = '';
-    let text = '';
-    const attachments: any[] = [];
+  public async getValidToken(tenantId: string): Promise<string> {
+    const row = await this.db
+      .selectFrom('google_oauth_tokens')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
 
-    const traverse = (part: any) => {
-      const mimeType = part.mimeType?.toLowerCase();
-      const filename = part.filename;
-      const body = part.body;
+    if (!row) {
+      throw new Error('No Google account connected for this tenant');
+    }
 
-      if (filename && body?.attachmentId) {
-        const headers = part.headers ?? [];
-        const contentDisposition =
-          headers.find((h: any) => h.name.toLowerCase() === 'content-disposition')?.value ?? '';
-        const isInline = contentDisposition.toLowerCase().includes('inline');
-        const contentIdHeader = headers.find((h: any) => h.name.toLowerCase() === 'content-id')?.value ?? '';
-        const cid = contentIdHeader ? contentIdHeader.replace(/[<>]/g, '') : null;
+    const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
+    if (!isExpired) {
+      return row.access_token;
+    }
 
-        attachments.push({
-          filename,
-          mimeType: part.mimeType,
-          attachmentId: body.attachmentId,
-          size: body.size ?? 0,
-          cid,
-          isInline,
-        });
-      } else if (mimeType === 'text/html' && body?.data) {
-        html += this.decodeBase64Url(body.data);
-      } else if (mimeType === 'text/plain' && body?.data) {
-        text += this.decodeBase64Url(body.data);
-      }
+    // Refresh token
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        refresh_token: row.refresh_token,
+        grant_type: 'refresh_token',
+      }),
+    });
 
-      if (part.parts) {
-        for (const p of part.parts) {
-          traverse(p);
-        }
-      }
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Token refresh failed: ${errorText} — tenant must reconnect their Google account`);
+    }
+
+    const data: any = await res.json();
+    const newAccessToken = data.access_token;
+    const newExpiresIn = data.expires_in ?? 3600;
+    const newExpiry = new Date(Date.now() + newExpiresIn * 1000);
+    const newRefreshToken = data.refresh_token ?? row.refresh_token;
+
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({
+        access_token: newAccessToken,
+        refresh_token: newRefreshToken,
+        expires_at: newExpiry,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+
+    return newAccessToken;
+  }
+
+  public async getConnectionStatus(tenantId: string): Promise<{
+    connected: boolean;
+    googleEmail: string | null;
+    syncedAt: Date | null;
+    lastSyncError: string | null;
+    lastSyncErrorAt: Date | null;
+  }> {
+    const row = await this.db
+      .selectFrom('google_oauth_tokens')
+      .select(['google_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    return {
+      connected: !!row,
+      googleEmail: row?.google_email ?? null,
+      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
+      lastSyncError: row?.last_sync_error ?? null,
+      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
     };
-
-    for (const part of parts) {
-      traverse(part);
-    }
-
-    return { html, text, attachments };
   }
 
-  private decodeBase64Url(str: string): string {
-    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-    while (base64.length % 4) {
-      base64 += '=';
-    }
-    return Buffer.from(base64, 'base64').toString('utf8');
+  public async disconnect(tenantId: string): Promise<void> {
+    await this.db.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tenantId).execute();
   }
 
-  private decodeBase64UrlToBuffer(str: string): Buffer {
-    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-    while (base64.length % 4) {
-      base64 += '=';
-    }
-    return Buffer.from(base64, 'base64');
+  public async saveDeltaLink(tenantId: string, deltaLink: string): Promise<void> {
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({
+        delta_link: deltaLink,
+        synced_at: new Date(),
+        last_sync_error: null,
+        last_sync_error_at: null,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async recordSyncError(tenantId: string, error: string): Promise<void> {
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async getDeltaLink(tenantId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom('google_oauth_tokens')
+      .select('delta_link')
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+    return row?.delta_link ?? null;
+  }
+
+  public async resetDeltaLink(tenantId: string): Promise<void> {
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
   }
 }
+```
+
+## File: apps/backend/src/app/modules/google-sync/trpc.router.ts
+
+```typescript
+import { authProcedure, router } from '../../../trpc';
+import { GoogleOAuthService, NEEDS_FULL_SYNC } from './google-oauth.service';
+import { GoogleSyncService } from './google-sync.service';
+import { BaseRepository } from '../../lib/base.repo';
+import { env } from '../../../env';
+import { z } from 'zod';
+import { sql } from 'kysely';
+
+let _oauthSvc: GoogleOAuthService | null = null;
+let _syncSvc: GoogleSyncService | null = null;
+
+function getServices() {
+  if (!_oauthSvc || !_syncSvc) {
+    const db = (BaseRepository as any)['_db']; // reuse the shared Kysely instance
+    _oauthSvc = new GoogleOAuthService(db, {
+      clientId: env.googleClientId ?? '',
+      clientSecret: env.googleClientSecret ?? '',
+      redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+    });
+    _syncSvc = new GoogleSyncService(db, _oauthSvc);
+  }
+  return { oauthSvc: _oauthSvc, syncSvc: _syncSvc };
+}
+
+function getAuthUrl() {
+  return authProcedure.input(z.object({ returnTo: z.string().optional() })).query(async ({ ctx, input }) => {
+    const { oauthSvc } = getServices();
+    const state = Buffer.from(
+      JSON.stringify({ userId: ctx.auth.user_id, tenantId: ctx.auth.tenant_id, returnTo: input.returnTo }),
+    ).toString('base64');
+    const url = oauthSvc.getAuthUrl(state);
+    return { url };
+  });
+}
+
+function getConnectionStatus() {
+  return authProcedure.query(async ({ ctx }) => {
+    const { oauthSvc } = getServices();
+    const db = (BaseRepository as any)['_db'];
+    const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id);
+
+    const activeJob = await db
+      .selectFrom('background_jobs' as any)
+      .select('id')
+      .where('status', 'in', ['pending', 'processing'])
+      .where('tenant_id', '=', ctx.auth.tenant_id)
+      .where(sql`payload->>'type'`, '=', 'google_sync')
+      .executeTakeFirst();
+
+    return {
+      ...status,
+      syncing: !!activeJob,
+    };
+  });
+}
+
+function syncNow() {
+  return authProcedure.mutation(async ({ ctx }) => {
+    const db = (BaseRepository as any)['_db'];
+
+    const existing = await db
+      .selectFrom('background_jobs' as any)
+      .select('id')
+      .where('status', 'in', ['pending', 'processing'])
+      .where('tenant_id', '=', ctx.auth.tenant_id)
+      .where(sql`payload->>'type'`, '=', 'google_sync')
+      .executeTakeFirst();
+
+    if (!existing) {
+      await db
+        .insertInto('background_jobs' as any)
+        .values({
+          tenant_id: ctx.auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'google_sync',
+            tenantId: ctx.auth.tenant_id,
+            requestedBy: ctx.auth.user_id,
+          }),
+          run_at: new Date(),
+          max_attempts: 3,
+        })
+        .execute();
+    }
+
+    return { inserted: 0, queued: true };
+  });
+}
+
+function disconnect() {
+  return authProcedure
+    .input(
+      z.object({
+        removeLocalEmails: z.boolean().default(false),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { oauthSvc, syncSvc } = getServices();
+
+      if (input.removeLocalEmails) {
+        await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id);
+      }
+
+      await oauthSvc.disconnect(ctx.auth.tenant_id);
+      return { success: true };
+    });
+}
+
+function resetSync() {
+  return authProcedure.mutation(async ({ ctx }) => {
+    const { oauthSvc } = getServices();
+    await oauthSvc.saveDeltaLink(ctx.auth.tenant_id, NEEDS_FULL_SYNC);
+    return { success: true };
+  });
+}
+
+export const GoogleSyncRouter = router({
+  getAuthUrl: getAuthUrl(),
+  getConnectionStatus: getConnectionStatus(),
+  syncNow: syncNow(),
+  disconnect: disconnect(),
+  resetSync: resetSync(),
+});
+export type GoogleSyncRouterType = typeof GoogleSyncRouter;
 ```
 
 ## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
@@ -32549,140 +30931,899 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 }
 ```
 
-## File: apps/backend/src/app/modules/ms-sync/trpc.router.ts
+## File: apps/backend/src/app/modules/households/controller.ts
 
 ```typescript
-import { authProcedure, router } from '../../../trpc';
-import { MsOAuthService, NEEDS_FULL_SYNC } from './ms-oauth.service';
-import { MsSyncService } from './ms-sync.service';
-import { BaseRepository } from '../../lib/base.repo';
-import { env } from '../../../env';
-import { z } from 'zod';
+import type {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  UpdateHouseholdsType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+import { TRPCError } from '@trpc/server';
 import { sql } from 'kysely';
 
-let _oauthSvc: MsOAuthService | null = null;
-let _syncSvc: MsSyncService | null = null;
+import type { QueryParams } from '../../lib/base.repo';
+import { BaseRepository } from '../../lib/base.repo';
+import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
+import { HouseholdRepo } from './repositories/households.repo';
+import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
+import { TagsRepo } from '../tags/repositories/tags.repo';
+import { matchCoordinatesToDistrict } from '../../lib/gis/geocoding';
+import { BaseController } from '../../lib/base.controller';
+import { SettingsController } from '../settings/controller';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 
-function getServices() {
-  if (!_oauthSvc || !_syncSvc) {
-    const db = (BaseRepository as any)['_db']; // reuse the shared Kysely instance
-    _oauthSvc = new MsOAuthService(db, {
-      clientId: env.msClientId ?? '',
-      clientSecret: env.msClientSecret ?? '',
-      tenantId: env.msTenantId ?? 'common',
-      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-    });
-    _syncSvc = new MsSyncService(db, _oauthSvc);
+export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
+  private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
+  private settingsController = new SettingsController();
+  private tagsRepo = new TagsRepo();
+
+  constructor() {
+    super(new HouseholdRepo());
   }
-  return { oauthSvc: _oauthSvc, syncSvc: _syncSvc };
-}
 
-function getAuthUrl() {
-  return authProcedure.input(z.object({ returnTo: z.string().optional() })).query(async ({ ctx, input }) => {
-    const { oauthSvc } = getServices();
-    const state = Buffer.from(
-      JSON.stringify({ userId: ctx.auth.user_id, tenantId: ctx.auth.tenant_id, returnTo: input.returnTo }),
-    ).toString('base64');
-    const url = await oauthSvc.getAuthUrl(state);
-    return { url };
-  });
-}
+  public async deleteManyForTenant(auth: IAuthKeyPayload, idsToDelete: string[]) {
+    // Filter out any placeholder households — they are permanent and undeletable
+    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, idsToDelete);
+    const safeIds = idsToDelete.filter((id) => !placeholders.has(id));
 
-function getConnectionStatus() {
-  return authProcedure.query(async ({ ctx }) => {
-    const { oauthSvc } = getServices();
-    const db = (BaseRepository as any)['_db'];
-    const status = await oauthSvc.getConnectionStatus(ctx.auth.user_id);
+    if (safeIds.length === 0) return false;
+    // Members move to the tenant's placeholder household (persons.household_id is
+    // NOT NULL) rather than being cascade-deleted along with the household.
+    return this.getRepo().deleteManyReassigningPersons({
+      tenant_id: auth.tenant_id,
+      ids: safeIds,
+      user_id: auth.user_id,
+    });
+  }
 
-    const activeJob = await db
-      .selectFrom('background_jobs' as any)
-      .select('id')
-      .where('status', 'in', ['pending', 'processing'])
-      .where('tenant_id', '=', ctx.auth.tenant_id)
-      .where(sql`payload->>'type'`, '=', 'ms_sync')
-      .where(sql`payload->>'userId'`, '=', ctx.auth.user_id)
-      .executeTakeFirst();
+  public async addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
+    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
 
-    return {
-      ...status,
-      syncing: !!activeJob,
+    const fp_street = fingerprintStreet({
+      street_num: payload.street_num,
+      street1: payload.street1,
+      street2: payload.street2,
+    });
+    const fp_full = fingerprintFull({
+      apt: payload.apt,
+      street_num: payload.street_num,
+      street1: payload.street1,
+      street2: payload.street2,
+      city: payload.city,
+      state: payload.state,
+      zip: payload.zip,
+      country: payload.country,
+    });
+
+    // Try to dedupe: find existing by fingerprint
+    if (fp_street || fp_full) {
+      const existing = await this.getRepo().findByFingerprint({
+        tenant_id: auth.tenant_id,
+        campaign_id: String(campaign_id),
+        fp_street: fp_street,
+        fp_full: fp_full,
+      });
+      if (existing?.id) return { id: String(existing.id) } as any;
+    }
+
+    const row = {
+      ...payload,
+      address_fp_street: fp_street,
+      address_fp_full: fp_full,
+      campaign_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
     };
-  });
-}
+    return this.add(row as OperationDataType<'households', 'insert'>);
+  }
 
-function syncNow() {
-  return authProcedure.mutation(async ({ ctx }) => {
-    const db = (BaseRepository as any)['_db'];
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const household = await super.getOneById(input);
+    if (!household) return undefined;
 
-    const existing = await db
-      .selectFrom('background_jobs' as any)
-      .select('id')
-      .where('status', 'in', ['pending', 'processing'])
-      .where('tenant_id', '=', ctx.auth.tenant_id)
-      .where(sql`payload->>'type'`, '=', 'ms_sync')
-      .where(sql`payload->>'userId'`, '=', ctx.auth.user_id)
+    const tenantRow = await (BaseRepository as any)['_db']
+      .selectFrom('tenants')
+      .select('placeholder_household_id')
+      .where('id', '=', input.tenant_id)
       .executeTakeFirst();
 
-    if (!existing) {
-      await db
+    const is_placeholder = tenantRow?.placeholder_household_id
+      ? String(tenantRow.placeholder_household_id) === String((household as any).id)
+      : false;
+    return {
+      ...household,
+      is_placeholder,
+    } as any;
+  }
+
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'households', 'update'>;
+  }) {
+    const placeholders = await this.getRepo().getPlaceholderIds(input.tenant_id, [input.id]);
+    if (placeholders.has(input.id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'The placeholder household cannot be edited.',
+      });
+    }
+
+    const keys = Object.keys(input.row || {});
+    const affectsAddress = keys.some((k) =>
+      ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country'].includes(k),
+    );
+
+    // Perform the main update without fingerprint columns first
+    const result = await super.update(input);
+
+    // Attempt fingerprint recompute in a separate, non-fatal step
+    if (affectsAddress) {
+      try {
+        const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as any;
+        const merged = { ...current, ...(input.row as any) };
+
+        let geocoding_status = isBlankAddress(merged) || isIncompleteAddress(merged) ? 'failed' : 'pending';
+        let district = null;
+        let precinct = null;
+        let ward = null;
+
+        // If autocomplete coordinates are provided in the update, use them and map boundaries synchronously
+        if (input.row.lat && input.row.lng && Number(input.row.lat) !== 0 && Number(input.row.lng) !== 0) {
+          try {
+            const matched = await matchCoordinatesToDistrict(Number(input.row.lat), Number(input.row.lng));
+            district = matched.district;
+            precinct = matched.precinct;
+            ward = matched.ward;
+            geocoding_status = 'success';
+          } catch (err) {
+            console.error('Failed to map coordinates to district during update', err);
+          }
+        }
+
+        const fpRow: any = {
+          address_fp_street: fingerprintStreet({
+            street_num: merged.street_num,
+            street1: merged.street1,
+            street2: merged.street2,
+          }),
+          address_fp_full: fingerprintFull({
+            apt: merged.apt,
+            street_num: merged.street_num,
+            street1: merged.street1,
+            street2: merged.street2,
+            city: merged.city,
+            state: merged.state,
+            zip: merged.zip,
+            country: merged.country,
+          }),
+          geocoding_status,
+          district,
+          precinct,
+          ward,
+        };
+        await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
+
+        // Queue geocoding background job if geocoding status is pending
+        if (geocoding_status === 'pending') {
+          await this.getRepo()
+            .db.insertInto('background_jobs' as any)
+            .values({
+              tenant_id: input.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'geocode_household',
+                household_id: input.id,
+                tenant_id: input.tenant_id,
+              }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+        // Duplicate maintenance is only calculated nightly
+      } catch (err) {
+        console.error('Failed to update address fingerprint and queue duplicates maintenance', err);
+      }
+    }
+
+    return result;
+  }
+
+  public async attachTag(household_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
+    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, [household_id]);
+    if (placeholders.has(household_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Cannot attach tags to the placeholder household.',
+      });
+    }
+
+    const randomHexColor = () =>
+      '#' +
+      Math.floor(Math.random() * 0xffffff)
+        .toString(16)
+        .padStart(6, '0');
+    const row = {
+      name,
+      color: randomHexColor(),
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      type,
+    };
+
+    const tag = await this.tagsRepo.addOrGet({
+      row: row as OperationDataType<'tags', 'insert'>,
+      onConflictColumn: 'name',
+    });
+
+    return this.addToMap({
+      tag_id: tag?.id as string | undefined,
+      household_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    });
+  }
+
+  public async detachTag(
+    tenant_id: string,
+    household_id: string,
+    tag_name: string,
+    type: 'tag' | 'issue' = 'tag',
+    userId?: string,
+  ) {
+    const placeholders = await this.getRepo().getPlaceholderIds(tenant_id, [household_id]);
+    if (placeholders.has(household_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Cannot detach tags from the placeholder household.',
+      });
+    }
+
+    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name, type });
+    if (tag?.id) {
+      await this.mapHouseholdsTagRepo.deleteMapping(tenant_id, household_id, tag.id);
+    }
+
+    try {
+      if (userId) {
+        await this.userActivity.log({
+          tenant_id,
+          user_id: userId,
+          activity: 'update',
+          entity: 'households',
+          entity_id: household_id,
+          quantity: 1,
+          metadata: { id: household_id, action: `detach_${type}`, name: tag_name },
+        });
+      }
+    } catch (e) {
+      console.error('Failed to log detach tag activity', e);
+    }
+  }
+
+  public getAllWithPeopleCount(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    const { tags, ...queryParams } = options || {};
+    return this.getRepo().getAllWithPeopleCount({
+      tenant_id: auth.tenant_id,
+      options: queryParams as QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'>,
+      tags,
+    });
+  }
+
+  public getPeopleCount(id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
+  }
+
+  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getDistinctTags(auth.tenant_id, type);
+  }
+
+  public getTags(id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getTags(id, auth.tenant_id, type);
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const result = await this.getAllWithPeopleCount(auth, input?.options);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: 'households',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+        },
+      });
+      return response;
+    }
+    return super.exportCsv(input, auth);
+  }
+
+  private async addToMap(row: {
+    tag_id: string | undefined;
+    household_id: string;
+    tenant_id: string;
+    createdby_id: string;
+    updatedby_id: string;
+  }) {
+    if (!row.tag_id) {
+      throw new TRPCError({
+        message: 'Failed to add the tag',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+    }
+
+    return await this.mapHouseholdsTagRepo.add({
+      row: row as OperationDataType<'map_households_tags', 'insert'>,
+    });
+  }
+
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
+  }
+
+  public async mergeHouseholds(target_id: string, source_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().mergeHouseholds({
+      tenant_id: auth.tenant_id,
+      target_id,
+      source_id,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async getLastFingerprintRecomputation(tenantId: string): Promise<{ lastRunAt: string | null }> {
+    const job = await this.getRepo()
+      .db.selectFrom('background_jobs' as any)
+      .select(['created_at'])
+      .where('tenant_id', '=', tenantId as any)
+      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+      .orderBy('created_at', 'desc')
+      .executeTakeFirst();
+
+    return { lastRunAt: job?.created_at ? new Date(job.created_at).toISOString() : null };
+  }
+
+  public async recomputeAddressFingerprints(tenantId: string): Promise<void> {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+    const existingJob = await this.getRepo()
+      .db.selectFrom('background_jobs' as any)
+      .select(['created_at'])
+      .where('tenant_id', '=', tenantId as any)
+      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+      .where('created_at', '>', oneMonthAgo)
+      .executeTakeFirst();
+
+    if (existingJob) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Address fingerprints can only be recomputed once a month. A request was already submitted recently.',
+      });
+    }
+
+    await this.getRepo()
+      .db.insertInto('background_jobs' as any)
+      .values({
+        tenant_id: tenantId,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'recompute_address_fingerprints',
+          tenant_id: tenantId,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/ms-sync/ms-oauth.service.ts
+
+```typescript
+import type { AuthorizationCodeRequest } from '@azure/msal-node';
+import { ConfidentialClientApplication } from '@azure/msal-node';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+
+export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
+
+const MS_SCOPES = [
+  'https://graph.microsoft.com/Mail.Read',
+  'https://graph.microsoft.com/Mail.ReadWrite',
+  'https://graph.microsoft.com/Mail.Send',
+  'offline_access',
+];
+
+export class MsOAuthService {
+  private readonly msalApp: ConfidentialClientApplication;
+  private readonly db: Kysely<Models>;
+  private readonly redirectUri: string;
+
+  constructor(
+    db: Kysely<Models>,
+    config: { clientId: string; clientSecret: string; tenantId: string; redirectUri: string },
+  ) {
+    this.db = db;
+    this.redirectUri = config.redirectUri;
+    this.msalApp = new ConfidentialClientApplication({
+      auth: {
+        clientId: config.clientId,
+        clientSecret: config.clientSecret,
+        authority: `https://login.microsoftonline.com/${config.tenantId}`,
+      },
+    });
+  }
+
+  public async getAuthUrl(state: string): Promise<string> {
+    return this.msalApp.getAuthCodeUrl({
+      scopes: MS_SCOPES,
+      redirectUri: this.redirectUri,
+      state,
+      prompt: 'select_account',
+    });
+  }
+
+  public async handleCallback(code: string, connectedBy: string, tenantId: string): Promise<void> {
+    const request: AuthorizationCodeRequest = {
+      code,
+      scopes: MS_SCOPES,
+      redirectUri: this.redirectUri,
+    };
+
+    const response = await this.msalApp.acquireTokenByCode(request);
+    if (!response?.accessToken || !response.account) {
+      throw new Error('Failed to acquire token from Microsoft');
+    }
+
+    const expiresAt = response.expiresOn ?? new Date(Date.now() + 3600 * 1000);
+
+    // Retrieve the refresh token from the MSAL cache
+    const cache = this.msalApp.getTokenCache().serialize();
+    const parsedCache = JSON.parse(cache);
+    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
+    const refreshToken = refreshTokenEntry[0]?.secret ?? '';
+
+    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto('ms_oauth_tokens')
+        .values({
+          tenant_id: tenantId,
+          user_id: connectedBy,
+          access_token: response.accessToken,
+          refresh_token: refreshToken,
+          expires_at: expiresAt,
+          ms_email: response.account?.username ?? null,
+          delta_link: NEEDS_FULL_SYNC,
+          synced_at: null,
+        })
+        .onConflict((oc) =>
+          oc.column('tenant_id').doUpdateSet({
+            user_id: connectedBy,
+            access_token: response.accessToken,
+            refresh_token: refreshToken,
+            expires_at: expiresAt,
+            ms_email: response.account?.username ?? null,
+            delta_link: NEEDS_FULL_SYNC,
+            synced_at: null,
+            last_sync_error: null,
+            last_sync_error_at: null,
+            updated_at: new Date(),
+          }),
+        )
+        .execute();
+
+      await trx
         .insertInto('background_jobs' as any)
         .values({
-          tenant_id: ctx.auth.tenant_id,
+          tenant_id: tenantId,
           queue: 'default',
           status: 'pending',
-          payload: JSON.stringify({
-            type: 'ms_sync',
-            userId: ctx.auth.user_id,
-            tenantId: ctx.auth.tenant_id,
-            requestedBy: ctx.auth.user_id,
-          }),
+          payload: JSON.stringify({ type: 'ms_sync', tenantId, requestedBy: connectedBy }),
           run_at: new Date(),
           max_attempts: 3,
         })
         .execute();
+    });
+  }
+
+  public async getValidToken(tenantId: string): Promise<string> {
+    const row = await this.db
+      .selectFrom('ms_oauth_tokens')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    if (!row) {
+      throw new Error('No Microsoft account connected for this tenant');
     }
 
-    return { inserted: 0, queued: true };
-  });
+    const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
+    if (!isExpired) {
+      return row.access_token;
+    }
+
+    // Refresh via MSAL silent flow
+    const response = await this.msalApp.acquireTokenByRefreshToken({
+      refreshToken: row.refresh_token,
+      scopes: MS_SCOPES,
+    });
+
+    if (!response?.accessToken) {
+      throw new Error('Token refresh failed — tenant must reconnect their Microsoft account');
+    }
+
+    const newExpiry = response.expiresOn ?? new Date(Date.now() + 3600 * 1000);
+
+    // Retrieve fresh refresh token from cache
+    const cache = this.msalApp.getTokenCache().serialize();
+    const parsedCache = JSON.parse(cache);
+    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
+    const newRefreshToken = refreshTokenEntry[0]?.secret ?? row.refresh_token;
+
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({
+        access_token: response.accessToken,
+        refresh_token: newRefreshToken,
+        expires_at: newExpiry,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+
+    return response.accessToken;
+  }
+
+  public async getConnectionStatus(tenantId: string): Promise<{
+    connected: boolean;
+    msEmail: string | null;
+    syncedAt: Date | null;
+    lastSyncError: string | null;
+    lastSyncErrorAt: Date | null;
+  }> {
+    const row = await this.db
+      .selectFrom('ms_oauth_tokens')
+      .select(['ms_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    return {
+      connected: !!row,
+      msEmail: row?.ms_email ?? null,
+      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
+      lastSyncError: row?.last_sync_error ?? null,
+      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
+    };
+  }
+
+  public async disconnect(tenantId: string): Promise<void> {
+    await this.db.deleteFrom('ms_oauth_tokens').where('tenant_id', '=', tenantId).execute();
+  }
+
+  public async saveDeltaLink(tenantId: string, deltaLink: string): Promise<void> {
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({
+        delta_link: deltaLink,
+        synced_at: new Date(),
+        last_sync_error: null,
+        last_sync_error_at: null,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async recordSyncError(tenantId: string, error: string): Promise<void> {
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async getDeltaLink(tenantId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom('ms_oauth_tokens')
+      .select('delta_link')
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+    return row?.delta_link ?? null;
+  }
+
+  public async resetDeltaLink(tenantId: string): Promise<void> {
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/ms-sync/ms-sync.service.ts
+
+```typescript
+import { Client } from '@microsoft/microsoft-graph-client';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { MsOAuthService } from './ms-oauth.service';
+import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
+import type { IngestableEmail } from '../emails/services/email-ingester.service';
+import { EmailIngesterService } from '../emails/services/email-ingester.service';
+
+const MAX_MESSAGES_PER_SYNC = 50;
+
+async function graphCallWithRetry<T>(callFn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    try {
+      return await callFn();
+    } catch (err: any) {
+      if (err?.statusCode === 429 && attempt <= maxRetries) {
+        let delayMs = 5000;
+        const retryAfter = err?.headers?.get?.('Retry-After') || err?.headers?.['retry-after'];
+        if (retryAfter) {
+          const parsed = parseInt(retryAfter, 10);
+          if (!isNaN(parsed)) {
+            delayMs = parsed * 1000;
+          }
+        } else {
+          delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
+        }
+        console.warn(`MS Graph API rate limited (429). Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
-function disconnect() {
-  return authProcedure
-    .input(
-      z.object({
-        removeLocalEmails: z.boolean().default(false),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const { oauthSvc, syncSvc } = getServices();
+export class MsSyncService {
+  private readonly ingester: EmailIngesterService;
 
-      if (input.removeLocalEmails) {
-        await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id);
-        // Signal all remaining connected users in this tenant to do a full resync next time,
-        // since their locally-stored emails were just deleted.
-        await oauthSvc.resetDeltaLinkForTenant(ctx.auth.tenant_id);
+  constructor(
+    private readonly db: Kysely<Models>,
+    private readonly oauthSvc: MsOAuthService,
+  ) {
+    this.ingester = new EmailIngesterService(db, 'ms');
+  }
+
+  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
+    const accessToken = await this.oauthSvc.getValidToken(tenantId);
+    const client = this.buildGraphClient(accessToken);
+
+    const syncFolders = [
+      { wellKnownName: 'inbox', pplcrmId: ALL_FOLDERS.INBOX },
+      { wellKnownName: 'sentitems', pplcrmId: ALL_FOLDERS.SENT },
+      { wellKnownName: 'deleteditems', pplcrmId: ALL_FOLDERS.TRASH },
+      { wellKnownName: 'junkemail', pplcrmId: ALL_FOLDERS.SPAM },
+    ];
+
+    // Read stored delta map.
+    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
+    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
+    // positions after a successful sync, so no explicit clear is needed.
+    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
+    let deltaMap: Record<string, string> = {};
+    if (dbDeltaLink) {
+      try {
+        const parsed = JSON.parse(dbDeltaLink);
+        if (!parsed._needs_full_sync) {
+          deltaMap = parsed;
+        }
+        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
+      } catch {
+        // If not valid JSON, it's a legacy plain URL string. Clear it.
+        deltaMap = {};
+      }
+    }
+
+    let inserted = 0;
+    const nextDeltaMap: Record<string, string> = { ...deltaMap };
+
+    for (const folder of syncFolders) {
+      const folderDeltaLink = deltaMap[folder.wellKnownName] || null;
+
+      let pageUrl: string | null =
+        folderDeltaLink ??
+        `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
+
+      const allMessages: any[] = [];
+      let isInitialSync = folderDeltaLink === null;
+      let hasMore = true;
+
+      while (pageUrl && hasMore) {
+        const url = pageUrl;
+        try {
+          const response: any = await graphCallWithRetry(() => client.api(url).get());
+          const messages = response.value ?? [];
+          allMessages.push(...messages);
+
+          const nextLink = response['@odata.nextLink'] ?? null;
+          const deltaLink = response['@odata.deltaLink'] ?? null;
+
+          if (deltaLink) {
+            nextDeltaMap[folder.wellKnownName] = deltaLink;
+            hasMore = false;
+          } else if (nextLink) {
+            pageUrl = nextLink;
+          } else {
+            hasMore = false;
+          }
+        } catch (err: any) {
+          if (err?.statusCode === 410) {
+            // Delta link expired for this folder, clear it
+            delete nextDeltaMap[folder.wellKnownName];
+            isInitialSync = true;
+            allMessages.length = 0; // clear any partially loaded pages before restarting
+            pageUrl = `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
+          } else {
+            throw err;
+          }
+        }
       }
 
-      await oauthSvc.disconnect(ctx.auth.user_id);
-      return { success: true };
+      // Process all messages fetched in this sync run
+      for (const msg of allMessages) {
+        if (msg['@removed']) {
+          const msId = msg.id;
+          if (msId) {
+            await this.ingester.deleteMessage(tenantId, msId);
+          }
+          continue;
+        }
+
+        try {
+          const wasSaved = await this.saveMessage(client, msg, tenantId, requestedBy, folder.pplcrmId);
+          if (wasSaved) inserted++;
+        } catch (err) {
+          console.error(`Failed to ingest MS Graph message ${msg.id}:`, err);
+        }
+      }
+
+      // If it was an initial/full sync (meaning we started with no delta link, or it expired and we retried),
+      // we have retrieved the entire list of active server messages.
+      // Therefore, any local email that has an MS preview key but is NOT in the server's list must have been deleted or moved.
+      if (isInitialSync) {
+        const serverMsIds = new Set(allMessages.filter((m) => !m['@removed']).map((m) => String(m.id)));
+        const localEmails = await this.db
+          .selectFrom('emails')
+          .select(['id', 'preview'])
+          .where('tenant_id', '=', tenantId)
+          .where('folder_id', '=', folder.pplcrmId)
+          .where('preview', 'like', 'ms:%')
+          .execute();
+
+        for (const localEmail of localEmails) {
+          const previewKey = localEmail.preview ?? '';
+          const msId = previewKey.replace(/^ms:/, '');
+          if (!serverMsIds.has(msId)) {
+            await this.ingester.deleteMessage(tenantId, msId);
+          }
+        }
+      }
+    }
+
+    // Save updated delta map back to database
+    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
+
+    return { inserted };
+  }
+
+  public async removeAllLocalEmails(tenantId: string): Promise<void> {
+    await this.ingester.removeAllLocalEmails(tenantId);
+  }
+
+  private async saveMessage(
+    client: Client,
+    msg: any,
+    tenantId: string,
+    requestedBy: string,
+    folderId: string,
+  ): Promise<boolean> {
+    const msId: string = msg.id ?? '';
+    if (!msId) return false;
+
+    const fromEmail = msg.from?.emailAddress?.address ?? null;
+    const toEmail = msg.toRecipients?.[0]?.emailAddress?.address ?? null;
+    const subject = msg.subject ?? null;
+    let dateSent = msg.receivedDateTime ? new Date(msg.receivedDateTime) : new Date();
+    if (isNaN(dateSent.getTime())) {
+      dateSent = new Date();
+    }
+    const bodyHtml = msg.body?.content ?? '';
+
+    // Fetch Graph attachments if any
+    let graphAttachments: any[] = [];
+    const hasCid = bodyHtml && bodyHtml.includes('cid:');
+    if (msg.hasAttachments || hasCid) {
+      try {
+        const attRes = await graphCallWithRetry(() => client.api(`/me/messages/${msId}/attachments`).get());
+        graphAttachments = attRes.value ?? [];
+      } catch (err) {
+        console.error(`Failed to fetch attachments for message ${msId}:`, err);
+      }
+    }
+
+    const fileAttachments = graphAttachments.filter(
+      (att: any) => att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes,
+    );
+
+    // Map MS Graph attachments to IngestableEmail attachments
+    const attachments = fileAttachments.map((att: any) => ({
+      name: att.name,
+      contentType: att.contentType,
+      size: att.size,
+      contentId: att.contentId ?? null,
+      isInline: att.isInline ?? false,
+      fetchContent: async () => Buffer.from(att.contentBytes, 'base64'),
+    }));
+
+    // Map recipients
+    const recipients: Array<{ kind: 'to' | 'cc' | 'bcc'; name: string | null; email: string }> = [];
+    const toList: any[] = msg.toRecipients ?? [];
+    const ccList: any[] = msg.ccRecipients ?? [];
+    const bccList: any[] = msg.bccRecipients ?? [];
+
+    toList.forEach((r) => {
+      recipients.push({ kind: 'to', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
     });
-}
+    ccList.forEach((r) => {
+      recipients.push({ kind: 'cc', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
+    });
+    bccList.forEach((r) => {
+      recipients.push({ kind: 'bcc', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
+    });
 
-function resetSync() {
-  return authProcedure.mutation(async ({ ctx }) => {
-    const { oauthSvc } = getServices();
-    await oauthSvc.saveDeltaLink(ctx.auth.user_id, NEEDS_FULL_SYNC);
-    return { success: true };
-  });
-}
+    const ingestable: IngestableEmail = {
+      id: msId,
+      internetMessageId: msg.internetMessageId ?? null,
+      fromEmail,
+      toEmail,
+      subject,
+      dateSent,
+      bodyHtml,
+      recipients,
+      attachments,
+    };
 
-export const MsSyncRouter = router({
-  getAuthUrl: getAuthUrl(),
-  getConnectionStatus: getConnectionStatus(),
-  syncNow: syncNow(),
-  disconnect: disconnect(),
-  resetSync: resetSync(),
-});
+    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
+  }
+
+  private buildGraphClient(accessToken: string): Client {
+    return Client.init({
+      authProvider: (done) => done(null, accessToken),
+    });
+  }
+}
 ```
 
 ## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
@@ -33400,6 +32541,103 @@ export class PersonsRepo extends BaseRepository<'persons'> {
 }
 ```
 
+## File: apps/backend/project.json
+
+```json
+{
+  "name": "backend",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/backend/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "generate-context": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx repomix --output apps/backend/STRUCTURE.md --include \"apps/backend/src/**/*\" --ignore \"apps/frontend/**,apps/libs/**,libs/**,**/STRUCTURE.md,**/_migrations/schema_dump.sql,**/*.spec.ts\""
+      }
+    },
+    "build": {
+      "executor": "@nx/esbuild:esbuild",
+      "dependsOn": ["generate-context"],
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "platform": "node",
+        "outputPath": "dist/apps/backend",
+        "format": ["esm"],
+        "main": "apps/backend/src/main.ts",
+        "tsConfig": "apps/backend/tsconfig.app.json",
+        "assets": ["apps/backend/src/assets"],
+        "generatePackageJson": false,
+        "esbuildOptions": {
+          "packages": "external",
+          "external": ["aws-sdk", "nock", "mock-aws-s3"],
+          "loader": {
+            ".html": "text"
+          },
+          "sourcemap": "inline",
+          "outExtension": {
+            ".js": ".js"
+          }
+        }
+      },
+      "configurations": {
+        "development": {
+          "bundle": true
+        },
+        "production": {
+          "bundle": true,
+          "esbuildOptions": {
+            "sourcemap": false,
+            "external": ["aws-sdk", "nock", "mock-aws-s3"],
+            "loader": {
+              ".html": "text"
+            },
+            "outExtension": {
+              ".js": ".js"
+            }
+          }
+        }
+      }
+    },
+    "serve": {
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "backend:build"
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "backend:build:development",
+          "runtimeArgs": ["--inspect=9229", "--enable-source-maps", "--env-file=.env.development"]
+        },
+        "production": {
+          "buildTarget": "backend:build:production",
+          "runtimeArgs": ["--enable-source-maps", "--env-file=.env.production"]
+        }
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "outputs": ["{workspaceRoot}/coverage/apps/backend"],
+      "options": {
+        "cwd": "apps/backend",
+        "command": "vitest run"
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint",
+      "outputs": ["{options.outputFile}"],
+      "options": {
+        "lintFilePatterns": ["apps/backend/**/*.ts"]
+      }
+    }
+  }
+}
+```
+
 ## File: apps/backend/src/app/lib/jobs/webhook-worker.ts
 
 ```typescript
@@ -33800,414 +33038,1237 @@ export class WebhookEventWorker {
 }
 ```
 
-## File: apps/backend/src/app/modules/households/controller.ts
+## File: apps/backend/src/app/lib/jobs/worker.ts
 
 ```typescript
-import type {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthKeyPayload,
-  UpdateHouseholdsType,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-import { TRPCError } from '@trpc/server';
 import { sql } from 'kysely';
+import { Client } from 'pg';
 
-import type { QueryParams } from '../../lib/base.repo';
-import { BaseRepository } from '../../lib/base.repo';
-import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
-import { HouseholdRepo } from './repositories/households.repo';
-import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
-import { TagsRepo } from '../tags/repositories/tags.repo';
-import { matchCoordinatesToDistrict } from '../../lib/gis/geocoding';
-import { BaseController } from '../../lib/base.controller';
-import { SettingsController } from '../settings/controller';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { env } from '../../../env';
+import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
+import { executeJob } from './job-handlers';
 
-export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
-  private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
-  private settingsController = new SettingsController();
-  private tagsRepo = new TagsRepo();
+export class BackgroundJobWorker {
+  private readonly importsRepo = new ImportsRepo();
+  private readonly db = this.importsRepo.db; // Kysely DB instance
 
-  constructor() {
-    super(new HouseholdRepo());
-  }
+  private activeJobsCount = 0;
+  private isRunning = false;
+  private pgClient: Client | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private recoveryInterval: NodeJS.Timeout | null = null;
+  private shutdownResolver: (() => void) | null = null;
+  private timer: NodeJS.Timeout | null = null;
 
-  public async deleteManyForTenant(auth: IAuthKeyPayload, idsToDelete: string[]) {
-    // Filter out any placeholder households — they are permanent and undeletable
-    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, idsToDelete);
-    const safeIds = idsToDelete.filter((id) => !placeholders.has(id));
+  public start() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    console.log('Background Job Worker started.');
 
-    if (safeIds.length === 0) return false;
-    // Members move to the tenant's placeholder household (persons.household_id is
-    // NOT NULL) rather than being cascade-deleted along with the household.
-    return this.getRepo().deleteManyReassigningPersons({
-      tenant_id: auth.tenant_id,
-      ids: safeIds,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
-    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
-
-    const fp_street = fingerprintStreet({
-      street_num: payload.street_num,
-      street1: payload.street1,
-      street2: payload.street2,
-    });
-    const fp_full = fingerprintFull({
-      apt: payload.apt,
-      street_num: payload.street_num,
-      street1: payload.street1,
-      street2: payload.street2,
-      city: payload.city,
-      state: payload.state,
-      zip: payload.zip,
-      country: payload.country,
-    });
-
-    // Try to dedupe: find existing by fingerprint
-    if (fp_street || fp_full) {
-      const existing = await this.getRepo().findByFingerprint({
-        tenant_id: auth.tenant_id,
-        campaign_id: String(campaign_id),
-        fp_street: fp_street,
-        fp_full: fp_full,
-      });
-      if (existing?.id) return { id: String(existing.id) } as any;
-    }
-
-    const row = {
-      ...payload,
-      address_fp_street: fp_street,
-      address_fp_full: fp_full,
-      campaign_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-    return this.add(row as OperationDataType<'households', 'insert'>);
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const household = await super.getOneById(input);
-    if (!household) return undefined;
-
-    const tenantRow = await (BaseRepository as any)['_db']
-      .selectFrom('tenants')
-      .select('placeholder_household_id')
-      .where('id', '=', input.tenant_id)
-      .executeTakeFirst();
-
-    const is_placeholder = tenantRow?.placeholder_household_id
-      ? String(tenantRow.placeholder_household_id) === String((household as any).id)
-      : false;
-    return {
-      ...household,
-      is_placeholder,
-    } as any;
-  }
-
-  public override async update(input: {
-    tenant_id: string;
-    id: string;
-    row: OperationDataType<'households', 'update'>;
-  }) {
-    const placeholders = await this.getRepo().getPlaceholderIds(input.tenant_id, [input.id]);
-    if (placeholders.has(input.id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'The placeholder household cannot be edited.',
-      });
-    }
-
-    const keys = Object.keys(input.row || {});
-    const affectsAddress = keys.some((k) =>
-      ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country'].includes(k),
+    this.ensureCleanupJobScheduled().catch((err) => console.error('Failed to ensure cleanup job scheduled:', err));
+    this.ensureSyncSchedulerJobScheduled().catch((err) =>
+      console.error('Failed to ensure sync scheduler job scheduled:', err),
+    );
+    this.ensureDuplicatesRecomputeJobScheduled().catch((err) =>
+      console.error('Failed to ensure duplicates recompute job scheduled:', err),
+    );
+    this.ensureAddressFingerprintsJobScheduled().catch((err) =>
+      console.error('Failed to ensure address fingerprints job scheduled:', err),
+    );
+    this.ensureWorkflowsJobScheduled().catch((err) => console.error('Failed to ensure workflows job scheduled:', err));
+    this.ensurePerformScheduledDeletionsJobScheduled().catch((err) =>
+      console.error('Failed to ensure perform scheduled deletions job scheduled:', err),
+    );
+    this.ensureUsageLimitChecksScheduled().catch((err) =>
+      console.error('Failed to ensure usage limit checks scheduled:', err),
+    );
+    this.ensureDueTasksCheckScheduled().catch((err) =>
+      console.error('Failed to ensure due tasks check scheduled:', err),
+    );
+    this.ensureCompaniesGoogleRefreshJobScheduled().catch((err) =>
+      console.error('Failed to ensure companies google refresh job scheduled:', err),
+    );
+    this.ensurePruneNewsletterEventsJobScheduled().catch((err) =>
+      console.error('Failed to ensure prune newsletter events job scheduled:', err),
     );
 
-    // Perform the main update without fingerprint columns first
-    const result = await super.update(input);
+    // Run stale job recovery on startup and then every 5 minutes
+    this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs on startup:', err));
+    this.recoveryInterval = setInterval(
+      () => {
+        this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs:', err));
+      },
+      5 * 60 * 1000,
+    );
 
-    // Attempt fingerprint recompute in a separate, non-fatal step
-    if (affectsAddress) {
+    this.setupListener();
+    this.poll();
+  }
+
+  public async stop(): Promise<void> {
+    this.isRunning = false;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.recoveryInterval) {
+      clearInterval(this.recoveryInterval);
+      this.recoveryInterval = null;
+    }
+    if (this.pgClient) {
       try {
-        const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as any;
-        const merged = { ...current, ...(input.row as any) };
+        await this.pgClient.end();
+      } catch (err) {
+        console.error('Error closing Postgres listener client on shutdown:', err);
+      }
+      this.pgClient = null;
+    }
 
-        let geocoding_status = isBlankAddress(merged) || isIncompleteAddress(merged) ? 'failed' : 'pending';
-        let district = null;
-        let precinct = null;
-        let ward = null;
+    if (this.activeJobsCount > 0) {
+      console.log(
+        `Background Job Worker: Waiting for ${this.activeJobsCount} active jobs to complete before shutting down...`,
+      );
+      await new Promise<void>((resolve) => {
+        this.shutdownResolver = resolve;
+      });
+    }
+    console.log('Background Job Worker stopped.');
+  }
 
-        // If autocomplete coordinates are provided in the update, use them and map boundaries synchronously
-        if (input.row.lat && input.row.lng && Number(input.row.lat) !== 0 && Number(input.row.lng) !== 0) {
-          try {
-            const matched = await matchCoordinatesToDistrict(Number(input.row.lat), Number(input.row.lng));
-            district = matched.district;
-            precinct = matched.precinct;
-            ward = matched.ward;
-            geocoding_status = 'success';
-          } catch (err) {
-            console.error('Failed to map coordinates to district during update', err);
-          }
-        }
-
-        const fpRow: any = {
-          address_fp_street: fingerprintStreet({
-            street_num: merged.street_num,
-            street1: merged.street1,
-            street2: merged.street2,
-          }),
-          address_fp_full: fingerprintFull({
-            apt: merged.apt,
-            street_num: merged.street_num,
-            street1: merged.street1,
-            street2: merged.street2,
-            city: merged.city,
-            state: merged.state,
-            zip: merged.zip,
-            country: merged.country,
-          }),
-          geocoding_status,
-          district,
-          precinct,
-          ward,
-        };
-        await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
-
-        // Queue geocoding background job if geocoding status is pending
-        if (geocoding_status === 'pending') {
-          await this.getRepo()
-            .db.insertInto('background_jobs' as any)
+  private async ensureAddressFingerprintsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling nightly address fingerprints recomputation background job…');
+          await trx
+            .insertInto('background_jobs' as any)
             .values({
-              tenant_id: input.tenant_id,
+              tenant_id: null,
               queue: 'default',
               status: 'pending',
-              payload: JSON.stringify({
-                type: 'geocode_household',
-                household_id: input.id,
-                tenant_id: input.tenant_id,
-              }),
+              payload: JSON.stringify({ type: 'recompute_address_fingerprints' }),
               run_at: new Date(),
               max_attempts: 3,
             })
             .execute();
         }
-        // Duplicate maintenance is only calculated nightly
+      });
+    } catch (err) {
+      console.error('Failed to ensure address fingerprints job scheduled:', err);
+    }
+  }
+
+  private async ensureCleanupJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'cleanup_activities')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily activity feed cleanup background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'cleanup_activities' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure cleanup job scheduled:', err);
+    }
+  }
+
+  private async ensureCompaniesGoogleRefreshJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'refresh_companies_google')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily company google enrichment background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'refresh_companies_google' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure companies google refresh job scheduled:', err);
+    }
+  }
+
+  private async ensureDueTasksCheckScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'check_due_tasks')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily due tasks check background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'check_due_tasks' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure due tasks check scheduled:', err);
+    }
+  }
+
+  private async ensureDuplicatesRecomputeJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling nightly duplicates recomputation background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'recompute_all_duplicates' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure duplicates recompute job scheduled:', err);
+    }
+  }
+
+  private async ensurePerformScheduledDeletionsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'perform_scheduled_deletions')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily scheduled deletions background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'perform_scheduled_deletions' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure perform scheduled deletions job scheduled:', err);
+    }
+  }
+
+  private async ensurePruneNewsletterEventsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'prune_newsletter_events')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily newsletter events pruning background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'prune_newsletter_events' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure prune newsletter events job scheduled:', err);
+    }
+  }
+
+  private async ensureSyncSchedulerJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'schedule_sync_jobs')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling sync scheduler background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'schedule_sync_jobs' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure sync scheduler job scheduled:', err);
+    }
+  }
+
+  private async ensureUsageLimitChecksScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'check_all_usage_limits')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily usage limits check background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'check_all_usage_limits' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure usage limit checks scheduled:', err);
+    }
+  }
+
+  private async ensureWorkflowsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'process_drip_workflows')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling periodic drip workflows processing background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'process_drip_workflows' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure workflows job scheduled:', err);
+    }
+  }
+
+  private poll() {
+    if (!this.isRunning) return;
+
+    this.timer = setTimeout(async () => {
+      let processedAJob = false;
+      try {
+        this.activeJobsCount++;
+        processedAJob = await this.processNextJob();
       } catch (err) {
-        console.error('Failed to update address fingerprint and queue duplicates maintenance', err);
+        console.error('Error in background job worker poll cycle:', err);
+      } finally {
+        this.activeJobsCount--;
+
+        // If shutdown was requested and no active jobs remain, resolve the stop() promise
+        if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
+          this.shutdownResolver();
+        } else {
+          // Poll again immediately (10ms) if we processed a job (to drain the queue),
+          // or back off to 30 seconds if no jobs were found.
+          const delay = processedAJob ? 10 : 30000;
+          this.pollWithDelay(delay);
+        }
       }
-    }
-
-    return result;
+    }, 0);
   }
 
-  public async attachTag(household_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
-    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, [household_id]);
-    if (placeholders.has(household_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Cannot attach tags to the placeholder household.',
-      });
-    }
-
-    const randomHexColor = () =>
-      '#' +
-      Math.floor(Math.random() * 0xffffff)
-        .toString(16)
-        .padStart(6, '0');
-    const row = {
-      name,
-      color: randomHexColor(),
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      type,
-    };
-
-    const tag = await this.tagsRepo.addOrGet({
-      row: row as OperationDataType<'tags', 'insert'>,
-      onConflictColumn: 'name',
-    });
-
-    return this.addToMap({
-      tag_id: tag?.id as string | undefined,
-      household_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    });
+  private pollWithDelay(ms: number) {
+    if (!this.isRunning) return;
+    this.timer = setTimeout(() => this.poll(), ms);
   }
 
-  public async detachTag(
-    tenant_id: string,
-    household_id: string,
-    tag_name: string,
-    type: 'tag' | 'issue' = 'tag',
-    userId?: string,
-  ) {
-    const placeholders = await this.getRepo().getPlaceholderIds(tenant_id, [household_id]);
-    if (placeholders.has(household_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Cannot detach tags from the placeholder household.',
-      });
-    }
+  private async processNextJob(): Promise<boolean> {
+    const workerId = `worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
 
-    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name, type });
-    if (tag?.id) {
-      await this.mapHouseholdsTagRepo.deleteMapping(tenant_id, household_id, tag.id);
-    }
+    // Try to find and lock a job using SKIP LOCKED
+    const job = await this.db.transaction().execute(async (trx: any) => {
+      const pendingJob = (await trx
+        .selectFrom('background_jobs' as any)
+        .selectAll()
+        .where('status', '=', 'pending')
+        .where('run_at', '<=', new Date())
+        .orderBy('id', 'asc')
+        .limit(1)
+        .forUpdate()
+        .skipLocked()
+        .executeTakeFirst()) as any;
+
+      if (!pendingJob) return null;
+
+      const updatedJob = await trx
+        .updateTable('background_jobs' as any)
+        .set({
+          status: 'processing',
+          locked_at: new Date(),
+          locked_by: workerId,
+          attempts: Number(pendingJob.attempts || 0) + 1,
+          updated_at: new Date(),
+        })
+        .where('id', '=', pendingJob.id)
+        .returningAll()
+        .executeTakeFirst();
+
+      return updatedJob;
+    });
+
+    if (!job) return false;
+
+    console.log(`Processing job ${job.id} (Queue: ${job.queue}, Status: ${job.status})`);
+
+    const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
 
     try {
-      if (userId) {
-        await this.userActivity.log({
-          tenant_id,
-          user_id: userId,
-          activity: 'update',
-          entity: 'households',
-          entity_id: household_id,
-          quantity: 1,
-          metadata: { id: household_id, action: `detach_${type}`, name: tag_name },
-        });
+      await executeJob(payload, this.db, job.id);
+
+      // Mark job as completed
+      await this.db
+        .updateTable('background_jobs' as any)
+        .set({
+          status: 'completed',
+          locked_at: null,
+          locked_by: null,
+          updated_at: new Date(),
+        })
+        .where('id', '=', job.id)
+        .execute();
+
+      console.log(`Job ${job.id} completed successfully.`);
+    } catch (err: any) {
+      const errorMsg = err?.message || String(err);
+      console.error(`Failed to process background job ${job.id}:`, err);
+
+      try {
+        // If it was an import job, mark the import as failed and store the error message
+        if (payload.import_id) {
+          await this.importsRepo.update({
+            tenant_id: payload.tenant_id as any,
+            id: payload.import_id as any,
+            row: {
+              status: 'failed',
+              error_message: errorMsg.substring(0, 1000), // Truncate just in case
+              processed_at: new Date(),
+              updated_at: new Date(),
+            } as any,
+          });
+        }
+      } catch (dbErr) {
+        console.error('Failed to mark data_imports as failed:', dbErr);
       }
-    } catch (e) {
-      console.error('Failed to log detach tag activity', e);
+
+      const attempts = Number(job.attempts || 0);
+      const maxAttempts = Number(job.max_attempts || 3);
+
+      if (attempts < maxAttempts) {
+        // Retry with backoff (exponential backoff for mail, linear for others)
+        const isMail =
+          payload.type === 'send-transactional-email' ||
+          payload.type === 'send-form-notifications' ||
+          payload.type === 'send-webform-notifications' ||
+          payload.type === 'send-shift-reminder' ||
+          payload.type === 'send-newsletter';
+        const delaySeconds = isMail ? Math.pow(2, attempts) * 30 : attempts * 30;
+        const runAt = new Date(Date.now() + delaySeconds * 1000);
+        console.log(`Rescheduling job ${job.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`);
+
+        await this.db
+          .updateTable('background_jobs' as any)
+          .set({
+            status: 'pending',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            run_at: runAt,
+            updated_at: new Date(),
+          })
+          .where('id', '=', job.id)
+          .execute();
+      } else {
+        console.error(`Job ${job.id} exceeded maximum attempts (${maxAttempts}). Marking as failed.`);
+        await this.db
+          .updateTable('background_jobs' as any)
+          .set({
+            status: 'failed',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            updated_at: new Date(),
+          })
+          .where('id', '=', job.id)
+          .execute();
+
+        if (payload.export_id) {
+          try {
+            const { ExportsRepo } = await import('../../modules/exports/repositories/exports.repo');
+            const exportsRepo = new ExportsRepo();
+            await exportsRepo.updateStatus(String(payload.export_id), String(payload.tenant_id), 'failed', {
+              error: `Export failed after all retries. Last error: ${errorMsg.substring(0, 400)}`,
+            });
+          } catch (exportErr) {
+            console.error('Failed to update export status on job permanent failure:', exportErr);
+          }
+        }
+
+        if (payload.type === 'ms_sync' && payload.userId) {
+          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
+          console.error(`[sync-error][${correlationId}] MS sync permanently failed for user ${payload.userId}:`, err);
+          try {
+            const { MsOAuthService } = await import('../../modules/ms-sync/ms-oauth.service');
+            const { env } = await import('../../../env');
+            const oauthSvc = new MsOAuthService(this.db as any, {
+              clientId: env.msClientId ?? '',
+              clientSecret: env.msClientSecret ?? '',
+              tenantId: env.msTenantId ?? 'common',
+              redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+            });
+            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
+          } catch (recordErr) {
+            console.error('Failed to record MS sync error on token:', recordErr);
+          }
+        }
+
+        if (payload.type === 'google_sync' && payload.userId) {
+          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
+          console.error(
+            `[sync-error][${correlationId}] Google sync permanently failed for user ${payload.userId}:`,
+            err,
+          );
+          try {
+            const { GoogleOAuthService } = await import('../../modules/google-sync/google-oauth.service');
+            const { env } = await import('../../../env');
+            const oauthSvc = new GoogleOAuthService(this.db as any, {
+              clientId: env.googleClientId ?? '',
+              clientSecret: env.googleClientSecret ?? '',
+              redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+            });
+            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
+          } catch (recordErr) {
+            console.error('Failed to record Google sync error on token:', recordErr);
+          }
+        }
+
+        // If a recurrent cron-like job fails permanently, schedule the next iteration
+        await this.rescheduleCronJobOnFailure(payload.type);
+      }
+    }
+
+    return true;
+  }
+
+  private reconnectListener() {
+    if (this.pgClient) {
+      this.pgClient.end().catch();
+      this.pgClient = null;
+    }
+    if (!this.isRunning) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.setupListener();
+    }, 5000);
+  }
+
+  private async recoverStaleJobs(): Promise<void> {
+    try {
+      const staleTime = new Date(Date.now() - 30 * 60 * 1000); // 30 minutes
+      await this.db
+        .updateTable('background_jobs' as any)
+        .set({
+          status: 'pending',
+          locked_at: null,
+          locked_by: null,
+          updated_at: new Date(),
+          error: 'Job processing timed out',
+        })
+        .where('status', '=', 'processing')
+        .where('locked_at', '<', staleTime)
+        .execute();
+
+      // Clean up/timeout data exports stuck in pending/processing for more than 1 hour
+      const staleExportTime = new Date(Date.now() - 60 * 60 * 1000); // 1 hour
+      const staleExports = await this.db
+        .selectFrom('data_exports' as any)
+        .select(['id', 'tenant_id'])
+        .where('status', 'in', ['pending', 'processing'])
+        .where('created_at', '<', staleExportTime)
+        .execute();
+
+      if (staleExports.length > 0) {
+        const ids = staleExports.map((e: any) => e.id as any);
+        await this.db
+          .updateTable('data_exports' as any)
+          .set({
+            status: 'failed',
+            error: 'Export processing timed out',
+            updated_at: new Date(),
+          })
+          .where('id', 'in', ids)
+          .execute();
+
+        for (const exp of staleExports) {
+          await this.db
+            .deleteFrom('background_jobs' as any)
+            .where('tenant_id', '=', exp.tenant_id as any)
+            .where(sql`payload->>'type'`, '=', 'export_csv')
+            .where(sql`payload->>'export_id'`, '=', String(exp.id))
+            .execute();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to recover stale background jobs:', err);
     }
   }
 
-  public getAllWithPeopleCount(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    const { tags, ...queryParams } = options || {};
-    return this.getRepo().getAllWithPeopleCount({
-      tenant_id: auth.tenant_id,
-      options: queryParams as QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'>,
-      tags,
-    });
+  private async rescheduleCronJobOnFailure(type: string): Promise<void> {
+    let delayMs = 0;
+    if (type === 'cleanup_activities') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'schedule_sync_jobs') {
+      delayMs = 10 * 60 * 1000;
+    } else if (type === 'recompute_all_duplicates') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'recompute_address_fingerprints') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'process_drip_workflows') {
+      delayMs = 10 * 60 * 1000;
+    } else if (type === 'perform_scheduled_deletions') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'check_all_usage_limits') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'refresh_companies_google') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'prune_newsletter_events') {
+      delayMs = 24 * 60 * 60 * 1000;
+    }
+
+    if (delayMs > 0) {
+      try {
+        await this.db
+          .insertInto('background_jobs' as any)
+          .values({
+            tenant_id: null,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({ type }),
+            run_at: new Date(Date.now() + delayMs),
+            max_attempts: 3,
+          })
+          .execute();
+      } catch (schedErr) {
+        console.error(`Failed to reschedule failed cron job (${type}):`, schedErr);
+      }
+    }
   }
 
-  public getPeopleCount(id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
-  }
+  private async setupListener() {
+    if (!this.isRunning) return;
+    try {
+      this.pgClient = new Client(env.db);
+      await this.pgClient.connect();
 
-  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getDistinctTags(auth.tenant_id, type);
-  }
-
-  public getTags(id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getTags(id, auth.tenant_id, type);
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const result = await this.getAllWithPeopleCount(auth, input?.options);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'export',
-        entity: 'households',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-        },
+      this.pgClient.on('notification', (msg) => {
+        if (msg.channel === 'background_jobs_channel') {
+          console.log('Background Job Worker received notify, waking up...');
+          this.wakeUp();
+        }
       });
-      return response;
-    }
-    return super.exportCsv(input, auth);
-  }
 
-  private async addToMap(row: {
-    tag_id: string | undefined;
-    household_id: string;
-    tenant_id: string;
-    createdby_id: string;
-    updatedby_id: string;
-  }) {
-    if (!row.tag_id) {
-      throw new TRPCError({
-        message: 'Failed to add the tag',
-        code: 'INTERNAL_SERVER_ERROR',
+      this.pgClient.on('error', (err) => {
+        console.error('Postgres listener client error:', err);
+        this.reconnectListener();
       });
-    }
 
-    return await this.mapHouseholdsTagRepo.add({
-      row: row as OperationDataType<'map_households_tags', 'insert'>,
-    });
-  }
-
-  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
-  }
-
-  public async mergeHouseholds(target_id: string, source_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().mergeHouseholds({
-      tenant_id: auth.tenant_id,
-      target_id,
-      source_id,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async getLastFingerprintRecomputation(tenantId: string): Promise<{ lastRunAt: string | null }> {
-    const job = await this.getRepo()
-      .db.selectFrom('background_jobs' as any)
-      .select(['created_at'])
-      .where('tenant_id', '=', tenantId as any)
-      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
-      .orderBy('created_at', 'desc')
-      .executeTakeFirst();
-
-    return { lastRunAt: job?.created_at ? new Date(job.created_at).toISOString() : null };
-  }
-
-  public async recomputeAddressFingerprints(tenantId: string): Promise<void> {
-    const oneMonthAgo = new Date();
-    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-
-    const existingJob = await this.getRepo()
-      .db.selectFrom('background_jobs' as any)
-      .select(['created_at'])
-      .where('tenant_id', '=', tenantId as any)
-      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
-      .where('created_at', '>', oneMonthAgo)
-      .executeTakeFirst();
-
-    if (existingJob) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Address fingerprints can only be recomputed once a month. A request was already submitted recently.',
+      this.pgClient.on('end', () => {
+        console.warn('Postgres listener connection closed.');
+        this.reconnectListener();
       });
-    }
 
-    await this.getRepo()
-      .db.insertInto('background_jobs' as any)
-      .values({
-        tenant_id: tenantId,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'recompute_address_fingerprints',
-          tenant_id: tenantId,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      })
-      .execute();
+      await this.pgClient.query('LISTEN background_jobs_channel');
+      console.log('Listening for background_jobs notifications...');
+    } catch (err) {
+      console.error('Failed to setup Postgres listener:', err);
+      this.reconnectListener();
+    }
+  }
+
+  private wakeUp() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.poll();
   }
 }
+```
+
+## File: apps/backend/src/app/modules/google-sync/google-sync.service.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { GoogleOAuthService } from './google-oauth.service';
+import type { IngestableEmail } from '../emails/services/email-ingester.service';
+import { EmailIngesterService } from '../emails/services/email-ingester.service';
+import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
+
+const MAX_MESSAGES_PER_SYNC = 50;
+
+async function fetchWithRetry(url: string, init?: RequestInit, maxRetries = 3): Promise<Response> {
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    const res = await fetch(url, init);
+    if (res.status === 429 && attempt <= maxRetries) {
+      const retryAfterHeader = res.headers.get('Retry-After');
+      let delayMs = 5000;
+      if (retryAfterHeader) {
+        const parsed = parseInt(retryAfterHeader, 10);
+        if (!isNaN(parsed)) {
+          delayMs = parsed * 1000;
+        } else {
+          const parsedDate = Date.parse(retryAfterHeader);
+          if (!isNaN(parsedDate)) {
+            delayMs = Math.max(0, parsedDate - Date.now());
+          }
+        }
+      } else {
+        delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
+      }
+      console.warn(
+        `Google API rate limited (429) on ${url}. Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      continue;
+    }
+    return res;
+  }
+}
+
+export class GoogleSyncService {
+  private readonly ingester: EmailIngesterService;
+
+  constructor(
+    private readonly db: Kysely<Models>,
+    private readonly oauthSvc: GoogleOAuthService,
+  ) {
+    this.ingester = new EmailIngesterService(db, 'google');
+  }
+
+  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
+    const accessToken = await this.oauthSvc.getValidToken(tenantId);
+
+    // Map Gmail label names to pplcrm folder IDs
+    const syncFolders = [
+      { label: 'INBOX', pplcrmId: ALL_FOLDERS.INBOX },
+      { label: 'SENT', pplcrmId: ALL_FOLDERS.SENT },
+      { label: 'TRASH', pplcrmId: ALL_FOLDERS.TRASH },
+      { label: 'SPAM', pplcrmId: ALL_FOLDERS.SPAM },
+    ];
+
+    // Stored delta_link is a JSON-encoded map of label -> last_sync_time (epoch seconds).
+    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
+    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
+    // positions after a successful sync, so no explicit clear is needed.
+    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
+    let deltaMap: Record<string, number> = {};
+    if (dbDeltaLink) {
+      try {
+        const parsed = JSON.parse(dbDeltaLink);
+        if (!parsed._needs_full_sync) {
+          deltaMap = parsed;
+        }
+        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
+      } catch {
+        deltaMap = {};
+      }
+    }
+
+    let inserted = 0;
+    const nextDeltaMap: Record<string, number> = { ...deltaMap };
+    const currentSyncTime = Math.floor(Date.now() / 1000);
+
+    for (const folder of syncFolders) {
+      const folderLastSync = deltaMap[folder.label] || 0;
+
+      let pageToken: string | null = null;
+      let hasMore = true;
+      const allMessageIds: string[] = [];
+
+      // Query Gmail messages: `label:<LABEL>` and `after:<epoch_seconds>` (with a small 60s overlap buffer)
+      const queryParts = [`label:${folder.label}`];
+      if (folderLastSync > 0) {
+        queryParts.push(`after:${folderLastSync - 60}`);
+      }
+      const q = queryParts.join(' ');
+
+      while (hasMore) {
+        const urlParams = new URLSearchParams({
+          maxResults: String(MAX_MESSAGES_PER_SYNC),
+          q,
+        });
+        if (pageToken) urlParams.set('pageToken', pageToken);
+
+        const res = await fetchWithRetry(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?${urlParams.toString()}`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          },
+        );
+
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(`Gmail API error: ${errText}`);
+        }
+
+        const data: any = await res.json();
+        const messages = data.messages ?? [];
+        allMessageIds.push(...messages.map((m: any) => m.id));
+
+        if (data.nextPageToken) {
+          pageToken = data.nextPageToken;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      // Process all messages fetched
+      for (const msgId of allMessageIds) {
+        try {
+          const wasSaved = await this.syncMessageDetails(accessToken, msgId, tenantId, requestedBy, folder.pplcrmId);
+          if (wasSaved) inserted++;
+        } catch (err) {
+          console.error(`Failed to sync Gmail message details for ${msgId}:`, err);
+        }
+      }
+
+      nextDeltaMap[folder.label] = currentSyncTime;
+
+      // Handle clean-up for deleted/moved emails
+      // If we performed a full sync (started with no previous sync time), we compare
+      // messages in Gmail with local emails having `google:` preview prefix in this folder.
+      if (folderLastSync === 0) {
+        const serverGoogleIds = new Set(allMessageIds);
+        const localEmails = await this.db
+          .selectFrom('emails')
+          .select(['id', 'preview'])
+          .where('tenant_id', '=', tenantId)
+          .where('folder_id', '=', folder.pplcrmId)
+          .where('preview', 'like', 'google:%')
+          .execute();
+
+        for (const localEmail of localEmails) {
+          const previewKey = localEmail.preview ?? '';
+          const googleId = previewKey.replace(/^google:/, '');
+          if (!serverGoogleIds.has(googleId)) {
+            await this.ingester.deleteMessage(tenantId, googleId);
+          }
+        }
+      }
+    }
+
+    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
+    return { inserted };
+  }
+
+  public async removeAllLocalEmails(tenantId: string): Promise<void> {
+    await this.ingester.removeAllLocalEmails(tenantId);
+  }
+
+  private async syncMessageDetails(
+    accessToken: string,
+    msgId: string,
+    tenantId: string,
+    requestedBy: string,
+    folderId: string,
+  ): Promise<boolean> {
+    const res = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!res.ok) {
+      if (res.status === 404) {
+        return false; // message deleted in the meantime
+      }
+      const errText = await res.text();
+      throw new Error(`Failed to fetch Gmail message ${msgId} details: ${errText}`);
+    }
+
+    const data: any = await res.json();
+    const payload = data.payload;
+    if (!payload) return false;
+
+    const headers = payload.headers ?? [];
+    const getHeader = (name: string) =>
+      headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
+
+    const subject = getHeader('subject');
+    const fromVal = getHeader('from');
+    const toVal = getHeader('to');
+    const dateVal = getHeader('date');
+    const internetMessageId = getHeader('message-id');
+
+    // Parse email addresses from "Name <email@domain.com>" format
+    const extractEmail = (val: string | null): string | null => {
+      if (!val) return null;
+      const match = val.match(/<([^>]+)>/);
+      return match ? match[1]! : val.trim();
+    };
+
+    const fromEmail = extractEmail(fromVal);
+    const toEmail = extractEmail(toVal);
+    let dateSent = dateVal ? new Date(dateVal) : new Date();
+    if (isNaN(dateSent.getTime())) {
+      dateSent = new Date();
+    }
+
+    // Parse body parts recursively
+    const parts = payload.parts ? payload.parts : [payload];
+    const { html, text, attachments } = this.parseGmailParts(parts);
+    const bodyHtml = html || text || '';
+
+    // Map attachments to the generic ingestable structure
+    const mappedAttachments = attachments.map((att: any) => ({
+      name: att.filename,
+      contentType: att.mimeType,
+      size: att.size,
+      contentId: att.cid,
+      isInline: att.isInline,
+      fetchContent: async () => {
+        const attRes = await fetchWithRetry(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${att.attachmentId}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        if (!attRes.ok) {
+          throw new Error(`Failed to fetch attachment ${att.filename} from Gmail`);
+        }
+        const attData: any = await attRes.json();
+        return this.decodeBase64UrlToBuffer(attData.data);
+      },
+    }));
+
+    // Parse recipients
+    const recipients: Array<{ kind: 'to' | 'cc' | 'bcc'; name: string | null; email: string }> = [];
+
+    const parseRecipientHeader = (val: string | null, kind: 'to' | 'cc' | 'bcc') => {
+      if (!val) return;
+      // Split by comma, respecting quotes
+      const list = val.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+      list.forEach((item) => {
+        const trimmed = item.trim();
+        if (!trimmed) return;
+        const emailMatch = trimmed.match(/<([^>]+)>/);
+        const email = emailMatch ? emailMatch[1]! : trimmed;
+        const nameMatch = trimmed.match(/^([^<]+)/);
+        let name = nameMatch ? nameMatch[1]!.trim() : null;
+        if (name) {
+          name = name.replace(/^["']|["']$/g, ''); // strip quotes
+        }
+        recipients.push({ kind, name, email });
+      });
+    };
+
+    parseRecipientHeader(getHeader('to'), 'to');
+    parseRecipientHeader(getHeader('cc'), 'cc');
+    parseRecipientHeader(getHeader('bcc'), 'bcc');
+
+    const ingestable: IngestableEmail = {
+      id: msgId,
+      internetMessageId,
+      fromEmail,
+      toEmail,
+      subject,
+      dateSent,
+      bodyHtml,
+      recipients,
+      attachments: mappedAttachments,
+    };
+
+    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
+  }
+
+  private parseGmailParts(parts: any[]): { html: string; text: string; attachments: any[] } {
+    let html = '';
+    let text = '';
+    const attachments: any[] = [];
+
+    const traverse = (part: any) => {
+      const mimeType = part.mimeType?.toLowerCase();
+      const filename = part.filename;
+      const body = part.body;
+
+      if (filename && body?.attachmentId) {
+        const headers = part.headers ?? [];
+        const contentDisposition =
+          headers.find((h: any) => h.name.toLowerCase() === 'content-disposition')?.value ?? '';
+        const isInline = contentDisposition.toLowerCase().includes('inline');
+        const contentIdHeader = headers.find((h: any) => h.name.toLowerCase() === 'content-id')?.value ?? '';
+        const cid = contentIdHeader ? contentIdHeader.replace(/[<>]/g, '') : null;
+
+        attachments.push({
+          filename,
+          mimeType: part.mimeType,
+          attachmentId: body.attachmentId,
+          size: body.size ?? 0,
+          cid,
+          isInline,
+        });
+      } else if (mimeType === 'text/html' && body?.data) {
+        html += this.decodeBase64Url(body.data);
+      } else if (mimeType === 'text/plain' && body?.data) {
+        text += this.decodeBase64Url(body.data);
+      }
+
+      if (part.parts) {
+        for (const p of part.parts) {
+          traverse(p);
+        }
+      }
+    };
+
+    for (const part of parts) {
+      traverse(part);
+    }
+
+    return { html, text, attachments };
+  }
+
+  private decodeBase64Url(str: string): string {
+    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    return Buffer.from(base64, 'base64').toString('utf8');
+  }
+
+  private decodeBase64UrlToBuffer(str: string): Buffer {
+    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    return Buffer.from(base64, 'base64');
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/ms-sync/trpc.router.ts
+
+```typescript
+import { authProcedure, router } from '../../../trpc';
+import { MsOAuthService, NEEDS_FULL_SYNC } from './ms-oauth.service';
+import { MsSyncService } from './ms-sync.service';
+import { BaseRepository } from '../../lib/base.repo';
+import { env } from '../../../env';
+import { z } from 'zod';
+import { sql } from 'kysely';
+
+let _oauthSvc: MsOAuthService | null = null;
+let _syncSvc: MsSyncService | null = null;
+
+function getServices() {
+  if (!_oauthSvc || !_syncSvc) {
+    const db = (BaseRepository as any)['_db']; // reuse the shared Kysely instance
+    _oauthSvc = new MsOAuthService(db, {
+      clientId: env.msClientId ?? '',
+      clientSecret: env.msClientSecret ?? '',
+      tenantId: env.msTenantId ?? 'common',
+      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+    });
+    _syncSvc = new MsSyncService(db, _oauthSvc);
+  }
+  return { oauthSvc: _oauthSvc, syncSvc: _syncSvc };
+}
+
+function getAuthUrl() {
+  return authProcedure.input(z.object({ returnTo: z.string().optional() })).query(async ({ ctx, input }) => {
+    const { oauthSvc } = getServices();
+    const state = Buffer.from(
+      JSON.stringify({ userId: ctx.auth.user_id, tenantId: ctx.auth.tenant_id, returnTo: input.returnTo }),
+    ).toString('base64');
+    const url = await oauthSvc.getAuthUrl(state);
+    return { url };
+  });
+}
+
+function getConnectionStatus() {
+  return authProcedure.query(async ({ ctx }) => {
+    const { oauthSvc } = getServices();
+    const db = (BaseRepository as any)['_db'];
+    const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id);
+
+    const activeJob = await db
+      .selectFrom('background_jobs' as any)
+      .select('id')
+      .where('status', 'in', ['pending', 'processing'])
+      .where('tenant_id', '=', ctx.auth.tenant_id)
+      .where(sql`payload->>'type'`, '=', 'ms_sync')
+      .executeTakeFirst();
+
+    return {
+      ...status,
+      syncing: !!activeJob,
+    };
+  });
+}
+
+function syncNow() {
+  return authProcedure.mutation(async ({ ctx }) => {
+    const db = (BaseRepository as any)['_db'];
+
+    const existing = await db
+      .selectFrom('background_jobs' as any)
+      .select('id')
+      .where('status', 'in', ['pending', 'processing'])
+      .where('tenant_id', '=', ctx.auth.tenant_id)
+      .where(sql`payload->>'type'`, '=', 'ms_sync')
+      .executeTakeFirst();
+
+    if (!existing) {
+      await db
+        .insertInto('background_jobs' as any)
+        .values({
+          tenant_id: ctx.auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'ms_sync',
+            tenantId: ctx.auth.tenant_id,
+            requestedBy: ctx.auth.user_id,
+          }),
+          run_at: new Date(),
+          max_attempts: 3,
+        })
+        .execute();
+    }
+
+    return { inserted: 0, queued: true };
+  });
+}
+
+function disconnect() {
+  return authProcedure
+    .input(
+      z.object({
+        removeLocalEmails: z.boolean().default(false),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { oauthSvc, syncSvc } = getServices();
+
+      if (input.removeLocalEmails) {
+        await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id);
+      }
+
+      await oauthSvc.disconnect(ctx.auth.tenant_id);
+      return { success: true };
+    });
+}
+
+function resetSync() {
+  return authProcedure.mutation(async ({ ctx }) => {
+    const { oauthSvc } = getServices();
+    await oauthSvc.saveDeltaLink(ctx.auth.tenant_id, NEEDS_FULL_SYNC);
+    return { success: true };
+  });
+}
+
+export const MsSyncRouter = router({
+  getAuthUrl: getAuthUrl(),
+  getConnectionStatus: getConnectionStatus(),
+  syncNow: syncNow(),
+  disconnect: disconnect(),
+  resetSync: resetSync(),
+});
 ```
 
 ## File: apps/backend/src/app/modules/volunteer-events/controller.ts
@@ -36407,9 +36468,16 @@ function verifyEmail() {
 }
 
 function resendVerificationEmail() {
-  return publicProcedure
-    .input(z.object({ email: z.string().trim().email() }))
-    .mutation(({ input }) => controller.resendVerificationEmail(input.email));
+  return publicProcedure.input(z.object({ email: z.string().trim().email() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:resendVerification`, 3, MIN15);
+    checkRateLimit(`resendVerification:${input.email}`, 3, MIN15);
+    return controller.resendVerificationEmail(input.email);
+  });
+}
+
+function dismissPasskeyPrompt() {
+  return authProcedure.mutation(({ ctx }) => controller.dismissPasskeyPrompt(ctx.auth));
 }
 
 const controller = new AuthController();
@@ -36512,6 +36580,7 @@ export const AuthRouter = router({
   listPasskeys: listPasskeys(),
   deletePasskey: deletePasskey(),
   updatePasskeyName: updatePasskeyName(),
+  dismissPasskeyPrompt: dismissPasskeyPrompt(),
 });
 ```
 
@@ -37276,800 +37345,6 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 }
 ```
 
-## File: apps/backend/src/app/modules/donations/controller.ts
-
-```typescript
-import Stripe from 'stripe';
-import { TRPCError } from '@trpc/server';
-import { env } from '../../../env';
-import { BaseController } from '../../lib/base.controller';
-import { DonationsRepo } from './repositories/donations.repo';
-import { DonationPeriodsRepo } from './repositories/periods.repo';
-import { DonationPledgesRepo } from './repositories/pledges.repo';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
-import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { WorkflowsController } from '../workflows/controller';
-import { Selectable } from 'kysely';
-
-export class DonationsController extends BaseController<'donations', DonationsRepo> {
-  private settingsRepo = new SettingsRepo();
-  private periodsRepo = new DonationPeriodsRepo();
-  private pledgesRepo = new DonationPledgesRepo();
-
-  constructor() {
-    super(new DonationsRepo());
-  }
-
-  public async getPersonDonationsList(tenantId: string, personId: string) {
-    return this.getRepo().getPersonDonationsList(tenantId, personId);
-  }
-
-  public async getPersonCumulativeDonations(tenantId: string, personId: string, year: number): Promise<number> {
-    return this.getRepo().getPersonCumulativeDonations(tenantId, personId, year);
-  }
-
-  public async getTenantDonationsList(tenantId: string) {
-    return this.getRepo().getTenantDonationsList(tenantId);
-  }
-
-  // ── Donation Periods ────────────────────────────────────────────────────────
-
-  public async getDonationPeriods(tenantId: string) {
-    return this.periodsRepo.getAllForTenant(tenantId);
-  }
-
-  public async createDonationPeriod(
-    tenantId: string,
-    userId: string,
-    payload: { name: string; start_date: string; end_date?: string | null; limit_amount: number },
-  ) {
-    return this.periodsRepo.db
-      .insertInto('donation_periods')
-      .values({
-        tenant_id: tenantId as any,
-        name: payload.name,
-        start_date: payload.start_date as any,
-        end_date: payload.end_date ? (payload.end_date as any) : null,
-        limit_amount: payload.limit_amount,
-        is_active: true,
-        createdby_id: userId as any,
-        updatedby_id: userId as any,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-  }
-
-  public async updateDonationPeriod(
-    tenantId: string,
-    userId: string,
-    id: string,
-    payload: {
-      name?: string;
-      start_date?: string;
-      end_date?: string | null;
-      limit_amount?: number;
-      is_active?: boolean;
-    },
-  ) {
-    const set: any = { updatedby_id: userId, updated_at: new Date() };
-    if (payload.name !== undefined) set.name = payload.name;
-    if (payload.start_date !== undefined) set.start_date = payload.start_date;
-    if ('end_date' in payload) set.end_date = payload.end_date ?? null;
-    if (payload.limit_amount !== undefined) set.limit_amount = payload.limit_amount;
-    if (payload.is_active !== undefined) set.is_active = payload.is_active;
-
-    return this.periodsRepo.db
-      .updateTable('donation_periods')
-      .set(set)
-      .where('id', '=', id as any)
-      .where('tenant_id', '=', tenantId as any)
-      .returningAll()
-      .executeTakeFirstOrThrow();
-  }
-
-  public async deleteDonationPeriod(tenantId: string, id: string) {
-    await this.periodsRepo.db
-      .deleteFrom('donation_periods')
-      .where('id', '=', id as any)
-      .where('tenant_id', '=', tenantId as any)
-      .execute();
-  }
-
-  // ── Pledges ─────────────────────────────────────────────────────────────────
-
-  public async getTenantPledgesList(tenantId: string) {
-    return this.pledgesRepo.getAllForTenant(tenantId);
-  }
-
-  public async getPersonPledges(tenantId: string, personId: string) {
-    return this.pledgesRepo.getForPerson(tenantId, personId);
-  }
-
-  public async cancelPledge(tenantId: string, pledgeId: string, userId: string) {
-    const pledge = await this.pledgesRepo.db
-      .selectFrom('donation_pledges')
-      .selectAll()
-      .where('id', '=', pledgeId as any)
-      .where('tenant_id', '=', tenantId as any)
-      .executeTakeFirst();
-
-    if (!pledge) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Pledge not found.' });
-    }
-
-    // Cancel in Stripe if there's a real subscription
-    if (pledge.stripe_subscription_id && !pledge.stripe_subscription_id.startsWith('sub_mock_')) {
-      const tenantStripeKey =
-        (await this.getSettingVal(tenantId, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-      if (tenantStripeKey) {
-        const stripe = new Stripe(tenantStripeKey);
-        try {
-          await stripe.subscriptions.cancel(pledge.stripe_subscription_id);
-        } catch (err) {
-          console.error('Stripe subscription cancel failed:', err);
-        }
-      }
-    }
-
-    return this.pledgesRepo.db
-      .updateTable('donation_pledges')
-      .set({
-        status: 'cancelled',
-        cancelled_at: new Date(),
-        updatedby_id: userId as any,
-        updated_at: new Date(),
-      })
-      .where('id', '=', pledgeId as any)
-      .where('tenant_id', '=', tenantId as any)
-      .returningAll()
-      .executeTakeFirstOrThrow();
-  }
-
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
-  private async getSettingVal(tenantId: string, key: string): Promise<any> {
-    const row = await this.settingsRepo.getByKey({ tenant_id: tenantId, key });
-    return row?.value;
-  }
-
-  public calculateTaxCredit(
-    amountCents: number,
-    cumulativeBeforeCents: number,
-    tiers: Array<{ limit: number; rate: number }>,
-  ): number {
-    if (!tiers || tiers.length === 0) return 0;
-
-    const sortedTiers = [...tiers].sort((a, b) => a.limit - b.limit);
-    let creditCents = 0;
-    let remainingAmount = amountCents;
-    let currentCumulative = cumulativeBeforeCents;
-
-    for (const tier of sortedTiers) {
-      const tierLimitCents = tier.limit * 100;
-
-      if (currentCumulative < tierLimitCents && remainingAmount > 0) {
-        const availableInTier = tierLimitCents - currentCumulative;
-        const amountInTier = Math.min(remainingAmount, availableInTier);
-
-        creditCents += amountInTier * tier.rate;
-        remainingAmount -= amountInTier;
-        currentCumulative += amountInTier;
-      }
-    }
-
-    return Math.round(creditCents);
-  }
-
-  /**
-   * Resolve the active limit window for the tenant.
-   * Returns { limitCents, cumulative } using the donation_period if one is active,
-   * or falling back to the legacy calendar-year setting.
-   */
-  private async resolveLimitWindow(
-    tenantId: string,
-    personId: string,
-  ): Promise<{ limitCents: number; cumulative: number; periodName: string | null }> {
-    const activePeriod = await this.periodsRepo.getActivePeriodForToday(tenantId);
-
-    if (activePeriod) {
-      const cumulative = await this.getRepo().getPersonCumulativeDonationsForPeriod(
-        tenantId,
-        personId,
-        new Date(activePeriod.start_date),
-        activePeriod.end_date ? new Date(activePeriod.end_date) : null,
-      );
-      return {
-        limitCents: Number(activePeriod.limit_amount),
-        cumulative,
-        periodName: activePeriod.name,
-      };
-    }
-
-    // Fallback: calendar year + legacy settings
-    const limitVal = await this.getSettingVal(tenantId, 'donations.limit');
-    const limitSetting = limitVal !== undefined && limitVal !== null ? Number(limitVal) : 1000;
-    const currentYear = new Date().getFullYear();
-    const cumulative = await this.getRepo().getPersonCumulativeDonations(tenantId, personId, currentYear);
-    return { limitCents: limitSetting * 100, cumulative, periodName: null };
-  }
-
-  /**
-   * Perform eligibility checks based on limit and residency restrictions.
-   * For recurring donations, pass monthlyAmountCents and remainingMonths to enforce
-   * the total commitment against the period limit.
-   */
-  public async checkEligibility(
-    tenantId: string,
-    personId: string,
-    amountCents: number,
-    address: { country?: string; state?: string },
-    options?: { isRecurring?: boolean; remainingMonths?: number },
-  ) {
-    const { limitCents, cumulative, periodName } = await this.resolveLimitWindow(tenantId, personId);
-
-    // For recurring: check total commitment (monthly × remaining months) against limit
-    const effectiveAmount =
-      options?.isRecurring && options?.remainingMonths ? amountCents * options.remainingMonths : amountCents;
-
-    if (cumulative + effectiveAmount > limitCents) {
-      const allowedAmount = Math.max(0, limitCents - cumulative) / 100;
-      const periodLabel = periodName ? `during the "${periodName}" period` : 'this year';
-      const limitLabel = limitCents / 100;
-      return {
-        eligible: false,
-        reason: `Donation exceeds the maximum limit of $${limitLabel} ${periodLabel}. Already donated: $${cumulative / 100}. Maximum additional allowed: $${allowedAmount}.`,
-      };
-    }
-
-    // Residency check
-    const restrictResidency = (await this.getSettingVal(tenantId, 'donations.restrict_residency')) === true;
-    const allowedCountries = String((await this.getSettingVal(tenantId, 'donations.allowed_countries')) || '').trim();
-    const allowedRegions = String((await this.getSettingVal(tenantId, 'donations.allowed_regions')) || '').trim();
-
-    if (restrictResidency) {
-      const country = (address.country || '').trim().toUpperCase();
-      const state = (address.state || '').trim().toUpperCase();
-
-      if (allowedCountries) {
-        const countriesList = allowedCountries.split(',').map((c) => c.trim().toUpperCase());
-        if (!country || !countriesList.includes(country)) {
-          return {
-            eligible: false,
-            reason: `Donor must reside in one of the allowed countries: ${allowedCountries}.`,
-          };
-        }
-      }
-
-      if (allowedRegions) {
-        const regionsList = allowedRegions.split(',').map((r) => r.trim().toUpperCase());
-        if (!state || !regionsList.includes(state)) {
-          return {
-            eligible: false,
-            reason: `Donor must reside in one of the allowed provinces/states: ${allowedRegions}.`,
-          };
-        }
-      }
-    }
-
-    return { eligible: true };
-  }
-
-  /**
-   * Get donation stats for a person relative to the active limit window.
-   */
-  public async getDonationStats(tenantId: string, personId: string) {
-    const { limitCents, cumulative, periodName } = await this.resolveLimitWindow(tenantId, personId);
-    return {
-      cumulativeAmount: cumulative / 100,
-      limitAmount: limitCents / 100,
-      remainingAmount: Math.max(0, limitCents / 100 - cumulative / 100),
-      periodName,
-    };
-  }
-
-  // ── One-time Checkout ────────────────────────────────────────────────────────
-
-  public async createCheckoutSession(
-    auth: { tenant_id: string; user_id: string },
-    personId: string,
-    amountCents: number,
-    address: { country?: string; state?: string },
-    customUrls?: { successUrl?: string; cancelUrl?: string },
-  ) {
-    const eligibility = await this.checkEligibility(auth.tenant_id, personId, amountCents, address);
-    if (!eligibility.eligible) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: eligibility.reason });
-    }
-
-    const tenantStripeKey =
-      (await this.getSettingVal(auth.tenant_id, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-    const isMock = !tenantStripeKey || tenantStripeKey.includes('MockKey') || tenantStripeKey === '';
-
-    if (isMock) {
-      const mockSessionId = 'cs_mock_' + Math.random().toString(36).substring(7);
-      let redirectBase = customUrls?.successUrl
-        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
-        : `${env.appUrl}/people/${personId}?mock_donation_success=true&amount=${amountCents / 100}&session_id=${mockSessionId}&province=${address.state || ''}&country=${address.country || ''}`;
-
-      if (customUrls?.successUrl) {
-        const separator = redirectBase.includes('?') ? '&' : '?';
-        redirectBase += `${separator}is_mock=true&person_id=${personId}&amount_cents=${amountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${auth.tenant_id}&user_id=${auth.user_id}`;
-      }
-
-      return { url: redirectBase };
-    }
-
-    const stripe = new Stripe(tenantStripeKey);
-
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'cad',
-            product_data: { name: 'Campaign Donation' },
-            unit_amount: amountCents,
-          },
-          quantity: 1,
-        },
-      ],
-      mode: 'payment',
-      success_url:
-        customUrls?.successUrl ||
-        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
-      metadata: {
-        tenantId: auth.tenant_id,
-        personId,
-        amount: String(amountCents),
-        residencyProvince: address.state || '',
-        residencyCountry: address.country || '',
-        createdBy: auth.user_id,
-      },
-    });
-
-    return { url: session.url };
-  }
-
-  // ── Recurring Subscription Checkout ─────────────────────────────────────────
-
-  /**
-   * Calculate remaining months in the active donation period from today.
-   * Returns null if the period is open-ended.
-   */
-  private getRemainingMonths(endDate: Date | null): number | null {
-    if (!endDate) return null;
-    const now = new Date();
-    const diffMs = endDate.getTime() - now.getTime();
-    if (diffMs <= 0) return 0;
-    return Math.ceil(diffMs / (1000 * 60 * 60 * 24 * 30));
-  }
-
-  public async createRecurringCheckoutSession(
-    auth: { tenant_id: string; user_id: string },
-    personId: string,
-    monthlyAmountCents: number,
-    address: { country?: string; state?: string },
-    customUrls?: { successUrl?: string; cancelUrl?: string },
-  ) {
-    // Determine remaining months for limit enforcement
-    const activePeriod = await this.periodsRepo.getActivePeriodForToday(auth.tenant_id);
-    const remainingMonths = activePeriod?.end_date ? this.getRemainingMonths(new Date(activePeriod.end_date)) : null;
-
-    const eligibility = await this.checkEligibility(auth.tenant_id, personId, monthlyAmountCents, address, {
-      isRecurring: true,
-      remainingMonths: remainingMonths ?? 12,
-    });
-    if (!eligibility.eligible) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: eligibility.reason });
-    }
-
-    const tenantStripeKey =
-      (await this.getSettingVal(auth.tenant_id, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-    const isMock = !tenantStripeKey || tenantStripeKey.includes('MockKey') || tenantStripeKey === '';
-
-    if (isMock) {
-      const mockSubId = 'sub_mock_' + Math.random().toString(36).substring(7);
-      const mockSessionId = 'cs_mock_rec_' + Math.random().toString(36).substring(7);
-
-      let successUrl = customUrls?.successUrl
-        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
-        : `${env.appUrl}/people/${personId}?mock_pledge_success=true&monthly_amount=${monthlyAmountCents / 100}&session_id=${mockSessionId}`;
-
-      if (customUrls?.successUrl) {
-        const sep = successUrl.includes('?') ? '&' : '?';
-        successUrl += `${sep}is_mock=true&person_id=${personId}&monthly_amount_cents=${monthlyAmountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${auth.tenant_id}&user_id=${auth.user_id}&mock_sub_id=${mockSubId}`;
-      }
-
-      return { url: successUrl, mock: true };
-    }
-
-    const stripe = new Stripe(tenantStripeKey);
-
-    // Create a one-off price for this amount (monthly)
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'cad',
-            product_data: { name: 'Monthly Campaign Donation' },
-            unit_amount: monthlyAmountCents,
-            recurring: { interval: 'month' },
-          },
-          quantity: 1,
-        },
-      ],
-      mode: 'subscription',
-      success_url:
-        customUrls?.successUrl ||
-        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
-      subscription_data: {
-        metadata: {
-          tenantId: auth.tenant_id,
-          personId,
-          monthlyAmount: String(monthlyAmountCents),
-          residencyProvince: address.state || '',
-          residencyCountry: address.country || '',
-          createdBy: auth.user_id,
-        },
-      },
-      metadata: {
-        tenantId: auth.tenant_id,
-        personId,
-        monthlyAmount: String(monthlyAmountCents),
-        residencyProvince: address.state || '',
-        residencyCountry: address.country || '',
-        createdBy: auth.user_id,
-        isRecurring: 'true',
-      },
-    });
-
-    return { url: session.url };
-  }
-
-  // ── Confirm Flows ────────────────────────────────────────────────────────────
-
-  public async confirmDonation(tenantId: string, userId: string, sessionId: string) {
-    const existing = await this.getRepo()
-      .db.selectFrom('donations')
-      .selectAll()
-      .where('tenant_id', '=', tenantId as any)
-      .where('stripe_session_id', '=', sessionId)
-      .executeTakeFirst();
-
-    if (existing) {
-      return { success: true, donation: existing };
-    }
-
-    if (sessionId.startsWith('cs_mock_')) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Mock sessions must be confirmed via the confirmMockDonation endpoint.',
-      });
-    }
-
-    const tenantStripeKey = (await this.getSettingVal(tenantId, 'donations.stripe_secret_key')) || env.stripeSecretKey;
-    if (!tenantStripeKey) {
-      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Stripe is not configured for this tenant.' });
-    }
-    const stripe = new Stripe(tenantStripeKey);
-
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-    if (session.payment_status !== 'paid') {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Session has not been paid.' });
-    }
-
-    const personId = String(session.metadata?.['personId']);
-    const amountCents = Number(session.metadata?.['amount']);
-    const province = String(session.metadata?.['residencyProvince'] || '');
-    const country = String(session.metadata?.['residencyCountry'] || '');
-
-    const record = await this.recordSuccessfulDonation(
-      tenantId,
-      personId,
-      amountCents,
-      sessionId,
-      province,
-      country,
-      userId,
-    );
-    return { success: true, donation: record };
-  }
-
-  public async confirmMockDonation(
-    tenantId: string,
-    userId: string,
-    personId: string,
-    amountCents: number,
-    sessionId: string,
-    province: string,
-    country: string,
-  ) {
-    const existing = await this.getRepo()
-      .db.selectFrom('donations')
-      .selectAll()
-      .where('tenant_id', '=', tenantId as any)
-      .where('stripe_session_id', '=', sessionId)
-      .executeTakeFirst();
-
-    if (existing) {
-      return { success: true, donation: existing };
-    }
-
-    const record = await this.recordSuccessfulDonation(
-      tenantId,
-      personId,
-      amountCents,
-      sessionId,
-      province,
-      country,
-      userId,
-    );
-    return { success: true, donation: record };
-  }
-
-  /**
-   * Confirm a mock recurring pledge from the frontend (no real Stripe).
-   */
-  public async confirmMockPledge(
-    tenantId: string,
-    userId: string,
-    personId: string,
-    monthlyAmountCents: number,
-    mockSubId: string,
-    province: string,
-    country: string,
-  ) {
-    return this.recordNewPledge(tenantId, personId, monthlyAmountCents, mockSubId, null, province, country, userId);
-  }
-
-  // ── Internal Write Helpers ───────────────────────────────────────────────────
-
-  public async recordNewPledge(
-    tenantId: string,
-    personId: string,
-    monthlyAmountCents: number,
-    stripeSubscriptionId: string,
-    stripeCustomerId: string | null,
-    province: string,
-    country: string,
-    userId: string,
-  ): Promise<Selectable<Models['donation_pledges']>> {
-    const existing = await this.pledgesRepo.db
-      .selectFrom('donation_pledges')
-      .selectAll()
-      .where('stripe_subscription_id', '=', stripeSubscriptionId)
-      .executeTakeFirst();
-
-    if (existing) return existing;
-
-    const person = await this.pledgesRepo.db
-      .selectFrom('persons')
-      .select(['first_name', 'last_name', 'email'])
-      .where('id', '=', personId as any)
-      .where('tenant_id', '=', tenantId as any)
-      .executeTakeFirst();
-
-    const pledge = await this.pledgesRepo.db.transaction().execute(async (trx) => {
-      const inserted = (await trx
-        .insertInto('donation_pledges' as any)
-        .values({
-          tenant_id: tenantId,
-          person_id: personId,
-          stripe_subscription_id: stripeSubscriptionId,
-          stripe_customer_id: stripeCustomerId,
-          monthly_amount: monthlyAmountCents,
-          status: 'active',
-          first_name: person?.first_name ?? null,
-          last_name: person?.last_name ?? null,
-          email: person?.email ?? null,
-          state: province || null,
-          country: country || null,
-          createdby_id: userId,
-          updatedby_id: userId,
-        } as any)
-        .returningAll()
-        .executeTakeFirstOrThrow()) as Selectable<Models['donation_pledges']>;
-
-      // Ensure 'donor' tag
-      const tagName = 'donor';
-      let tag = await trx
-        .selectFrom('tags')
-        .select('id')
-        .where('tenant_id', '=', tenantId as any)
-        .where('name', '=', tagName)
-        .where('type', '=', 'tag')
-        .executeTakeFirst();
-
-      if (!tag) {
-        const insertTagRes = await trx
-          .insertInto('tags')
-          .values({
-            tenant_id: tenantId as any,
-            name: tagName,
-            type: 'tag',
-            deletable: true,
-            createdby_id: userId as any,
-            updatedby_id: userId as any,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-        tag = { id: insertTagRes.id };
-      }
-
-      const mapExists = await trx
-        .selectFrom('map_peoples_tags')
-        .select('person_id')
-        .where('tenant_id', '=', tenantId as any)
-        .where('person_id', '=', personId as any)
-        .where('tag_id', '=', tag.id as any)
-        .executeTakeFirst();
-
-      if (!mapExists) {
-        await trx
-          .insertInto('map_peoples_tags')
-          .values({
-            tenant_id: tenantId as any,
-            person_id: personId as any,
-            tag_id: tag.id as any,
-            createdby_id: userId as any,
-            updatedby_id: userId as any,
-          })
-          .execute();
-        try {
-          const wc = new WorkflowsController();
-          await wc.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
-        } catch (err) {
-          console.error('Failed to trigger tag_added on pledge:', err);
-        }
-      }
-
-      await trx
-        .insertInto('user_activity' as any)
-        .values({
-          tenant_id: tenantId,
-          user_id: userId,
-          activity: `Started a monthly pledge of $${monthlyAmountCents / 100}/month`,
-          entity: 'persons',
-          entity_id: personId,
-          quantity: 1,
-          createdby_id: userId,
-          updatedby_id: userId,
-        } as any)
-        .execute();
-
-      return inserted;
-    });
-
-    return pledge;
-  }
-
-  public async recordSuccessfulDonation(
-    tenantId: string,
-    personId: string,
-    amountCents: number,
-    sessionId: string,
-    province: string,
-    country: string,
-    userId: string,
-    pledgeId?: string,
-  ): Promise<Selectable<Models['donations']>> {
-    const person = await this.getRepo()
-      .db.selectFrom('persons')
-      .select(['first_name', 'last_name', 'email'])
-      .where('id', '=', personId as any)
-      .where('tenant_id', '=', tenantId as any)
-      .executeTakeFirst();
-
-    const record = await this.getRepo()
-      .db.transaction()
-      .execute(async (trx) => {
-        const inserted = (await trx
-          .insertInto('donations' as any)
-          .values({
-            tenant_id: tenantId,
-            person_id: personId,
-            first_name: person?.first_name ?? null,
-            last_name: person?.last_name ?? null,
-            email: person?.email ?? null,
-            amount: amountCents,
-            status: 'succeeded',
-            stripe_session_id: sessionId,
-            state: province || null,
-            country: country || null,
-            pledge_id: pledgeId ? pledgeId : null,
-          } as any)
-          .returningAll()
-          .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;
-
-        const tagName = 'donor';
-        let tag = await trx
-          .selectFrom('tags')
-          .select('id')
-          .where('tenant_id', '=', tenantId as any)
-          .where('name', '=', tagName)
-          .where('type', '=', 'tag')
-          .executeTakeFirst();
-
-        if (!tag) {
-          const insertTagRes = await trx
-            .insertInto('tags')
-            .values({
-              tenant_id: tenantId as any,
-              name: tagName,
-              type: 'tag',
-              deletable: true,
-              createdby_id: userId as any,
-              updatedby_id: userId as any,
-            })
-            .returning('id')
-            .executeTakeFirstOrThrow();
-          tag = { id: insertTagRes.id };
-        }
-
-        const mapExists = await trx
-          .selectFrom('map_peoples_tags')
-          .select('person_id')
-          .where('tenant_id', '=', tenantId as any)
-          .where('person_id', '=', personId as any)
-          .where('tag_id', '=', tag.id as any)
-          .executeTakeFirst();
-
-        if (!mapExists) {
-          await trx
-            .insertInto('map_peoples_tags')
-            .values({
-              tenant_id: tenantId as any,
-              person_id: personId as any,
-              tag_id: tag.id as any,
-              createdby_id: userId as any,
-              updatedby_id: userId as any,
-            })
-            .execute();
-
-          try {
-            const workflowsController = new WorkflowsController();
-            await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
-          } catch (err) {
-            console.error('Failed to trigger tag_added workflow in DonationsController:', err);
-          }
-        }
-
-        try {
-          await trx
-            .insertInto('user_activity' as any)
-            .values({
-              tenant_id: tenantId,
-              user_id: userId,
-              activity: `Collected a donation of $${amountCents / 100}`,
-              entity: 'persons',
-              entity_id: personId,
-              quantity: 1,
-              createdby_id: userId,
-              updatedby_id: userId,
-            } as any)
-            .execute();
-        } catch (err) {
-          console.error('Failed to write audit activity log for donation:', err);
-        }
-
-        return inserted;
-      });
-
-    try {
-      const workflowsController = new WorkflowsController();
-      await workflowsController.triggerWorkflow(tenantId, personId, 'donation_received', String(amountCents / 100));
-    } catch (workflowErr) {
-      console.error('Failed to trigger workflow on donation_received:', workflowErr);
-    }
-
-    return record;
-  }
-}
-```
-
 ## File: apps/backend/src/app/lib/jobs/job-handlers.ts
 
 ```typescript
@@ -38166,7 +37441,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
     });
     const syncSvc = new GoogleSyncService(db, oauthSvc);
-    await syncSvc.syncUser(payload.userId, payload.tenantId, payload.requestedBy);
+    await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
   } else if (payload.type === 'ms_sync') {
     const oauthSvc = new MsOAuthService(db, {
       clientId: env.msClientId ?? '',
@@ -38175,7 +37450,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
     });
     const syncSvc = new MsSyncService(db, oauthSvc);
-    await syncSvc.syncUser(payload.userId, payload.tenantId, payload.requestedBy);
+    await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
   } else if (payload.type === 'recompute_all_duplicates') {
     const lastJob = await db
       .selectFrom('background_jobs' as any)
@@ -39438,8 +38713,6 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 const ENGAGEMENT_EVENT_TYPES = new Set(['open', 'click', 'unsubscribe', 'group_unsubscribe', 'bounce', 'spamreport']);
 
 async function pruneNewsletterEvents(db: any): Promise<void> {
-  const { getPlanLimits } = await import('../../modules/billing/usage-limits');
-
   const tenants: { id: string; subscription_plan: string | null }[] = await db
     .selectFrom('tenants')
     .select(['id', 'subscription_plan'])
@@ -39666,24 +38939,23 @@ async function recomputeTenantAddressFingerprints(tenantId: string, db: any): Pr
 
 async function queueUserSyncJobs(db: any): Promise<void> {
   try {
-    // Find all connected Google accounts
-    const googleTokens = await db.selectFrom('google_oauth_tokens').select(['user_id', 'tenant_id']).execute();
+    // Find all tenants with a connected Google account
+    const googleTokens = await db.selectFrom('google_oauth_tokens').select('tenant_id').execute();
 
     for (const token of googleTokens) {
-      const userId = String(token.user_id);
-      const tenantId = token.tenant_id ? String(token.tenant_id) : null;
+      const tenantId = String(token.tenant_id);
 
-      // Check if there is already a pending or processing sync job for this user
+      // Check if there is already a pending or processing sync job for this tenant
       const existing = await db
         .selectFrom('background_jobs' as any)
         .select('id')
         .where('status', 'in', ['pending', 'processing'])
         .where(sql`payload->>'type'`, '=', 'google_sync')
-        .where(sql`payload->>'userId'`, '=', userId)
+        .where(sql`payload->>'tenantId'`, '=', tenantId)
         .executeTakeFirst();
 
       if (!existing) {
-        console.log(`Auto-scheduling Google sync job for user ${userId}`);
+        console.log(`Auto-scheduling Google sync job for tenant ${tenantId}`);
         await db
           .insertInto('background_jobs' as any)
           .values({
@@ -39692,7 +38964,6 @@ async function queueUserSyncJobs(db: any): Promise<void> {
             status: 'pending',
             payload: JSON.stringify({
               type: 'google_sync',
-              userId,
               tenantId,
               requestedBy: 'system',
             }),
@@ -39703,24 +38974,23 @@ async function queueUserSyncJobs(db: any): Promise<void> {
       }
     }
 
-    // Find all connected Microsoft accounts
-    const msTokens = await db.selectFrom('ms_oauth_tokens').select(['user_id', 'tenant_id']).execute();
+    // Find all tenants with a connected Microsoft account
+    const msTokens = await db.selectFrom('ms_oauth_tokens').select('tenant_id').execute();
 
     for (const token of msTokens) {
-      const userId = String(token.user_id);
-      const tenantId = token.tenant_id ? String(token.tenant_id) : null;
+      const tenantId = String(token.tenant_id);
 
-      // Check if there is already a pending or processing sync job for this user
+      // Check if there is already a pending or processing sync job for this tenant
       const existing = await db
         .selectFrom('background_jobs' as any)
         .select('id')
         .where('status', 'in', ['pending', 'processing'])
         .where(sql`payload->>'type'`, '=', 'ms_sync')
-        .where(sql`payload->>'userId'`, '=', userId)
+        .where(sql`payload->>'tenantId'`, '=', tenantId)
         .executeTakeFirst();
 
       if (!existing) {
-        console.log(`Auto-scheduling MS sync job for user ${userId}`);
+        console.log(`Auto-scheduling MS sync job for tenant ${tenantId}`);
         await db
           .insertInto('background_jobs' as any)
           .values({
@@ -39729,7 +38999,6 @@ async function queueUserSyncJobs(db: any): Promise<void> {
             status: 'pending',
             payload: JSON.stringify({
               type: 'ms_sync',
-              userId,
               tenantId,
               requestedBy: 'system',
             }),
@@ -39740,7 +39009,7 @@ async function queueUserSyncJobs(db: any): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('Failed to queue user sync jobs:', err);
+    console.error('Failed to queue tenant sync jobs:', err);
   }
 }
 
@@ -39823,6 +39092,800 @@ export async function checkDueTasks(db: any): Promise<void> {
 }
 ```
 
+## File: apps/backend/src/app/modules/donations/controller.ts
+
+```typescript
+import Stripe from 'stripe';
+import { TRPCError } from '@trpc/server';
+import { env } from '../../../env';
+import { BaseController } from '../../lib/base.controller';
+import { DonationsRepo } from './repositories/donations.repo';
+import { DonationPeriodsRepo } from './repositories/periods.repo';
+import { DonationPledgesRepo } from './repositories/pledges.repo';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
+import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { WorkflowsController } from '../workflows/controller';
+import { Selectable } from 'kysely';
+
+export class DonationsController extends BaseController<'donations', DonationsRepo> {
+  private settingsRepo = new SettingsRepo();
+  private periodsRepo = new DonationPeriodsRepo();
+  private pledgesRepo = new DonationPledgesRepo();
+
+  constructor() {
+    super(new DonationsRepo());
+  }
+
+  public async getPersonDonationsList(tenantId: string, personId: string) {
+    return this.getRepo().getPersonDonationsList(tenantId, personId);
+  }
+
+  public async getPersonCumulativeDonations(tenantId: string, personId: string, year: number): Promise<number> {
+    return this.getRepo().getPersonCumulativeDonations(tenantId, personId, year);
+  }
+
+  public async getTenantDonationsList(tenantId: string) {
+    return this.getRepo().getTenantDonationsList(tenantId);
+  }
+
+  // ── Donation Periods ────────────────────────────────────────────────────────
+
+  public async getDonationPeriods(tenantId: string) {
+    return this.periodsRepo.getAllForTenant(tenantId);
+  }
+
+  public async createDonationPeriod(
+    tenantId: string,
+    userId: string,
+    payload: { name: string; start_date: string; end_date?: string | null; limit_amount: number },
+  ) {
+    return this.periodsRepo.db
+      .insertInto('donation_periods')
+      .values({
+        tenant_id: tenantId as any,
+        name: payload.name,
+        start_date: payload.start_date as any,
+        end_date: payload.end_date ? (payload.end_date as any) : null,
+        limit_amount: payload.limit_amount,
+        is_active: true,
+        createdby_id: userId as any,
+        updatedby_id: userId as any,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  public async updateDonationPeriod(
+    tenantId: string,
+    userId: string,
+    id: string,
+    payload: {
+      name?: string;
+      start_date?: string;
+      end_date?: string | null;
+      limit_amount?: number;
+      is_active?: boolean;
+    },
+  ) {
+    const set: any = { updatedby_id: userId, updated_at: new Date() };
+    if (payload.name !== undefined) set.name = payload.name;
+    if (payload.start_date !== undefined) set.start_date = payload.start_date;
+    if ('end_date' in payload) set.end_date = payload.end_date ?? null;
+    if (payload.limit_amount !== undefined) set.limit_amount = payload.limit_amount;
+    if (payload.is_active !== undefined) set.is_active = payload.is_active;
+
+    return this.periodsRepo.db
+      .updateTable('donation_periods')
+      .set(set)
+      .where('id', '=', id as any)
+      .where('tenant_id', '=', tenantId as any)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  public async deleteDonationPeriod(tenantId: string, id: string) {
+    await this.periodsRepo.db
+      .deleteFrom('donation_periods')
+      .where('id', '=', id as any)
+      .where('tenant_id', '=', tenantId as any)
+      .execute();
+  }
+
+  // ── Pledges ─────────────────────────────────────────────────────────────────
+
+  public async getTenantPledgesList(tenantId: string) {
+    return this.pledgesRepo.getAllForTenant(tenantId);
+  }
+
+  public async getPersonPledges(tenantId: string, personId: string) {
+    return this.pledgesRepo.getForPerson(tenantId, personId);
+  }
+
+  public async cancelPledge(tenantId: string, pledgeId: string, userId: string) {
+    const pledge = await this.pledgesRepo.db
+      .selectFrom('donation_pledges')
+      .selectAll()
+      .where('id', '=', pledgeId as any)
+      .where('tenant_id', '=', tenantId as any)
+      .executeTakeFirst();
+
+    if (!pledge) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Pledge not found.' });
+    }
+
+    // Cancel in Stripe if there's a real subscription
+    if (pledge.stripe_subscription_id && !pledge.stripe_subscription_id.startsWith('sub_mock_')) {
+      const tenantStripeKey =
+        (await this.getSettingVal(tenantId, 'donations.stripe_secret_key')) || env.stripeSecretKey;
+      if (tenantStripeKey) {
+        const stripe = new Stripe(tenantStripeKey);
+        try {
+          await stripe.subscriptions.cancel(pledge.stripe_subscription_id);
+        } catch (err) {
+          console.error('Stripe subscription cancel failed:', err);
+        }
+      }
+    }
+
+    return this.pledgesRepo.db
+      .updateTable('donation_pledges')
+      .set({
+        status: 'cancelled',
+        cancelled_at: new Date(),
+        updatedby_id: userId as any,
+        updated_at: new Date(),
+      })
+      .where('id', '=', pledgeId as any)
+      .where('tenant_id', '=', tenantId as any)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  private async getSettingVal(tenantId: string, key: string): Promise<any> {
+    const row = await this.settingsRepo.getByKey({ tenant_id: tenantId, key });
+    return row?.value;
+  }
+
+  public calculateTaxCredit(
+    amountCents: number,
+    cumulativeBeforeCents: number,
+    tiers: Array<{ limit: number; rate: number }>,
+  ): number {
+    if (!tiers || tiers.length === 0) return 0;
+
+    const sortedTiers = [...tiers].sort((a, b) => a.limit - b.limit);
+    let creditCents = 0;
+    let remainingAmount = amountCents;
+    let currentCumulative = cumulativeBeforeCents;
+
+    for (const tier of sortedTiers) {
+      const tierLimitCents = tier.limit * 100;
+
+      if (currentCumulative < tierLimitCents && remainingAmount > 0) {
+        const availableInTier = tierLimitCents - currentCumulative;
+        const amountInTier = Math.min(remainingAmount, availableInTier);
+
+        creditCents += amountInTier * tier.rate;
+        remainingAmount -= amountInTier;
+        currentCumulative += amountInTier;
+      }
+    }
+
+    return Math.round(creditCents);
+  }
+
+  /**
+   * Resolve the active limit window for the tenant.
+   * Returns { limitCents, cumulative } using the donation_period if one is active,
+   * or falling back to the legacy calendar-year setting.
+   */
+  private async resolveLimitWindow(
+    tenantId: string,
+    personId: string,
+  ): Promise<{ limitCents: number; cumulative: number; periodName: string | null }> {
+    const activePeriod = await this.periodsRepo.getActivePeriodForToday(tenantId);
+
+    if (activePeriod) {
+      const cumulative = await this.getRepo().getPersonCumulativeDonationsForPeriod(
+        tenantId,
+        personId,
+        new Date(activePeriod.start_date),
+        activePeriod.end_date ? new Date(activePeriod.end_date) : null,
+      );
+      return {
+        limitCents: Number(activePeriod.limit_amount),
+        cumulative,
+        periodName: activePeriod.name,
+      };
+    }
+
+    // Fallback: calendar year + legacy settings
+    const limitVal = await this.getSettingVal(tenantId, 'donations.limit');
+    const limitSetting = limitVal !== undefined && limitVal !== null ? Number(limitVal) : 1000;
+    const currentYear = new Date().getFullYear();
+    const cumulative = await this.getRepo().getPersonCumulativeDonations(tenantId, personId, currentYear);
+    return { limitCents: limitSetting * 100, cumulative, periodName: null };
+  }
+
+  /**
+   * Perform eligibility checks based on limit and residency restrictions.
+   * For recurring donations, pass monthlyAmountCents and remainingMonths to enforce
+   * the total commitment against the period limit.
+   */
+  public async checkEligibility(
+    tenantId: string,
+    personId: string,
+    amountCents: number,
+    address: { country?: string; state?: string },
+    options?: { isRecurring?: boolean; remainingMonths?: number },
+  ) {
+    const { limitCents, cumulative, periodName } = await this.resolveLimitWindow(tenantId, personId);
+
+    // For recurring: check total commitment (monthly × remaining months) against limit
+    const effectiveAmount =
+      options?.isRecurring && options?.remainingMonths ? amountCents * options.remainingMonths : amountCents;
+
+    if (cumulative + effectiveAmount > limitCents) {
+      const allowedAmount = Math.max(0, limitCents - cumulative) / 100;
+      const periodLabel = periodName ? `during the "${periodName}" period` : 'this year';
+      const limitLabel = limitCents / 100;
+      return {
+        eligible: false,
+        reason: `Donation exceeds the maximum limit of $${limitLabel} ${periodLabel}. Already donated: $${cumulative / 100}. Maximum additional allowed: $${allowedAmount}.`,
+      };
+    }
+
+    // Residency check
+    const restrictResidency = (await this.getSettingVal(tenantId, 'donations.restrict_residency')) === true;
+    const allowedCountries = String((await this.getSettingVal(tenantId, 'donations.allowed_countries')) || '').trim();
+    const allowedRegions = String((await this.getSettingVal(tenantId, 'donations.allowed_regions')) || '').trim();
+
+    if (restrictResidency) {
+      const country = (address.country || '').trim().toUpperCase();
+      const state = (address.state || '').trim().toUpperCase();
+
+      if (allowedCountries) {
+        const countriesList = allowedCountries.split(',').map((c) => c.trim().toUpperCase());
+        if (!country || !countriesList.includes(country)) {
+          return {
+            eligible: false,
+            reason: `Donor must reside in one of the allowed countries: ${allowedCountries}.`,
+          };
+        }
+      }
+
+      if (allowedRegions) {
+        const regionsList = allowedRegions.split(',').map((r) => r.trim().toUpperCase());
+        if (!state || !regionsList.includes(state)) {
+          return {
+            eligible: false,
+            reason: `Donor must reside in one of the allowed provinces/states: ${allowedRegions}.`,
+          };
+        }
+      }
+    }
+
+    return { eligible: true };
+  }
+
+  /**
+   * Get donation stats for a person relative to the active limit window.
+   */
+  public async getDonationStats(tenantId: string, personId: string) {
+    const { limitCents, cumulative, periodName } = await this.resolveLimitWindow(tenantId, personId);
+    return {
+      cumulativeAmount: cumulative / 100,
+      limitAmount: limitCents / 100,
+      remainingAmount: Math.max(0, limitCents / 100 - cumulative / 100),
+      periodName,
+    };
+  }
+
+  // ── One-time Checkout ────────────────────────────────────────────────────────
+
+  public async createCheckoutSession(
+    auth: { tenant_id: string; user_id: string },
+    personId: string,
+    amountCents: number,
+    address: { country?: string; state?: string },
+    customUrls?: { successUrl?: string; cancelUrl?: string },
+  ) {
+    const eligibility = await this.checkEligibility(auth.tenant_id, personId, amountCents, address);
+    if (!eligibility.eligible) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: eligibility.reason });
+    }
+
+    const tenantStripeKey =
+      (await this.getSettingVal(auth.tenant_id, 'donations.stripe_secret_key')) || env.stripeSecretKey;
+    const isMock = !tenantStripeKey || tenantStripeKey.includes('MockKey') || tenantStripeKey === '';
+
+    if (isMock) {
+      const mockSessionId = 'cs_mock_' + Math.random().toString(36).substring(7);
+      let redirectBase = customUrls?.successUrl
+        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
+        : `${env.appUrl}/people/${personId}?mock_donation_success=true&amount=${amountCents / 100}&session_id=${mockSessionId}&province=${address.state || ''}&country=${address.country || ''}`;
+
+      if (customUrls?.successUrl) {
+        const separator = redirectBase.includes('?') ? '&' : '?';
+        redirectBase += `${separator}is_mock=true&person_id=${personId}&amount_cents=${amountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${auth.tenant_id}&user_id=${auth.user_id}`;
+      }
+
+      return { url: redirectBase };
+    }
+
+    const stripe = new Stripe(tenantStripeKey);
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'cad',
+            product_data: { name: 'Campaign Donation' },
+            unit_amount: amountCents,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url:
+        customUrls?.successUrl ||
+        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
+      metadata: {
+        tenantId: auth.tenant_id,
+        personId,
+        amount: String(amountCents),
+        residencyProvince: address.state || '',
+        residencyCountry: address.country || '',
+        createdBy: auth.user_id,
+      },
+    });
+
+    return { url: session.url };
+  }
+
+  // ── Recurring Subscription Checkout ─────────────────────────────────────────
+
+  /**
+   * Calculate remaining months in the active donation period from today.
+   * Returns null if the period is open-ended.
+   */
+  private getRemainingMonths(endDate: Date | null): number | null {
+    if (!endDate) return null;
+    const now = new Date();
+    const diffMs = endDate.getTime() - now.getTime();
+    if (diffMs <= 0) return 0;
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24 * 30));
+  }
+
+  public async createRecurringCheckoutSession(
+    auth: { tenant_id: string; user_id: string },
+    personId: string,
+    monthlyAmountCents: number,
+    address: { country?: string; state?: string },
+    customUrls?: { successUrl?: string; cancelUrl?: string },
+  ) {
+    // Determine remaining months for limit enforcement
+    const activePeriod = await this.periodsRepo.getActivePeriodForToday(auth.tenant_id);
+    const remainingMonths = activePeriod?.end_date ? this.getRemainingMonths(new Date(activePeriod.end_date)) : null;
+
+    const eligibility = await this.checkEligibility(auth.tenant_id, personId, monthlyAmountCents, address, {
+      isRecurring: true,
+      remainingMonths: remainingMonths ?? 12,
+    });
+    if (!eligibility.eligible) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: eligibility.reason });
+    }
+
+    const tenantStripeKey =
+      (await this.getSettingVal(auth.tenant_id, 'donations.stripe_secret_key')) || env.stripeSecretKey;
+    const isMock = !tenantStripeKey || tenantStripeKey.includes('MockKey') || tenantStripeKey === '';
+
+    if (isMock) {
+      const mockSubId = 'sub_mock_' + Math.random().toString(36).substring(7);
+      const mockSessionId = 'cs_mock_rec_' + Math.random().toString(36).substring(7);
+
+      let successUrl = customUrls?.successUrl
+        ? customUrls.successUrl.replace('{CHECKOUT_SESSION_ID}', mockSessionId)
+        : `${env.appUrl}/people/${personId}?mock_pledge_success=true&monthly_amount=${monthlyAmountCents / 100}&session_id=${mockSessionId}`;
+
+      if (customUrls?.successUrl) {
+        const sep = successUrl.includes('?') ? '&' : '?';
+        successUrl += `${sep}is_mock=true&person_id=${personId}&monthly_amount_cents=${monthlyAmountCents}&province=${encodeURIComponent(address.state || '')}&country=${encodeURIComponent(address.country || '')}&tenant_id=${auth.tenant_id}&user_id=${auth.user_id}&mock_sub_id=${mockSubId}`;
+      }
+
+      return { url: successUrl, mock: true };
+    }
+
+    const stripe = new Stripe(tenantStripeKey);
+
+    // Create a one-off price for this amount (monthly)
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'cad',
+            product_data: { name: 'Monthly Campaign Donation' },
+            unit_amount: monthlyAmountCents,
+            recurring: { interval: 'month' },
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'subscription',
+      success_url:
+        customUrls?.successUrl ||
+        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
+      subscription_data: {
+        metadata: {
+          tenantId: auth.tenant_id,
+          personId,
+          monthlyAmount: String(monthlyAmountCents),
+          residencyProvince: address.state || '',
+          residencyCountry: address.country || '',
+          createdBy: auth.user_id,
+        },
+      },
+      metadata: {
+        tenantId: auth.tenant_id,
+        personId,
+        monthlyAmount: String(monthlyAmountCents),
+        residencyProvince: address.state || '',
+        residencyCountry: address.country || '',
+        createdBy: auth.user_id,
+        isRecurring: 'true',
+      },
+    });
+
+    return { url: session.url };
+  }
+
+  // ── Confirm Flows ────────────────────────────────────────────────────────────
+
+  public async confirmDonation(tenantId: string, userId: string, sessionId: string) {
+    const existing = await this.getRepo()
+      .db.selectFrom('donations')
+      .selectAll()
+      .where('tenant_id', '=', tenantId as any)
+      .where('stripe_session_id', '=', sessionId)
+      .executeTakeFirst();
+
+    if (existing) {
+      return { success: true, donation: existing };
+    }
+
+    if (sessionId.startsWith('cs_mock_')) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Mock sessions must be confirmed via the confirmMockDonation endpoint.',
+      });
+    }
+
+    const tenantStripeKey = (await this.getSettingVal(tenantId, 'donations.stripe_secret_key')) || env.stripeSecretKey;
+    if (!tenantStripeKey) {
+      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Stripe is not configured for this tenant.' });
+    }
+    const stripe = new Stripe(tenantStripeKey);
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.payment_status !== 'paid') {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Session has not been paid.' });
+    }
+
+    const personId = String(session.metadata?.['personId']);
+    const amountCents = Number(session.metadata?.['amount']);
+    const province = String(session.metadata?.['residencyProvince'] || '');
+    const country = String(session.metadata?.['residencyCountry'] || '');
+
+    const record = await this.recordSuccessfulDonation(
+      tenantId,
+      personId,
+      amountCents,
+      sessionId,
+      province,
+      country,
+      userId,
+    );
+    return { success: true, donation: record };
+  }
+
+  public async confirmMockDonation(
+    tenantId: string,
+    userId: string,
+    personId: string,
+    amountCents: number,
+    sessionId: string,
+    province: string,
+    country: string,
+  ) {
+    const existing = await this.getRepo()
+      .db.selectFrom('donations')
+      .selectAll()
+      .where('tenant_id', '=', tenantId as any)
+      .where('stripe_session_id', '=', sessionId)
+      .executeTakeFirst();
+
+    if (existing) {
+      return { success: true, donation: existing };
+    }
+
+    const record = await this.recordSuccessfulDonation(
+      tenantId,
+      personId,
+      amountCents,
+      sessionId,
+      province,
+      country,
+      userId,
+    );
+    return { success: true, donation: record };
+  }
+
+  /**
+   * Confirm a mock recurring pledge from the frontend (no real Stripe).
+   */
+  public async confirmMockPledge(
+    tenantId: string,
+    userId: string,
+    personId: string,
+    monthlyAmountCents: number,
+    mockSubId: string,
+    province: string,
+    country: string,
+  ) {
+    return this.recordNewPledge(tenantId, personId, monthlyAmountCents, mockSubId, null, province, country, userId);
+  }
+
+  // ── Internal Write Helpers ───────────────────────────────────────────────────
+
+  public async recordNewPledge(
+    tenantId: string,
+    personId: string,
+    monthlyAmountCents: number,
+    stripeSubscriptionId: string,
+    stripeCustomerId: string | null,
+    province: string,
+    country: string,
+    userId: string,
+  ): Promise<Selectable<Models['donation_pledges']>> {
+    const existing = await this.pledgesRepo.db
+      .selectFrom('donation_pledges')
+      .selectAll()
+      .where('stripe_subscription_id', '=', stripeSubscriptionId)
+      .executeTakeFirst();
+
+    if (existing) return existing;
+
+    const person = await this.pledgesRepo.db
+      .selectFrom('persons')
+      .select(['first_name', 'last_name', 'email'])
+      .where('id', '=', personId as any)
+      .where('tenant_id', '=', tenantId as any)
+      .executeTakeFirst();
+
+    const pledge = await this.pledgesRepo.db.transaction().execute(async (trx) => {
+      const inserted = (await trx
+        .insertInto('donation_pledges' as any)
+        .values({
+          tenant_id: tenantId,
+          person_id: personId,
+          stripe_subscription_id: stripeSubscriptionId,
+          stripe_customer_id: stripeCustomerId,
+          monthly_amount: monthlyAmountCents,
+          status: 'active',
+          first_name: person?.first_name ?? null,
+          last_name: person?.last_name ?? null,
+          email: person?.email ?? null,
+          state: province || null,
+          country: country || null,
+          createdby_id: userId,
+          updatedby_id: userId,
+        } as any)
+        .returningAll()
+        .executeTakeFirstOrThrow()) as Selectable<Models['donation_pledges']>;
+
+      // Ensure 'donor' tag
+      const tagName = 'donor';
+      let tag = await trx
+        .selectFrom('tags')
+        .select('id')
+        .where('tenant_id', '=', tenantId as any)
+        .where('name', '=', tagName)
+        .where('type', '=', 'tag')
+        .executeTakeFirst();
+
+      if (!tag) {
+        const insertTagRes = await trx
+          .insertInto('tags')
+          .values({
+            tenant_id: tenantId as any,
+            name: tagName,
+            type: 'tag',
+            deletable: true,
+            createdby_id: userId as any,
+            updatedby_id: userId as any,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        tag = { id: insertTagRes.id };
+      }
+
+      const mapExists = await trx
+        .selectFrom('map_peoples_tags')
+        .select('person_id')
+        .where('tenant_id', '=', tenantId as any)
+        .where('person_id', '=', personId as any)
+        .where('tag_id', '=', tag.id as any)
+        .executeTakeFirst();
+
+      if (!mapExists) {
+        await trx
+          .insertInto('map_peoples_tags')
+          .values({
+            tenant_id: tenantId as any,
+            person_id: personId as any,
+            tag_id: tag.id as any,
+            createdby_id: userId as any,
+            updatedby_id: userId as any,
+          })
+          .execute();
+        try {
+          const wc = new WorkflowsController();
+          await wc.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
+        } catch (err) {
+          console.error('Failed to trigger tag_added on pledge:', err);
+        }
+      }
+
+      await trx
+        .insertInto('user_activity' as any)
+        .values({
+          tenant_id: tenantId,
+          user_id: userId,
+          activity: `Started a monthly pledge of $${monthlyAmountCents / 100}/month`,
+          entity: 'persons',
+          entity_id: personId,
+          quantity: 1,
+          createdby_id: userId,
+          updatedby_id: userId,
+        } as any)
+        .execute();
+
+      return inserted;
+    });
+
+    return pledge;
+  }
+
+  public async recordSuccessfulDonation(
+    tenantId: string,
+    personId: string,
+    amountCents: number,
+    sessionId: string,
+    province: string,
+    country: string,
+    userId: string,
+    pledgeId?: string,
+  ): Promise<Selectable<Models['donations']>> {
+    const person = await this.getRepo()
+      .db.selectFrom('persons')
+      .select(['first_name', 'last_name', 'email'])
+      .where('id', '=', personId as any)
+      .where('tenant_id', '=', tenantId as any)
+      .executeTakeFirst();
+
+    const record = await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        const inserted = (await trx
+          .insertInto('donations' as any)
+          .values({
+            tenant_id: tenantId,
+            person_id: personId,
+            first_name: person?.first_name ?? null,
+            last_name: person?.last_name ?? null,
+            email: person?.email ?? null,
+            amount: amountCents,
+            status: 'succeeded',
+            stripe_session_id: sessionId,
+            state: province || null,
+            country: country || null,
+            pledge_id: pledgeId ? pledgeId : null,
+          } as any)
+          .returningAll()
+          .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;
+
+        const tagName = 'donor';
+        let tag = await trx
+          .selectFrom('tags')
+          .select('id')
+          .where('tenant_id', '=', tenantId as any)
+          .where('name', '=', tagName)
+          .where('type', '=', 'tag')
+          .executeTakeFirst();
+
+        if (!tag) {
+          const insertTagRes = await trx
+            .insertInto('tags')
+            .values({
+              tenant_id: tenantId as any,
+              name: tagName,
+              type: 'tag',
+              deletable: true,
+              createdby_id: userId as any,
+              updatedby_id: userId as any,
+            })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+          tag = { id: insertTagRes.id };
+        }
+
+        const mapExists = await trx
+          .selectFrom('map_peoples_tags')
+          .select('person_id')
+          .where('tenant_id', '=', tenantId as any)
+          .where('person_id', '=', personId as any)
+          .where('tag_id', '=', tag.id as any)
+          .executeTakeFirst();
+
+        if (!mapExists) {
+          await trx
+            .insertInto('map_peoples_tags')
+            .values({
+              tenant_id: tenantId as any,
+              person_id: personId as any,
+              tag_id: tag.id as any,
+              createdby_id: userId as any,
+              updatedby_id: userId as any,
+            })
+            .execute();
+
+          try {
+            const workflowsController = new WorkflowsController();
+            await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
+          } catch (err) {
+            console.error('Failed to trigger tag_added workflow in DonationsController:', err);
+          }
+        }
+
+        try {
+          await trx
+            .insertInto('user_activity' as any)
+            .values({
+              tenant_id: tenantId,
+              user_id: userId,
+              activity: `Collected a donation of $${amountCents / 100}`,
+              entity: 'persons',
+              entity_id: personId,
+              quantity: 1,
+              createdby_id: userId,
+              updatedby_id: userId,
+            } as any)
+            .execute();
+        } catch (err) {
+          console.error('Failed to write audit activity log for donation:', err);
+        }
+
+        return inserted;
+      });
+
+    try {
+      const workflowsController = new WorkflowsController();
+      await workflowsController.triggerWorkflow(tenantId, personId, 'donation_received', String(amountCents / 100));
+    } catch (workflowErr) {
+      console.error('Failed to trigger workflow on donation_received:', workflowErr);
+    }
+
+    return record;
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/auth/controller.ts
 
 ```typescript
@@ -39876,10 +39939,6 @@ import { seedOnboardingData } from './onboarding-seed';
 import { AuthUsersRepo } from './repositories/authusers.repo';
 import { SessionsRepo } from './repositories/sessions.repo';
 import { TenantsRepo } from './repositories/tenants.repo';
-
-const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
-const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
 export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private static readonly AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -40103,7 +40162,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new UnauthorizedError();
     }
     const options = {
-      columns: ['id', 'email', 'first_name', 'role'],
+      columns: ['id', 'email', 'first_name', 'role', 'verified', 'passkey_setup_dismissed_at'],
     } as QueryParams<'authusers'>;
 
     try {
@@ -40136,6 +40195,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       return {
         ...user,
         avatar_url,
+        email_verified: this.coerceBoolean((user as any).verified),
+        passkey_setup_dismissed_at: (user as any).passkey_setup_dismissed_at
+          ? new Date((user as any).passkey_setup_dismissed_at)
+          : null,
         tenant_deletion_scheduled_at,
         tenant_paused_at,
       };
@@ -40250,6 +40313,16 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
       return { success: true };
     });
+  }
+
+  public async dismissPasskeyPrompt(auth: IAuthKeyPayload) {
+    await this.getRepo()
+      .db.updateTable('authusers')
+      .set({ passkey_setup_dismissed_at: new Date() as any })
+      .where('id', '=', auth.user_id as any)
+      .where('tenant_id', '=', auth.tenant_id as any)
+      .execute();
+    return { success: true };
   }
 
   public async ensureAtLeastOneOwner(
@@ -40807,7 +40880,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     if (!user.verified) {
       throw new ForbiddenError(
-        'Your email address is not verified yet. Please check your inbox for a verification link.',
+        'Your email address is not verified yet. Please check your inbox (and spam folder) for a verification link.',
       );
     }
 
@@ -41266,7 +41339,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
     if (!user.verified) {
       throw new ForbiddenError(
-        'Your email address is not verified yet. Please check your inbox for a verification link.',
+        'Your email address is not verified yet. Please check your inbox (and spam folder) for a verification link.',
       );
     }
 
@@ -41619,6 +41692,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       last_name: lastName ?? '',
       role: record.role != null ? String(record.role) : null,
       verified: this.coerceBoolean(record.verified),
+      email_verified: this.coerceBoolean(record.verified),
       two_factor_enabled: this.coerceBoolean(record.two_factor_enabled),
       deletion_scheduled_at: this.coerceDate(record.deletion_scheduled_at),
       created_at: this.coerceDate(record.created_at),
@@ -41713,6 +41787,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 }
 
+const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const renewalVerifier = createVerifier({
   algorithms: ['HS256'],
   key: env.sharedSecret,
