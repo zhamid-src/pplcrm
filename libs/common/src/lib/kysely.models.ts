@@ -56,6 +56,7 @@ export interface Models {
   emails: Emails;
   newsletters: Newsletters;
   newsletter_events: NewsletterEvents;
+  person_newsletter_engagements: PersonNewsletterEngagements;
   email_comments: EmailComments;
   email_bodies: EmailBodies;
   email_headers: EmailHeaders;
@@ -462,6 +463,23 @@ export interface NewsletterEvents {
   user_agent: string | null;
   timestamp: Timestamp;
   created_at: Generated<Timestamp>;
+}
+
+export interface PersonNewsletterEngagements {
+  tenant_id: string;
+  newsletter_id: string;
+  email: string;
+  open_count: number;
+  click_count: number;
+  has_unsubscribed: boolean;
+  hard_bounced: boolean;
+  soft_bounced: boolean;
+  first_opened_at: Timestamp | null;
+  last_opened_at: Timestamp | null;
+  first_clicked_at: Timestamp | null;
+  last_clicked_at: Timestamp | null;
+  bounced_at: Timestamp | null;
+  unsubscribed_at: Timestamp | null;
 }
 
 interface WebForms extends RecordType {

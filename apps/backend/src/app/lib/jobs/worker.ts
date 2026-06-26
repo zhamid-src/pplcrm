@@ -1,20 +1,21 @@
-import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
 import { sql } from 'kysely';
-import { executeJob } from './job-handlers';
 import { Client } from 'pg';
+
 import { env } from '../../../env';
+import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
+import { executeJob } from './job-handlers';
 
 export class BackgroundJobWorker {
-  private isRunning = false;
-  private timer: NodeJS.Timeout | null = null;
-  private recoveryInterval: NodeJS.Timeout | null = null;
-  private activeJobsCount = 0;
-  private shutdownResolver: (() => void) | null = null;
-  private pgClient: Client | null = null;
-  private reconnectTimer: NodeJS.Timeout | null = null;
-
   private readonly importsRepo = new ImportsRepo();
   private readonly db = this.importsRepo.db; // Kysely DB instance
+
+  private activeJobsCount = 0;
+  private isRunning = false;
+  private pgClient: Client | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private recoveryInterval: NodeJS.Timeout | null = null;
+  private shutdownResolver: (() => void) | null = null;
+  private timer: NodeJS.Timeout | null = null;
 
   public start() {
     if (this.isRunning) return;
@@ -43,6 +44,9 @@ export class BackgroundJobWorker {
     );
     this.ensureCompaniesGoogleRefreshJobScheduled().catch((err) =>
       console.error('Failed to ensure companies google refresh job scheduled:', err),
+    );
+    this.ensurePruneNewsletterEventsJobScheduled().catch((err) =>
+      console.error('Failed to ensure prune newsletter events job scheduled:', err),
     );
 
     // Run stale job recovery on startup and then every 5 minutes
@@ -92,55 +96,304 @@ export class BackgroundJobWorker {
     console.log('Background Job Worker stopped.');
   }
 
-  private async setupListener() {
-    if (!this.isRunning) return;
+  private async ensureAddressFingerprintsJobScheduled(): Promise<void> {
     try {
-      this.pgClient = new Client(env.db);
-      await this.pgClient.connect();
-
-      this.pgClient.on('notification', (msg) => {
-        if (msg.channel === 'background_jobs_channel') {
-          console.log('Background Job Worker received notify, waking up...');
-          this.wakeUp();
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling nightly address fingerprints recomputation background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'recompute_address_fingerprints' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
         }
       });
-
-      this.pgClient.on('error', (err) => {
-        console.error('Postgres listener client error:', err);
-        this.reconnectListener();
-      });
-
-      this.pgClient.on('end', () => {
-        console.warn('Postgres listener connection closed.');
-        this.reconnectListener();
-      });
-
-      await this.pgClient.query('LISTEN background_jobs_channel');
-      console.log('Listening for background_jobs notifications...');
     } catch (err) {
-      console.error('Failed to setup Postgres listener:', err);
-      this.reconnectListener();
+      console.error('Failed to ensure address fingerprints job scheduled:', err);
     }
   }
 
-  private reconnectListener() {
-    if (this.pgClient) {
-      this.pgClient.end().catch(() => {});
-      this.pgClient = null;
+  private async ensureCleanupJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'cleanup_activities')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily activity feed cleanup background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'cleanup_activities' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure cleanup job scheduled:', err);
     }
-    if (!this.isRunning) return;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = setTimeout(() => {
-      this.setupListener();
-    }, 5000);
   }
 
-  private wakeUp() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
+  private async ensureCompaniesGoogleRefreshJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'refresh_companies_google')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily company google enrichment background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'refresh_companies_google' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure companies google refresh job scheduled:', err);
     }
-    this.poll();
+  }
+
+  private async ensureDueTasksCheckScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'check_due_tasks')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily due tasks check background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'check_due_tasks' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure due tasks check scheduled:', err);
+    }
+  }
+
+  private async ensureDuplicatesRecomputeJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling nightly duplicates recomputation background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'recompute_all_duplicates' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure duplicates recompute job scheduled:', err);
+    }
+  }
+
+  private async ensurePerformScheduledDeletionsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'perform_scheduled_deletions')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily scheduled deletions background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'perform_scheduled_deletions' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure perform scheduled deletions job scheduled:', err);
+    }
+  }
+
+  private async ensurePruneNewsletterEventsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'prune_newsletter_events')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily newsletter events pruning background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'prune_newsletter_events' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure prune newsletter events job scheduled:', err);
+    }
+  }
+
+  private async ensureSyncSchedulerJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'schedule_sync_jobs')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling sync scheduler background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'schedule_sync_jobs' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure sync scheduler job scheduled:', err);
+    }
+  }
+
+  private async ensureUsageLimitChecksScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'check_all_usage_limits')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily usage limits check background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'check_all_usage_limits' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure usage limit checks scheduled:', err);
+    }
+  }
+
+  private async ensureWorkflowsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'process_drip_workflows')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling periodic drip workflows processing background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'process_drip_workflows' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure workflows job scheduled:', err);
+    }
   }
 
   private poll() {
@@ -159,13 +412,12 @@ export class BackgroundJobWorker {
         // If shutdown was requested and no active jobs remain, resolve the stop() promise
         if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
           this.shutdownResolver();
-          return;
+        } else {
+          // Poll again immediately (10ms) if we processed a job (to drain the queue),
+          // or back off to 30 seconds if no jobs were found.
+          const delay = processedAJob ? 10 : 30000;
+          this.pollWithDelay(delay);
         }
-
-        // Poll again immediately (10ms) if we processed a job (to drain the queue),
-        // or back off to 30 seconds if no jobs were found.
-        const delay = processedAJob ? 10 : 30000;
-        this.pollWithDelay(delay);
       }
     }, 0);
   }
@@ -298,12 +550,9 @@ export class BackgroundJobWorker {
           try {
             const { ExportsRepo } = await import('../../modules/exports/repositories/exports.repo');
             const exportsRepo = new ExportsRepo();
-            await exportsRepo.updateStatus(
-              String(payload.export_id),
-              String(payload.tenant_id),
-              'failed',
-              { error: `Export failed after all retries. Last error: ${errorMsg.substring(0, 400)}` }
-            );
+            await exportsRepo.updateStatus(String(payload.export_id), String(payload.tenant_id), 'failed', {
+              error: `Export failed after all retries. Last error: ${errorMsg.substring(0, 400)}`,
+            });
           } catch (exportErr) {
             console.error('Failed to update export status on job permanent failure:', exportErr);
           }
@@ -329,7 +578,10 @@ export class BackgroundJobWorker {
 
         if (payload.type === 'google_sync' && payload.userId) {
           const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
-          console.error(`[sync-error][${correlationId}] Google sync permanently failed for user ${payload.userId}:`, err);
+          console.error(
+            `[sync-error][${correlationId}] Google sync permanently failed for user ${payload.userId}:`,
+            err,
+          );
           try {
             const { GoogleOAuthService } = await import('../../modules/google-sync/google-oauth.service');
             const { env } = await import('../../../env');
@@ -352,313 +604,16 @@ export class BackgroundJobWorker {
     return true;
   }
 
-  private async rescheduleCronJobOnFailure(type: string): Promise<void> {
-    let delayMs = 0;
-    if (type === 'cleanup_activities') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'schedule_sync_jobs') {
-      delayMs = 10 * 60 * 1000;
-    } else if (type === 'recompute_all_duplicates') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'recompute_address_fingerprints') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'process_drip_workflows') {
-      delayMs = 10 * 60 * 1000;
-    } else if (type === 'perform_scheduled_deletions') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'check_all_usage_limits') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'refresh_companies_google') {
-      delayMs = 24 * 60 * 60 * 1000;
+  private reconnectListener() {
+    if (this.pgClient) {
+      this.pgClient.end().catch();
+      this.pgClient = null;
     }
-
-    if (delayMs > 0) {
-      try {
-        await this.db
-          .insertInto('background_jobs' as any)
-          .values({
-            tenant_id: null,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({ type }),
-            run_at: new Date(Date.now() + delayMs),
-            max_attempts: 3,
-          })
-          .execute();
-      } catch (schedErr) {
-        console.error(`Failed to reschedule failed cron job (${type}):`, schedErr);
-      }
-    }
-  }
-
-  private async ensureCleanupJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'cleanup_activities')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily activity feed cleanup background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'cleanup_activities' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure cleanup job scheduled:', err);
-    }
-  }
-
-  private async ensureSyncSchedulerJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'schedule_sync_jobs')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling sync scheduler background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'schedule_sync_jobs' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure sync scheduler job scheduled:', err);
-    }
-  }
-
-  private async ensureDuplicatesRecomputeJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling nightly duplicates recomputation background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'recompute_all_duplicates' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure duplicates recompute job scheduled:', err);
-    }
-  }
-
-  private async ensureAddressFingerprintsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling nightly address fingerprints recomputation background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'recompute_address_fingerprints' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure address fingerprints job scheduled:', err);
-    }
-  }
-
-  private async ensureWorkflowsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'process_drip_workflows')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling periodic drip workflows processing background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'process_drip_workflows' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure workflows job scheduled:', err);
-    }
-  }
-
-  private async ensurePerformScheduledDeletionsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'perform_scheduled_deletions')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily scheduled deletions background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'perform_scheduled_deletions' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure perform scheduled deletions job scheduled:', err);
-    }
-  }
-
-  private async ensureUsageLimitChecksScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'check_all_usage_limits')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily usage limits check background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'check_all_usage_limits' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure usage limit checks scheduled:', err);
-    }
-  }
-
-  private async ensureDueTasksCheckScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'check_due_tasks')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily due tasks check background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'check_due_tasks' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure due tasks check scheduled:', err);
-    }
-  }
-
-  private async ensureCompaniesGoogleRefreshJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'refresh_companies_google')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily company google enrichment background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'refresh_companies_google' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure companies google refresh job scheduled:', err);
-    }
+    if (!this.isRunning) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.setupListener();
+    }, 5000);
   }
 
   private async recoverStaleJobs(): Promise<void> {
@@ -710,5 +665,85 @@ export class BackgroundJobWorker {
     } catch (err) {
       console.error('Failed to recover stale background jobs:', err);
     }
+  }
+
+  private async rescheduleCronJobOnFailure(type: string): Promise<void> {
+    let delayMs = 0;
+    if (type === 'cleanup_activities') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'schedule_sync_jobs') {
+      delayMs = 10 * 60 * 1000;
+    } else if (type === 'recompute_all_duplicates') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'recompute_address_fingerprints') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'process_drip_workflows') {
+      delayMs = 10 * 60 * 1000;
+    } else if (type === 'perform_scheduled_deletions') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'check_all_usage_limits') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'refresh_companies_google') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'prune_newsletter_events') {
+      delayMs = 24 * 60 * 60 * 1000;
+    }
+
+    if (delayMs > 0) {
+      try {
+        await this.db
+          .insertInto('background_jobs' as any)
+          .values({
+            tenant_id: null,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({ type }),
+            run_at: new Date(Date.now() + delayMs),
+            max_attempts: 3,
+          })
+          .execute();
+      } catch (schedErr) {
+        console.error(`Failed to reschedule failed cron job (${type}):`, schedErr);
+      }
+    }
+  }
+
+  private async setupListener() {
+    if (!this.isRunning) return;
+    try {
+      this.pgClient = new Client(env.db);
+      await this.pgClient.connect();
+
+      this.pgClient.on('notification', (msg) => {
+        if (msg.channel === 'background_jobs_channel') {
+          console.log('Background Job Worker received notify, waking up...');
+          this.wakeUp();
+        }
+      });
+
+      this.pgClient.on('error', (err) => {
+        console.error('Postgres listener client error:', err);
+        this.reconnectListener();
+      });
+
+      this.pgClient.on('end', () => {
+        console.warn('Postgres listener connection closed.');
+        this.reconnectListener();
+      });
+
+      await this.pgClient.query('LISTEN background_jobs_channel');
+      console.log('Listening for background_jobs notifications...');
+    } catch (err) {
+      console.error('Failed to setup Postgres listener:', err);
+      this.reconnectListener();
+    }
+  }
+
+  private wakeUp() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.poll();
   }
 }
