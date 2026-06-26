@@ -29,27 +29,30 @@ export class EmailFolderList implements OnInit {
   // Responsive Tailwind class strings — CSS handles breakpoint, signal handles manual toggle
   protected readonly asideClass = computed(
     () =>
-      'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 hover:w-48 h-full ' +
-      (this.foldersCollapsed() ? 'w-12' : 'w-12 xl:w-48'),
+      'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
+      'w-full lg:hover:w-48 ' +
+      (this.foldersCollapsed() ? 'lg:w-12' : 'lg:w-12 xl:w-48'),
   );
 
-  // Text labels: always hidden on narrow screens, visible at xl+ when not collapsed, visible on hover always
+  // Labels: always visible on mobile (< lg); on desktop hidden unless hovered or xl+ and not collapsed
   protected readonly labelClass = computed(
-    () => 'hidden group-hover:block' + (this.foldersCollapsed() ? '' : ' xl:block'),
+    () => 'block lg:hidden lg:group-hover:block' + (this.foldersCollapsed() ? '' : ' xl:block'),
   );
 
   protected readonly countClass = computed(
-    () => 'text-xs tabular-nums font-normal hidden group-hover:block' + (this.foldersCollapsed() ? '' : ' xl:block'),
+    () =>
+      'text-xs tabular-nums font-normal block lg:hidden lg:group-hover:block' +
+      (this.foldersCollapsed() ? '' : ' xl:block'),
   );
 
   protected readonly sectionHeaderClass = computed(
     () =>
-      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none hidden group-hover:flex' +
+      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none flex lg:hidden lg:group-hover:flex' +
       (this.foldersCollapsed() ? '' : ' xl:flex'),
   );
 
   protected readonly buttonLabelClass = computed(
-    () => 'hidden group-hover:inline' + (this.foldersCollapsed() ? '' : ' xl:inline'),
+    () => 'inline lg:hidden lg:group-hover:inline' + (this.foldersCollapsed() ? '' : ' xl:inline'),
   );
 
   protected readonly separatorClass = computed(

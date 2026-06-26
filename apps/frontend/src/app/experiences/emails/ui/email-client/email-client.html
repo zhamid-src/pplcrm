@@ -1,37 +1,60 @@
 <div class="flex text-sm bg-base-100 h-full overflow-hidden">
-  <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"> </pc-email-folder-list>
+  <!-- Folder list panel: full-width on mobile when active, narrow sidebar on desktop -->
+  <div [class]="folderPanelClass()">
+    <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"></pc-email-folder-list>
+  </div>
 
-  @if (!isBodyExpanded() && emails().length) {
-  <pc-email-list
-    (emailSelected)="onEmail($event!)"
-    (reply)="onReply($event)"
-    (replyAll)="onReplyAll($event)"
-    (forward)="onForward($event)"
-  ></pc-email-list>
-  }
-
-  <!-- Right pane: compose OR details -->
-  <div class="flex-1 h-full p-4 pt-2 relative z-10">
-    @if (isComposing()) {
-    <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3 relative z-20">
-      <!-- emits (finished) when sent/discarded -->
-      <pc-compose-email
-        #composer
-        class="h-full"
-        [draftId]="draftIdToLoad()"
-        [initial]="composePrefill()"
-        (finished)="closeCompose()"
-      ></pc-compose-email>
+  <!-- Email list panel -->
+  @if (!isBodyExpanded()) {
+  <div [class]="listPanelClass()">
+    <!-- Mobile back button -->
+    <div class="lg:hidden flex items-center px-2 py-1 border-b border-base-300 bg-base-200 shrink-0">
+      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Folders
+      </button>
     </div>
-    } @else {
-    <pc-email-details
-      class="h-full"
-      [email]="selectedEmail()"
+    <pc-email-list
+      class="flex-1 min-h-0 block"
+      (emailSelected)="onEmail($event!)"
       (reply)="onReply($event)"
       (replyAll)="onReplyAll($event)"
       (forward)="onForward($event)"
-    ></pc-email-details>
-    }
+    ></pc-email-list>
+  </div>
+  }
+
+  <!-- Right pane: compose OR details -->
+  <div [class]="detailPanelClass()">
+    <!-- Mobile back button -->
+    <div class="lg:hidden flex items-center mb-2 shrink-0">
+      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Back
+      </button>
+    </div>
+
+    <div class="flex-1 min-h-0 overflow-hidden">
+      @if (isComposing()) {
+      <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3 relative z-20">
+        <pc-compose-email
+          #composer
+          class="h-full"
+          [draftId]="draftIdToLoad()"
+          [initial]="composePrefill()"
+          (finished)="closeCompose()"
+        ></pc-compose-email>
+      </div>
+      } @else {
+      <pc-email-details
+        class="h-full"
+        [email]="selectedEmail()"
+        (reply)="onReply($event)"
+        (replyAll)="onReplyAll($event)"
+        (forward)="onForward($event)"
+      ></pc-email-details>
+      }
+    </div>
   </div>
 
   @if (isBodyExpanded() && selectedEmail()) {
