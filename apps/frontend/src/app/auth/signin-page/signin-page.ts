@@ -146,7 +146,7 @@ export class SignInPage implements OnInit, OnDestroy {
   public async signInWithPasskey() {
     const end = this._loading.begin();
     try {
-      const result = await this.authService.signInWithPasskey(this.tokenService.getPersistence());
+      const result = await this.authService.signInWithPasskey(this.persistence());
       if (result.cancelled) {
         this.step.set('password');
         return;
@@ -182,7 +182,7 @@ export class SignInPage implements OnInit, OnDestroy {
           const res = await this.authService.signIn({
             email: emailVal,
             password: passwordVal,
-            rememberMe: this.tokenService.getPersistence(),
+            rememberMe: this.persistence(),
           });
           if (res.requires2FA) {
             this.suppressNavigation.set(false);
@@ -229,7 +229,7 @@ export class SignInPage implements OnInit, OnDestroy {
           await this.authService.verify2FA({
             email: emailVal,
             code: codeVal,
-            rememberMe: this.tokenService.getPersistence(),
+            rememberMe: this.persistence(),
           });
         } catch (err: any) {
           this.handleError(err);
