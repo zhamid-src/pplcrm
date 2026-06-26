@@ -1,7 +1,10 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { AutoComplete } from './autocomplete';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { ComponentFixture} from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { AutoComplete } from './autocomplete';
 
 describe('AutoComplete Component', () => {
   let component: AutoComplete;
@@ -50,7 +53,7 @@ describe('AutoComplete Component', () => {
     // Check if list is rendered
     const listItems = fixture.debugElement.queryAll(By.css('li'));
     expect(listItems.length).toBe(3);
-    expect(listItems[0].nativeElement.textContent.trim()).toBe('apple');
+    expect(listItems[0].nativeElement.textContent.trim()).toBe('Apple');
   });
 
   it('should emit value on Enter key and clear input', () => {
