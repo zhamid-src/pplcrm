@@ -1,15 +1,22 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { DataGrid } from '../datagrid';
 import { GridActionComponent } from '../tool-button';
 import { Icon } from '@icons/icon';
+import { MultiselectFilterComponent } from './multiselect-filter';
+import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
 
 @Component({
   selector: 'pc-dg-toolbar',
-  imports: [GridActionComponent, Icon],
+  imports: [GridActionComponent, Icon, MultiselectFilterComponent, SingleselectFilterComponent],
   templateUrl: 'datagrid-toolbar.html',
 })
 export class DataGridToolbarComponent {
   public readonly grid: any = inject(DataGrid);
+
+  readonly narrowTypeOptions = computed<SingleSelectOption[]>(() => this.grid.narrowTypeOptions());
+  readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.grid.availableLists().map((l: any) => ({ value: l.id, label: l.name })),
+  );
 
   public onAdd() {
     this.grid.doAdd();

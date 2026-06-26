@@ -426,6 +426,8 @@ apps/
                 datagrid-row.ts
                 datagrid-toolbar.html
                 datagrid-toolbar.ts
+                multiselect-filter.ts
+                singleselect-filter.ts
               datagrid.css
               datagrid.html
               datagrid.tokens.ts
@@ -17427,18 +17429,25 @@ export class DataGridRowComponent {
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
 
 ```typescript
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { DataGrid } from '../datagrid';
 import { GridActionComponent } from '../tool-button';
 import { Icon } from '@icons/icon';
+import { MultiselectFilterComponent } from './multiselect-filter';
+import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
 
 @Component({
   selector: 'pc-dg-toolbar',
-  imports: [GridActionComponent, Icon],
+  imports: [GridActionComponent, Icon, MultiselectFilterComponent, SingleselectFilterComponent],
   templateUrl: 'datagrid-toolbar.html',
 })
 export class DataGridToolbarComponent {
   public readonly grid: any = inject(DataGrid);
+
+  readonly narrowTypeOptions = computed<SingleSelectOption[]>(() => this.grid.narrowTypeOptions());
+  readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.grid.availableLists().map((l: any) => ({ value: l.id, label: l.name })),
+  );
 
   public onAdd() {
     this.grid.doAdd();
@@ -17499,6 +17508,109 @@ export class DataGridToolbarComponent {
   public onUndo() {
     this.grid.undo();
   }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/multiselect-filter.ts
+
+```typescript
+import { Component, input, model, output } from '@angular/core';
+
+@Component({
+  selector: 'pc-multiselect-filter',
+  template: `
+    <div class="flex flex-col gap-1">
+      <input
+        type="text"
+        [placeholder]="'Search ' + label().toLowerCase() + '...'"
+        class="input input-bordered input-xs w-full bg-base-100"
+        [value]="searchQuery()"
+        (input)="searchQuery.set($any($event.target).value)"
+      />
+      <div class="flex gap-2 text-[11px] text-primary px-1">
+        <button class="hover:underline cursor-pointer font-medium" (click)="selectAll.emit()">Select all</button>
+        <span class="text-base-300">|</span>
+        <button class="hover:underline cursor-pointer font-medium" (click)="clearVisible.emit()">Clear</button>
+      </div>
+      <div class="border-t border-base-200 my-0.5"></div>
+      <div class="overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar" [style.max-height.rem]="maxHeight()">
+        @if (options().length === 0) {
+          <div class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
+        } @else {
+          @for (opt of options(); track opt) {
+            <label
+              class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 rounded w-full min-w-0 flex items-center select-none"
+            >
+              <input
+                type="checkbox"
+                class="checkbox checkbox-primary checkbox-xs shrink-0"
+                [checked]="selected().includes(opt)"
+                (change)="toggle.emit({ value: opt, checked: $any($event.target).checked })"
+              />
+              <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="opt">{{ opt }}</span>
+            </label>
+          }
+        }
+      </div>
+    </div>
+  `,
+})
+export class MultiselectFilterComponent {
+  label = input.required<string>();
+  options = input.required<string[]>();
+  selected = input.required<string[]>();
+  searchQuery = model.required<string>();
+  maxHeight = input(9);
+
+  selectAll = output<void>();
+  clearVisible = output<void>();
+  toggle = output<{ value: string; checked: boolean }>();
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/singleselect-filter.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+
+export interface SingleSelectOption {
+  value: string;
+  label: string;
+}
+
+@Component({
+  selector: 'pc-singleselect-filter',
+  template: `
+    <div class="overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar" [style.max-height.rem]="maxHeight()">
+      @if (options().length === 0) {
+        <div class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
+      } @else {
+        @for (opt of options(); track opt.value) {
+          <label
+            class="label cursor-pointer justify-start gap-2 py-1 px-2 rounded hover:bg-base-200 w-full min-w-0 flex items-center select-none"
+          >
+            <input
+              type="radio"
+              [name]="radioName()"
+              class="radio radio-primary radio-xs shrink-0"
+              [checked]="selected() === opt.value"
+              (change)="select.emit(opt.value)"
+            />
+            <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="opt.label">{{ opt.label }}</span>
+          </label>
+        }
+      }
+    </div>
+  `,
+})
+export class SingleselectFilterComponent {
+  label = input.required<string>();
+  options = input.required<SingleSelectOption[]>();
+  selected = input<string | null>(null);
+  radioName = input.required<string>();
+  maxHeight = input(9);
+
+  select = output<string>();
 }
 ```
 
@@ -44855,653 +44967,6 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
-
-```html
-<!-- Mobile toolbar -->
-<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
-  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-  <!-- Combined filter panel -->
-  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
-  grid.showListFilter()) {
-  <pc-grid-tool-btn
-    icon="funnel"
-    tip="Filters"
-    [hasDropdown]="true"
-    [dropdownEnd]="false"
-    [active]="
-      grid.selectedNarrowType() !== null ||
-      grid.selectedTags().length > 0 ||
-      grid.selectedIssues().length > 0 ||
-      grid.selectedListId() !== null ||
-      grid.hasActiveFilters() ||
-      grid.hasActiveAdvancedFilters()
-    "
-  >
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
-    >
-      @if (grid.showNarrowTypeFilter()) {
-      <details class="group/narrow" [open]="grid.selectedNarrowType() !== null">
-        <summary
-          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
-        >
-          <span class="flex items-center gap-1.5">
-            @if (grid.selectedNarrowType() !== null) {
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
-            } Narrow by Type
-          </span>
-          <pc-icon
-            name="chevron-down"
-            [size]="3"
-            class="transition-transform group-open/narrow:rotate-180 text-base-content/40"
-          ></pc-icon>
-        </summary>
-        <div class="pt-1 pb-2">
-          @for (opt of grid.narrowTypeOptions(); track opt.value) {
-          <label class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 rounded select-none">
-            <input
-              type="radio"
-              name="narrowTypeMobile"
-              class="radio radio-primary radio-xs shrink-0"
-              [checked]="grid.selectedNarrowType() === opt.value"
-              (change)="grid.selectNarrowType(opt.value)"
-            />
-            <span class="label-text text-xs">{{ opt.label }}</span>
-          </label>
-          }
-        </div>
-      </details>
-      } @if (grid.showTagFilter()) {
-      <details class="group/tags border-t border-base-200" [open]="grid.selectedTags().length > 0">
-        <summary
-          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
-        >
-          <span class="flex items-center gap-1.5">
-            @if (grid.selectedTags().length > 0) {
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
-            } Filter by Tags
-          </span>
-          <div class="flex items-center gap-1">
-            @if (grid.selectedTags().length > 0) {
-            <button
-              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
-              (click)="grid.clearTagsFilter(); $event.stopPropagation()"
-            >
-              Clear
-            </button>
-            }
-            <pc-icon
-              name="chevron-down"
-              [size]="3"
-              class="transition-transform group-open/tags:rotate-180 text-base-content/40"
-            ></pc-icon>
-          </div>
-        </summary>
-        <div class="pt-1 pb-2 flex flex-col gap-1">
-          <input
-            type="text"
-            placeholder="Search tags..."
-            class="input input-bordered input-xs w-full bg-base-100"
-            [value]="grid.tagSearchQuery()"
-            (input)="grid.tagSearchQuery.set($any($event.target).value)"
-          />
-          <div class="flex gap-2 text-[11px] text-primary px-1">
-            <button class="hover:underline cursor-pointer font-medium" (click)="grid.selectAllTags()">
-              Select all
-            </button>
-            <span class="text-base-300">|</span>
-            <button class="hover:underline cursor-pointer font-medium" (click)="grid.clearAllTagsVisible()">
-              Clear
-            </button>
-          </div>
-          <div class="max-h-36 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
-            @if (grid.filteredAvailableTags().length === 0) {
-            <div class="px-3 py-3 text-xs text-neutral-400 text-center">No tags found</div>
-            } @else { @for (tag of grid.filteredAvailableTags(); track tag) {
-            <label
-              class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none rounded"
-            >
-              <input
-                type="checkbox"
-                class="checkbox checkbox-primary checkbox-xs shrink-0"
-                [checked]="grid.selectedTags().includes(tag)"
-                (change)="grid.toggleTagFilter(tag, $any($event.target).checked)"
-              />
-              <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="tag">{{ tag }}</span>
-            </label>
-            } }
-          </div>
-        </div>
-      </details>
-      } @if (grid.showIssueFilter()) {
-      <details class="group/issues border-t border-base-200" [open]="grid.selectedIssues().length > 0">
-        <summary
-          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
-        >
-          <span class="flex items-center gap-1.5">
-            @if (grid.selectedIssues().length > 0) {
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
-            } Filter by Issues
-          </span>
-          <div class="flex items-center gap-1">
-            @if (grid.selectedIssues().length > 0) {
-            <button
-              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
-              (click)="grid.clearIssuesFilter(); $event.stopPropagation()"
-            >
-              Clear
-            </button>
-            }
-            <pc-icon
-              name="chevron-down"
-              [size]="3"
-              class="transition-transform group-open/issues:rotate-180 text-base-content/40"
-            ></pc-icon>
-          </div>
-        </summary>
-        <div class="pt-1 pb-2 flex flex-col gap-1">
-          <input
-            type="text"
-            placeholder="Search issues..."
-            class="input input-bordered input-xs w-full bg-base-100"
-            [value]="grid.issueSearchQuery()"
-            (input)="grid.issueSearchQuery.set($any($event.target).value)"
-          />
-          <div class="flex gap-2 text-[11px] text-primary px-1">
-            <button class="hover:underline cursor-pointer font-medium" (click)="grid.selectAllIssues()">
-              Select all
-            </button>
-            <span class="text-base-300">|</span>
-            <button class="hover:underline cursor-pointer font-medium" (click)="grid.clearAllIssuesVisible()">
-              Clear
-            </button>
-          </div>
-          <div class="max-h-36 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
-            @if (grid.filteredAvailableIssues().length === 0) {
-            <div class="px-3 py-3 text-xs text-neutral-400 text-center">No issues found</div>
-            } @else { @for (issue of grid.filteredAvailableIssues(); track issue) {
-            <label
-              class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none rounded"
-            >
-              <input
-                type="checkbox"
-                class="checkbox checkbox-primary checkbox-xs shrink-0"
-                [checked]="grid.selectedIssues().includes(issue)"
-                (change)="grid.toggleIssueFilter(issue, $any($event.target).checked)"
-              />
-              <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="issue">{{ issue }}</span>
-            </label>
-            } }
-          </div>
-        </div>
-      </details>
-      } @if (grid.showListFilter()) {
-      <details class="group/list border-t border-base-200" [open]="grid.selectedListId() !== null">
-        <summary
-          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
-        >
-          <span class="flex items-center gap-1.5">
-            @if (grid.selectedListId() !== null) {
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
-            } Filter by List
-          </span>
-          <div class="flex items-center gap-1">
-            @if (grid.selectedListId() !== null) {
-            <button
-              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
-              (click)="grid.clearListFilter(); $event.stopPropagation()"
-            >
-              Clear
-            </button>
-            }
-            <pc-icon
-              name="chevron-down"
-              [size]="3"
-              class="transition-transform group-open/list:rotate-180 text-base-content/40"
-            ></pc-icon>
-          </div>
-        </summary>
-        <div class="pt-1 pb-2">
-          <div class="max-h-36 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
-            @if (grid.availableLists().length === 0) {
-            <div class="px-3 py-3 text-xs text-neutral-400 text-center">No lists found</div>
-            } @else { @for (l of grid.availableLists(); track l.id) {
-            <label
-              class="label cursor-pointer justify-start gap-2 py-1 px-2 rounded-md hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
-            >
-              <input
-                type="radio"
-                name="selectedListMobile"
-                class="radio radio-primary radio-xs shrink-0"
-                [checked]="grid.selectedListId() === l.id"
-                (change)="grid.selectListFilter(l.id)"
-              />
-              <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="l.name">{{ l.name }}</span>
-            </label>
-            } }
-          </div>
-        </div>
-      </details>
-      } @if (grid.allowFilter()) {
-      <div class="border-t border-base-200 pt-1 flex flex-col">
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
-          [disabled]="grid.hasActiveAdvancedFilters()"
-          (click)="onToggleFilters()"
-        >
-          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
-        </button>
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-          (click)="grid.openAdvancedFilterBuilder()"
-        >
-          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
-        </button>
-      </div>
-      }
-    </div>
-  </pc-grid-tool-btn>
-  }
-
-  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
-      <li class="px-2 py-1 flex gap-2">
-        <button class="btn btn-ghost btn-xs" (click)="onShowAllCols()">Show all</button>
-        <button class="btn btn-ghost btn-xs" (click)="onHideAllCols()">Hide all</button>
-        <button class="btn btn-ghost btn-xs" (click)="onResetAllWidths()">Reset widths</button>
-      </li>
-      @for (col of grid.getColDefsForToolbar(); track col.field) { @if (col.field) {
-      <li>
-        <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
-          <input
-            type="checkbox"
-            class="checkbox checkbox-xs"
-            [checked]="grid.getColVisibilityMap()[col.field!] !== false"
-            (change)="onToggleCol(col.field!, $any($event.target).checked)"
-          />
-          <span class="label-text">{{ col.headerName || col.field }}</span>
-        </label>
-      </li>
-      } }
-    </ul>
-  </pc-grid-tool-btn>
-
-  <!-- Overflow: secondary actions -->
-  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
-      <li
-        [class.disabled]="grid.disableRefresh()"
-        [class.cursor-not-allowed]="grid.disableRefresh()"
-        [class.text-neutral-400]="grid.disableRefresh()"
-        [class.pointer-events-none]="grid.disableRefresh()"
-      >
-        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
-      </li>
-      @if (grid.addRoute() || !grid.disableMerge()) {
-      <li class="border-t border-base-200 mt-1 pt-1 menu-title text-[10px]"></li>
-      } @if (grid.addRoute()) {
-      <li
-        [class.disabled]="!grid.hasSingleSelection()"
-        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
-        [class.text-neutral-400]="!grid.hasSingleSelection()"
-        [class.pointer-events-none]="!grid.hasSingleSelection()"
-      >
-        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
-      </li>
-      } @if (!grid.disableMerge()) {
-      <li
-        [class.disabled]="grid.getCountRowSelected() !== 2"
-        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
-        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
-        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
-      >
-        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
-      </li>
-      } @if (!grid.disableImport() || !grid.disableExport()) {
-      <li class="border-t border-base-200 mt-1 pt-1 menu-title text-[10px]"></li>
-      } @if (!grid.disableImport()) {
-      <li>
-        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
-      </li>
-      } @if (!grid.disableExport()) {
-      <li>
-        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
-      </li>
-      } @if (grid.showArchiveIcon()) {
-      <li>
-        <a (click)="onToggleArchive()">
-          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
-        </a>
-      </li>
-      }
-    </ul>
-  </pc-grid-tool-btn>
-</ul>
-
-<!-- Desktop toolbar -->
-<ul class="menu menu-horizontal hidden lg:flex flex-row pl-0 relative z-30">
-  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <pc-grid-tool-btn
-    [enabled]="!!grid.addRoute() && grid.hasSingleSelection()"
-    [tip]="'Clone'"
-    icon="document-duplicate"
-    [hidden]="!grid.addRoute()"
-    (action)="onClone()"
-  />
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Deleted selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-
-  @if (!grid.disableMerge()) {
-  <pc-grid-tool-btn
-    [enabled]="grid.getCountRowSelected() === 2"
-    [tip]="'Merge selected rows'"
-    icon="merge"
-    (action)="onMergeSelected()"
-  />
-  }
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
-    [spinning]="grid.isRefreshing()"
-    [tip]="'Refresh the grid'"
-    icon="arrow-path"
-    (action)="onRefresh()"
-  />
-  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableImport()"
-    [tip]="'Import data from CSV'"
-    icon="arrow-up-tray"
-    (action)="onImportCsv()"
-  />
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableExport()"
-    [tip]="'Download as CSV'"
-    icon="arrow-down-tray"
-    (action)="onExportCsv()"
-  />
-
-  <!-- Narrow by Type / Tag Filter Dropdown -->
-  @if (grid.showNarrowTypeFilter() || grid.showTagFilter()) {
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-  } @if (grid.showNarrowTypeFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'tag'"
-    [tip]="'Narrow by type'"
-    [active]="grid.selectedNarrowType() !== null"
-    [hasDropdown]="true"
-  >
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-48 p-2 shadow">
-      @for (opt of grid.narrowTypeOptions(); track opt.value) {
-      <li>
-        <label tabindex="-1" class="label cursor-pointer justify-start gap-2 py-1 px-2">
-          <input
-            type="radio"
-            name="narrowType"
-            class="radio radio-primary radio-xs shrink-0"
-            [checked]="grid.selectedNarrowType() === opt.value"
-            (change)="grid.selectNarrowType(opt.value)"
-          />
-          <span class="label-text text-xs">{{ opt.label }}</span>
-        </label>
-      </li>
-      }
-    </ul>
-  </pc-grid-tool-btn>
-  } @if (grid.showTagFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'label'"
-    [tip]="'Filter by Tags'"
-    [active]="grid.selectedTags().length > 0"
-    [hasDropdown]="true"
-    [badge]="grid.selectedTags().length"
-  >
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
-    >
-      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
-        <span>Filter by Tags</span>
-        @if (grid.selectedTags().length > 0) {
-        <button
-          class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
-          (click)="grid.clearTagsFilter()"
-        >
-          Clear Filter
-        </button>
-        }
-      </div>
-      <div>
-        <input
-          type="text"
-          placeholder="Search tags..."
-          class="input input-bordered input-xs w-full bg-base-100"
-          [value]="grid.tagSearchQuery()"
-          (input)="grid.tagSearchQuery.set($any($event.target).value)"
-        />
-      </div>
-
-      <div class="flex gap-2 text-[11px] text-primary px-1">
-        <button class="hover:underline cursor-pointer font-medium" (click)="grid.selectAllTags()">Select all</button>
-        <span class="text-base-300">|</span>
-        <button class="hover:underline cursor-pointer font-medium" (click)="grid.clearAllTagsVisible()">Clear</button>
-      </div>
-
-      <div class="border-t border-base-200 my-0.5"></div>
-
-      <div class="max-h-56 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
-        @if (grid.filteredAvailableTags().length === 0) {
-        <div class="px-3 py-4 text-xs text-neutral-400 text-center">No tags found</div>
-        } @else { @for (tag of grid.filteredAvailableTags(); track tag) {
-        <label
-          tabindex="-1"
-          class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
-        >
-          <input
-            type="checkbox"
-            class="checkbox checkbox-primary checkbox-xs shrink-0"
-            [checked]="grid.selectedTags().includes(tag)"
-            (change)="grid.toggleTagFilter(tag, $any($event.target).checked)"
-          />
-          <span class="label-text truncate flex-1 min-w-0 text-left text-xs" [title]="tag">{{ tag }}</span>
-        </label>
-        } }
-      </div>
-    </div>
-  </pc-grid-tool-btn>
-  }
-
-  <!-- Issue Filter Dropdown -->
-  @if (grid.showIssueFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'shield-exclamation'"
-    [tip]="'Filter by Issues'"
-    [active]="grid.selectedIssues().length > 0"
-    [hasDropdown]="true"
-    [badge]="grid.selectedIssues().length"
-  >
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
-    >
-      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
-        <span>Filter by Issues</span>
-        @if (grid.selectedIssues().length > 0) {
-        <button
-          class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
-          (click)="grid.clearIssuesFilter()"
-        >
-          Clear Filter
-        </button>
-        }
-      </div>
-      <div>
-        <input
-          type="text"
-          placeholder="Search issues..."
-          class="input input-bordered input-xs w-full bg-base-100"
-          [value]="grid.issueSearchQuery()"
-          (input)="grid.issueSearchQuery.set($any($event.target).value)"
-        />
-      </div>
-
-      <div class="flex gap-2 text-[11px] text-primary px-1">
-        <button class="hover:underline cursor-pointer font-medium" (click)="grid.selectAllIssues()">Select all</button>
-        <span class="text-base-300">|</span>
-        <button class="hover:underline cursor-pointer font-medium" (click)="grid.clearAllIssuesVisible()">Clear</button>
-      </div>
-
-      <div class="border-t border-base-200 my-0.5"></div>
-
-      <div class="max-h-56 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
-        @if (grid.filteredAvailableIssues().length === 0) {
-        <div class="px-3 py-4 text-xs text-neutral-400 text-center">No issues found</div>
-        } @else { @for (issue of grid.filteredAvailableIssues(); track issue) {
-        <label
-          tabindex="-1"
-          class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
-        >
-          <input
-            type="checkbox"
-            class="checkbox checkbox-primary checkbox-xs shrink-0"
-            [checked]="grid.selectedIssues().includes(issue)"
-            (change)="grid.toggleIssueFilter(issue, $any($event.target).checked)"
-          />
-          <span class="label-text truncate flex-1 min-w-0 text-left text-xs" [title]="issue">{{ issue }}</span>
-        </label>
-        } }
-      </div>
-    </div>
-  </pc-grid-tool-btn>
-  }
-
-  <!-- List Filter Dropdown -->
-  @if (grid.showListFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'queue-list'"
-    [tip]="'Filter by List'"
-    [active]="grid.selectedListId() !== null"
-    [hasDropdown]="true"
-  >
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
-    >
-      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
-        <span>Filter by List</span>
-        @if (grid.selectedListId() !== null) {
-        <button
-          class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
-          (click)="grid.clearListFilter()"
-        >
-          Clear Filter
-        </button>
-        }
-      </div>
-      <div class="border-t border-base-200 my-0.5"></div>
-
-      <div class="max-h-56 overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar">
-        @if (grid.availableLists().length === 0) {
-        <div class="px-3 py-4 text-xs text-neutral-400 text-center">No lists found</div>
-        } @else { @for (l of grid.availableLists(); track l.id) {
-        <label
-          tabindex="-1"
-          class="label cursor-pointer justify-start gap-2 py-1 px-2 rounded-md hover:bg-base-200 w-full min-w-0 flex flex-row items-center select-none"
-        >
-          <input
-            type="radio"
-            name="selectedList"
-            class="radio radio-primary radio-xs shrink-0"
-            [checked]="grid.selectedListId() === l.id"
-            (change)="grid.selectListFilter(l.id)"
-          />
-          <span class="label-text truncate flex-1 min-w-0 text-left text-xs" [title]="l.name">{{ l.name }}</span>
-        </label>
-        } }
-      </div>
-    </div>
-  </pc-grid-tool-btn>
-  }
-
-  <pc-grid-tool-btn
-    icon="funnel"
-    tip="Advanced Filters"
-    [hidden]="!grid.allowFilter()"
-    [active]="grid.showFiltersState() || grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-    [enabled]="!grid.hasActiveAdvancedFilters()"
-    (action)="onToggleFilters()"
-  />
-
-  <pc-grid-tool-btn
-    icon="adjustments-horizontal"
-    tip="Advanced Query Builder"
-    [hidden]="!grid.allowFilter()"
-    [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-    [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
-    (action)="grid.openAdvancedFilterBuilder()"
-  />
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
-      <li class="px-2 py-1 flex gap-2">
-        <button class="btn btn-ghost btn-xs" (click)="onShowAllCols()">Show all</button>
-        <button class="btn btn-ghost btn-xs" (click)="onHideAllCols()">Hide all</button>
-        <button class="btn btn-ghost btn-xs" (click)="onResetAllWidths()">Reset widths</button>
-      </li>
-      @for (col of grid.getColDefsForToolbar(); track col.field) { @if (col.field) {
-      <li>
-        <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
-          <input
-            type="checkbox"
-            class="checkbox checkbox-xs"
-            [checked]="grid.getColVisibilityMap()[col.field!] !== false"
-            (change)="onToggleCol(col.field!, $any($event.target).checked)"
-          />
-          <span class="label-text">{{ col.headerName || col.field }}</span>
-        </label>
-      </li>
-      } }
-    </ul>
-  </pc-grid-tool-btn>
-
-  <pc-grid-tool-btn
-    [icon]="grid.archiveIcon()"
-    [tip]="grid.archiveTip()"
-    [hidden]="!grid.showArchiveIcon()"
-    [active]="grid.archiveModeState()"
-    (action)="onToggleArchive()"
-  />
-</ul>
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
 
 ```html
@@ -47723,6 +47188,511 @@ export class DonationsSettingsComponent implements OnInit {
   </div>
   }
 </div>
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
+
+```html
+<!-- Mobile toolbar -->
+<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
+  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Delete selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+  <!-- Combined filter panel -->
+  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
+  grid.showListFilter()) {
+  <pc-grid-tool-btn
+    icon="funnel"
+    tip="Filters"
+    [hasDropdown]="true"
+    [dropdownEnd]="false"
+    [active]="
+      grid.selectedNarrowType() !== null ||
+      grid.selectedTags().length > 0 ||
+      grid.selectedIssues().length > 0 ||
+      grid.selectedListId() !== null ||
+      grid.hasActiveFilters() ||
+      grid.hasActiveAdvancedFilters()
+    "
+  >
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
+    >
+      @if (grid.showNarrowTypeFilter()) {
+      <details class="group/narrow" [open]="grid.selectedNarrowType() !== null">
+        <summary
+          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
+        >
+          <span class="flex items-center gap-1.5">
+            @if (grid.selectedNarrowType() !== null) {
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
+            } Narrow by Type
+          </span>
+          <pc-icon
+            name="chevron-down"
+            [size]="3"
+            class="transition-transform group-open/narrow:rotate-180 text-base-content/40"
+          ></pc-icon>
+        </summary>
+        <div class="pt-1 pb-2">
+          <pc-singleselect-filter
+            [label]="'Type'"
+            [options]="narrowTypeOptions()"
+            [selected]="grid.selectedNarrowType()"
+            [radioName]="'narrowTypeMobile'"
+            (select)="grid.selectNarrowType($event)"
+          />
+        </div>
+      </details>
+      } @if (grid.showTagFilter()) {
+      <details class="group/tags border-t border-base-200" [open]="grid.selectedTags().length > 0">
+        <summary
+          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
+        >
+          <span class="flex items-center gap-1.5">
+            @if (grid.selectedTags().length > 0) {
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
+            } Filter by Tags
+          </span>
+          <div class="flex items-center gap-1">
+            @if (grid.selectedTags().length > 0) {
+            <button
+              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
+              (click)="grid.clearTagsFilter(); $event.stopPropagation()"
+            >
+              Clear
+            </button>
+            }
+            <pc-icon
+              name="chevron-down"
+              [size]="3"
+              class="transition-transform group-open/tags:rotate-180 text-base-content/40"
+            ></pc-icon>
+          </div>
+        </summary>
+        <div class="pt-1 pb-2">
+          <pc-multiselect-filter
+            [label]="'Tags'"
+            [options]="grid.filteredAvailableTags()"
+            [selected]="grid.selectedTags()"
+            [searchQuery]="grid.tagSearchQuery()"
+            (searchQueryChange)="grid.tagSearchQuery.set($event)"
+            (selectAll)="grid.selectAllTags()"
+            (clearVisible)="grid.clearAllTagsVisible()"
+            (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+          />
+        </div>
+      </details>
+      } @if (grid.showIssueFilter()) {
+      <details class="group/issues border-t border-base-200" [open]="grid.selectedIssues().length > 0">
+        <summary
+          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
+        >
+          <span class="flex items-center gap-1.5">
+            @if (grid.selectedIssues().length > 0) {
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
+            } Filter by Issues
+          </span>
+          <div class="flex items-center gap-1">
+            @if (grid.selectedIssues().length > 0) {
+            <button
+              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
+              (click)="grid.clearIssuesFilter(); $event.stopPropagation()"
+            >
+              Clear
+            </button>
+            }
+            <pc-icon
+              name="chevron-down"
+              [size]="3"
+              class="transition-transform group-open/issues:rotate-180 text-base-content/40"
+            ></pc-icon>
+          </div>
+        </summary>
+        <div class="pt-1 pb-2">
+          <pc-multiselect-filter
+            [label]="'Issues'"
+            [options]="grid.filteredAvailableIssues()"
+            [selected]="grid.selectedIssues()"
+            [searchQuery]="grid.issueSearchQuery()"
+            (searchQueryChange)="grid.issueSearchQuery.set($event)"
+            (selectAll)="grid.selectAllIssues()"
+            (clearVisible)="grid.clearAllIssuesVisible()"
+            (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+          />
+        </div>
+      </details>
+      } @if (grid.showListFilter()) {
+      <details class="group/list border-t border-base-200" [open]="grid.selectedListId() !== null">
+        <summary
+          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
+        >
+          <span class="flex items-center gap-1.5">
+            @if (grid.selectedListId() !== null) {
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
+            } Filter by List
+          </span>
+          <div class="flex items-center gap-1">
+            @if (grid.selectedListId() !== null) {
+            <button
+              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
+              (click)="grid.clearListFilter(); $event.stopPropagation()"
+            >
+              Clear
+            </button>
+            }
+            <pc-icon
+              name="chevron-down"
+              [size]="3"
+              class="transition-transform group-open/list:rotate-180 text-base-content/40"
+            ></pc-icon>
+          </div>
+        </summary>
+        <div class="pt-1 pb-2">
+          <pc-singleselect-filter
+            [label]="'List'"
+            [options]="listOptions()"
+            [selected]="grid.selectedListId()"
+            [radioName]="'selectedListMobile'"
+            (select)="grid.selectListFilter($event)"
+          />
+        </div>
+      </details>
+      } @if (grid.allowFilter()) {
+      <div class="border-t border-base-200 pt-1 flex flex-col">
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
+          [disabled]="grid.hasActiveAdvancedFilters()"
+          (click)="onToggleFilters()"
+        >
+          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
+        </button>
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+          (click)="grid.openAdvancedFilterBuilder()"
+        >
+          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
+        </button>
+      </div>
+      }
+    </div>
+  </pc-grid-tool-btn>
+  }
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
+      <li class="px-2 py-1 flex gap-2">
+        <button class="btn btn-ghost btn-xs" (click)="onShowAllCols()">Show all</button>
+        <button class="btn btn-ghost btn-xs" (click)="onHideAllCols()">Hide all</button>
+        <button class="btn btn-ghost btn-xs" (click)="onResetAllWidths()">Reset widths</button>
+      </li>
+      @for (col of grid.getColDefsForToolbar(); track col.field) { @if (col.field) {
+      <li>
+        <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-xs"
+            [checked]="grid.getColVisibilityMap()[col.field!] !== false"
+            (change)="onToggleCol(col.field!, $any($event.target).checked)"
+          />
+          <span class="label-text">{{ col.headerName || col.field }}</span>
+        </label>
+      </li>
+      } }
+    </ul>
+  </pc-grid-tool-btn>
+
+  <!-- Overflow: secondary actions -->
+  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
+      <li
+        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
+        [class.cursor-not-allowed]="grid.disableRefresh()"
+        [class.text-neutral-400]="grid.disableRefresh()"
+        [class.pointer-events-none]="grid.disableRefresh()"
+      >
+        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
+      </li>
+      @if (grid.addRoute() || !grid.disableMerge()) {
+      <div class="divider my-0"></div>
+      } @if (grid.addRoute()) {
+      <li
+        [class.disabled]="!grid.hasSingleSelection()"
+        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
+        [class.text-neutral-400]="!grid.hasSingleSelection()"
+        [class.pointer-events-none]="!grid.hasSingleSelection()"
+      >
+        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
+      </li>
+      } @if (!grid.disableMerge()) {
+      <li
+        [class.disabled]="grid.getCountRowSelected() !== 2"
+        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
+        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
+        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
+      >
+        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
+      </li>
+      } @if (!grid.disableImport() || !grid.disableExport()) {
+      <div class="divider my-0"></div>
+      } @if (!grid.disableImport()) {
+      <li>
+        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
+      </li>
+      } @if (!grid.disableExport()) {
+      <li>
+        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
+      </li>
+      } @if (grid.showArchiveIcon()) {
+      <li>
+        <a (click)="onToggleArchive()">
+          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
+        </a>
+      </li>
+      }
+    </ul>
+  </pc-grid-tool-btn>
+</ul>
+
+<!-- Desktop toolbar -->
+<ul class="menu menu-horizontal hidden lg:flex flex-row pl-0 relative z-30">
+  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+  <pc-grid-tool-btn
+    [enabled]="!!grid.addRoute() && grid.hasSingleSelection()"
+    [tip]="'Clone'"
+    icon="document-duplicate"
+    [hidden]="!grid.addRoute()"
+    (action)="onClone()"
+  />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Deleted selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  @if (!grid.disableMerge()) {
+  <pc-grid-tool-btn
+    [enabled]="grid.getCountRowSelected() === 2"
+    [tip]="'Merge selected rows'"
+    icon="merge"
+    (action)="onMergeSelected()"
+  />
+  }
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
+    [spinning]="grid.isRefreshing()"
+    [tip]="'Refresh the grid'"
+    icon="arrow-path"
+    (action)="onRefresh()"
+  />
+  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableImport()"
+    [tip]="'Import data from CSV'"
+    icon="arrow-up-tray"
+    (action)="onImportCsv()"
+  />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableExport()"
+    [tip]="'Download as CSV'"
+    icon="arrow-down-tray"
+    (action)="onExportCsv()"
+  />
+
+  @if (grid.showNarrowTypeFilter() || grid.showTagFilter()) {
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+  } @if (grid.showNarrowTypeFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'tag'"
+    [tip]="'Narrow by type'"
+    [active]="grid.selectedNarrowType() !== null"
+    [hasDropdown]="true"
+  >
+    <div tabindex="0" class="dropdown-content bg-base-100 rounded-box z-[1] w-48 p-3 shadow-lg border border-base-200">
+      <pc-singleselect-filter
+        [label]="'Type'"
+        [options]="narrowTypeOptions()"
+        [selected]="grid.selectedNarrowType()"
+        [radioName]="'narrowType'"
+        (select)="grid.selectNarrowType($event)"
+      />
+    </div>
+  </pc-grid-tool-btn>
+  } @if (grid.showTagFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'label'"
+    [tip]="'Filter by Tags'"
+    [active]="grid.selectedTags().length > 0"
+    [hasDropdown]="true"
+    [badge]="grid.selectedTags().length"
+  >
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
+    >
+      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
+        <span>Filter by Tags</span>
+        @if (grid.selectedTags().length > 0) {
+        <button
+          class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
+          (click)="grid.clearTagsFilter()"
+        >
+          Clear Filter
+        </button>
+        }
+      </div>
+      <pc-multiselect-filter
+        [label]="'Tags'"
+        [options]="grid.filteredAvailableTags()"
+        [selected]="grid.selectedTags()"
+        [searchQuery]="grid.tagSearchQuery()"
+        (searchQueryChange)="grid.tagSearchQuery.set($event)"
+        [maxHeight]="14"
+        (selectAll)="grid.selectAllTags()"
+        (clearVisible)="grid.clearAllTagsVisible()"
+        (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+      />
+    </div>
+  </pc-grid-tool-btn>
+  } @if (grid.showIssueFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'shield-exclamation'"
+    [tip]="'Filter by Issues'"
+    [active]="grid.selectedIssues().length > 0"
+    [hasDropdown]="true"
+    [badge]="grid.selectedIssues().length"
+  >
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
+    >
+      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
+        <span>Filter by Issues</span>
+        @if (grid.selectedIssues().length > 0) {
+        <button
+          class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
+          (click)="grid.clearIssuesFilter()"
+        >
+          Clear Filter
+        </button>
+        }
+      </div>
+      <pc-multiselect-filter
+        [label]="'Issues'"
+        [options]="grid.filteredAvailableIssues()"
+        [selected]="grid.selectedIssues()"
+        [searchQuery]="grid.issueSearchQuery()"
+        (searchQueryChange)="grid.issueSearchQuery.set($event)"
+        [maxHeight]="14"
+        (selectAll)="grid.selectAllIssues()"
+        (clearVisible)="grid.clearAllIssuesVisible()"
+        (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+      />
+    </div>
+  </pc-grid-tool-btn>
+  } @if (grid.showListFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'queue-list'"
+    [tip]="'Filter by List'"
+    [active]="grid.selectedListId() !== null"
+    [hasDropdown]="true"
+  >
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
+    >
+      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
+        <span>Filter by List</span>
+        @if (grid.selectedListId() !== null) {
+        <button
+          class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
+          (click)="grid.clearListFilter()"
+        >
+          Clear Filter
+        </button>
+        }
+      </div>
+      <pc-singleselect-filter
+        [label]="'List'"
+        [options]="listOptions()"
+        [selected]="grid.selectedListId()"
+        [radioName]="'selectedList'"
+        [maxHeight]="14"
+        (select)="grid.selectListFilter($event)"
+      />
+    </div>
+  </pc-grid-tool-btn>
+  }
+
+  <pc-grid-tool-btn
+    icon="funnel"
+    tip="Advanced Filters"
+    [hidden]="!grid.allowFilter()"
+    [active]="grid.showFiltersState() || grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+    [enabled]="!grid.hasActiveAdvancedFilters()"
+    (action)="onToggleFilters()"
+  />
+  <pc-grid-tool-btn
+    icon="adjustments-horizontal"
+    tip="Advanced Query Builder"
+    [hidden]="!grid.allowFilter()"
+    [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+    [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
+    (action)="grid.openAdvancedFilterBuilder()"
+  />
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
+      <li class="px-2 py-1 flex gap-2">
+        <button class="btn btn-ghost btn-xs" (click)="onShowAllCols()">Show all</button>
+        <button class="btn btn-ghost btn-xs" (click)="onHideAllCols()">Hide all</button>
+        <button class="btn btn-ghost btn-xs" (click)="onResetAllWidths()">Reset widths</button>
+      </li>
+      @for (col of grid.getColDefsForToolbar(); track col.field) { @if (col.field) {
+      <li>
+        <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-xs"
+            [checked]="grid.getColVisibilityMap()[col.field!] !== false"
+            (change)="onToggleCol(col.field!, $any($event.target).checked)"
+          />
+          <span class="label-text">{{ col.headerName || col.field }}</span>
+        </label>
+      </li>
+      } }
+    </ul>
+  </pc-grid-tool-btn>
+
+  <pc-grid-tool-btn
+    [icon]="grid.archiveIcon()"
+    [tip]="grid.archiveTip()"
+    [hidden]="!grid.showArchiveIcon()"
+    [active]="grid.archiveModeState()"
+    (action)="onToggleArchive()"
+  />
+</ul>
 ```
 
 ## File: apps/frontend/src/app/auth/signin-page/signin-page.html
