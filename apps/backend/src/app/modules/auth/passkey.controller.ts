@@ -1,43 +1,79 @@
 import {
-  generateRegistrationOptions,
-  verifyRegistrationResponse,
   generateAuthenticationOptions,
+  generateRegistrationOptions,
   verifyAuthenticationResponse,
+  verifyRegistrationResponse,
 } from '@simplewebauthn/server';
 import type {
-  RegistrationResponseJSON,
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
+  RegistrationResponseJSON,
 } from '@simplewebauthn/types';
+
 import { randomBytes } from 'crypto';
-import { env } from '../../../env';
-import { BaseRepository } from '../../lib/base.repo';
-import { storeChallenge, consumeChallenge } from '../../lib/webauthn-challenges';
-import { UnauthorizedError, NotFoundError, BadRequestError } from '../../errors/app-errors';
+
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src';
+import { env } from '../../../env';
+import { BadRequestError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
+import { BaseRepository } from '../../lib/base.repo';
+import { consumeChallenge, storeChallenge } from '../../lib/webauthn-challenges';
 import { createTokens } from './auth-tokens';
-
-const rpID = env.webAuthnRpId;
-const rpName = env.webAuthnRpName;
-
-function getExpectedOrigins(): string[] {
-  const origins: string[] = [env.appUrl];
-  if (env.apiUrl !== env.appUrl) {
-    try {
-      origins.push(new URL(env.apiUrl).origin);
-    } catch {}
-  }
-  return origins;
-}
 
 export class PasskeyController {
   private get db() {
     return BaseRepository.dbInstance;
   }
 
-  // ── Registration ─────────────────────────────────────────────────────────
+  // ── Email Check ──────────────────────────────────────────────────────────
+  public async checkEmailPasskeys(email: string): Promise<{ hasPasskeys: boolean }> {
+    const user = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'tenant_id'])
+      .where('email', '=', email.trim().toLowerCase())
+      .executeTakeFirst();
 
-  async getRegistrationOptions(auth: IAuthKeyPayload) {
+    if (!user) return { hasPasskeys: false };
+
+    const row = await this.db
+      .selectFrom('passkeys')
+      .select(this.db.fn.countAll<string>().as('count'))
+      .where('user_id', '=', user.id as any)
+      .where('tenant_id', '=', user.tenant_id)
+      .executeTakeFirst();
+
+    return { hasPasskeys: Number(row?.count ?? 0) > 0 };
+  }
+
+  public async deletePasskey(auth: IAuthKeyPayload, id: string) {
+    const result = await this.db
+      .deleteFrom('passkeys')
+      .where('id', '=', id as any)
+      .where('user_id', '=', auth.user_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (Number(result.numDeletedRows) === 0) {
+      throw new NotFoundError('Passkey not found.');
+    }
+    return { success: true };
+  }
+
+  // ── Authentication ────────────────────────────────────────────────────────
+  public async getAuthenticationOptions() {
+    const nonce = randomBytes(16).toString('hex');
+
+    const options = await generateAuthenticationOptions({
+      rpID,
+      userVerification: 'preferred',
+      allowCredentials: [], // discoverable credential — browser prompts user to choose
+    });
+
+    storeChallenge(`auth:${nonce}`, options.challenge);
+    return { options, nonce };
+  }
+
+  // ── Registration ─────────────────────────────────────────────────────────
+  public async getRegistrationOptions(auth: IAuthKeyPayload) {
     const user = await this.db
       .selectFrom('authusers')
       .select(['id', 'email', 'first_name', 'last_name'])
@@ -74,66 +110,33 @@ export class PasskeyController {
     return options;
   }
 
-  async verifyRegistration(auth: IAuthKeyPayload, response: RegistrationResponseJSON, friendlyName?: string) {
-    const challenge = consumeChallenge(`reg:${auth.user_id}`);
-    if (!challenge) throw new BadRequestError('Registration challenge expired or not found. Please try again.');
-
-    const verification = await verifyRegistrationResponse({
-      response,
-      expectedChallenge: challenge,
-      expectedOrigin: getExpectedOrigins(),
-      expectedRPID: rpID,
-      requireUserVerification: false,
-    });
-
-    if (!verification.verified || !verification.registrationInfo) {
-      throw new BadRequestError('Passkey registration verification failed.');
-    }
-
-    const { credential, credentialDeviceType, credentialBackedUp, aaguid } = verification.registrationInfo;
-
-    const user = await this.db
-      .selectFrom('authusers')
-      .select('tenant_id')
-      .where('id', '=', auth.user_id as any)
+  // ── Management ────────────────────────────────────────────────────────────
+  public async listPasskeys(auth: IAuthKeyPayload) {
+    return this.db
+      .selectFrom('passkeys')
+      .select(['id', 'friendly_name', 'device_type', 'backed_up', 'aaguid', 'transports', 'created_at'])
+      .where('user_id', '=', auth.user_id as any)
       .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirstOrThrow();
-
-    await this.db
-      .insertInto('passkeys')
-      .values({
-        user_id: auth.user_id as any,
-        tenant_id: user.tenant_id as any,
-        credential_id: credential.id,
-        public_key: Buffer.from(credential.publicKey).toString('base64url'),
-        counter: credential.counter as any,
-        device_type: credentialDeviceType,
-        backed_up: credentialBackedUp,
-        transports: (credential.transports as string[] | undefined) ?? null,
-        aaguid: aaguid ?? null,
-        friendly_name: friendlyName ?? null,
-      })
+      .orderBy('created_at', 'asc')
       .execute();
-
-    return { verified: true };
   }
 
-  // ── Authentication ────────────────────────────────────────────────────────
+  public async updatePasskeyName(auth: IAuthKeyPayload, id: string, friendlyName: string) {
+    const result = await this.db
+      .updateTable('passkeys')
+      .set({ friendly_name: friendlyName })
+      .where('id', '=', id as any)
+      .where('user_id', '=', auth.user_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
 
-  async getAuthenticationOptions() {
-    const nonce = randomBytes(16).toString('hex');
-
-    const options = await generateAuthenticationOptions({
-      rpID,
-      userVerification: 'preferred',
-      allowCredentials: [], // discoverable credential — browser prompts user to choose
-    });
-
-    storeChallenge(`auth:${nonce}`, options.challenge);
-    return { options, nonce };
+    if (Number(result.numUpdatedRows) === 0) {
+      throw new NotFoundError('Passkey not found.');
+    }
+    return { success: true };
   }
 
-  async verifyAuthentication(
+  public async verifyAuthentication(
     response: AuthenticationResponseJSON,
     nonce: string,
     ipAddress?: string,
@@ -198,65 +201,60 @@ export class PasskeyController {
     });
   }
 
-  // ── Email Check ──────────────────────────────────────────────────────────
+  public async verifyRegistration(auth: IAuthKeyPayload, response: RegistrationResponseJSON, friendlyName?: string) {
+    const challenge = consumeChallenge(`reg:${auth.user_id}`);
+    if (!challenge) throw new BadRequestError('Registration challenge expired or not found. Please try again.');
 
-  async checkEmailPasskeys(email: string): Promise<{ hasPasskeys: boolean }> {
+    const verification = await verifyRegistrationResponse({
+      response,
+      expectedChallenge: challenge,
+      expectedOrigin: getExpectedOrigins(),
+      expectedRPID: rpID,
+      requireUserVerification: false,
+    });
+
+    if (!verification.verified || !verification.registrationInfo) {
+      throw new BadRequestError('Passkey registration verification failed.');
+    }
+
+    const { credential, credentialDeviceType, credentialBackedUp, aaguid } = verification.registrationInfo;
+
     const user = await this.db
       .selectFrom('authusers')
-      .select(['id', 'tenant_id'])
-      .where('email', '=', email.trim().toLowerCase())
-      .executeTakeFirst();
-
-    if (!user) return { hasPasskeys: false };
-
-    const row = await this.db
-      .selectFrom('passkeys')
-      .select(this.db.fn.countAll<string>().as('count'))
-      .where('user_id', '=', user.id as any)
-      .where('tenant_id', '=', user.tenant_id)
-      .executeTakeFirst();
-
-    return { hasPasskeys: Number(row?.count ?? 0) > 0 };
-  }
-
-  // ── Management ────────────────────────────────────────────────────────────
-
-  async listPasskeys(auth: IAuthKeyPayload) {
-    return this.db
-      .selectFrom('passkeys')
-      .select(['id', 'friendly_name', 'device_type', 'backed_up', 'aaguid', 'transports', 'created_at'])
-      .where('user_id', '=', auth.user_id as any)
+      .select('tenant_id')
+      .where('id', '=', auth.user_id as any)
       .where('tenant_id', '=', auth.tenant_id)
-      .orderBy('created_at', 'asc')
+      .executeTakeFirstOrThrow();
+
+    await this.db
+      .insertInto('passkeys')
+      .values({
+        user_id: auth.user_id as any,
+        tenant_id: user.tenant_id as any,
+        credential_id: credential.id,
+        public_key: Buffer.from(credential.publicKey).toString('base64url'),
+        counter: credential.counter as any,
+        device_type: credentialDeviceType,
+        backed_up: credentialBackedUp,
+        transports: (credential.transports as string[] | undefined) ?? null,
+        aaguid: aaguid ?? null,
+        friendly_name: friendlyName ?? null,
+      })
       .execute();
-  }
 
-  async deletePasskey(auth: IAuthKeyPayload, id: string) {
-    const result = await this.db
-      .deleteFrom('passkeys')
-      .where('id', '=', id as any)
-      .where('user_id', '=', auth.user_id as any)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (Number(result.numDeletedRows) === 0) {
-      throw new NotFoundError('Passkey not found.');
-    }
-    return { success: true };
-  }
-
-  async updatePasskeyName(auth: IAuthKeyPayload, id: string, friendlyName: string) {
-    const result = await this.db
-      .updateTable('passkeys')
-      .set({ friendly_name: friendlyName })
-      .where('id', '=', id as any)
-      .where('user_id', '=', auth.user_id as any)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (Number(result.numUpdatedRows) === 0) {
-      throw new NotFoundError('Passkey not found.');
-    }
-    return { success: true };
+    return { verified: true };
   }
 }
+
+function getExpectedOrigins(): string[] {
+  const origins: string[] = [env.appUrl];
+  if (env.apiUrl !== env.appUrl) {
+    try {
+      origins.push(new URL(env.apiUrl).origin);
+    } catch {}
+  }
+  return origins;
+}
+
+const rpID = env.webAuthnRpId;
+const rpName = env.webAuthnRpName;
