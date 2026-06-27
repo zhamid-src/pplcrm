@@ -38,17 +38,17 @@ export class EmailClient {
   protected mobileView = this.stateStore.mobilePanelView;
 
   protected folderPanelClass = computed(() =>
-    this.mobileView() === 'folders' ? 'flex-1 lg:flex-none' : 'hidden lg:block',
+    this.mobileView() === 'folders' ? 'flex-1 md:flex-none' : 'hidden md:block',
   );
 
   protected listPanelClass = computed(() =>
-    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 lg:flex-none' : 'hidden lg:flex lg:flex-col lg:h-full',
+    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 md:flex-none' : 'hidden md:flex md:flex-col md:h-full',
   );
 
   protected detailPanelClass = computed(() =>
     this.mobileView() === 'detail'
       ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
-      : 'hidden lg:flex lg:flex-col lg:flex-1 lg:h-full lg:p-4 lg:pt-2 lg:relative lg:z-10',
+      : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:p-4 md:pt-2 md:relative md:z-10',
   );
 
   constructor() {

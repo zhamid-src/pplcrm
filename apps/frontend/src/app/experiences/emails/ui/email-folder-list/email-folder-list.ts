@@ -30,33 +30,33 @@ export class EmailFolderList implements OnInit {
   protected readonly asideClass = computed(
     () =>
       'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
-      'w-full lg:hover:w-48 ' +
-      (this.foldersCollapsed() ? 'lg:w-12' : 'lg:w-12 xl:w-48'),
+      'w-full md:w-12 ' +
+      (this.foldersCollapsed() ? 'lg:w-12 lg:hover:w-48' : 'lg:w-48'),
   );
 
-  // Labels: always visible on mobile (< lg); on desktop hidden unless hovered or xl+ and not collapsed
+  // Labels: visible on small (< md); hidden on md (collapsed); on lg+ hidden unless hovered or not collapsed
   protected readonly labelClass = computed(
-    () => 'block lg:hidden lg:group-hover:block' + (this.foldersCollapsed() ? '' : ' xl:block'),
+    () => 'block md:hidden lg:group-hover:block' + (this.foldersCollapsed() ? '' : ' lg:block'),
   );
 
   protected readonly countClass = computed(
     () =>
-      'text-xs tabular-nums font-normal block lg:hidden lg:group-hover:block' +
-      (this.foldersCollapsed() ? '' : ' xl:block'),
+      'text-xs tabular-nums font-normal block md:hidden lg:group-hover:block' +
+      (this.foldersCollapsed() ? '' : ' lg:block'),
   );
 
   protected readonly sectionHeaderClass = computed(
     () =>
-      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none flex lg:hidden lg:group-hover:flex' +
-      (this.foldersCollapsed() ? '' : ' xl:flex'),
+      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none flex md:hidden lg:group-hover:flex' +
+      (this.foldersCollapsed() ? '' : ' lg:flex'),
   );
 
   protected readonly buttonLabelClass = computed(
-    () => 'inline lg:hidden lg:group-hover:inline' + (this.foldersCollapsed() ? '' : ' xl:inline'),
+    () => 'inline md:hidden lg:group-hover:inline' + (this.foldersCollapsed() ? '' : ' lg:inline'),
   );
 
   protected readonly separatorClass = computed(
-    () => 'h-px bg-base-300 my-2' + (this.foldersCollapsed() ? ' mx-1' : ' mx-1 xl:mx-3'),
+    () => 'h-px bg-base-300 my-2' + (this.foldersCollapsed() ? ' mx-1' : ' mx-1 lg:mx-3'),
   );
 
   public emitNewEmail() {
