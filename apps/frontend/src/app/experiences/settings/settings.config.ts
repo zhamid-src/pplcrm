@@ -1,4 +1,4 @@
-import { PcIconNameType } from '@icons/icons.index';
+import type { PcIconNameType } from '@icons/icons.index';
 
 export type SettingsFieldType =
   | 'text'
@@ -105,6 +105,14 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         type: 'textarea',
         placeholder: 'Paid for by PeopleCRM Campaign…',
         defaultValue: '',
+        helper: 'Appended to the bottom of every newsletter, above the unsubscribe link.',
+      },
+      {
+        key: 'communications.double_opt_in',
+        label: 'Require Double Opt-in',
+        type: 'toggle',
+        defaultValue: false,
+        helper: 'Require new web-form subscribers to confirm via email before they receive newsletters.',
       },
     ],
   },
@@ -195,45 +203,9 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
     ],
   },
   {
-    id: 'data',
-    title: 'People & Data',
-    description: 'Import, tagging, and data retention across the tenant.',
-    icon: 'users',
-    fields: [
-      {
-        key: 'data.import_strategy',
-        label: 'Import Deduplication Strategy',
-        type: 'select',
-        defaultValue: 'email',
-        options: [
-          { label: 'Email only', value: 'email' },
-          { label: 'Phone only', value: 'phone' },
-          { label: 'Email + Phone', value: 'email_phone' },
-          { label: 'Loose match', value: 'loose' },
-        ],
-      },
-      {
-        key: 'data.auto_tag',
-        label: 'Automatic Tag for Imports',
-        type: 'text',
-        placeholder: 'New Prospect',
-        defaultValue: '',
-      },
-      { key: 'data.retention_days', label: 'Data Retention (days)', type: 'number', defaultValue: 365 },
-      { key: 'data.double_opt_in', label: 'Require Double Opt-in', type: 'toggle', defaultValue: true },
-      {
-        key: 'data.gdpr_contact',
-        label: 'Privacy Contact Email',
-        type: 'email',
-        placeholder: 'privacy@example.com',
-        defaultValue: '',
-      },
-    ],
-  },
-  {
     id: 'access',
     title: 'Teams & Access',
-    description: 'Role defaults, session policies, and volunteer controls.',
+    description: 'Default role for new invites and tenant-wide MFA enforcement.',
     icon: 'user-group',
     fields: [
       {
@@ -248,22 +220,12 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
         ],
       },
       {
-        key: 'access.invite_requires_approval',
-        label: 'Require Admin Approval for Invites',
+        key: 'access.mfa_required',
+        label: 'Require MFA for all users',
         type: 'toggle',
         defaultValue: false,
+        helper: 'Force email verification codes for every user signing in from a new device or location.',
       },
-      { key: 'access.mfa_required', label: 'Require MFA for all users', type: 'toggle', defaultValue: false },
-      { key: 'access.enforce_strong_passwords', label: 'Enforce Strong Passwords', type: 'toggle', defaultValue: true },
-      {
-        key: 'access.allowed_ips',
-        label: 'Allowed IP Ranges (comma separated)',
-        type: 'text',
-        placeholder: '192.168.1.1/24',
-        defaultValue: '',
-      },
-      { key: 'access.session_timeout_minutes', label: 'Session Timeout (minutes)', type: 'number', defaultValue: 60 },
-      { key: 'access.volunteer_self_signup', label: 'Allow Volunteer Self-signup', type: 'toggle', defaultValue: true },
     ],
   },
 

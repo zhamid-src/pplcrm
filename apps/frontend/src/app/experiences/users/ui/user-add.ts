@@ -8,6 +8,7 @@ import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-head
 
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SettingsService } from '../../settings/services/settings-service';
 
 @Component({
   selector: 'pc-user-add',
@@ -20,6 +21,7 @@ export class UserAddComponent implements OnInit {
   private readonly router = inject(Router);
   private readonly users = inject(UserAdminService);
   private readonly auth = inject(AuthService);
+  private readonly settings = inject(SettingsService);
 
   protected readonly error = signal<string | null>(null);
 
@@ -40,7 +42,7 @@ export class UserAddComponent implements OnInit {
 
   protected readonly submitting = signal(false);
 
-  public ngOnInit(): void {
+  public async ngOnInit(): Promise<void> {
     const state = window.history.state;
     if (state && state.cloneData) {
       const data = state.cloneData;
@@ -50,6 +52,18 @@ export class UserAddComponent implements OnInit {
         last_name: data.last_name || '',
         role: data.role || '',
       });
+      return;
+    }
+
+    // Prefill the role with the tenant's configured default invite role (best-effort).
+    try {
+      await this.settings.load();
+      const defaultRole = this.settings.getValue<string>('access.default_role');
+      if (defaultRole) {
+        this.payload.update((p) => ({ ...p, role: defaultRole }));
+      }
+    } catch {
+      // Ignore — fall back to the built-in default role.
     }
   }
 

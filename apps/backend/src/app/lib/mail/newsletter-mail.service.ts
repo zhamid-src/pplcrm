@@ -4,6 +4,7 @@ import { InternalError } from '../../errors/app-errors';
 export interface SendNewsletterOptions {
   fromName: string;
   fromEmail: string;
+  replyTo?: string;
   recipients: string[];
   subject: string;
   html: string;
@@ -21,10 +22,12 @@ export class NewsletterEmailService {
     if (!apiKey) {
       console.info(`[SENDGRID DEV MOCK] Newsletter Outbound:
         From: "${options.fromName}" <${options.fromEmail}>
+        Reply-To: ${options.replyTo || '(none)'}
         Recipients Count: ${options.recipients.length}
         Recipients: ${options.recipients.join(', ')}
         Subject: ${options.subject}
         HTML Length: ${options.html.length} chars
+        HTML Tail: ${options.html.slice(-300)}
       `);
       return options.recipients.length;
     }
@@ -58,6 +61,7 @@ export class NewsletterEmailService {
           email: options.fromEmail,
           name: options.fromName,
         },
+        ...(options.replyTo ? { reply_to: { email: options.replyTo } } : {}),
         subject: options.subject,
         content: [
           {
@@ -81,6 +85,14 @@ export class NewsletterEmailService {
               },
             }
           : {}),
+        // Enable subscription tracking so SendGrid replaces the `<% unsubscribe %>` substitution tag in
+        // the server-appended footer with a working, per-recipient unsubscribe URL.
+        tracking_settings: {
+          subscription_tracking: {
+            enable: true,
+            substitution_tag: '<% unsubscribe %>',
+          },
+        },
       };
 
       try {

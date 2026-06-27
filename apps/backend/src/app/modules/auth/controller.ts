@@ -543,6 +543,16 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const email = input.email.toLowerCase();
     await this.verifyUserDoesNotExist(email);
 
+    // Fall back to the tenant's configured default invite role when the caller didn't specify one.
+    let role = input.role ?? null;
+    if (!role) {
+      const defaultRole = await this.getTenantSetting(auth.tenant_id, 'access.default_role');
+      if (typeof defaultRole === 'string' && defaultRole.trim()) role = defaultRole.trim();
+    }
+    if (callerRole === 'admin' && role === 'owner') {
+      throw new ForbiddenError('Admins cannot invite users with the Owner role.');
+    }
+
     const tempPassword = this.generateTempPassword();
     const password = await hashPassword(tempPassword);
     const repo = this.getRepo();
@@ -553,7 +563,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         email,
         password,
         first_name: input.first_name,
-        role: input.role ?? null,
+        role,
         verified: false,
         createdby_id: auth.user_id,
         updatedby_id: auth.user_id,
@@ -993,8 +1003,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       );
     }
 
+    // Tenant-wide MFA enforcement: when enabled, every user gets the email-OTP challenge on a new
+    // device/location, even if they never individually enabled two-factor auth.
+    const tenantMfaRequired = (await this.getTenantSetting(user.tenant_id, 'access.mfa_required')) === true;
     const requires2FA =
-      user.two_factor_enabled && (await this.isNewDeviceOrLocation(String(user.id), ipAddress, userAgent));
+      (user.two_factor_enabled || tenantMfaRequired) &&
+      (await this.isNewDeviceOrLocation(String(user.id), ipAddress, userAgent));
 
     if (requires2FA) {
       const otpCode = randomInt(100000, 1000000).toString();
@@ -1718,6 +1732,18 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return randomBytes(Math.max(12, Math.ceil(length / 2)))
       .toString('base64url')
       .slice(0, length);
+  }
+
+  /** Reads a single tenant configuration value from the settings key/value table. */
+  private async getTenantSetting(tenant_id: string | number | null | undefined, key: string): Promise<unknown> {
+    if (tenant_id === null || tenant_id === undefined) return undefined;
+    const row = await this.getRepo()
+      .db.selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('key', '=', key)
+      .executeTakeFirst();
+    return row?.value;
   }
 
   private async getCodeAge(code: string): Promise<number> {

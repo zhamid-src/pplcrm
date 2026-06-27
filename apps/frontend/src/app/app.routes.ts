@@ -31,19 +31,21 @@ export const appRoutes = [
       import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
   },
   {
-    path: 'verify-email',
+    path: 'confirm-subscription',
     loadComponent: () =>
-      import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
+      import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
+  },
+  {
+    path: 'verify-email',
+    loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
   },
   {
     path: 'cancel-deletion',
-    loadComponent: () =>
-      import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
+    loadComponent: () => import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
   },
   {
     path: 'resume-account',
-    loadComponent: () =>
-      import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
+    loadComponent: () => import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
   },
 
   // Main dashboard shell + children (protected)

@@ -284,6 +284,8 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   facebook: string | null;
   instagram: string | null;
   assigned_to: string | null;
+  opt_in_status: string | null;
+  opt_in_confirmed_at: Timestamp | null;
 }
 
 interface Profiles extends RecordType, AddressType {

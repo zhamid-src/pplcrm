@@ -5,6 +5,7 @@ import type { Models } from '../../../../../../libs/common/src/lib/kysely.models
 import { type Transaction, sql } from 'kysely';
 import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
+import { createSigner, createVerifier } from 'fast-jwt';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
 import { HouseholdRepo } from '../households/repositories/households.repo';
 
@@ -295,6 +296,10 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 
         const campaignId = await this.getCampaignId(tenantId, trx);
 
+        // When the tenant requires double opt-in, new subscribers are created as 'pending' and only
+        // counted once they confirm via the emailed link (see confirm-subscription route).
+        const doubleOptIn = await this.isDoubleOptInEnabled(tenantId, trx);
+
         let finalHouseholdId = householdId;
 
         const street1 = (payload['street1'] || payload['street_address'] || '').trim();
@@ -401,6 +406,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
             email: email,
             mobile: mobile,
             notes: notes,
+            opt_in_status: doubleOptIn ? 'pending' : null,
           };
           const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
           personId = String(insertRes.id);
@@ -411,6 +417,16 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
             await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
           } catch (err) {
             console.error('Failed to trigger contact_created workflow in WebFormsController:', err);
+          }
+
+          // Queue the double opt-in confirmation email (transactional outbox) for brand-new subscribers.
+          if (doubleOptIn) {
+            await this.enqueueSubscriptionConfirmation(trx, {
+              tenantId,
+              personId,
+              email,
+              firstName,
+            });
           }
         }
 
@@ -602,6 +618,95 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     }
 
     return { redirect_url: form.redirect_url || null };
+  }
+
+  /**
+   * Confirms a pending double opt-in subscription from a signed link. Public (unauthenticated) — the
+   * token carries the tenant and person identity. Idempotent: an already-confirmed person stays confirmed.
+   */
+  public async confirmSubscription(token: string): Promise<{ success: boolean }> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Server misconfiguration: SHARED_SECRET is missing.',
+      });
+    }
+
+    const verifier = createVerifier({ algorithms: ['HS256'], key, ignoreExpiration: false });
+
+    let payload: any;
+    try {
+      payload = await verifier(token);
+    } catch {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This confirmation link is invalid or has expired.' });
+    }
+
+    if (!payload || payload.purpose !== 'confirm-subscription' || !payload.tenant_id || !payload.person_id) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
+    }
+
+    await this.getRepo()
+      .db.updateTable('persons')
+      .set({ opt_in_status: 'confirmed', opt_in_confirmed_at: sql`now()` } as any)
+      .where('tenant_id', '=', String(payload.tenant_id) as any)
+      .where('id', '=', String(payload.person_id) as any)
+      .execute();
+
+    return { success: true };
+  }
+
+  private async isDoubleOptInEnabled(tenantId: string, trx: Transaction<Models>): Promise<boolean> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId as any)
+      .where('key', '=', 'communications.double_opt_in')
+      .executeTakeFirst();
+
+    return row?.value === true || row?.value === 'true';
+  }
+
+  /**
+   * Inserts a transactional-outbox job that emails a new subscriber a signed confirmation link. The job
+   * runs only if the surrounding submission transaction commits, keeping the pending person and the
+   * confirmation email consistent.
+   */
+  private async enqueueSubscriptionConfirmation(
+    trx: Transaction<Models>,
+    args: { tenantId: string; personId: string; email: string; firstName: string | null },
+  ): Promise<void> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      console.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
+      return;
+    }
+
+    const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '7d' });
+    const token = signer({
+      tenant_id: args.tenantId,
+      person_id: args.personId,
+      email: args.email.toLowerCase().trim(),
+      purpose: 'confirm-subscription',
+    });
+    const confirmUrl = `${env.appUrl}/confirm-subscription?token=${token}`;
+
+    await trx
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: args.tenantId as any,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-subscription-confirmation',
+          tenantId: args.tenantId,
+          email: args.email,
+          firstName: args.firstName,
+          confirmUrl,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
   }
 
   private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
