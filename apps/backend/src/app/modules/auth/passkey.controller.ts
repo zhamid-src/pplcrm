@@ -42,6 +42,7 @@ export class PasskeyController {
       .selectFrom('authusers')
       .select(['id', 'email', 'first_name', 'last_name'])
       .where('id', '=', auth.user_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .executeTakeFirst();
 
     if (!user) throw new NotFoundError('User not found');
@@ -95,6 +96,7 @@ export class PasskeyController {
       .selectFrom('authusers')
       .select('tenant_id')
       .where('id', '=', auth.user_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .executeTakeFirstOrThrow();
 
     await this.db
@@ -141,7 +143,6 @@ export class PasskeyController {
     const challenge = consumeChallenge(`auth:${nonce}`);
     if (!challenge) throw new UnauthorizedError('Authentication challenge expired. Please try again.');
 
-     
     const passkey = await this.db
       .selectFrom('passkeys')
       .selectAll()
@@ -166,7 +167,6 @@ export class PasskeyController {
 
     if (!verification.verified) throw new UnauthorizedError('Passkey authentication failed.');
 
-     
     await this.db
       .updateTable('passkeys')
       .set({ counter: verification.authenticationInfo.newCounter as any })
