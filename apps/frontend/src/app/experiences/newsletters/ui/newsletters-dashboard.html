@@ -1,12 +1,21 @@
 <div class="mb-6 rounded-xl border border-base-300 bg-base-100/50 p-6 shadow-sm backdrop-blur-md">
-  <div class="flex items-center justify-between border-b border-base-200 pb-4">
+  <div class="flex flex-col gap-3 border-b border-base-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
     <div>
       <h2 class="text-lg font-bold tracking-tight text-base-content">Delivery & Engagement Analytics</h2>
       <p class="text-xs text-base-content/60">Performance overview of your dispatched marketing campaigns</p>
     </div>
-    <button class="btn btn-xs btn-outline btn-ghost gap-1 font-medium capitalize" (click)="collapsed.set(!collapsed())">
-      {{ collapsed() ? 'show dashboard' : 'hide dashboard' }}
-    </button>
+    <div class="flex items-center justify-center gap-2 sm:justify-end">
+      <a class="btn btn-sm btn-primary gap-1 font-medium" routerLink="add">
+        <pc-icon name="plus" [size]="3"></pc-icon>
+        New Newsletter
+      </a>
+      <button
+        class="btn btn-sm btn-outline btn-ghost gap-1 font-medium capitalize"
+        (click)="collapsed.set(!collapsed())"
+      >
+        {{ collapsed() ? 'show dashboard' : 'hide dashboard' }}
+      </button>
+    </div>
   </div>
 
   @if (!collapsed()) {

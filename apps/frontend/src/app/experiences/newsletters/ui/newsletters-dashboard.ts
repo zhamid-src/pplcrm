@@ -1,4 +1,6 @@
 import { Component, input, computed, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
 
 interface DashboardStats {
   totalSent: number;
@@ -11,6 +13,7 @@ interface DashboardStats {
 @Component({
   selector: 'pc-newsletters-dashboard',
   standalone: true,
+  imports: [RouterLink, Icon],
   templateUrl: './newsletters-dashboard.html',
   styles: [
     `
