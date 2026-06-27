@@ -420,8 +420,10 @@ apps/
                 grid-context.service.ts
               ui/
                 datagrid-columns-dropdown.ts
+                datagrid-filter-dropdown.ts
                 datagrid-filter-panel.html
                 datagrid-filter-panel.ts
+                datagrid-filter-section.ts
                 datagrid-inline-filters-row.html
                 datagrid-inline-filters-row.ts
                 datagrid-row.ts
@@ -3364,6 +3366,271 @@ function toNum(n: unknown): number | undefined {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/emails/services/store/emailstore.ts
+
+```typescript
+import { computed, inject, signal, Service, debounced, effect, untracked } from '@angular/core';
+import { Router } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+import { EmailStatus } from '../../../../../../../../libs/common/src';
+
+import { EmailsService } from '../emails-service';
+import { EmailActionsStore } from './email-actions.store';
+import { EmailCacheStore } from './email-cache.store';
+import { EmailFoldersStore } from './email-folders.store';
+import { type EmailId, EmailStateStore } from './email-state.store';
+import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
+
+@Service()
+export class EmailsStore {
+  // ----------------- Lazy per-email fallback -----------------
+  //  private readonly _checked = new Set<string>();
+  private readonly router = inject(Router);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly actions = inject(EmailActionsStore);
+  private readonly cache = inject(EmailCacheStore);
+  private readonly emailSvc = inject(EmailsService);
+
+  private readonly _isSyncing = signal(false);
+  public readonly isSyncing = this._isSyncing.asReadonly();
+
+  /*
+  private readonly ensureHasAttachmentOnOpen = effect(() => {
+    const id = this.currentSelectedEmailId();
+    if (!id) return;
+
+    // Skip if already known or in-flight
+    if (this.state.hasAttachment(id)() !== undefined) return;
+    if (this._checked.has(id)) return;
+    this._checked.add(id);
+
+    // Ask backend for this one email
+    this.emailSvc
+      .hasAttachment(id)
+      .then((has) => {
+        this.state.setHasAttachment(id, !!has);
+      })
+      .catch(() => {
+        // leave as undefined on error; next open can retry
+        this._checked.delete(id);
+      });
+  });
+  */
+  private readonly folders = inject(EmailFoldersStore);
+  private readonly state = inject(EmailStateStore);
+
+  public readonly allFolders = this.folders.allFolders;
+
+  public readonly currentSelectedEmail = this.state.currentSelectedEmail;
+
+  public readonly currentSelectedEmailId = this.state.currentSelectedEmailId;
+
+  public readonly currentSelectedFolderId = this.folders.currentSelectedFolderId;
+
+  public readonly hasMore = this.folders.hasMore;
+  public readonly isLoadingMore = this.folders.isLoadingMore;
+
+  public readonly emailsInSelectedFolder = computed(() => {
+    const fid = this.folders.currentSelectedFolderId();
+    if (!fid) return [] as EmailType[];
+    return this.state.emailsInFolderWithFlags(fid)();
+  });
+  public readonly emailsLoading = this.folders.isLoading;
+
+  // ----------------- Cache computed factories -----------------
+  public readonly getEmailBodyById = this.cache.getEmailBodyById;
+  public readonly getEmailHeaderById = this.cache.getEmailHeaderById;
+  public readonly getEmailActivitiesById = this.cache.getEmailActivitiesById;
+
+  public readonly isBodyExpanded = this.state.isBodyExpanded;
+
+  private debouncedSelectedEmailId = debounced(this.state.currentSelectedEmailId, 1000);
+
+  constructor() {
+    effect(() => {
+      // The effect tracks this because it's OUTSIDE untracked()
+      const targetId = this.debouncedSelectedEmailId.value();
+
+      if (targetId) {
+        // Run the email lookup and update INSIDE untracked()
+        // Now, if the user manually changes 'is_read' to false, this effect will NOT re-run.
+        untracked(() => {
+          const emailObj = this.state.readEmail(targetId);
+
+          if (emailObj && !emailObj.is_read) {
+            void this.actions.toggleEmailReadStatus(targetId, true);
+          }
+        });
+      }
+    });
+  }
+
+  // ----------------- Mutations (actions) -----------------
+  public addComment(emailId: EmailId, authorId: string, commentText: string) {
+    return this.actions.addComment(emailId, authorId, commentText);
+  }
+
+  public assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null) {
+    return this.actions.assignEmailToUser(emailId, userId, assigneeName);
+  }
+
+  public deleteComment(emailId: EmailId, commentId: string | number) {
+    return this.actions.deleteComment(emailId, commentId);
+  }
+
+  public deleteEmail(emailId: EmailId) {
+    return this.actions.deleteEmail(emailId);
+  }
+
+  // ----------------- Loads -----------------
+  public loadAllFolders() {
+    return this.folders.loadAllFolders();
+  }
+
+  public loadAllFoldersWithCounts() {
+    return this.folders.loadAllFoldersWithCounts();
+  }
+
+  public loadEmailBody(emailId: EmailId) {
+    return this.cache.loadEmailBody(emailId);
+  }
+
+  public loadEmailWithHeaders(emailId: EmailId) {
+    return this.cache.loadEmailWithHeaders(emailId);
+  }
+
+  public refreshEmailHeader(emailId: EmailId) {
+    return this.cache.refreshEmailHeader(emailId);
+  }
+
+  public loadEmailActivities(emailId: EmailId) {
+    return this.cache.loadEmailActivities(emailId);
+  }
+
+  public async loadEmailsForFolder(folderId: EmailId) {
+    const rows = await this.folders.loadEmailsForFolder(String(folderId));
+
+    // Prefer IDs from the response; fallback to state if needed
+    const ids =
+      (Array.isArray(rows) ? rows.map((e: any) => String(e.id)) : []) ||
+      this.state.emailIdsByFolderId()[String(folderId)] ||
+      [];
+
+    if (!ids.length) return rows;
+
+    try {
+      const partial: Partial<Record<string, boolean>> = await this.emailSvc.hasAttachmentByEmailIds(ids as string[]);
+
+      const merged: Record<string, boolean> = {};
+      for (const id of ids) {
+        const key = String(id); // <- normalize the key
+        merged[key] = !!partial[key];
+      }
+      this.state.setManyHasAttachment(merged);
+    } catch {
+      // ignore failures; UI can lazily resolve per-email elsewhere
+    }
+
+    return rows;
+  }
+
+  public refreshFolderCounts() {
+    return this.folders.refreshFolderCounts();
+  }
+
+  public restoreFromTrash(emailId: EmailId) {
+    return this.actions.restoreFromTrash(emailId);
+  }
+
+  public selectEmail(email: EmailType | { id: EmailId } | null): void {
+    this.state.selectEmail(email);
+  }
+
+  public selectFolder(folder: EmailFolderType | null): void {
+    this.folders.selectFolder(folder);
+  }
+
+  public toggleBodyExpanded(): void {
+    this.state.toggleBodyExpanded();
+  }
+
+  public toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean) {
+    return this.actions.toggleEmailFavoriteStatus(emailId, isFavorite);
+  }
+
+  public toggleEmailReadStatus(emailId: EmailId, isRead: boolean) {
+    return this.actions.toggleEmailReadStatus(emailId, isRead);
+  }
+
+  public moveToFolder(emailId: EmailId, folderId: string) {
+    return this.actions.moveToFolder(emailId, folderId);
+  }
+
+  public loadNextPage() {
+    return this.folders.loadNextPage();
+  }
+
+  public updateEmailStatus(emailId: EmailId, status: EmailStatus) {
+    return this.actions.updateEmailStatus(emailId, status);
+  }
+
+  // ----------------- Syncing -----------------
+  public async syncEmails() {
+    this._isSyncing.set(true);
+    try {
+      const result = await this.emailSvc.syncEmails();
+
+      // Poll status every 3 seconds for up to 5 minutes (100 attempts)
+      let attempts = 0;
+      while (attempts < 100) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const active = await this.emailSvc.isAnySyncing();
+        if (!active) {
+          break;
+        }
+        attempts++;
+      }
+
+      // Reload current folder emails and counts
+      const currentFolderId = this.currentSelectedFolderId();
+      if (currentFolderId) {
+        await this.loadEmailsForFolder(currentFolderId);
+      }
+      await this.refreshFolderCounts();
+      this.alerts.showSuccess('Sync complete!');
+      return result;
+    } catch (e: any) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (
+        msg.includes('No email accounts connected') ||
+        msg.includes('No Microsoft account connected') ||
+        msg.includes('No Google account connected') ||
+        msg.includes('Token refresh failed')
+      ) {
+        const confirmed = await this.dialogs.confirm({
+          title: 'Email Account Connection Required',
+          message:
+            'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
+          variant: 'warning',
+          confirmText: 'Go to Settings',
+          cancelText: 'Cancel',
+        });
+        if (confirmed) {
+          void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });
+        }
+      } else {
+        this.alerts.showError(`Sync failed: ${msg}`);
+      }
+      throw e;
+    } finally {
+      this._isSyncing.set(false);
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/emails/ui/email-activities/email-activities.html
 
 ```html
@@ -4551,6 +4818,146 @@ export class FilesService extends AbstractAPIService<'files', any> {
   </div>
   }
 </div>
+```
+
+## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
+
+```typescript
+import { Component, inject, signal, OnInit } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { FilesService } from '../services/files.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TokenService } from '../../../services/api/token-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { environment } from '../../../../environments/environment';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+
+@Component({
+  selector: 'pc-files-grid',
+  imports: [DatePipe, Icon],
+  templateUrl: './files-grid.html',
+  styles: [
+    `
+      :host {
+        display: block;
+        min-height: 100%;
+      }
+    `,
+  ],
+})
+export class FilesGrid implements OnInit {
+  private readonly filesSvc = inject(FilesService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly tokenSvc = inject(TokenService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly files = signal<any[]>([]);
+  protected readonly filteredFiles = signal<any[]>([]);
+  protected readonly isLoading = signal(false);
+  protected readonly isUploading = signal(false);
+  protected readonly searchQuery = signal('');
+
+  public ngOnInit() {
+    this.loadFiles();
+  }
+
+  protected async onFileSelectedForUpload(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input?.files?.[0];
+    if (!file) return;
+
+    this.isUploading.set(true);
+    try {
+      await this.filesSvc.uploadFileDirectly(file);
+      this.alertSvc.showSuccess('File uploaded successfully via SAS URL');
+      await this.loadFiles();
+    } catch (err) {
+      console.error(err);
+      this.alertSvc.showError('Failed to upload file');
+    } finally {
+      this.isUploading.set(false);
+      input.value = '';
+    }
+  }
+
+  protected async loadFiles() {
+    this.isLoading.set(true);
+    try {
+      const res = await this.filesSvc.getAll();
+      this.files.set(res.rows || []);
+      this.applyFilter();
+    } catch (err) {
+      this.alertSvc.showError('Failed to load files');
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  protected onSearch(event: Event) {
+    const val = (event.target as HTMLInputElement).value;
+    this.searchQuery.set(val);
+    this.applyFilter();
+  }
+
+  private applyFilter() {
+    const q = this.searchQuery().toLowerCase().trim();
+    if (!q) {
+      this.filteredFiles.set(this.files());
+      return;
+    }
+
+    const filtered = this.files().filter(
+      (f) => f.filename?.toLowerCase().includes(q) || f.mime_type?.toLowerCase().includes(q),
+    );
+    this.filteredFiles.set(filtered);
+  }
+
+  protected formatBytes(bytes: number | null | undefined): string {
+    if (bytes == null) return '—';
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  protected getFileIcon(mime: string | null | undefined): PcIconNameType {
+    if (!mime) return 'document';
+    if (mime.includes('image')) return 'file-image';
+    if (mime.includes('pdf')) return 'file-pdf';
+    if (mime.includes('audio')) return 'file-audio';
+    if (mime.includes('video')) return 'file-video';
+    if (mime.includes('zip') || mime.includes('tar') || mime.includes('gz')) return 'file-archive';
+    return 'document';
+  }
+
+  protected downloadFile(file: any) {
+    const token = this.tokenSvc.getAuthToken();
+    const url = `${environment.apiUrl}/api/files/download/${file.id}?token=${encodeURIComponent(token || '')}`;
+    window.open(url, '_blank');
+  }
+
+  protected async deleteFile(file: any) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Confirm Delete',
+      message: `Are you sure you want to permanently delete "${file.filename}"? This will clean up the database record and delete the file from cloud storage.`,
+      variant: 'danger',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+    });
+
+    if (!confirmed) return;
+
+    try {
+      await this.filesSvc.delete(file.id);
+      this.alertSvc.showSuccess('File deleted successfully');
+      await this.loadFiles();
+    } catch (err) {
+      this.alertSvc.showError('Failed to delete file');
+    }
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/services/forms-service.ts
@@ -17427,56 +17834,6 @@ export class GridContextService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
-
-```typescript
-import { Component, inject } from '@angular/core';
-import { DataGrid } from '../datagrid';
-
-/**
- * Column visibility dropdown shared by the mobile and desktop toolbars.
- * Rendered as the projected content of a `pc-grid-tool-btn` dropdown, so it
- * uses `display: contents` to stay a direct child of the DaisyUI `<details>`.
- */
-@Component({
-  selector: 'pc-dg-columns-dropdown',
-  template: `
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
-      <li class="px-2 py-1 flex gap-2">
-        <button class="btn btn-ghost btn-xs" (click)="grid.showAllColsPublic()">Show all</button>
-        <button class="btn btn-ghost btn-xs" (click)="grid.hideAllColsPublic()">Hide all</button>
-        <button class="btn btn-ghost btn-xs" (click)="grid.resetAllWidthsPublic()">Reset widths</button>
-      </li>
-      @for (col of grid.getColDefsForToolbar(); track col.field) {
-        @if (col.field) {
-          <li>
-            <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs"
-                [checked]="grid.getColVisibilityMap()[col.field!] !== false"
-                (change)="grid.toggleColPublic(col.field!, $any($event.target).checked)"
-              />
-              <span class="label-text">{{ col.headerName || col.field }}</span>
-            </label>
-          </li>
-        }
-      }
-    </ul>
-  `,
-  styles: [
-    `
-      :host {
-        display: contents;
-      }
-    `,
-  ],
-})
-export class DataGridColumnsDropdownComponent {
-  public readonly grid: any = inject(DataGrid);
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.html
 
 ```html
@@ -20474,6 +20831,168 @@ export class PledgesGridComponent implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/duplicates/base-duplicates-manager.ts
+
+```typescript
+import { inject, signal, computed, Directive } from '@angular/core';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+
+export interface DuplicateGroup<T> {
+  reason: string;
+  items: T[]; // Normalized array (replaces specific persons/households/companies arrays)
+  selectedTargetId?: string;
+  selectedSourceId?: string;
+}
+
+@Directive() // Needed for abstract classes using dependency injection in Angular
+export abstract class BaseDuplicateManager<T extends { id: string; created_at: string | Date }> {
+  protected readonly alertSvc = inject(AlertService);
+  protected readonly dialogs = inject(ConfirmDialogService);
+
+  public readonly isLoading = signal(false);
+  public readonly groups = signal<DuplicateGroup<T>[]>([]);
+
+  public readonly currentPage = signal(1);
+  public readonly pageSize = signal(10);
+  public readonly totalGroups = signal(0);
+  public readonly totalPages = computed(() => Math.ceil(this.totalGroups() / this.pageSize()));
+
+  // Abstract methods the child components must implement
+  protected abstract getEntityName(): string;
+  protected abstract getItemDisplayName(item: T): string;
+  protected abstract fetchFromService(options: {
+    page: number;
+    pageSize: number;
+  }): Promise<{ groups: any[]; total: number }>;
+  protected abstract getItemsFromRawGroup(rawGroup: any): T[];
+  protected abstract mergeInService(targetId: string, sourceId: string): Promise<void>;
+
+  public async loadDuplicates() {
+    this.isLoading.set(true);
+    try {
+      const response = await this.fetchFromService({
+        page: this.currentPage(),
+        pageSize: this.pageSize(),
+      });
+
+      this.totalGroups.set(response.total);
+
+      const mappedGroups: DuplicateGroup<T>[] = response.groups.map((g) => {
+        let selectedTargetId: string | undefined = undefined;
+        let selectedSourceId: string | undefined = undefined;
+        const items = this.getItemsFromRawGroup(g);
+
+        if (items.length === 2) {
+          const date0 = new Date(items[0]!.created_at).getTime();
+          const date1 = new Date(items[1]!.created_at).getTime();
+          if (date0 <= date1) {
+            selectedTargetId = items[0]!.id;
+            selectedSourceId = items[1]!.id;
+          } else {
+            selectedTargetId = items[1]!.id;
+            selectedSourceId = items[0]!.id;
+          }
+        }
+        return { reason: g.reason, items, selectedTargetId, selectedSourceId };
+      });
+      this.groups.set(mappedGroups);
+    } catch (err) {
+      this.alertSvc.showError(`Failed to fetch ${this.getEntityName()} duplicates`);
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  public selectRole(groupIndex: number, itemId: string, role: 'target' | 'source') {
+    this.groups.update((current) => {
+      const updated = [...current];
+
+      // 1. Create a shallow copy of the group to avoid mutating the original reference
+      const updatedGroup = { ...updated[groupIndex]! };
+
+      // 2. Apply your logic to the NEW object
+      if (role === 'target') {
+        updatedGroup.selectedTargetId = itemId;
+        if (updatedGroup.selectedSourceId === itemId) updatedGroup.selectedSourceId = undefined;
+      } else {
+        updatedGroup.selectedSourceId = itemId;
+        if (updatedGroup.selectedTargetId === itemId) updatedGroup.selectedTargetId = undefined;
+      }
+
+      // 3. Assign the new object back to the array
+      updated[groupIndex] = updatedGroup;
+
+      return updated;
+    });
+  }
+
+  public async mergeGroup(groupIndex: number) {
+    const group = this.groups()[groupIndex]!;
+    const targetId = group.selectedTargetId;
+    const sourceId = group.selectedSourceId;
+    if (!targetId || !sourceId) return;
+
+    const targetItem = group.items.find((i) => i.id === targetId)!;
+    const sourceItem = group.items.find((i) => i.id === sourceId)!;
+
+    const primaryName = this.getItemDisplayName(targetItem);
+    const dupName = this.getItemDisplayName(sourceItem);
+
+    const confirmed = await this.dialogs.confirm({
+      title: 'Confirm Merge',
+      message: `Are you sure you want to merge "${dupName}" into "${primaryName}"? This action will permanently delete this duplicate ${this.getEntityName()} and cannot be undone.`,
+      variant: 'warning',
+      confirmText: 'Merge',
+      cancelText: 'Cancel',
+    });
+
+    if (!confirmed) return;
+
+    try {
+      await this.mergeInService(targetId, sourceId);
+      this.alertSvc.showSuccess(`Successfully merged into "${primaryName}"`);
+
+      let updatedGroups = this.groups().filter((_, idx) => idx !== groupIndex);
+      updatedGroups = updatedGroups.map((g) => ({
+        ...g,
+        items: g.items.filter((i) => i.id !== sourceId),
+      }));
+
+      const initialLength = updatedGroups.length;
+      updatedGroups = updatedGroups.filter((g) => g.items.length > 1);
+      const groupsRemovedCount = 1 + (initialLength - updatedGroups.length);
+
+      this.groups.set(updatedGroups);
+      this.totalGroups.update((t) => Math.max(0, t - groupsRemovedCount));
+
+      if (updatedGroups.length === 0 && this.currentPage() > 1) {
+        this.currentPage.update((p) => p - 1);
+        this.loadDuplicates();
+      } else if (updatedGroups.length === 0 && this.totalGroups() > 0) {
+        this.loadDuplicates();
+      }
+    } catch (err: any) {
+      this.alertSvc.showError(err?.message || 'Merge failed');
+    }
+  }
+
+  public nextPage() {
+    if (this.currentPage() < this.totalPages()) {
+      this.currentPage.update((p) => p + 1);
+      this.loadDuplicates();
+    }
+  }
+
+  public prevPage() {
+    if (this.currentPage() > 1) {
+      this.currentPage.update((p) => p - 1);
+      this.loadDuplicates();
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/emails/services/store/email-state.store.ts
 
 ```typescript
@@ -20665,271 +21184,6 @@ function toNum(n: unknown): number {
   if (typeof n === 'string') return Number(n) || 0;
   if (typeof n === 'number') return n;
   return 0;
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/services/store/emailstore.ts
-
-```typescript
-import { computed, inject, signal, Service, debounced, effect, untracked } from '@angular/core';
-import { Router } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
-import { EmailStatus } from '../../../../../../../../libs/common/src';
-
-import { EmailsService } from '../emails-service';
-import { EmailActionsStore } from './email-actions.store';
-import { EmailCacheStore } from './email-cache.store';
-import { EmailFoldersStore } from './email-folders.store';
-import { type EmailId, EmailStateStore } from './email-state.store';
-import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Service()
-export class EmailsStore {
-  // ----------------- Lazy per-email fallback -----------------
-  //  private readonly _checked = new Set<string>();
-  private readonly router = inject(Router);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly actions = inject(EmailActionsStore);
-  private readonly cache = inject(EmailCacheStore);
-  private readonly emailSvc = inject(EmailsService);
-
-  private readonly _isSyncing = signal(false);
-  public readonly isSyncing = this._isSyncing.asReadonly();
-
-  /*
-  private readonly ensureHasAttachmentOnOpen = effect(() => {
-    const id = this.currentSelectedEmailId();
-    if (!id) return;
-
-    // Skip if already known or in-flight
-    if (this.state.hasAttachment(id)() !== undefined) return;
-    if (this._checked.has(id)) return;
-    this._checked.add(id);
-
-    // Ask backend for this one email
-    this.emailSvc
-      .hasAttachment(id)
-      .then((has) => {
-        this.state.setHasAttachment(id, !!has);
-      })
-      .catch(() => {
-        // leave as undefined on error; next open can retry
-        this._checked.delete(id);
-      });
-  });
-  */
-  private readonly folders = inject(EmailFoldersStore);
-  private readonly state = inject(EmailStateStore);
-
-  public readonly allFolders = this.folders.allFolders;
-
-  public readonly currentSelectedEmail = this.state.currentSelectedEmail;
-
-  public readonly currentSelectedEmailId = this.state.currentSelectedEmailId;
-
-  public readonly currentSelectedFolderId = this.folders.currentSelectedFolderId;
-
-  public readonly hasMore = this.folders.hasMore;
-  public readonly isLoadingMore = this.folders.isLoadingMore;
-
-  public readonly emailsInSelectedFolder = computed(() => {
-    const fid = this.folders.currentSelectedFolderId();
-    if (!fid) return [] as EmailType[];
-    return this.state.emailsInFolderWithFlags(fid)();
-  });
-  public readonly emailsLoading = this.folders.isLoading;
-
-  // ----------------- Cache computed factories -----------------
-  public readonly getEmailBodyById = this.cache.getEmailBodyById;
-  public readonly getEmailHeaderById = this.cache.getEmailHeaderById;
-  public readonly getEmailActivitiesById = this.cache.getEmailActivitiesById;
-
-  public readonly isBodyExpanded = this.state.isBodyExpanded;
-
-  private debouncedSelectedEmailId = debounced(this.state.currentSelectedEmailId, 1000);
-
-  constructor() {
-    effect(() => {
-      // The effect tracks this because it's OUTSIDE untracked()
-      const targetId = this.debouncedSelectedEmailId.value();
-
-      if (targetId) {
-        // Run the email lookup and update INSIDE untracked()
-        // Now, if the user manually changes 'is_read' to false, this effect will NOT re-run.
-        untracked(() => {
-          const emailObj = this.state.readEmail(targetId);
-
-          if (emailObj && !emailObj.is_read) {
-            void this.actions.toggleEmailReadStatus(targetId, true);
-          }
-        });
-      }
-    });
-  }
-
-  // ----------------- Mutations (actions) -----------------
-  public addComment(emailId: EmailId, authorId: string, commentText: string) {
-    return this.actions.addComment(emailId, authorId, commentText);
-  }
-
-  public assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null) {
-    return this.actions.assignEmailToUser(emailId, userId, assigneeName);
-  }
-
-  public deleteComment(emailId: EmailId, commentId: string | number) {
-    return this.actions.deleteComment(emailId, commentId);
-  }
-
-  public deleteEmail(emailId: EmailId) {
-    return this.actions.deleteEmail(emailId);
-  }
-
-  // ----------------- Loads -----------------
-  public loadAllFolders() {
-    return this.folders.loadAllFolders();
-  }
-
-  public loadAllFoldersWithCounts() {
-    return this.folders.loadAllFoldersWithCounts();
-  }
-
-  public loadEmailBody(emailId: EmailId) {
-    return this.cache.loadEmailBody(emailId);
-  }
-
-  public loadEmailWithHeaders(emailId: EmailId) {
-    return this.cache.loadEmailWithHeaders(emailId);
-  }
-
-  public refreshEmailHeader(emailId: EmailId) {
-    return this.cache.refreshEmailHeader(emailId);
-  }
-
-  public loadEmailActivities(emailId: EmailId) {
-    return this.cache.loadEmailActivities(emailId);
-  }
-
-  public async loadEmailsForFolder(folderId: EmailId) {
-    const rows = await this.folders.loadEmailsForFolder(String(folderId));
-
-    // Prefer IDs from the response; fallback to state if needed
-    const ids =
-      (Array.isArray(rows) ? rows.map((e: any) => String(e.id)) : []) ||
-      this.state.emailIdsByFolderId()[String(folderId)] ||
-      [];
-
-    if (!ids.length) return rows;
-
-    try {
-      const partial: Partial<Record<string, boolean>> = await this.emailSvc.hasAttachmentByEmailIds(ids as string[]);
-
-      const merged: Record<string, boolean> = {};
-      for (const id of ids) {
-        const key = String(id); // <- normalize the key
-        merged[key] = !!partial[key];
-      }
-      this.state.setManyHasAttachment(merged);
-    } catch {
-      // ignore failures; UI can lazily resolve per-email elsewhere
-    }
-
-    return rows;
-  }
-
-  public refreshFolderCounts() {
-    return this.folders.refreshFolderCounts();
-  }
-
-  public restoreFromTrash(emailId: EmailId) {
-    return this.actions.restoreFromTrash(emailId);
-  }
-
-  public selectEmail(email: EmailType | { id: EmailId } | null): void {
-    this.state.selectEmail(email);
-  }
-
-  public selectFolder(folder: EmailFolderType | null): void {
-    this.folders.selectFolder(folder);
-  }
-
-  public toggleBodyExpanded(): void {
-    this.state.toggleBodyExpanded();
-  }
-
-  public toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean) {
-    return this.actions.toggleEmailFavoriteStatus(emailId, isFavorite);
-  }
-
-  public toggleEmailReadStatus(emailId: EmailId, isRead: boolean) {
-    return this.actions.toggleEmailReadStatus(emailId, isRead);
-  }
-
-  public moveToFolder(emailId: EmailId, folderId: string) {
-    return this.actions.moveToFolder(emailId, folderId);
-  }
-
-  public loadNextPage() {
-    return this.folders.loadNextPage();
-  }
-
-  public updateEmailStatus(emailId: EmailId, status: EmailStatus) {
-    return this.actions.updateEmailStatus(emailId, status);
-  }
-
-  // ----------------- Syncing -----------------
-  public async syncEmails() {
-    this._isSyncing.set(true);
-    try {
-      const result = await this.emailSvc.syncEmails();
-
-      // Poll status every 3 seconds for up to 5 minutes (100 attempts)
-      let attempts = 0;
-      while (attempts < 100) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        const active = await this.emailSvc.isAnySyncing();
-        if (!active) {
-          break;
-        }
-        attempts++;
-      }
-
-      // Reload current folder emails and counts
-      const currentFolderId = this.currentSelectedFolderId();
-      if (currentFolderId) {
-        await this.loadEmailsForFolder(currentFolderId);
-      }
-      await this.refreshFolderCounts();
-      this.alerts.showSuccess('Sync complete!');
-      return result;
-    } catch (e: any) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (
-        msg.includes('No email accounts connected') ||
-        msg.includes('No Microsoft account connected') ||
-        msg.includes('No Google account connected') ||
-        msg.includes('Token refresh failed')
-      ) {
-        const confirmed = await this.dialogs.confirm({
-          title: 'Email Account Connection Required',
-          message:
-            'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
-          variant: 'warning',
-          confirmText: 'Go to Settings',
-          cancelText: 'Cancel',
-        });
-        if (confirmed) {
-          void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });
-        }
-      } else {
-        this.alerts.showError(`Sync failed: ${msg}`);
-      }
-      throw e;
-    } finally {
-      this._isSyncing.set(false);
-    }
-  }
 }
 ```
 
@@ -23207,146 +23461,6 @@ export class EventsFrontendService extends AbstractAPIService<'events', UpdateEv
   </div>
   }
 </pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
-
-```typescript
-import { Component, inject, signal, OnInit } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { FilesService } from '../services/files.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { TokenService } from '../../../services/api/token-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { environment } from '../../../../environments/environment';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-files-grid',
-  imports: [DatePipe, Icon],
-  templateUrl: './files-grid.html',
-  styles: [
-    `
-      :host {
-        display: block;
-        min-height: 100%;
-      }
-    `,
-  ],
-})
-export class FilesGrid implements OnInit {
-  private readonly filesSvc = inject(FilesService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly tokenSvc = inject(TokenService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly files = signal<any[]>([]);
-  protected readonly filteredFiles = signal<any[]>([]);
-  protected readonly isLoading = signal(false);
-  protected readonly isUploading = signal(false);
-  protected readonly searchQuery = signal('');
-
-  public ngOnInit() {
-    this.loadFiles();
-  }
-
-  protected async onFileSelectedForUpload(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input?.files?.[0];
-    if (!file) return;
-
-    this.isUploading.set(true);
-    try {
-      await this.filesSvc.uploadFileDirectly(file);
-      this.alertSvc.showSuccess('File uploaded successfully via SAS URL');
-      await this.loadFiles();
-    } catch (err) {
-      console.error(err);
-      this.alertSvc.showError('Failed to upload file');
-    } finally {
-      this.isUploading.set(false);
-      input.value = '';
-    }
-  }
-
-  protected async loadFiles() {
-    this.isLoading.set(true);
-    try {
-      const res = await this.filesSvc.getAll();
-      this.files.set(res.rows || []);
-      this.applyFilter();
-    } catch (err) {
-      this.alertSvc.showError('Failed to load files');
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
-
-  protected onSearch(event: Event) {
-    const val = (event.target as HTMLInputElement).value;
-    this.searchQuery.set(val);
-    this.applyFilter();
-  }
-
-  private applyFilter() {
-    const q = this.searchQuery().toLowerCase().trim();
-    if (!q) {
-      this.filteredFiles.set(this.files());
-      return;
-    }
-
-    const filtered = this.files().filter(
-      (f) => f.filename?.toLowerCase().includes(q) || f.mime_type?.toLowerCase().includes(q),
-    );
-    this.filteredFiles.set(filtered);
-  }
-
-  protected formatBytes(bytes: number | null | undefined): string {
-    if (bytes == null) return '—';
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  }
-
-  protected getFileIcon(mime: string | null | undefined): PcIconNameType {
-    if (!mime) return 'document';
-    if (mime.includes('image')) return 'file-image';
-    if (mime.includes('pdf')) return 'file-pdf';
-    if (mime.includes('audio')) return 'file-audio';
-    if (mime.includes('video')) return 'file-video';
-    if (mime.includes('zip') || mime.includes('tar') || mime.includes('gz')) return 'file-archive';
-    return 'document';
-  }
-
-  protected downloadFile(file: any) {
-    const token = this.tokenSvc.getAuthToken();
-    const url = `${environment.apiUrl}/api/files/download/${file.id}?token=${encodeURIComponent(token || '')}`;
-    window.open(url, '_blank');
-  }
-
-  protected async deleteFile(file: any) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Confirm Delete',
-      message: `Are you sure you want to permanently delete "${file.filename}"? This will clean up the database record and delete the file from cloud storage.`,
-      variant: 'danger',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-    });
-
-    if (!confirmed) return;
-
-    try {
-      await this.filesSvc.delete(file.id);
-      this.alertSvc.showSuccess('File deleted successfully');
-      await this.loadFiles();
-    } catch (err) {
-      this.alertSvc.showError('Failed to delete file');
-    }
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/services/donation-pages-service.ts
@@ -32414,79 +32528,120 @@ export class DataGridUtilsService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-dropdown.ts
 
 ```typescript
-import { Component, computed, inject } from '@angular/core';
-import { DataGrid } from '../datagrid';
-import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
-import { GridActionComponent } from '../tool-button';
-import { Icon } from '@icons/icon';
-import { MultiselectFilterComponent } from './multiselect-filter';
-import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
+import { Component, input, output } from '@angular/core';
 
+/**
+ * Desktop filter dropdown shell shared by the tags/issues/list toolbar
+ * dropdowns: a `dropdown-content` panel with a title and an optional
+ * "Clear Filter" action, with the actual filter control projected in.
+ *
+ * Rendered as the projected content of a `pc-grid-tool-btn`, so it uses
+ * `display: contents` to stay a direct child of the DaisyUI `<details>`.
+ */
 @Component({
-  selector: 'pc-dg-toolbar',
-  imports: [
-    GridActionComponent,
-    Icon,
-    MultiselectFilterComponent,
-    SingleselectFilterComponent,
-    DataGridColumnsDropdownComponent,
+  selector: 'pc-dg-filter-dropdown',
+  template: `
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
+    >
+      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
+        <span>{{ title() }}</span>
+        @if (active()) {
+          <button
+            class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
+            (click)="clear.emit()"
+          >
+            Clear Filter
+          </button>
+        }
+      </div>
+      <ng-content></ng-content>
+    </div>
+  `,
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+    `,
   ],
-  templateUrl: 'datagrid-toolbar.html',
 })
-export class DataGridToolbarComponent {
-  public readonly grid: any = inject(DataGrid);
+export class DataGridFilterDropdownComponent {
+  public title = input.required<string>();
+  public active = input(false);
+  public clear = output<void>();
+}
+```
 
-  readonly narrowTypeOptions = computed<SingleSelectOption[]>(() => this.grid.narrowTypeOptions());
-  readonly listOptions = computed<SingleSelectOption[]>(() =>
-    this.grid.availableLists().map((l: any) => ({ value: l.id, label: l.name })),
-  );
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-section.ts
 
-  public onAdd() {
-    this.grid.doAdd();
-  }
+```typescript
+import { Component, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
 
-  public onClone() {
-    this.grid.doClone();
-  }
-
-  public onMergeSelected() {
-    this.grid.doConfirmMerge();
-  }
-
-  public onDeleteSelected() {
-    this.grid.doConfirmDelete();
-  }
-
-  public onExportCsv() {
-    this.grid.doConfirmExport();
-  }
-
-  public onImportCsv() {
-    this.grid.doImportCSV();
-  }
-
-  public onRedo() {
-    this.grid.redo();
-  }
-
-  public onRefresh() {
-    this.grid.doRefresh();
-  }
-
-  public onToggleArchive() {
-    this.grid.toggleArchiveModePublic();
-  }
-
-  public onToggleFilters() {
-    this.grid.filter();
-  }
-
-  public onUndo() {
-    this.grid.undo();
-  }
+/**
+ * Mobile collapsible filter section shared by the narrow/tags/issues/list
+ * rows inside the combined mobile filter panel: a `<details>` with an active
+ * dot indicator, title, optional "Clear" action, and a rotating chevron.
+ * The filter control itself is projected in.
+ *
+ * Uses `display: contents` so the `<details>` stays a direct flex child of
+ * the surrounding panel column.
+ */
+@Component({
+  selector: 'pc-dg-filter-section',
+  imports: [Icon],
+  template: `
+    <details class="group" [class.border-t]="bordered()" [class.border-base-200]="bordered()" [open]="open()">
+      <summary
+        class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
+      >
+        <span class="flex items-center gap-1.5">
+          @if (active()) {
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
+          }
+          {{ title() }}
+        </span>
+        <div class="flex items-center gap-1">
+          @if (active() && clearable()) {
+            <button
+              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
+              (click)="clear.emit(); $event.stopPropagation()"
+            >
+              Clear
+            </button>
+          }
+          <pc-icon
+            name="chevron-down"
+            [size]="3"
+            class="transition-transform group-open:rotate-180 text-base-content/40"
+          ></pc-icon>
+        </div>
+      </summary>
+      <div class="pt-1 pb-2">
+        <ng-content></ng-content>
+      </div>
+    </details>
+  `,
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+    `,
+  ],
+})
+export class DataGridFilterSectionComponent {
+  public title = input.required<string>();
+  public active = input(false);
+  public open = input(false);
+  public bordered = input(true);
+  public clearable = input(true);
+  public clear = output<void>();
 }
 ```
 
@@ -33634,168 +33789,6 @@ export class DonationsGridComponent implements OnInit {
       this.alertSvc.showError('Failed to load donations. Please try again.');
     } finally {
       end();
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/duplicates/base-duplicates-manager.ts
-
-```typescript
-import { inject, signal, computed, Directive } from '@angular/core';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
-
-export interface DuplicateGroup<T> {
-  reason: string;
-  items: T[]; // Normalized array (replaces specific persons/households/companies arrays)
-  selectedTargetId?: string;
-  selectedSourceId?: string;
-}
-
-@Directive() // Needed for abstract classes using dependency injection in Angular
-export abstract class BaseDuplicateManager<T extends { id: string; created_at: string | Date }> {
-  protected readonly alertSvc = inject(AlertService);
-  protected readonly dialogs = inject(ConfirmDialogService);
-
-  public readonly isLoading = signal(false);
-  public readonly groups = signal<DuplicateGroup<T>[]>([]);
-
-  public readonly currentPage = signal(1);
-  public readonly pageSize = signal(10);
-  public readonly totalGroups = signal(0);
-  public readonly totalPages = computed(() => Math.ceil(this.totalGroups() / this.pageSize()));
-
-  // Abstract methods the child components must implement
-  protected abstract getEntityName(): string;
-  protected abstract getItemDisplayName(item: T): string;
-  protected abstract fetchFromService(options: {
-    page: number;
-    pageSize: number;
-  }): Promise<{ groups: any[]; total: number }>;
-  protected abstract getItemsFromRawGroup(rawGroup: any): T[];
-  protected abstract mergeInService(targetId: string, sourceId: string): Promise<void>;
-
-  public async loadDuplicates() {
-    this.isLoading.set(true);
-    try {
-      const response = await this.fetchFromService({
-        page: this.currentPage(),
-        pageSize: this.pageSize(),
-      });
-
-      this.totalGroups.set(response.total);
-
-      const mappedGroups: DuplicateGroup<T>[] = response.groups.map((g) => {
-        let selectedTargetId: string | undefined = undefined;
-        let selectedSourceId: string | undefined = undefined;
-        const items = this.getItemsFromRawGroup(g);
-
-        if (items.length === 2) {
-          const date0 = new Date(items[0]!.created_at).getTime();
-          const date1 = new Date(items[1]!.created_at).getTime();
-          if (date0 <= date1) {
-            selectedTargetId = items[0]!.id;
-            selectedSourceId = items[1]!.id;
-          } else {
-            selectedTargetId = items[1]!.id;
-            selectedSourceId = items[0]!.id;
-          }
-        }
-        return { reason: g.reason, items, selectedTargetId, selectedSourceId };
-      });
-      this.groups.set(mappedGroups);
-    } catch (err) {
-      this.alertSvc.showError(`Failed to fetch ${this.getEntityName()} duplicates`);
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
-
-  public selectRole(groupIndex: number, itemId: string, role: 'target' | 'source') {
-    this.groups.update((current) => {
-      const updated = [...current];
-
-      // 1. Create a shallow copy of the group to avoid mutating the original reference
-      const updatedGroup = { ...updated[groupIndex]! };
-
-      // 2. Apply your logic to the NEW object
-      if (role === 'target') {
-        updatedGroup.selectedTargetId = itemId;
-        if (updatedGroup.selectedSourceId === itemId) updatedGroup.selectedSourceId = undefined;
-      } else {
-        updatedGroup.selectedSourceId = itemId;
-        if (updatedGroup.selectedTargetId === itemId) updatedGroup.selectedTargetId = undefined;
-      }
-
-      // 3. Assign the new object back to the array
-      updated[groupIndex] = updatedGroup;
-
-      return updated;
-    });
-  }
-
-  public async mergeGroup(groupIndex: number) {
-    const group = this.groups()[groupIndex]!;
-    const targetId = group.selectedTargetId;
-    const sourceId = group.selectedSourceId;
-    if (!targetId || !sourceId) return;
-
-    const targetItem = group.items.find((i) => i.id === targetId)!;
-    const sourceItem = group.items.find((i) => i.id === sourceId)!;
-
-    const primaryName = this.getItemDisplayName(targetItem);
-    const dupName = this.getItemDisplayName(sourceItem);
-
-    const confirmed = await this.dialogs.confirm({
-      title: 'Confirm Merge',
-      message: `Are you sure you want to merge "${dupName}" into "${primaryName}"? This action will permanently delete this duplicate ${this.getEntityName()} and cannot be undone.`,
-      variant: 'warning',
-      confirmText: 'Merge',
-      cancelText: 'Cancel',
-    });
-
-    if (!confirmed) return;
-
-    try {
-      await this.mergeInService(targetId, sourceId);
-      this.alertSvc.showSuccess(`Successfully merged into "${primaryName}"`);
-
-      let updatedGroups = this.groups().filter((_, idx) => idx !== groupIndex);
-      updatedGroups = updatedGroups.map((g) => ({
-        ...g,
-        items: g.items.filter((i) => i.id !== sourceId),
-      }));
-
-      const initialLength = updatedGroups.length;
-      updatedGroups = updatedGroups.filter((g) => g.items.length > 1);
-      const groupsRemovedCount = 1 + (initialLength - updatedGroups.length);
-
-      this.groups.set(updatedGroups);
-      this.totalGroups.update((t) => Math.max(0, t - groupsRemovedCount));
-
-      if (updatedGroups.length === 0 && this.currentPage() > 1) {
-        this.currentPage.update((p) => p - 1);
-        this.loadDuplicates();
-      } else if (updatedGroups.length === 0 && this.totalGroups() > 0) {
-        this.loadDuplicates();
-      }
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Merge failed');
-    }
-  }
-
-  public nextPage() {
-    if (this.currentPage() < this.totalPages()) {
-      this.currentPage.update((p) => p + 1);
-      this.loadDuplicates();
-    }
-  }
-
-  public prevPage() {
-    if (this.currentPage() > 1) {
-      this.currentPage.update((p) => p - 1);
-      this.loadDuplicates();
     }
   }
 }
@@ -41220,6 +41213,70 @@ export class DataGridFiltersService {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
+
+```typescript
+import { Component, computed, input } from '@angular/core';
+
+/**
+ * Column visibility dropdown shared by the mobile and desktop toolbars.
+ * Rendered as the projected content of a `pc-grid-tool-btn` dropdown, so it
+ * uses `display: contents` to stay a direct child of the DaisyUI `<details>`.
+ *
+ * The grid is passed in as an input rather than injected: as projected
+ * content it does not reliably resolve the same `DataGrid` instance.
+ *
+ * `getColDefsForToolbar()` returns a plain (non-signal) array that is filled
+ * in after init, so as an isolated component this would render once and stay
+ * empty. `cols` reads the reactive `getColVisibilityMap()` (the colVisibility
+ * signal) to recompute once the columns are populated.
+ */
+@Component({
+  selector: 'pc-dg-columns-dropdown',
+  template: `
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
+      <li class="px-2 py-1 flex gap-2">
+        <button class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
+        <button class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
+        <button class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
+      </li>
+      @for (col of cols(); track col.field) {
+        @if (col.field) {
+          <li>
+            <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs"
+                [checked]="grid().getColVisibilityMap()[col.field!] !== false"
+                (change)="grid().toggleColPublic(col.field!, $any($event.target).checked)"
+              />
+              <span class="label-text">{{ col.headerName || col.field }}</span>
+            </label>
+          </li>
+        }
+      }
+    </ul>
+  `,
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+    `,
+  ],
+})
+export class DataGridColumnsDropdownComponent {
+  public readonly grid = input.required<any>();
+
+  protected readonly cols = computed<any[]>(() => {
+    // Establish a reactive dependency on the colVisibility signal so the list
+    // recomputes once the (non-signal) column defs are populated after init.
+    this.grid().getColVisibilityMap();
+    return this.grid().getColDefsForToolbar();
+  });
+}
+```
+
 ## File: apps/frontend/src/app/app.routes.ts
 
 ```typescript
@@ -43737,6 +43794,86 @@ function httpUnbatchedLink(tokenSvc: TokenService) {
       return authToken ? { Authorization: `Bearer ${authToken}` } : {};
     },
   });
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
+
+```typescript
+import { Component, computed, inject } from '@angular/core';
+import { DataGrid } from '../datagrid';
+import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
+import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
+import { DataGridFilterSectionComponent } from './datagrid-filter-section';
+import { GridActionComponent } from '../tool-button';
+import { Icon } from '@icons/icon';
+import { MultiselectFilterComponent } from './multiselect-filter';
+import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
+
+@Component({
+  selector: 'pc-dg-toolbar',
+  imports: [
+    GridActionComponent,
+    Icon,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
+    DataGridColumnsDropdownComponent,
+    DataGridFilterDropdownComponent,
+    DataGridFilterSectionComponent,
+  ],
+  templateUrl: 'datagrid-toolbar.html',
+})
+export class DataGridToolbarComponent {
+  public readonly grid: any = inject(DataGrid);
+
+  readonly narrowTypeOptions = computed<SingleSelectOption[]>(() => this.grid.narrowTypeOptions());
+  readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.grid.availableLists().map((l: any) => ({ value: l.id, label: l.name })),
+  );
+
+  public onAdd() {
+    this.grid.doAdd();
+  }
+
+  public onClone() {
+    this.grid.doClone();
+  }
+
+  public onMergeSelected() {
+    this.grid.doConfirmMerge();
+  }
+
+  public onDeleteSelected() {
+    this.grid.doConfirmDelete();
+  }
+
+  public onExportCsv() {
+    this.grid.doConfirmExport();
+  }
+
+  public onImportCsv() {
+    this.grid.doImportCSV();
+  }
+
+  public onRedo() {
+    this.grid.redo();
+  }
+
+  public onRefresh() {
+    this.grid.doRefresh();
+  }
+
+  public onToggleArchive() {
+    this.grid.toggleArchiveModePublic();
+  }
+
+  public onToggleFilters() {
+    this.grid.filter();
+  }
+
+  public onUndo() {
+    this.grid.undo();
+  }
 }
 ```
 
@@ -47464,1467 +47601,6 @@ export class DonationsSettingsComponent implements OnInit {
 </pc-auth-layout>
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
-
-```html
-<!-- Mobile toolbar -->
-<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
-  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-  <!-- Combined filter panel -->
-  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
-  grid.showListFilter()) {
-  <pc-grid-tool-btn
-    icon="funnel"
-    tip="Filters"
-    [hasDropdown]="true"
-    [dropdownEnd]="false"
-    [active]="
-      grid.selectedNarrowType() !== null ||
-      grid.selectedTags().length > 0 ||
-      grid.selectedIssues().length > 0 ||
-      grid.selectedListId() !== null ||
-      grid.hasActiveFilters() ||
-      grid.hasActiveAdvancedFilters()
-    "
-  >
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
-    >
-      @if (grid.showNarrowTypeFilter()) {
-      <details class="group/narrow" [open]="grid.selectedNarrowType() !== null">
-        <summary
-          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
-        >
-          <span class="flex items-center gap-1.5">
-            @if (grid.selectedNarrowType() !== null) {
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
-            } Narrow by Type
-          </span>
-          <pc-icon
-            name="chevron-down"
-            [size]="3"
-            class="transition-transform group-open/narrow:rotate-180 text-base-content/40"
-          ></pc-icon>
-        </summary>
-        <div class="pt-1 pb-2">
-          <pc-singleselect-filter
-            [label]="'Type'"
-            [options]="narrowTypeOptions()"
-            [selected]="grid.selectedNarrowType()"
-            [radioName]="'narrowTypeMobile'"
-            (select)="grid.selectNarrowType($event)"
-          />
-        </div>
-      </details>
-      } @if (grid.showTagFilter()) {
-      <details class="group/tags border-t border-base-200" [open]="grid.selectedTags().length > 0">
-        <summary
-          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
-        >
-          <span class="flex items-center gap-1.5">
-            @if (grid.selectedTags().length > 0) {
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
-            } Filter by Tags
-          </span>
-          <div class="flex items-center gap-1">
-            @if (grid.selectedTags().length > 0) {
-            <button
-              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
-              (click)="grid.clearTagsFilter(); $event.stopPropagation()"
-            >
-              Clear
-            </button>
-            }
-            <pc-icon
-              name="chevron-down"
-              [size]="3"
-              class="transition-transform group-open/tags:rotate-180 text-base-content/40"
-            ></pc-icon>
-          </div>
-        </summary>
-        <div class="pt-1 pb-2">
-          <pc-multiselect-filter
-            [label]="'Tags'"
-            [options]="grid.filteredAvailableTags()"
-            [selected]="grid.selectedTags()"
-            [searchQuery]="grid.tagSearchQuery()"
-            (searchQueryChange)="grid.tagSearchQuery.set($event)"
-            (selectAll)="grid.selectAllTags()"
-            (clearVisible)="grid.clearAllTagsVisible()"
-            (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-          />
-        </div>
-      </details>
-      } @if (grid.showIssueFilter()) {
-      <details class="group/issues border-t border-base-200" [open]="grid.selectedIssues().length > 0">
-        <summary
-          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
-        >
-          <span class="flex items-center gap-1.5">
-            @if (grid.selectedIssues().length > 0) {
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
-            } Filter by Issues
-          </span>
-          <div class="flex items-center gap-1">
-            @if (grid.selectedIssues().length > 0) {
-            <button
-              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
-              (click)="grid.clearIssuesFilter(); $event.stopPropagation()"
-            >
-              Clear
-            </button>
-            }
-            <pc-icon
-              name="chevron-down"
-              [size]="3"
-              class="transition-transform group-open/issues:rotate-180 text-base-content/40"
-            ></pc-icon>
-          </div>
-        </summary>
-        <div class="pt-1 pb-2">
-          <pc-multiselect-filter
-            [label]="'Issues'"
-            [options]="grid.filteredAvailableIssues()"
-            [selected]="grid.selectedIssues()"
-            [searchQuery]="grid.issueSearchQuery()"
-            (searchQueryChange)="grid.issueSearchQuery.set($event)"
-            (selectAll)="grid.selectAllIssues()"
-            (clearVisible)="grid.clearAllIssuesVisible()"
-            (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-          />
-        </div>
-      </details>
-      } @if (grid.showListFilter()) {
-      <details class="group/list border-t border-base-200" [open]="grid.selectedListId() !== null">
-        <summary
-          class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
-        >
-          <span class="flex items-center gap-1.5">
-            @if (grid.selectedListId() !== null) {
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
-            } Filter by List
-          </span>
-          <div class="flex items-center gap-1">
-            @if (grid.selectedListId() !== null) {
-            <button
-              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
-              (click)="grid.clearListFilter(); $event.stopPropagation()"
-            >
-              Clear
-            </button>
-            }
-            <pc-icon
-              name="chevron-down"
-              [size]="3"
-              class="transition-transform group-open/list:rotate-180 text-base-content/40"
-            ></pc-icon>
-          </div>
-        </summary>
-        <div class="pt-1 pb-2">
-          <pc-singleselect-filter
-            [label]="'List'"
-            [options]="listOptions()"
-            [selected]="grid.selectedListId()"
-            [radioName]="'selectedListMobile'"
-            (select)="grid.selectListFilter($event)"
-          />
-        </div>
-      </details>
-      } @if (grid.allowFilter()) {
-      <div class="border-t border-base-200 pt-1 flex flex-col">
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
-          [disabled]="grid.hasActiveAdvancedFilters()"
-          (click)="onToggleFilters()"
-        >
-          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
-        </button>
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-          (click)="grid.openAdvancedFilterBuilder()"
-        >
-          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
-        </button>
-      </div>
-      }
-    </div>
-  </pc-grid-tool-btn>
-  }
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown />
-  </pc-grid-tool-btn>
-
-  <!-- Overflow: secondary actions -->
-  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
-      <li
-        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
-        [class.cursor-not-allowed]="grid.disableRefresh()"
-        [class.text-neutral-400]="grid.disableRefresh()"
-        [class.pointer-events-none]="grid.disableRefresh()"
-      >
-        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
-      </li>
-      @if (grid.addRoute() || !grid.disableMerge()) {
-      <div class="divider my-0"></div>
-      } @if (grid.addRoute()) {
-      <li
-        [class.disabled]="!grid.hasSingleSelection()"
-        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
-        [class.text-neutral-400]="!grid.hasSingleSelection()"
-        [class.pointer-events-none]="!grid.hasSingleSelection()"
-      >
-        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
-      </li>
-      } @if (!grid.disableMerge()) {
-      <li
-        [class.disabled]="grid.getCountRowSelected() !== 2"
-        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
-        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
-        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
-      >
-        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
-      </li>
-      } @if (!grid.disableImport() || !grid.disableExport()) {
-      <div class="divider my-0"></div>
-      } @if (!grid.disableImport()) {
-      <li>
-        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
-      </li>
-      } @if (!grid.disableExport()) {
-      <li>
-        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
-      </li>
-      } @if (grid.showArchiveIcon()) {
-      <li>
-        <a (click)="onToggleArchive()">
-          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
-        </a>
-      </li>
-      }
-    </ul>
-  </pc-grid-tool-btn>
-</ul>
-
-<!-- Desktop toolbar -->
-<ul class="menu menu-horizontal hidden lg:flex flex-row pl-0 relative z-30">
-  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <pc-grid-tool-btn
-    [enabled]="!!grid.addRoute() && grid.hasSingleSelection()"
-    [tip]="'Clone'"
-    icon="document-duplicate"
-    [hidden]="!grid.addRoute()"
-    (action)="onClone()"
-  />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  @if (!grid.disableMerge()) {
-  <pc-grid-tool-btn
-    [enabled]="grid.getCountRowSelected() === 2"
-    [tip]="'Merge selected rows'"
-    icon="merge"
-    (action)="onMergeSelected()"
-  />
-  }
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
-    [spinning]="grid.isRefreshing()"
-    [tip]="'Refresh the grid'"
-    icon="arrow-path"
-    (action)="onRefresh()"
-  />
-  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableImport()"
-    [tip]="'Import data from CSV'"
-    icon="arrow-up-tray"
-    (action)="onImportCsv()"
-  />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableExport()"
-    [tip]="'Download as CSV'"
-    icon="arrow-down-tray"
-    (action)="onExportCsv()"
-  />
-
-  @if (grid.showNarrowTypeFilter() || grid.showTagFilter()) {
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-  } @if (grid.showNarrowTypeFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'tag'"
-    [tip]="'Narrow by type'"
-    [active]="grid.selectedNarrowType() !== null"
-    [hasDropdown]="true"
-  >
-    <div tabindex="0" class="dropdown-content bg-base-100 rounded-box z-[1] w-48 p-3 shadow-lg border border-base-200">
-      <pc-singleselect-filter
-        [label]="'Type'"
-        [options]="narrowTypeOptions()"
-        [selected]="grid.selectedNarrowType()"
-        [radioName]="'narrowType'"
-        (select)="grid.selectNarrowType($event)"
-      />
-    </div>
-  </pc-grid-tool-btn>
-  } @if (grid.showTagFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'label'"
-    [tip]="'Filter by Tags'"
-    [active]="grid.selectedTags().length > 0"
-    [hasDropdown]="true"
-    [badge]="grid.selectedTags().length"
-  >
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
-    >
-      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
-        <span>Filter by Tags</span>
-        @if (grid.selectedTags().length > 0) {
-        <button
-          class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
-          (click)="grid.clearTagsFilter()"
-        >
-          Clear Filter
-        </button>
-        }
-      </div>
-      <pc-multiselect-filter
-        [label]="'Tags'"
-        [options]="grid.filteredAvailableTags()"
-        [selected]="grid.selectedTags()"
-        [searchQuery]="grid.tagSearchQuery()"
-        (searchQueryChange)="grid.tagSearchQuery.set($event)"
-        [maxHeight]="14"
-        (selectAll)="grid.selectAllTags()"
-        (clearVisible)="grid.clearAllTagsVisible()"
-        (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-      />
-    </div>
-  </pc-grid-tool-btn>
-  } @if (grid.showIssueFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'shield-exclamation'"
-    [tip]="'Filter by Issues'"
-    [active]="grid.selectedIssues().length > 0"
-    [hasDropdown]="true"
-    [badge]="grid.selectedIssues().length"
-  >
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
-    >
-      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
-        <span>Filter by Issues</span>
-        @if (grid.selectedIssues().length > 0) {
-        <button
-          class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
-          (click)="grid.clearIssuesFilter()"
-        >
-          Clear Filter
-        </button>
-        }
-      </div>
-      <pc-multiselect-filter
-        [label]="'Issues'"
-        [options]="grid.filteredAvailableIssues()"
-        [selected]="grid.selectedIssues()"
-        [searchQuery]="grid.issueSearchQuery()"
-        (searchQueryChange)="grid.issueSearchQuery.set($event)"
-        [maxHeight]="14"
-        (selectAll)="grid.selectAllIssues()"
-        (clearVisible)="grid.clearAllIssuesVisible()"
-        (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-      />
-    </div>
-  </pc-grid-tool-btn>
-  } @if (grid.showListFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'queue-list'"
-    [tip]="'Filter by List'"
-    [active]="grid.selectedListId() !== null"
-    [hasDropdown]="true"
-  >
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
-    >
-      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
-        <span>Filter by List</span>
-        @if (grid.selectedListId() !== null) {
-        <button
-          class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
-          (click)="grid.clearListFilter()"
-        >
-          Clear Filter
-        </button>
-        }
-      </div>
-      <pc-singleselect-filter
-        [label]="'List'"
-        [options]="listOptions()"
-        [selected]="grid.selectedListId()"
-        [radioName]="'selectedList'"
-        [maxHeight]="14"
-        (select)="grid.selectListFilter($event)"
-      />
-    </div>
-  </pc-grid-tool-btn>
-  }
-
-  <pc-grid-tool-btn
-    icon="funnel"
-    tip="Advanced Filters"
-    [hidden]="!grid.allowFilter()"
-    [active]="grid.showFiltersState() || grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-    [enabled]="!grid.hasActiveAdvancedFilters()"
-    (action)="onToggleFilters()"
-  />
-  <pc-grid-tool-btn
-    icon="adjustments-horizontal"
-    tip="Advanced Query Builder"
-    [hidden]="!grid.allowFilter()"
-    [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-    [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
-    (action)="grid.openAdvancedFilterBuilder()"
-  />
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown />
-  </pc-grid-tool-btn>
-
-  <pc-grid-tool-btn
-    [icon]="grid.archiveIcon()"
-    [tip]="grid.archiveTip()"
-    [hidden]="!grid.showArchiveIcon()"
-    [active]="grid.archiveModeState()"
-    (action)="onToggleArchive()"
-  />
-</ul>
-```
-
-## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
-
-```typescript
-import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
-import { AbstractControl, ValidatorFn } from '@angular/forms';
-import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { TokenService } from '../../services/api/token-service';
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-
-type SignInStep = 'email' | 'passkey' | 'password' | '2fa' | 'passkey-setup';
-
-@Component({
-  selector: 'pc-login',
-  imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
-  templateUrl: './signin-page.html',
-})
-export class SignInPage implements OnInit, OnDestroy {
-  private readonly alertSvc = inject(AlertService);
-  private readonly authService = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly suppressNavigation = signal<boolean>(false);
-  private readonly tokenService = inject(TokenService);
-
-  private _countdownInterval: ReturnType<typeof setInterval> | null = null;
-  private _resendCooldownInterval: ReturnType<typeof setInterval> | null = null;
-  private _loading = createLoadingGate();
-
-  protected readonly step = signal<SignInStep>('email');
-  protected readonly emailData = signal({ email: '' });
-  protected readonly passwordData = signal({ password: '' });
-  protected readonly otpData = signal({ code: '' });
-  protected readonly emailFor2FA = signal<string>('');
-  protected readonly pendingEmail = signal<string>('');
-  protected readonly rateLimitSecondsLeft = signal<number>(0);
-  protected readonly rateLimitMins = computed(() => Math.floor(this.rateLimitSecondsLeft() / 60));
-  protected readonly rateLimitRemSecs = computed(() => this.rateLimitSecondsLeft() % 60);
-  protected readonly resending = signal<boolean>(false);
-  protected readonly resendCooldownSeconds = signal<number>(0);
-  protected readonly resendCooldownMins = computed(() => Math.floor(this.resendCooldownSeconds() / 60));
-  protected readonly resendCooldownRemSecs = computed(() => this.resendCooldownSeconds() % 60);
-  protected readonly settingUpPasskey = signal<boolean>(false);
-  protected readonly verificationPending = signal<boolean>(false);
-
-  protected isLoading = this._loading.visible;
-  protected persistence = signal(this.tokenService.getPersistence());
-
-  public readonly emailForm = form(this.emailData, (p) => {
-    required(p.email);
-    email(p.email);
-  });
-
-  public readonly passwordForm = form(this.passwordData, (p) => {
-    required(p.password);
-    minLength(p.password, 8);
-  });
-
-  public readonly otpForm = form(this.otpData, (p) => {
-    required(p.code);
-    pattern(p.code, /^\d{6}$/);
-  });
-
-  constructor() {
-    effect(() => {
-      const user = this.authService.getUserSignal();
-      if (user() && !this.suppressNavigation()) void this.router.navigate(['summary']);
-    });
-  }
-
-  public get emailField() {
-    return this.emailForm.email();
-  }
-
-  public get password() {
-    return this.passwordForm.password();
-  }
-
-  public get code() {
-    return this.otpForm.code();
-  }
-
-  public ngOnInit() {
-    const params = this.route.snapshot.queryParamMap;
-    const emailVal = params.get('email') || '';
-    if (params.get('emailChanged') === 'true' || params.get('verificationPending') === 'true') {
-      this.verificationPending.set(true);
-      this.pendingEmail.set(emailVal);
-      if (emailVal) {
-        this.emailForm.email().value.set(emailVal);
-        this.step.set('password');
-      }
-    }
-  }
-
-  public ngOnDestroy() {
-    this.clearCountdown();
-    this.clearResendCooldown();
-  }
-
-  public goBackToEmail() {
-    this.step.set('email');
-    this.verificationPending.set(false);
-    this.passwordData.update((p) => ({ ...p, password: '' }));
-    this.otpData.update((o) => ({ ...o, code: '' }));
-  }
-
-  public usePasswordInstead() {
-    this.step.set('password');
-  }
-
-  public async continueWithEmail(event?: Event) {
-    event?.preventDefault();
-
-    const rawEmail = this.emailData().email;
-    const emailVal = rawEmail.trim().toLowerCase();
-
-    if (rawEmail !== emailVal) {
-      this.emailForm.email().value.set(emailVal);
-    }
-
-    this.emailForm().markAsTouched();
-
-    await submit(this.emailForm, {
-      action: async () => {
-        let hasPasskeys = false;
-        const end = this._loading.begin();
-        try {
-          ({ hasPasskeys } = await this.authService.checkEmail(emailVal));
-        } catch {
-          // network error — fall through to password
-        } finally {
-          end();
-        }
-
-        if (hasPasskeys) {
-          this.step.set('passkey');
-          await this.signInWithPasskey();
-        } else {
-          this.step.set('password');
-        }
-
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.emailForm.email();
-        const hasRequired = f.errors().some((e) => e.kind === 'required');
-        this.alertSvc.showError(hasRequired ? 'Email is required.' : 'Please enter a valid email address.');
-      },
-    });
-  }
-
-  public async signInWithPasskey() {
-    const end = this._loading.begin();
-    try {
-      const result = await this.authService.signInWithPasskey(this.persistence());
-      if (result.cancelled) {
-        this.step.set('password');
-        return;
-      }
-      if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
-    } catch (err: any) {
-      if (err?.name === 'NotAllowedError') {
-        this.step.set('password');
-        return;
-      }
-      this.handleError(err);
-    } finally {
-      end();
-    }
-  }
-
-  public async signIn(event?: Event) {
-    event?.preventDefault();
-
-    this.tokenService.clearAll();
-
-    const emailVal = this.emailData().email.trim().toLowerCase();
-    const passwordVal = this.passwordData().password;
-
-    this.verificationPending.set(false);
-    this.passwordForm().markAsTouched();
-
-    await submit(this.passwordForm, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          this.suppressNavigation.set(true);
-          const res = await this.authService.signIn({
-            email: emailVal,
-            password: passwordVal,
-            rememberMe: this.persistence(),
-          });
-          if (res.requires2FA) {
-            this.suppressNavigation.set(false);
-            this.step.set('2fa');
-            this.emailFor2FA.set(res.email || emailVal);
-            this.otpData.update((o) => ({ ...o, code: '' }));
-          } else {
-            const user = this.authService.getUser();
-            const dismissed = !!user?.passkey_setup_dismissed_at;
-            if (!dismissed) {
-              const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
-              if (passkeys.length === 0) {
-                this.step.set('passkey-setup');
-                return null;
-              }
-            }
-            this.suppressNavigation.set(false);
-          }
-        } catch (err: any) {
-          this.suppressNavigation.set(false);
-          this.handleError(err, emailVal);
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.passwordForm.password();
-        const hasMinLength = f.errors().some((e) => e.kind === 'minLength');
-        this.alertSvc.showError(
-          hasMinLength ? 'Password must be at least 8 characters.' : 'Please enter your password.',
-        );
-      },
-    });
-  }
-
-  public async verify2FA(event?: Event) {
-    event?.preventDefault();
-
-    this.otpForm().markAsTouched();
-
-    await submit(this.otpForm, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const emailVal = this.emailFor2FA();
-          const codeVal = this.otpData().code.trim();
-          await this.authService.verify2FA({
-            email: emailVal,
-            code: codeVal,
-            rememberMe: this.persistence(),
-          });
-        } catch (err: any) {
-          this.handleError(err);
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.otpForm.code();
-        const hasRequired = f.errors().some((e) => e.kind === 'required');
-        const hasPattern = f.errors().some((e) => e.kind === 'pattern');
-        const msg = hasRequired
-          ? 'Verification code is required.'
-          : hasPattern
-            ? 'Verification code must be exactly 6 digits.'
-            : 'Please enter a valid verification code.';
-        this.alertSvc.showError(msg);
-      },
-    });
-  }
-
-  public async setupPasskey() {
-    this.settingUpPasskey.set(true);
-    try {
-      const result = await this.authService.registerPasskey();
-      if (result.verified) {
-        this.alertSvc.showSuccess('Passkey set up successfully!');
-      }
-    } catch (err: any) {
-      if (err?.name !== 'NotAllowedError') {
-        this.alertSvc.showError(err.message || 'Failed to set up passkey.');
-      }
-    } finally {
-      this.settingUpPasskey.set(false);
-      this.suppressNavigation.set(false);
-    }
-  }
-
-  public async skipPasskeySetup() {
-    try {
-      await this.authService.dismissPasskeyPrompt();
-    } catch {
-      // non-fatal — still allow navigation
-    }
-    this.suppressNavigation.set(false);
-  }
-
-  public togglePersistence(target: EventTarget | null) {
-    if (!target) return;
-    const checked = (target as HTMLInputElement).checked;
-    this.tokenService.setPersistence(checked);
-    this.persistence.set(checked);
-  }
-
-  public async resendVerification() {
-    const emailVal = this.pendingEmail().trim();
-    if (!emailVal || this.resendCooldownSeconds() > 0) return;
-    this.resending.set(true);
-    try {
-      await this.authService.resendVerificationEmail(emailVal);
-      this.alertSvc.showSuccess('Verification email sent successfully!');
-      this.startResendCooldown(60);
-    } catch (err: any) {
-      const tRPCData = err?.originalError?.data ?? err?.data;
-      const retryAfterSec =
-        (tRPCData?.retryAfterSec as number | undefined) ?? this.parseRetryAfterSec(err.message || '');
-      if (retryAfterSec) {
-        this.startResendCooldown(retryAfterSec);
-      } else {
-        this.alertSvc.showError(err.message || 'Failed to resend verification email.');
-      }
-    } finally {
-      this.resending.set(false);
-    }
-  }
-
-  private clearCountdown() {
-    if (this._countdownInterval !== null) {
-      clearInterval(this._countdownInterval);
-      this._countdownInterval = null;
-    }
-  }
-
-  private clearResendCooldown() {
-    if (this._resendCooldownInterval !== null) {
-      clearInterval(this._resendCooldownInterval);
-      this._resendCooldownInterval = null;
-    }
-  }
-
-  private startResendCooldown(seconds: number) {
-    this.clearResendCooldown();
-    this.resendCooldownSeconds.set(seconds);
-    this._resendCooldownInterval = setInterval(() => {
-      const current = this.resendCooldownSeconds();
-      if (current <= 1) {
-        this.resendCooldownSeconds.set(0);
-        this.clearResendCooldown();
-      } else {
-        this.resendCooldownSeconds.update((s) => s - 1);
-      }
-    }, 1000);
-  }
-
-  private handleError(err: any, emailVal?: string) {
-    const tRPCData = err?.originalError?.data ?? err?.data;
-    const message = err.message || String(err);
-    const retryAfterSec = (tRPCData?.retryAfterSec as number | undefined) ?? this.parseRetryAfterSec(message);
-    if (retryAfterSec) {
-      this.startRateLimitCountdown(retryAfterSec);
-      return;
-    }
-    const code = tRPCData?.code as string | undefined;
-    if (emailVal && message.toLowerCase().includes('not verified')) {
-      this.verificationPending.set(true);
-      this.pendingEmail.set(emailVal);
-      this.alertSvc.showError(message);
-    } else if (emailVal && (code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
-      this.alertSvc.showError('Please check your email address and password and try again.');
-    } else {
-      this.alertSvc.showError(message);
-    }
-  }
-
-  private parseRetryAfterSec(message: string): number | undefined {
-    const match = message?.match(/retry in (\d+) second/i);
-    return match ? parseInt(match[1]!, 10) : undefined;
-  }
-
-  private startRateLimitCountdown(seconds: number) {
-    this.clearCountdown();
-    this.rateLimitSecondsLeft.set(seconds);
-
-    this._countdownInterval = setInterval(() => {
-      const current = this.rateLimitSecondsLeft();
-      if (current < 1) {
-        this.clearCountdown();
-      } else {
-        this.rateLimitSecondsLeft.update((s) => s - 1);
-      }
-    }, 1000);
-  }
-}
-
-export function emailSafeValidator(): ValidatorFn {
-  return (control: AbstractControl) => {
-    const v = (control.value ?? '').toString().trim();
-    return v && EMAIL_SAFE.test(v) ? null : { email: true };
-  };
-}
-
-const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
-```
-
-## File: apps/frontend/src/app/experiences/settings/settings-page.ts
-
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
-import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
-import { ActivatedRoute, Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
-import { AuthService } from '../../auth/auth-service';
-import { UserService } from '../../services/user.service';
-import { HouseholdsService } from '../households/services/households-service';
-import { AccountSettingsComponent } from './account/account-settings';
-import { BillingSettingsComponent } from './billing/billing-settings';
-import { DomainSettingsComponent } from './domains/domains-settings';
-import { DonationsSettingsComponent } from './donations/donations-settings';
-import { GoogleSyncSettings } from './google-sync/google-sync-settings';
-import { MsSyncSettings } from './ms-sync/ms-sync-settings';
-import { PasskeySettingsComponent } from './security/passkey-settings';
-import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
-import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
-
-interface SectionFieldState {
-  config: SettingsFieldConfig;
-  controlName: string;
-}
-
-interface SectionState {
-  config: SettingsSectionConfig;
-  fields: SectionFieldState[];
-  form: any;
-  payload: WritableSignal<Record<string, any>>;
-}
-
-@Component({
-  selector: 'pc-settings-page',
-  imports: [
-    FormField,
-    Icon,
-    MsSyncSettings,
-    GoogleSyncSettings,
-    BillingSettingsComponent,
-    DomainSettingsComponent,
-    DonationsSettingsComponent,
-    AccountSettingsComponent,
-    PasskeySettingsComponent,
-    DatePipe,
-  ],
-  templateUrl: './settings-page.html',
-})
-export class SettingsPage implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
-
-  protected readonly currentMode: 'settings' | 'configuration';
-  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
-  protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
-  protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
-  protected readonly fingerprintRecomputeNextAvailable = computed(() => {
-    const lastTime = this.lastFingerprintRecomputeTime();
-    if (!lastTime) return null;
-    const nextAvailable = new Date(lastTime.getTime());
-    nextAvailable.setMonth(nextAvailable.getMonth() + 1);
-    return nextAvailable;
-  });
-  protected readonly hasLoaded = signal(false);
-  protected readonly householdsSvc = inject(HouseholdsService);
-  protected readonly isFingerprintRecomputeCooldown = computed(() => {
-    const nextAvailable = this.fingerprintRecomputeNextAvailable();
-    if (!nextAvailable) return false;
-    return Date.now() < nextAvailable.getTime();
-  });
-  protected readonly lastRequestedEmail = signal<string | null>(null);
-  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
-  protected readonly recomputingFingerprints = signal(false);
-  protected readonly savingSectionId = signal<string | null>(null);
-  protected readonly sectionStates: SectionState[];
-  protected readonly sections = SETTINGS_SECTIONS;
-  protected readonly selectedSectionId = signal<string>('');
-  protected readonly senderEmailInput = signal('');
-  protected readonly settingsSvc = inject(SettingsService);
-  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
-  protected readonly verifiedEmailsList = computed<string[]>(() => {
-    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-  });
-  protected readonly verifyingEmail = signal<string | null>(null);
-
-  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
-  protected trackSection = (_: number, section: SectionState) => section.config.id;
-
-  public readonly section = input<string>();
-
-  constructor() {
-    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'configuration') || 'settings';
-    this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
-
-    effect(() => {
-      const s = this.section();
-      if (s) {
-        this.selectedSectionId.set(s);
-      } else {
-        if (this.currentMode === 'settings') {
-          this.selectedSectionId.set('notifications');
-        } else if (this.currentMode === 'configuration') {
-          this.selectedSectionId.set('organization');
-        }
-      }
-    });
-
-    effect(() => {
-      const snapshot = this.snapshotSignal();
-      this.applySnapshot(snapshot, false);
-    });
-
-    effect(() => {
-      const snapshot = this.snapshotSignal();
-      const verifiedEmails = (snapshot['communications.verified_emails'] as string[]) || [];
-
-      const commsSection = this.sections.find((s) => s.id === 'communications');
-      if (commsSection) {
-        const fromEmailField = commsSection.fields.find((f) => f.key === 'communications.default_from_email');
-        const replyToField = commsSection.fields.find((f) => f.key === 'communications.reply_to');
-
-        const options = [
-          { label: 'Select a verified email', value: '' },
-          ...verifiedEmails.map((email) => ({ label: email, value: email })),
-        ];
-
-        if (fromEmailField) {
-          fromEmailField.options = options;
-        }
-        if (replyToField) {
-          replyToField.options = options;
-        }
-      }
-    });
-  }
-
-  protected get visibleSections(): SectionState[] {
-    if (this.currentMode === 'settings') {
-      return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
-    }
-    if (this.currentMode === 'configuration') {
-      return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
-    }
-    return [];
-  }
-
-  public async ngOnInit() {
-    await this.settingsSvc.load();
-    this.hasLoaded.set(true);
-    this.applySnapshot(this.settingsSvc.snapshot(), true);
-    await this.loadUserPrefs();
-    await this.loadLastFingerprintRecomputeTime();
-  }
-
-  protected copyToClipboard(val: string | null | undefined) {
-    if (!val) return;
-    navigator.clipboard
-      .writeText(val)
-      .then(() => {
-        this.alerts.showSuccess('Copied to clipboard!');
-      })
-      .catch(() => {
-        this.alerts.showError('Failed to copy to clipboard.');
-      });
-  }
-
-  protected generateWebhookCredentials(section: SectionState) {
-    const key = 'pk_live_' + this.randomHex(24);
-    const secret = 'whsec_' + this.randomHex(32);
-
-    section.payload.update((p) => ({
-      ...p,
-      integrations_webhook_api_key: key,
-      integrations_webhook_api_secret: secret,
-    }));
-
-    (section.form as any)['integrations_webhook_api_key']().markAsDirty();
-    (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
-    this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
-  }
-
-  protected getNotificationGroups(section: SectionState) {
-    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
-    const fields = section.fields;
-
-    for (const field of fields) {
-      if (field.config.key.endsWith('_in_app')) continue;
-
-      const inAppControlName = `${field.controlName}_in_app`;
-      const inAppField = fields.find((f) => f.controlName === inAppControlName);
-
-      groups.push({
-        label: field.config.label,
-        helper: field.config.helper || '',
-        emailField: field,
-        inAppField: inAppField,
-      });
-    }
-    return groups;
-  }
-
-  protected isEmailVerified(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-    return verified.includes(email.toLowerCase().trim());
-  }
-
-  protected isSaving(section: SectionState) {
-    return this.savingSectionId() === section.config.id;
-  }
-
-  protected isSectionDirty(section: SectionState) {
-    return section.form().dirty();
-  }
-
-  protected isSectionInvalid(section: SectionState) {
-    return section.form().invalid();
-  }
-
-  protected isSelected(sectionId: string) {
-    return this.selectedSectionId() === sectionId;
-  }
-
-  protected isVerifyCooldown(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
-    if (!lastTime) return false;
-    return Date.now() - lastTime < 60000;
-  }
-
-  protected async loadLastFingerprintRecomputeTime() {
-    try {
-      const res = await this.householdsSvc.getLastFingerprintRecomputation();
-      if (res && res.lastRunAt) {
-        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
-      } else {
-        this.lastFingerprintRecomputeTime.set(null);
-      }
-    } catch (err) {
-      console.error('Failed to load last fingerprint recompute time', err);
-    }
-  }
-
-  protected async loadUserPrefs() {
-    try {
-      const currentUser = await this.auth.getCurrentUser();
-      if (currentUser) {
-        const user = await this.userService.getProfileById(currentUser.id);
-        this.currentUserDetail.set(user);
-        const prefs = user.notification_preferences || {
-          mention_in_comment: true,
-          mention_in_comment_in_app: true,
-          task_assigned: true,
-          task_assigned_in_app: true,
-          task_due: true,
-          task_due_in_app: true,
-          person_assigned: true,
-          person_assigned_in_app: true,
-          export_ready: true,
-          export_ready_in_app: true,
-          import_summary: true,
-          import_summary_in_app: true,
-        };
-        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
-        if (notifState) {
-          notifState.payload.update((p) => ({
-            ...p,
-            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
-            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
-            notifications_task_assigned: prefs.task_assigned ?? true,
-            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
-            notifications_task_due: prefs.task_due ?? true,
-            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
-            notifications_person_assigned: prefs.person_assigned ?? true,
-            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
-            notifications_export_ready: prefs.export_ready ?? true,
-            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
-            notifications_import_summary: prefs.import_summary ?? true,
-            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
-          }));
-          notifState.form().reset();
-        }
-      }
-    } catch (err: any) {
-      console.error('Failed to load user preferences in settings page', err);
-    }
-  }
-
-  protected async recomputeAddressFingerprints() {
-    if (this.isFingerprintRecomputeCooldown()) {
-      this.alerts.showError('Fingerprints can only be recomputed once a month.');
-      return;
-    }
-
-    this.recomputingFingerprints.set(true);
-    try {
-      await this.householdsSvc.recomputeAddressFingerprints();
-      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
-      await this.loadLastFingerprintRecomputeTime();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to trigger address fingerprint recomputation.');
-    } finally {
-      this.recomputingFingerprints.set(false);
-    }
-  }
-
-  protected resetSection(section: SectionState) {
-    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
-    if (section.config.id === 'notifications') {
-      void this.loadUserPrefs();
-    }
-  }
-
-  protected async saveSection(section: SectionState) {
-    if (!section.form().dirty()) return;
-
-    const entries: SettingsEntryType[] = [];
-    for (const field of section.fields) {
-      const fieldSignal = (section.form as any)[field.controlName]();
-      if (!fieldSignal.dirty()) continue;
-
-      // Skip user notification preferences from tenant settings upsert
-      if (section.config.id === 'notifications') {
-        continue;
-      }
-
-      const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
-      entries.push({ key: field.config.key, value });
-    }
-
-    this.savingSectionId.set(section.config.id);
-    try {
-      if (entries.length > 0) {
-        const snapshot = await this.settingsSvc.upsert(entries);
-        this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
-      }
-
-      if (section.config.id === 'notifications') {
-        const user = this.currentUserDetail();
-        if (user) {
-          const raw = section.payload();
-          const parseBool = (val: any) => val === true || val === 'true';
-          const payload: UpdateAuthUserType = {
-            notification_preferences: {
-              mention_in_comment: parseBool(raw['notifications_mention_in_comment']),
-              mention_in_comment_in_app: parseBool(raw['notifications_mention_in_comment_in_app']),
-              task_assigned: parseBool(raw['notifications_task_assigned']),
-              task_assigned_in_app: parseBool(raw['notifications_task_assigned_in_app']),
-              task_due: parseBool(raw['notifications_task_due']),
-              task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
-              person_assigned: parseBool(raw['notifications_person_assigned']),
-              person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
-              export_ready: parseBool(raw['notifications_export_ready']),
-              export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
-              import_summary: parseBool(raw['notifications_import_summary']),
-              import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
-            },
-          };
-          await this.userService.updateUserProfile(user.id, payload);
-          await this.loadUserPrefs();
-        }
-      }
-      this.alerts.showSuccess('Settings updated successfully');
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to save settings';
-      this.alerts.showError(message);
-    } finally {
-      this.savingSectionId.set(null);
-    }
-  }
-
-  protected selectSection(sectionId: string) {
-    this.router.navigate(['/', this.currentMode, sectionId]);
-  }
-
-  protected async verifySenderEmail(email: string | null | undefined) {
-    if (!email) return;
-    const normalized = email.toLowerCase().trim();
-
-    if (this.isVerifyCooldown(normalized)) {
-      this.alerts.showError('Please wait at least one minute before requesting verification again.');
-      return;
-    }
-
-    this.verifyingEmail.set(normalized);
-
-    try {
-      await this.settingsSvc.requestEmailVerification(normalized);
-      this.lastVerificationTimes.update((prev) => ({
-        ...prev,
-        [normalized]: Date.now(),
-      }));
-      this.startEmailCooldown(normalized);
-      this.lastRequestedEmail.set(normalized);
-      this.alerts.showSuccess(
-        `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
-      );
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to send verification email.');
-    } finally {
-      this.verifyingEmail.set(null);
-    }
-  }
-
-  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
-    const sections = target ? [target] : this.sectionStates;
-
-    for (const state of sections) {
-      const nextPayload = { ...state.payload() };
-      let changed = false;
-
-      for (const field of state.fields) {
-        const fieldSignal = (state.form as any)[field.controlName]();
-        if (!resetDirty && fieldSignal.dirty()) continue;
-
-        // Skip user notification preferences from tenant settings snapshot update
-        if (state.config.id === 'notifications') {
-          continue;
-        }
-
-        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
-        if (nextPayload[field.controlName] !== incoming) {
-          nextPayload[field.controlName] = incoming;
-          changed = true;
-        }
-      }
-
-      if (changed) {
-        state.payload.set(nextPayload);
-      }
-
-      if (resetDirty) {
-        state.form().reset();
-      }
-    }
-  }
-
-  private buildSectionState(section: SettingsSectionConfig): SectionState {
-    const initialPayload: Record<string, any> = {};
-    const fieldStates: SectionFieldState[] = [];
-
-    for (const field of section.fields) {
-      const controlName = this.controlNameFor(field.key);
-      initialPayload[controlName] = this.normalizeIncomingValue(
-        field,
-        this.settingsSvc.getValue(field.key, field.defaultValue),
-      );
-      fieldStates.push({ config: field, controlName });
-    }
-
-    const payload = signal(initialPayload);
-    const formSignal = form(payload, (p) => {
-      for (const field of section.fields) {
-        const controlName = this.controlNameFor(field.key);
-        if (field.type === 'email') {
-          email(p[controlName]);
-        }
-        if (field.type === 'url') {
-          pattern(p[controlName], /^https?:\/\//i);
-        }
-        if (field.key === 'communications.default_from_email' || field.key === 'communications.reply_to') {
-          validate(p[controlName], (ctx) => {
-            const val = ((ctx.value() as string) || '').toLowerCase().trim();
-            if (!val) return null;
-            const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-            if (!verified.includes(val)) {
-              return { kind: 'not-verified', message: 'Email address must be verified.' };
-            }
-            return null;
-          });
-        }
-      }
-    });
-
-    return { config: section, payload, form: formSignal, fields: fieldStates };
-  }
-
-  private controlNameFor(key: string) {
-    return key.replace(/[^a-zA-Z0-9]+/g, '_');
-  }
-
-  private defaultForField(field: SettingsFieldConfig) {
-    switch (field.type) {
-      case 'toggle':
-        return false;
-      case 'number':
-        return null;
-      case 'select':
-        return field.options?.[0]?.value ?? '';
-      default:
-        return '';
-    }
-  }
-
-  private normalizeIncomingValue(field: SettingsFieldConfig, raw: unknown) {
-    const fallback = field.defaultValue ?? this.defaultForField(field);
-
-    switch (field.type) {
-      case 'toggle':
-        return Boolean(raw ?? fallback ?? false);
-      case 'number': {
-        if (raw === null || raw === undefined || raw === '') return fallback ?? null;
-        const numeric = typeof raw === 'number' ? raw : Number(raw);
-        return Number.isFinite(numeric) ? numeric : (fallback ?? null);
-      }
-      case 'select': {
-        const options = field.options ?? [];
-        const candidate = raw === undefined || raw === null ? fallback : String(raw);
-        const match = options.find((option) => option.value === candidate);
-        if (match) return match.value;
-        return (fallback ?? options[0]?.value ?? '') as string;
-      }
-      case 'date':
-        return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
-      case 'email':
-      case 'tel':
-      case 'password':
-      case 'url':
-      case 'text':
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      case 'textarea':
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      default:
-        return raw ?? fallback ?? '';
-    }
-  }
-
-  private prepareOutgoingValue(field: SettingsFieldConfig, value: unknown) {
-    switch (field.type) {
-      case 'toggle':
-        return Boolean(value);
-      case 'number': {
-        if (value === '' || value === null || value === undefined) return null;
-        const numeric = typeof value === 'number' ? value : Number(value);
-        return Number.isFinite(numeric) ? numeric : null;
-      }
-      case 'select': {
-        const candidate = value === null || value === undefined ? '' : String(value);
-        const options = field.options ?? [];
-        const match = options.find((option) => option.value === candidate);
-        return match ? match.value : this.defaultForField(field);
-      }
-      case 'date':
-        return typeof value === 'string' ? value : value ? String(value) : '';
-      case 'textarea':
-      case 'text':
-      case 'email':
-      case 'tel':
-      case 'password':
-      case 'url':
-        return value === null || value === undefined ? '' : String(value);
-      default:
-        return value ?? '';
-    }
-  }
-
-  private randomHex(len: number): string {
-    const chars = '0123456789abcdef';
-    let result = '';
-    for (let i = 0; i < len; i++) {
-      result += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return result;
-  }
-
-  private startEmailCooldown(email: string) {
-    this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: 60 }));
-    const interval = setInterval(() => {
-      const current = this.emailCooldownSeconds()[email] || 0;
-      if (current <= 1) {
-        clearInterval(interval);
-        this.emailCooldownSeconds.update((prev) => {
-          const next = { ...prev };
-          delete next[email];
-          return next;
-        });
-      } else {
-        this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
-      }
-    }, 1000);
-  }
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.ts
 
 ```typescript
@@ -51296,6 +49972,1000 @@ type TagDiff = {
 };
 ```
 
+## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
+
+```typescript
+import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { AbstractControl, ValidatorFn } from '@angular/forms';
+import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { TokenService } from '../../services/api/token-service';
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+
+type SignInStep = 'email' | 'passkey' | 'password' | '2fa' | 'passkey-setup';
+
+@Component({
+  selector: 'pc-login',
+  imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
+  templateUrl: './signin-page.html',
+})
+export class SignInPage implements OnInit, OnDestroy {
+  private readonly alertSvc = inject(AlertService);
+  private readonly authService = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly suppressNavigation = signal<boolean>(false);
+  private readonly tokenService = inject(TokenService);
+
+  private _countdownInterval: ReturnType<typeof setInterval> | null = null;
+  private _resendCooldownInterval: ReturnType<typeof setInterval> | null = null;
+  private _loading = createLoadingGate();
+
+  protected readonly step = signal<SignInStep>('email');
+  protected readonly emailData = signal({ email: '' });
+  protected readonly passwordData = signal({ password: '' });
+  protected readonly otpData = signal({ code: '' });
+  protected readonly emailFor2FA = signal<string>('');
+  protected readonly pendingEmail = signal<string>('');
+  protected readonly rateLimitSecondsLeft = signal<number>(0);
+  protected readonly rateLimitMins = computed(() => Math.floor(this.rateLimitSecondsLeft() / 60));
+  protected readonly rateLimitRemSecs = computed(() => this.rateLimitSecondsLeft() % 60);
+  protected readonly resending = signal<boolean>(false);
+  protected readonly resendCooldownSeconds = signal<number>(0);
+  protected readonly resendCooldownMins = computed(() => Math.floor(this.resendCooldownSeconds() / 60));
+  protected readonly resendCooldownRemSecs = computed(() => this.resendCooldownSeconds() % 60);
+  protected readonly settingUpPasskey = signal<boolean>(false);
+  protected readonly verificationPending = signal<boolean>(false);
+
+  protected isLoading = this._loading.visible;
+  protected persistence = signal(this.tokenService.getPersistence());
+
+  public readonly emailForm = form(this.emailData, (p) => {
+    required(p.email);
+    email(p.email);
+  });
+
+  public readonly passwordForm = form(this.passwordData, (p) => {
+    required(p.password);
+    minLength(p.password, 8);
+  });
+
+  public readonly otpForm = form(this.otpData, (p) => {
+    required(p.code);
+    pattern(p.code, /^\d{6}$/);
+  });
+
+  constructor() {
+    effect(() => {
+      const user = this.authService.getUserSignal();
+      if (user() && !this.suppressNavigation()) void this.router.navigate(['summary']);
+    });
+  }
+
+  public get emailField() {
+    return this.emailForm.email();
+  }
+
+  public get password() {
+    return this.passwordForm.password();
+  }
+
+  public get code() {
+    return this.otpForm.code();
+  }
+
+  public ngOnInit() {
+    const params = this.route.snapshot.queryParamMap;
+    const emailVal = params.get('email') || '';
+    if (params.get('emailChanged') === 'true' || params.get('verificationPending') === 'true') {
+      this.verificationPending.set(true);
+      this.pendingEmail.set(emailVal);
+      if (emailVal) {
+        this.emailForm.email().value.set(emailVal);
+        this.step.set('password');
+      }
+    }
+  }
+
+  public ngOnDestroy() {
+    this.clearCountdown();
+    this.clearResendCooldown();
+  }
+
+  public goBackToEmail() {
+    this.step.set('email');
+    this.verificationPending.set(false);
+    this.passwordData.update((p) => ({ ...p, password: '' }));
+    this.otpData.update((o) => ({ ...o, code: '' }));
+  }
+
+  public usePasswordInstead() {
+    this.step.set('password');
+  }
+
+  public async continueWithEmail(event?: Event) {
+    event?.preventDefault();
+
+    const rawEmail = this.emailData().email;
+    const emailVal = rawEmail.trim().toLowerCase();
+
+    if (rawEmail !== emailVal) {
+      this.emailForm.email().value.set(emailVal);
+    }
+
+    this.emailForm().markAsTouched();
+
+    await submit(this.emailForm, {
+      action: async () => {
+        let hasPasskeys = false;
+        const end = this._loading.begin();
+        try {
+          ({ hasPasskeys } = await this.authService.checkEmail(emailVal));
+        } catch {
+          // network error — fall through to password
+        } finally {
+          end();
+        }
+
+        if (hasPasskeys) {
+          this.step.set('passkey');
+          await this.signInWithPasskey();
+        } else {
+          this.step.set('password');
+        }
+
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.emailForm.email();
+        const hasRequired = f.errors().some((e) => e.kind === 'required');
+        this.alertSvc.showError(hasRequired ? 'Email is required.' : 'Please enter a valid email address.');
+      },
+    });
+  }
+
+  public async signInWithPasskey() {
+    const end = this._loading.begin();
+    try {
+      const result = await this.authService.signInWithPasskey(this.persistence());
+      if (result.cancelled) {
+        this.step.set('password');
+        return;
+      }
+      if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
+    } catch (err: any) {
+      if (err?.name === 'NotAllowedError') {
+        this.step.set('password');
+        return;
+      }
+      this.handleError(err);
+    } finally {
+      end();
+    }
+  }
+
+  public async signIn(event?: Event) {
+    event?.preventDefault();
+
+    this.tokenService.clearAll();
+
+    const emailVal = this.emailData().email.trim().toLowerCase();
+    const passwordVal = this.passwordData().password;
+
+    this.verificationPending.set(false);
+    this.passwordForm().markAsTouched();
+
+    await submit(this.passwordForm, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          this.suppressNavigation.set(true);
+          const res = await this.authService.signIn({
+            email: emailVal,
+            password: passwordVal,
+            rememberMe: this.persistence(),
+          });
+          if (res.requires2FA) {
+            this.suppressNavigation.set(false);
+            this.step.set('2fa');
+            this.emailFor2FA.set(res.email || emailVal);
+            this.otpData.update((o) => ({ ...o, code: '' }));
+          } else {
+            const user = this.authService.getUser();
+            const dismissed = !!user?.passkey_setup_dismissed_at;
+            if (!dismissed) {
+              const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
+              if (passkeys.length === 0) {
+                this.step.set('passkey-setup');
+                return null;
+              }
+            }
+            this.suppressNavigation.set(false);
+          }
+        } catch (err: any) {
+          this.suppressNavigation.set(false);
+          this.handleError(err, emailVal);
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.passwordForm.password();
+        const hasMinLength = f.errors().some((e) => e.kind === 'minLength');
+        this.alertSvc.showError(
+          hasMinLength ? 'Password must be at least 8 characters.' : 'Please enter your password.',
+        );
+      },
+    });
+  }
+
+  public async verify2FA(event?: Event) {
+    event?.preventDefault();
+
+    this.otpForm().markAsTouched();
+
+    await submit(this.otpForm, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const emailVal = this.emailFor2FA();
+          const codeVal = this.otpData().code.trim();
+          await this.authService.verify2FA({
+            email: emailVal,
+            code: codeVal,
+            rememberMe: this.persistence(),
+          });
+        } catch (err: any) {
+          this.handleError(err);
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.otpForm.code();
+        const hasRequired = f.errors().some((e) => e.kind === 'required');
+        const hasPattern = f.errors().some((e) => e.kind === 'pattern');
+        const msg = hasRequired
+          ? 'Verification code is required.'
+          : hasPattern
+            ? 'Verification code must be exactly 6 digits.'
+            : 'Please enter a valid verification code.';
+        this.alertSvc.showError(msg);
+      },
+    });
+  }
+
+  public async setupPasskey() {
+    this.settingUpPasskey.set(true);
+    try {
+      const result = await this.authService.registerPasskey();
+      if (result.verified) {
+        this.alertSvc.showSuccess('Passkey set up successfully!');
+      }
+    } catch (err: any) {
+      if (err?.name !== 'NotAllowedError') {
+        this.alertSvc.showError(err.message || 'Failed to set up passkey.');
+      }
+    } finally {
+      this.settingUpPasskey.set(false);
+      this.suppressNavigation.set(false);
+    }
+  }
+
+  public async skipPasskeySetup() {
+    try {
+      await this.authService.dismissPasskeyPrompt();
+    } catch {
+      // non-fatal — still allow navigation
+    }
+    this.suppressNavigation.set(false);
+  }
+
+  public togglePersistence(target: EventTarget | null) {
+    if (!target) return;
+    const checked = (target as HTMLInputElement).checked;
+    this.tokenService.setPersistence(checked);
+    this.persistence.set(checked);
+  }
+
+  public async resendVerification() {
+    const emailVal = this.pendingEmail().trim();
+    if (!emailVal || this.resendCooldownSeconds() > 0) return;
+    this.resending.set(true);
+    try {
+      await this.authService.resendVerificationEmail(emailVal);
+      this.alertSvc.showSuccess('Verification email sent successfully!');
+      this.startResendCooldown(60);
+    } catch (err: any) {
+      const tRPCData = err?.originalError?.data ?? err?.data;
+      const retryAfterSec =
+        (tRPCData?.retryAfterSec as number | undefined) ?? this.parseRetryAfterSec(err.message || '');
+      if (retryAfterSec) {
+        this.startResendCooldown(retryAfterSec);
+      } else {
+        this.alertSvc.showError(err.message || 'Failed to resend verification email.');
+      }
+    } finally {
+      this.resending.set(false);
+    }
+  }
+
+  private clearCountdown() {
+    if (this._countdownInterval !== null) {
+      clearInterval(this._countdownInterval);
+      this._countdownInterval = null;
+    }
+  }
+
+  private clearResendCooldown() {
+    if (this._resendCooldownInterval !== null) {
+      clearInterval(this._resendCooldownInterval);
+      this._resendCooldownInterval = null;
+    }
+  }
+
+  private startResendCooldown(seconds: number) {
+    this.clearResendCooldown();
+    this.resendCooldownSeconds.set(seconds);
+    this._resendCooldownInterval = setInterval(() => {
+      const current = this.resendCooldownSeconds();
+      if (current <= 1) {
+        this.resendCooldownSeconds.set(0);
+        this.clearResendCooldown();
+      } else {
+        this.resendCooldownSeconds.update((s) => s - 1);
+      }
+    }, 1000);
+  }
+
+  private handleError(err: any, emailVal?: string) {
+    const tRPCData = err?.originalError?.data ?? err?.data;
+    const message = err.message || String(err);
+    const retryAfterSec = (tRPCData?.retryAfterSec as number | undefined) ?? this.parseRetryAfterSec(message);
+    if (retryAfterSec) {
+      this.startRateLimitCountdown(retryAfterSec);
+      return;
+    }
+    const code = tRPCData?.code as string | undefined;
+    if (emailVal && message.toLowerCase().includes('not verified')) {
+      this.verificationPending.set(true);
+      this.pendingEmail.set(emailVal);
+      this.alertSvc.showError(message);
+    } else if (emailVal && (code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
+      this.alertSvc.showError('Please check your email address and password and try again.');
+    } else {
+      this.alertSvc.showError(message);
+    }
+  }
+
+  private parseRetryAfterSec(message: string): number | undefined {
+    const match = message?.match(/retry in (\d+) second/i);
+    return match ? parseInt(match[1]!, 10) : undefined;
+  }
+
+  private startRateLimitCountdown(seconds: number) {
+    this.clearCountdown();
+    this.rateLimitSecondsLeft.set(seconds);
+
+    this._countdownInterval = setInterval(() => {
+      const current = this.rateLimitSecondsLeft();
+      if (current < 1) {
+        this.clearCountdown();
+      } else {
+        this.rateLimitSecondsLeft.update((s) => s - 1);
+      }
+    }, 1000);
+  }
+}
+
+export function emailSafeValidator(): ValidatorFn {
+  return (control: AbstractControl) => {
+    const v = (control.value ?? '').toString().trim();
+    return v && EMAIL_SAFE.test(v) ? null : { email: true };
+  };
+}
+
+const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+```
+
+## File: apps/frontend/src/app/experiences/settings/settings-page.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
+import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
+import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
+import { HouseholdsService } from '../households/services/households-service';
+import { AccountSettingsComponent } from './account/account-settings';
+import { BillingSettingsComponent } from './billing/billing-settings';
+import { DomainSettingsComponent } from './domains/domains-settings';
+import { DonationsSettingsComponent } from './donations/donations-settings';
+import { GoogleSyncSettings } from './google-sync/google-sync-settings';
+import { MsSyncSettings } from './ms-sync/ms-sync-settings';
+import { PasskeySettingsComponent } from './security/passkey-settings';
+import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
+import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
+
+interface SectionFieldState {
+  config: SettingsFieldConfig;
+  controlName: string;
+}
+
+interface SectionState {
+  config: SettingsSectionConfig;
+  fields: SectionFieldState[];
+  form: any;
+  payload: WritableSignal<Record<string, any>>;
+}
+
+@Component({
+  selector: 'pc-settings-page',
+  imports: [
+    FormField,
+    Icon,
+    MsSyncSettings,
+    GoogleSyncSettings,
+    BillingSettingsComponent,
+    DomainSettingsComponent,
+    DonationsSettingsComponent,
+    AccountSettingsComponent,
+    PasskeySettingsComponent,
+    DatePipe,
+  ],
+  templateUrl: './settings-page.html',
+})
+export class SettingsPage implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
+
+  protected readonly currentMode: 'settings' | 'configuration';
+  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
+  protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
+  protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
+  protected readonly fingerprintRecomputeNextAvailable = computed(() => {
+    const lastTime = this.lastFingerprintRecomputeTime();
+    if (!lastTime) return null;
+    const nextAvailable = new Date(lastTime.getTime());
+    nextAvailable.setMonth(nextAvailable.getMonth() + 1);
+    return nextAvailable;
+  });
+  protected readonly hasLoaded = signal(false);
+  protected readonly householdsSvc = inject(HouseholdsService);
+  protected readonly isFingerprintRecomputeCooldown = computed(() => {
+    const nextAvailable = this.fingerprintRecomputeNextAvailable();
+    if (!nextAvailable) return false;
+    return Date.now() < nextAvailable.getTime();
+  });
+  protected readonly lastRequestedEmail = signal<string | null>(null);
+  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
+  protected readonly recomputingFingerprints = signal(false);
+  protected readonly savingSectionId = signal<string | null>(null);
+  protected readonly sectionStates: SectionState[];
+  protected readonly sections = SETTINGS_SECTIONS;
+  protected readonly selectedSectionId = signal<string>('');
+  protected readonly senderEmailInput = signal('');
+  protected readonly settingsSvc = inject(SettingsService);
+  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
+  protected readonly verifiedEmailsList = computed<string[]>(() => {
+    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+  });
+  protected readonly verifyingEmail = signal<string | null>(null);
+
+  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
+  protected trackSection = (_: number, section: SectionState) => section.config.id;
+
+  public readonly section = input<string>();
+
+  constructor() {
+    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'configuration') || 'settings';
+    this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
+
+    effect(() => {
+      const s = this.section();
+      if (s) {
+        this.selectedSectionId.set(s);
+      } else {
+        if (this.currentMode === 'settings') {
+          this.selectedSectionId.set('notifications');
+        } else if (this.currentMode === 'configuration') {
+          this.selectedSectionId.set('organization');
+        }
+      }
+    });
+
+    effect(() => {
+      const snapshot = this.snapshotSignal();
+      this.applySnapshot(snapshot, false);
+    });
+
+    effect(() => {
+      const snapshot = this.snapshotSignal();
+      const verifiedEmails = (snapshot['communications.verified_emails'] as string[]) || [];
+
+      const commsSection = this.sections.find((s) => s.id === 'communications');
+      if (commsSection) {
+        const fromEmailField = commsSection.fields.find((f) => f.key === 'communications.default_from_email');
+        const replyToField = commsSection.fields.find((f) => f.key === 'communications.reply_to');
+
+        const options = [
+          { label: 'Select a verified email', value: '' },
+          ...verifiedEmails.map((email) => ({ label: email, value: email })),
+        ];
+
+        if (fromEmailField) {
+          fromEmailField.options = options;
+        }
+        if (replyToField) {
+          replyToField.options = options;
+        }
+      }
+    });
+  }
+
+  protected get visibleSections(): SectionState[] {
+    if (this.currentMode === 'settings') {
+      return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
+    }
+    if (this.currentMode === 'configuration') {
+      return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
+    }
+    return [];
+  }
+
+  public async ngOnInit() {
+    await this.settingsSvc.load();
+    this.hasLoaded.set(true);
+    this.applySnapshot(this.settingsSvc.snapshot(), true);
+    await this.loadUserPrefs();
+    await this.loadLastFingerprintRecomputeTime();
+  }
+
+  protected copyToClipboard(val: string | null | undefined) {
+    if (!val) return;
+    navigator.clipboard
+      .writeText(val)
+      .then(() => {
+        this.alerts.showSuccess('Copied to clipboard!');
+      })
+      .catch(() => {
+        this.alerts.showError('Failed to copy to clipboard.');
+      });
+  }
+
+  protected generateWebhookCredentials(section: SectionState) {
+    const key = 'pk_live_' + this.randomHex(24);
+    const secret = 'whsec_' + this.randomHex(32);
+
+    section.payload.update((p) => ({
+      ...p,
+      integrations_webhook_api_key: key,
+      integrations_webhook_api_secret: secret,
+    }));
+
+    (section.form as any)['integrations_webhook_api_key']().markAsDirty();
+    (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
+    this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
+  }
+
+  protected getNotificationGroups(section: SectionState) {
+    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
+    const fields = section.fields;
+
+    for (const field of fields) {
+      if (field.config.key.endsWith('_in_app')) continue;
+
+      const inAppControlName = `${field.controlName}_in_app`;
+      const inAppField = fields.find((f) => f.controlName === inAppControlName);
+
+      groups.push({
+        label: field.config.label,
+        helper: field.config.helper || '',
+        emailField: field,
+        inAppField: inAppField,
+      });
+    }
+    return groups;
+  }
+
+  protected isEmailVerified(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+    return verified.includes(email.toLowerCase().trim());
+  }
+
+  protected isSaving(section: SectionState) {
+    return this.savingSectionId() === section.config.id;
+  }
+
+  protected isSectionDirty(section: SectionState) {
+    return section.form().dirty();
+  }
+
+  protected isSectionInvalid(section: SectionState) {
+    return section.form().invalid();
+  }
+
+  protected isSelected(sectionId: string) {
+    return this.selectedSectionId() === sectionId;
+  }
+
+  protected isVerifyCooldown(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
+    if (!lastTime) return false;
+    return Date.now() - lastTime < 60000;
+  }
+
+  protected async loadLastFingerprintRecomputeTime() {
+    try {
+      const res = await this.householdsSvc.getLastFingerprintRecomputation();
+      if (res && res.lastRunAt) {
+        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
+      } else {
+        this.lastFingerprintRecomputeTime.set(null);
+      }
+    } catch (err) {
+      console.error('Failed to load last fingerprint recompute time', err);
+    }
+  }
+
+  protected async loadUserPrefs() {
+    try {
+      const currentUser = await this.auth.getCurrentUser();
+      if (currentUser) {
+        const user = await this.userService.getProfileById(currentUser.id);
+        this.currentUserDetail.set(user);
+        const prefs = user.notification_preferences || {
+          mention_in_comment: true,
+          mention_in_comment_in_app: true,
+          task_assigned: true,
+          task_assigned_in_app: true,
+          task_due: true,
+          task_due_in_app: true,
+          person_assigned: true,
+          person_assigned_in_app: true,
+          export_ready: true,
+          export_ready_in_app: true,
+          import_summary: true,
+          import_summary_in_app: true,
+        };
+        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
+        if (notifState) {
+          notifState.payload.update((p) => ({
+            ...p,
+            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
+            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
+            notifications_task_assigned: prefs.task_assigned ?? true,
+            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
+            notifications_task_due: prefs.task_due ?? true,
+            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
+            notifications_person_assigned: prefs.person_assigned ?? true,
+            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
+            notifications_export_ready: prefs.export_ready ?? true,
+            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
+            notifications_import_summary: prefs.import_summary ?? true,
+            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
+          }));
+          notifState.form().reset();
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to load user preferences in settings page', err);
+    }
+  }
+
+  protected async recomputeAddressFingerprints() {
+    if (this.isFingerprintRecomputeCooldown()) {
+      this.alerts.showError('Fingerprints can only be recomputed once a month.');
+      return;
+    }
+
+    this.recomputingFingerprints.set(true);
+    try {
+      await this.householdsSvc.recomputeAddressFingerprints();
+      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
+      await this.loadLastFingerprintRecomputeTime();
+    } catch (err: any) {
+      this.alerts.showError(err.message || 'Failed to trigger address fingerprint recomputation.');
+    } finally {
+      this.recomputingFingerprints.set(false);
+    }
+  }
+
+  protected resetSection(section: SectionState) {
+    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
+    if (section.config.id === 'notifications') {
+      void this.loadUserPrefs();
+    }
+  }
+
+  protected async saveSection(section: SectionState) {
+    if (!section.form().dirty()) return;
+
+    const entries: SettingsEntryType[] = [];
+    for (const field of section.fields) {
+      const fieldSignal = (section.form as any)[field.controlName]();
+      if (!fieldSignal.dirty()) continue;
+
+      // Skip user notification preferences from tenant settings upsert
+      if (section.config.id === 'notifications') {
+        continue;
+      }
+
+      const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
+      entries.push({ key: field.config.key, value });
+    }
+
+    this.savingSectionId.set(section.config.id);
+    try {
+      if (entries.length > 0) {
+        const snapshot = await this.settingsSvc.upsert(entries);
+        this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
+      }
+
+      if (section.config.id === 'notifications') {
+        const user = this.currentUserDetail();
+        if (user) {
+          const raw = section.payload();
+          const parseBool = (val: any) => val === true || val === 'true';
+          const payload: UpdateAuthUserType = {
+            notification_preferences: {
+              mention_in_comment: parseBool(raw['notifications_mention_in_comment']),
+              mention_in_comment_in_app: parseBool(raw['notifications_mention_in_comment_in_app']),
+              task_assigned: parseBool(raw['notifications_task_assigned']),
+              task_assigned_in_app: parseBool(raw['notifications_task_assigned_in_app']),
+              task_due: parseBool(raw['notifications_task_due']),
+              task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
+              person_assigned: parseBool(raw['notifications_person_assigned']),
+              person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
+              export_ready: parseBool(raw['notifications_export_ready']),
+              export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
+              import_summary: parseBool(raw['notifications_import_summary']),
+              import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
+            },
+          };
+          await this.userService.updateUserProfile(user.id, payload);
+          await this.loadUserPrefs();
+        }
+      }
+      this.alerts.showSuccess('Settings updated successfully');
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Failed to save settings';
+      this.alerts.showError(message);
+    } finally {
+      this.savingSectionId.set(null);
+    }
+  }
+
+  protected selectSection(sectionId: string) {
+    this.router.navigate(['/', this.currentMode, sectionId]);
+  }
+
+  protected async verifySenderEmail(email: string | null | undefined) {
+    if (!email) return;
+    const normalized = email.toLowerCase().trim();
+
+    if (this.isVerifyCooldown(normalized)) {
+      this.alerts.showError('Please wait at least one minute before requesting verification again.');
+      return;
+    }
+
+    this.verifyingEmail.set(normalized);
+
+    try {
+      await this.settingsSvc.requestEmailVerification(normalized);
+      this.lastVerificationTimes.update((prev) => ({
+        ...prev,
+        [normalized]: Date.now(),
+      }));
+      this.startEmailCooldown(normalized);
+      this.lastRequestedEmail.set(normalized);
+      this.alerts.showSuccess(
+        `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
+      );
+    } catch (err: any) {
+      this.alerts.showError(err.message || 'Failed to send verification email.');
+    } finally {
+      this.verifyingEmail.set(null);
+    }
+  }
+
+  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
+    const sections = target ? [target] : this.sectionStates;
+
+    for (const state of sections) {
+      const nextPayload = { ...state.payload() };
+      let changed = false;
+
+      for (const field of state.fields) {
+        const fieldSignal = (state.form as any)[field.controlName]();
+        if (!resetDirty && fieldSignal.dirty()) continue;
+
+        // Skip user notification preferences from tenant settings snapshot update
+        if (state.config.id === 'notifications') {
+          continue;
+        }
+
+        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
+        if (nextPayload[field.controlName] !== incoming) {
+          nextPayload[field.controlName] = incoming;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        state.payload.set(nextPayload);
+      }
+
+      if (resetDirty) {
+        state.form().reset();
+      }
+    }
+  }
+
+  private buildSectionState(section: SettingsSectionConfig): SectionState {
+    const initialPayload: Record<string, any> = {};
+    const fieldStates: SectionFieldState[] = [];
+
+    for (const field of section.fields) {
+      const controlName = this.controlNameFor(field.key);
+      initialPayload[controlName] = this.normalizeIncomingValue(
+        field,
+        this.settingsSvc.getValue(field.key, field.defaultValue),
+      );
+      fieldStates.push({ config: field, controlName });
+    }
+
+    const payload = signal(initialPayload);
+    const formSignal = form(payload, (p) => {
+      for (const field of section.fields) {
+        const controlName = this.controlNameFor(field.key);
+        if (field.type === 'email') {
+          email(p[controlName]);
+        }
+        if (field.type === 'url') {
+          pattern(p[controlName], /^https?:\/\//i);
+        }
+        if (field.key === 'communications.default_from_email' || field.key === 'communications.reply_to') {
+          validate(p[controlName], (ctx) => {
+            const val = ((ctx.value() as string) || '').toLowerCase().trim();
+            if (!val) return null;
+            const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+            if (!verified.includes(val)) {
+              return { kind: 'not-verified', message: 'Email address must be verified.' };
+            }
+            return null;
+          });
+        }
+      }
+    });
+
+    return { config: section, payload, form: formSignal, fields: fieldStates };
+  }
+
+  private controlNameFor(key: string) {
+    return key.replace(/[^a-zA-Z0-9]+/g, '_');
+  }
+
+  private defaultForField(field: SettingsFieldConfig) {
+    switch (field.type) {
+      case 'toggle':
+        return false;
+      case 'number':
+        return null;
+      case 'select':
+        return field.options?.[0]?.value ?? '';
+      default:
+        return '';
+    }
+  }
+
+  private normalizeIncomingValue(field: SettingsFieldConfig, raw: unknown) {
+    const fallback = field.defaultValue ?? this.defaultForField(field);
+
+    switch (field.type) {
+      case 'toggle':
+        return Boolean(raw ?? fallback ?? false);
+      case 'number': {
+        if (raw === null || raw === undefined || raw === '') return fallback ?? null;
+        const numeric = typeof raw === 'number' ? raw : Number(raw);
+        return Number.isFinite(numeric) ? numeric : (fallback ?? null);
+      }
+      case 'select': {
+        const options = field.options ?? [];
+        const candidate = raw === undefined || raw === null ? fallback : String(raw);
+        const match = options.find((option) => option.value === candidate);
+        if (match) return match.value;
+        return (fallback ?? options[0]?.value ?? '') as string;
+      }
+      case 'date':
+        return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
+      case 'email':
+      case 'tel':
+      case 'password':
+      case 'url':
+      case 'text':
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      case 'textarea':
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      default:
+        return raw ?? fallback ?? '';
+    }
+  }
+
+  private prepareOutgoingValue(field: SettingsFieldConfig, value: unknown) {
+    switch (field.type) {
+      case 'toggle':
+        return Boolean(value);
+      case 'number': {
+        if (value === '' || value === null || value === undefined) return null;
+        const numeric = typeof value === 'number' ? value : Number(value);
+        return Number.isFinite(numeric) ? numeric : null;
+      }
+      case 'select': {
+        const candidate = value === null || value === undefined ? '' : String(value);
+        const options = field.options ?? [];
+        const match = options.find((option) => option.value === candidate);
+        return match ? match.value : this.defaultForField(field);
+      }
+      case 'date':
+        return typeof value === 'string' ? value : value ? String(value) : '';
+      case 'textarea':
+      case 'text':
+      case 'email':
+      case 'tel':
+      case 'password':
+      case 'url':
+        return value === null || value === undefined ? '' : String(value);
+      default:
+        return value ?? '';
+    }
+  }
+
+  private randomHex(len: number): string {
+    const chars = '0123456789abcdef';
+    let result = '';
+    for (let i = 0; i < len; i++) {
+      result += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return result;
+  }
+
+  private startEmailCooldown(email: string) {
+    this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: 60 }));
+    const interval = setInterval(() => {
+      const current = this.emailCooldownSeconds()[email] || 0;
+      if (current <= 1) {
+        clearInterval(interval);
+        this.emailCooldownSeconds.update((prev) => {
+          const next = { ...prev };
+          delete next[email];
+          return next;
+        });
+      } else {
+        this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
+      }
+    }, 1000);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/auth/auth-service.ts
 
 ```typescript
@@ -51502,6 +51172,368 @@ export class AuthService extends TRPCService<'authusers'> {
     return this.getCurrentUser();
   }
 }
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
+
+```html
+<!-- Mobile toolbar -->
+<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
+  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Delete selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+  <!-- Combined filter panel -->
+  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
+  grid.showListFilter()) {
+  <pc-grid-tool-btn
+    icon="funnel"
+    tip="Filters"
+    [hasDropdown]="true"
+    [dropdownEnd]="false"
+    [active]="
+      grid.selectedNarrowType() !== null ||
+      grid.selectedTags().length > 0 ||
+      grid.selectedIssues().length > 0 ||
+      grid.selectedListId() !== null ||
+      grid.hasActiveFilters() ||
+      grid.hasActiveAdvancedFilters()
+    "
+  >
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
+    >
+      @if (grid.showNarrowTypeFilter()) {
+      <pc-dg-filter-section
+        [title]="'Narrow by Type'"
+        [bordered]="false"
+        [clearable]="false"
+        [active]="grid.selectedNarrowType() !== null"
+        [open]="grid.selectedNarrowType() !== null"
+      >
+        <pc-singleselect-filter
+          [label]="'Type'"
+          [options]="narrowTypeOptions()"
+          [selected]="grid.selectedNarrowType()"
+          [radioName]="'narrowTypeMobile'"
+          (select)="grid.selectNarrowType($event)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showTagFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Tags'"
+        [active]="grid.selectedTags().length > 0"
+        [open]="grid.selectedTags().length > 0"
+        (clear)="grid.clearTagsFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Tags'"
+          [options]="grid.filteredAvailableTags()"
+          [selected]="grid.selectedTags()"
+          [searchQuery]="grid.tagSearchQuery()"
+          (searchQueryChange)="grid.tagSearchQuery.set($event)"
+          (selectAll)="grid.selectAllTags()"
+          (clearVisible)="grid.clearAllTagsVisible()"
+          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showIssueFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Issues'"
+        [active]="grid.selectedIssues().length > 0"
+        [open]="grid.selectedIssues().length > 0"
+        (clear)="grid.clearIssuesFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Issues'"
+          [options]="grid.filteredAvailableIssues()"
+          [selected]="grid.selectedIssues()"
+          [searchQuery]="grid.issueSearchQuery()"
+          (searchQueryChange)="grid.issueSearchQuery.set($event)"
+          (selectAll)="grid.selectAllIssues()"
+          (clearVisible)="grid.clearAllIssuesVisible()"
+          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showListFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by List'"
+        [active]="grid.selectedListId() !== null"
+        [open]="grid.selectedListId() !== null"
+        (clear)="grid.clearListFilter()"
+      >
+        <pc-singleselect-filter
+          [label]="'List'"
+          [options]="listOptions()"
+          [selected]="grid.selectedListId()"
+          [radioName]="'selectedListMobile'"
+          (select)="grid.selectListFilter($event)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.allowFilter()) {
+      <div class="border-t border-base-200 pt-1 flex flex-col">
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
+          [disabled]="grid.hasActiveAdvancedFilters()"
+          (click)="onToggleFilters()"
+        >
+          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
+        </button>
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+          (click)="grid.openAdvancedFilterBuilder()"
+        >
+          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
+        </button>
+      </div>
+      }
+    </div>
+  </pc-grid-tool-btn>
+  }
+  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <pc-dg-columns-dropdown [grid]="grid" />
+  </pc-grid-tool-btn>
+
+  <!-- Overflow: secondary actions -->
+  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
+      <li
+        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
+        [class.cursor-not-allowed]="grid.disableRefresh()"
+        [class.text-neutral-400]="grid.disableRefresh()"
+        [class.pointer-events-none]="grid.disableRefresh()"
+      >
+        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
+      </li>
+      @if (grid.addRoute() || !grid.disableMerge()) {
+      <div class="divider my-0"></div>
+      } @if (grid.addRoute()) {
+      <li
+        [class.disabled]="!grid.hasSingleSelection()"
+        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
+        [class.text-neutral-400]="!grid.hasSingleSelection()"
+        [class.pointer-events-none]="!grid.hasSingleSelection()"
+      >
+        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
+      </li>
+      } @if (!grid.disableMerge()) {
+      <li
+        [class.disabled]="grid.getCountRowSelected() !== 2"
+        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
+        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
+        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
+      >
+        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
+      </li>
+      } @if (!grid.disableImport() || !grid.disableExport()) {
+      <div class="divider my-0"></div>
+      } @if (!grid.disableImport()) {
+      <li>
+        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
+      </li>
+      } @if (!grid.disableExport()) {
+      <li>
+        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
+      </li>
+      } @if (grid.showArchiveIcon()) {
+      <li>
+        <a (click)="onToggleArchive()">
+          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
+        </a>
+      </li>
+      }
+    </ul>
+  </pc-grid-tool-btn>
+</ul>
+
+<!-- Desktop toolbar -->
+<ul class="menu menu-horizontal hidden lg:flex flex-row pl-0 relative z-30">
+  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+  <pc-grid-tool-btn
+    [enabled]="!!grid.addRoute() && grid.hasSingleSelection()"
+    [tip]="'Clone'"
+    icon="document-duplicate"
+    [hidden]="!grid.addRoute()"
+    (action)="onClone()"
+  />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Delete selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  @if (!grid.disableMerge()) {
+  <pc-grid-tool-btn
+    [enabled]="grid.getCountRowSelected() === 2"
+    [tip]="'Merge selected rows'"
+    icon="merge"
+    (action)="onMergeSelected()"
+  />
+  }
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
+    [spinning]="grid.isRefreshing()"
+    [tip]="'Refresh the grid'"
+    icon="arrow-path"
+    (action)="onRefresh()"
+  />
+  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableImport()"
+    [tip]="'Import data from CSV'"
+    icon="arrow-up-tray"
+    (action)="onImportCsv()"
+  />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableExport()"
+    [tip]="'Download as CSV'"
+    icon="arrow-down-tray"
+    (action)="onExportCsv()"
+  />
+
+  @if (grid.showNarrowTypeFilter() || grid.showTagFilter()) {
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+  } @if (grid.showNarrowTypeFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'tag'"
+    [tip]="'Narrow by type'"
+    [active]="grid.selectedNarrowType() !== null"
+    [hasDropdown]="true"
+  >
+    <div tabindex="0" class="dropdown-content bg-base-100 rounded-box z-[1] w-48 p-3 shadow-lg border border-base-200">
+      <pc-singleselect-filter
+        [label]="'Type'"
+        [options]="narrowTypeOptions()"
+        [selected]="grid.selectedNarrowType()"
+        [radioName]="'narrowType'"
+        (select)="grid.selectNarrowType($event)"
+      />
+    </div>
+  </pc-grid-tool-btn>
+  } @if (grid.showTagFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'label'"
+    [tip]="'Filter by Tags'"
+    [active]="grid.selectedTags().length > 0"
+    [hasDropdown]="true"
+    [badge]="grid.selectedTags().length"
+  >
+    <pc-dg-filter-dropdown
+      [title]="'Filter by Tags'"
+      [active]="grid.selectedTags().length > 0"
+      (clear)="grid.clearTagsFilter()"
+    >
+      <pc-multiselect-filter
+        [label]="'Tags'"
+        [options]="grid.filteredAvailableTags()"
+        [selected]="grid.selectedTags()"
+        [searchQuery]="grid.tagSearchQuery()"
+        (searchQueryChange)="grid.tagSearchQuery.set($event)"
+        [maxHeight]="14"
+        (selectAll)="grid.selectAllTags()"
+        (clearVisible)="grid.clearAllTagsVisible()"
+        (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+      />
+    </pc-dg-filter-dropdown>
+  </pc-grid-tool-btn>
+  } @if (grid.showIssueFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'shield-exclamation'"
+    [tip]="'Filter by Issues'"
+    [active]="grid.selectedIssues().length > 0"
+    [hasDropdown]="true"
+    [badge]="grid.selectedIssues().length"
+  >
+    <pc-dg-filter-dropdown
+      [title]="'Filter by Issues'"
+      [active]="grid.selectedIssues().length > 0"
+      (clear)="grid.clearIssuesFilter()"
+    >
+      <pc-multiselect-filter
+        [label]="'Issues'"
+        [options]="grid.filteredAvailableIssues()"
+        [selected]="grid.selectedIssues()"
+        [searchQuery]="grid.issueSearchQuery()"
+        (searchQueryChange)="grid.issueSearchQuery.set($event)"
+        [maxHeight]="14"
+        (selectAll)="grid.selectAllIssues()"
+        (clearVisible)="grid.clearAllIssuesVisible()"
+        (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+      />
+    </pc-dg-filter-dropdown>
+  </pc-grid-tool-btn>
+  } @if (grid.showListFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'queue-list'"
+    [tip]="'Filter by List'"
+    [active]="grid.selectedListId() !== null"
+    [hasDropdown]="true"
+  >
+    <pc-dg-filter-dropdown
+      [title]="'Filter by List'"
+      [active]="grid.selectedListId() !== null"
+      (clear)="grid.clearListFilter()"
+    >
+      <pc-singleselect-filter
+        [label]="'List'"
+        [options]="listOptions()"
+        [selected]="grid.selectedListId()"
+        [radioName]="'selectedList'"
+        [maxHeight]="14"
+        (select)="grid.selectListFilter($event)"
+      />
+    </pc-dg-filter-dropdown>
+  </pc-grid-tool-btn>
+  }
+
+  <pc-grid-tool-btn
+    icon="funnel"
+    tip="Advanced Filters"
+    [hidden]="!grid.allowFilter()"
+    [active]="grid.showFiltersState() || grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+    [enabled]="!grid.hasActiveAdvancedFilters()"
+    (action)="onToggleFilters()"
+  />
+  <pc-grid-tool-btn
+    icon="adjustments-horizontal"
+    tip="Advanced Query Builder"
+    [hidden]="!grid.allowFilter()"
+    [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+    [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
+    (action)="grid.openAdvancedFilterBuilder()"
+  />
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <pc-dg-columns-dropdown [grid]="grid" />
+  </pc-grid-tool-btn>
+
+  <pc-grid-tool-btn
+    [icon]="grid.archiveIcon()"
+    [tip]="grid.archiveTip()"
+    [hidden]="!grid.showArchiveIcon()"
+    [active]="grid.archiveModeState()"
+    (action)="onToggleArchive()"
+  />
+</ul>
 ```
 
 ## File: apps/frontend/src/app/dashboard.routes.ts
