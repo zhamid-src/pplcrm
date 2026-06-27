@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture} from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { SignUpPage } from './signup-page';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -14,13 +15,13 @@ describe('SignUpPage', () => {
 
   beforeEach(async () => {
     mockAuthSvc = {
-      signUp: vi.fn().mockResolvedValue({ first_name: 'John' })
+      signUp: vi.fn().mockResolvedValue({ first_name: 'John' }),
     };
 
     mockAlertSvc = {
       showError: vi.fn(),
       showSuccess: vi.fn(),
-      alertList: vi.fn().mockReturnValue([])
+      alertList: vi.fn().mockReturnValue([]),
     };
 
     await TestBed.configureTestingModule({
@@ -28,8 +29,8 @@ describe('SignUpPage', () => {
       providers: [
         provideRouter([]),
         { provide: AuthService, useValue: mockAuthSvc },
-        { provide: AlertService, useValue: mockAlertSvc }
-      ]
+        { provide: AlertService, useValue: mockAlertSvc },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(SignUpPage);
@@ -50,8 +51,12 @@ describe('SignUpPage', () => {
     expect(mockAuthSvc.signUp).not.toHaveBeenCalled();
   });
 
-  it('should submit form and show success when valid', async () => {
-    // Fill out the form correctly
+  it('should submit form and redirect to signin with verificationPending when valid', async () => {
+    mockAuthSvc.signUp.mockResolvedValue({ first_name: 'John', email: 'test@example.com' });
+
+    const mockRouter = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(mockRouter, 'navigate').mockResolvedValue(true as any);
+
     component['signUpData'].set({
       organization: 'Acme Corp',
       email: 'test@example.com',
@@ -59,7 +64,7 @@ describe('SignUpPage', () => {
       first_name: 'John',
       middle_names: '',
       last_name: 'Doe',
-      terms: 'true'
+      terms: 'true',
     });
 
     fixture.detectChanges();
@@ -74,9 +79,11 @@ describe('SignUpPage', () => {
       first_name: 'John',
       middle_names: '',
       last_name: 'Doe',
-      terms: 'true'
+      terms: 'true',
     });
-    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Welcome John!');
+    expect(navigateSpy).toHaveBeenCalledWith(['/signin'], {
+      queryParams: { verificationPending: 'true', email: 'test@example.com' },
+    });
   });
 
   it('should show error if signup returns falsy user', async () => {
@@ -89,7 +96,7 @@ describe('SignUpPage', () => {
       first_name: 'John',
       middle_names: '',
       last_name: '',
-      terms: ''
+      terms: '',
     });
 
     fixture.detectChanges();
@@ -109,7 +116,7 @@ describe('SignUpPage', () => {
       first_name: 'John',
       middle_names: '',
       last_name: '',
-      terms: ''
+      terms: '',
     });
 
     fixture.detectChanges();
@@ -118,7 +125,9 @@ describe('SignUpPage', () => {
     expect(mockAlertSvc.showError).toHaveBeenCalledWith(errorMsg);
   });
 
-  it('should redirect to summary page on successful sign up', async () => {
+  it('should redirect to signin with verificationPending on successful sign up', async () => {
+    mockAuthSvc.signUp.mockResolvedValue({ first_name: 'John', email: 'test@example.com' });
+
     const mockRouter = TestBed.inject(Router);
     const navigateSpy = vi.spyOn(mockRouter, 'navigate').mockResolvedValue(true as any);
 
@@ -129,13 +138,15 @@ describe('SignUpPage', () => {
       first_name: 'John',
       middle_names: '',
       last_name: 'Doe',
-      terms: 'true'
+      terms: 'true',
     });
 
     fixture.detectChanges();
     await component.join();
 
-    expect(navigateSpy).toHaveBeenCalledWith(['summary']);
+    expect(navigateSpy).toHaveBeenCalledWith(['/signin'], {
+      queryParams: { verificationPending: 'true', email: 'test@example.com' },
+    });
   });
 
   it('should call join only once on form submit via button click', async () => {
@@ -146,7 +157,7 @@ describe('SignUpPage', () => {
       first_name: 'John',
       middle_names: '',
       last_name: 'Doe',
-      terms: 'true'
+      terms: 'true',
     });
     fixture.detectChanges();
 

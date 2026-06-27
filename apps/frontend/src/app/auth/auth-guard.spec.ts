@@ -10,24 +10,24 @@ describe('AuthGuard', () => {
 
   beforeEach(() => {
     mockAuthSvc = {
-      getUser: vi.fn()
+      getUser: vi.fn(),
     };
 
     mockRouter = {
-      navigateByUrl: vi.fn()
+      navigateByUrl: vi.fn(),
     };
 
     TestBed.configureTestingModule({
       providers: [
         { provide: AuthService, useValue: mockAuthSvc },
-        { provide: Router, useValue: mockRouter }
-      ]
+        { provide: Router, useValue: mockRouter },
+      ],
     });
   });
 
   it('should allow access if user is authenticated', () => {
-    mockAuthSvc.getUser.mockReturnValue({ id: 'user-123' });
-    
+    mockAuthSvc.getUser.mockReturnValue({ id: 'user-123', email_verified: true });
+
     TestBed.runInInjectionContext(() => {
       const result = authGuard({} as any, {} as any);
       expect(result).toBe(true);
@@ -37,7 +37,7 @@ describe('AuthGuard', () => {
 
   it('should redirect to signin if user is NOT authenticated', () => {
     mockAuthSvc.getUser.mockReturnValue(null);
-    
+
     TestBed.runInInjectionContext(() => {
       authGuard({} as any, {} as any);
       expect(mockRouter.navigateByUrl).toHaveBeenCalledWith('/signin');
