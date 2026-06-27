@@ -1,4 +1,4 @@
-import {
+import type {
   ExportCsvInputType,
   ExportCsvResponseType,
   IAuthKeyPayload,
@@ -6,11 +6,12 @@ import {
 } from '../../../../../libs/common/src';
 import { env } from '../../env';
 
-import { ReferenceExpression, Transaction } from 'kysely';
+import type { ReferenceExpression, Transaction } from 'kysely';
 
-import { Models, OperationDataType, TypeTenantId } from '../../../../../libs/common/src/lib/kysely.models';
-import { BaseRepository, QueryParams } from './base.repo';
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../libs/common/src/lib/kysely.models';
+import type { BaseRepository, QueryParams } from './base.repo';
 import { rowsToCsv } from './csv';
+import type { UserActivityType } from './user-activity.repo';
 import { UserActivityRepo } from './user-activity.repo';
 import { TransactionalEmailService } from './mail/transactional-mail.service';
 
@@ -164,13 +165,15 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
   }
 
   public getOneById(input: { tenant_id: string; id: string }) {
-    return this.repo.getOneBy('id' as any, { value: input.id as any, tenant_id: input.tenant_id });
+    return this.repo.getOneById({ id: input.id, tenant_id: input.tenant_id });
   }
 
   public async update(input: { tenant_id: string; id: string; row: OperationDataType<T, 'update'> }) {
-    let original: any = null;
+    let original: Record<string, unknown> | undefined;
     try {
-      original = await this.repo.getOneBy('id' as any, { value: input.id as any, tenant_id: input.tenant_id });
+      original = (await this.repo.getOneById({ id: input.id, tenant_id: input.tenant_id })) as
+        | Record<string, unknown>
+        | undefined;
     } catch (err) {
       console.error('Failed to fetch original record for activity log', err);
     }
@@ -198,7 +201,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
           const changes: Record<string, any> = {};
           for (const key of Object.keys(rowObj)) {
             if (skipKeys.includes(key)) continue;
-            const oldVal = (original as any)[key];
+            const oldVal = original[key];
             const newVal = resultObj[key];
             if (oldVal !== newVal) {
               changes[key] = { from: oldVal ?? null, to: newVal ?? null };
@@ -210,7 +213,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         if (String(this.repo.getTableName()) === 'tasks' && resultObj && resultObj['name']) {
           metadata['task_name'] = String(resultObj['name']);
         }
-        let activity = 'update';
+        let activity: UserActivityType = 'update';
         if (String(this.repo.getTableName()) === 'tasks' && 'due_at' in rowObj) {
           metadata['action'] = 'change_due_date';
           metadata['due_at'] = rowObj['due_at'];
@@ -225,7 +228,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
               const assignee = await this.repo.db
                 .selectFrom('authusers')
                 .select(['first_name', 'last_name'])
-                .where('id', '=', Number(assigneeId) as any)
+                .where('id', '=', String(assigneeId))
                 .executeTakeFirst();
               if (assignee) {
                 metadata['assigned_to_name'] = `${assignee.first_name} ${assignee.last_name || ''}`.trim();
@@ -238,7 +241,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         await this.userActivity.log({
           tenant_id: String(input.tenant_id),
           user_id: String(actor),
-          activity: activity as any,
+          activity: activity,
           entity: String(this.repo.getTableName()),
           entity_id: input.id ? String(input.id) : null,
           quantity: 1,
@@ -288,7 +291,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
           .selectFrom('authusers')
           .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
           .select(['authusers.email', 'profiles.json as profile_json'])
-          .where('authusers.id', '=', auth.user_id as any)
+          .where('authusers.id', '=', auth.user_id)
           .executeTakeFirst();
         if (user && user.email) {
           let optedIn = true;
@@ -345,17 +348,17 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     };
   }
 
-  protected async resolveCreatorAndUpdater(tenantId: string, record: any, trx?: any) {
+  protected async resolveCreatorAndUpdater(tenantId: string, record: any, trx?: Transaction<Models>) {
     if (!record) return record;
-    const db = trx || this.repo.db;
-    const userIds = [record.createdby_id, record.updatedby_id].filter(Boolean);
+    const db = trx ?? this.repo.db;
+    const userIds: string[] = [record.createdby_id, record.updatedby_id].filter(Boolean);
     if (userIds.length === 0) return record;
 
     const users = await db
       .selectFrom('authusers')
       .select(['id', 'first_name', 'last_name'])
-      .where('id', 'in', userIds as any)
-      .where('tenant_id', '=', tenantId as any)
+      .where('id', 'in', userIds)
+      .where('tenant_id', '=', tenantId)
       .execute();
 
     const userMap: Record<string, string> = {};
