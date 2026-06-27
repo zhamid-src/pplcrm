@@ -34,6 +34,7 @@ import { type SortingState, ColumnDef as TSColumnDef, type Updater } from '@tans
 // Context available for future slices/controllers (not yet used here)
 // import { GridContextService } from './state/grid-context.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DateFormatService } from '../../services/date-format.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { DataGridColumnsService } from './services/columns.service';
@@ -150,6 +151,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Injected Services
   protected readonly alertSvc = inject(AlertService);
+  private readonly dateFormatSvc = inject(DateFormatService);
   private readonly columnsSvc = inject(DataGridColumnsService);
   private readonly dataSvc = inject(DataGridDataService);
   private readonly filtersSvc = inject(DataGridFiltersService);
@@ -1518,6 +1520,18 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (t === 'date' || t === 'datetime' || t === 'dateonly') return 'date';
     if (t === 'color' || t === 'colour') return 'color';
     return 'text';
+  }
+
+  /**
+   * Renders a raw cell value, applying the tenant's configured date format to date-typed columns that
+   * don't define their own valueFormatter. Non-date columns are returned unchanged.
+   */
+  protected formatGridCell(col: ColDef, value: any): any {
+    if (this.inputTypeFor(col) === 'date') {
+      const formatted = this.dateFormatSvc.format(value);
+      return formatted || value;
+    }
+    return value;
   }
 
   // Toolbar helpers

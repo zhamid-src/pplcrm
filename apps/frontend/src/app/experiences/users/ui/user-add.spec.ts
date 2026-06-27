@@ -1,8 +1,10 @@
-import { TestBed, ComponentFixture } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { vi, describe, beforeEach, it, expect } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { UserAdminService } from '../services/useradmin-service';
+import { SettingsService } from '../../settings/services/settings-service';
 import { UserAddComponent } from './user-add';
 
 describe('UserAddComponent', () => {
@@ -12,11 +14,17 @@ describe('UserAddComponent', () => {
   let mockAlertSvc: any;
   let mockRouter: any;
   let mockActivatedRoute: any;
+  let mockSettingsSvc: any;
 
   beforeEach(async () => {
     mockUsersSvc = {
       add: vi.fn(),
       triggerRefresh: vi.fn(),
+    };
+
+    mockSettingsSvc = {
+      load: vi.fn().mockResolvedValue({}),
+      getValue: vi.fn().mockReturnValue(undefined),
     };
 
     mockAlertSvc = {
@@ -39,6 +47,7 @@ describe('UserAddComponent', () => {
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: Router, useValue: mockRouter },
         { provide: ActivatedRoute, useValue: mockActivatedRoute },
+        { provide: SettingsService, useValue: mockSettingsSvc },
       ],
     }).compileComponents();
 

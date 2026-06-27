@@ -1,0 +1,37 @@
+<pc-auth-layout>
+  @if (isLoading()) {
+  <div class="flex flex-col items-center justify-center py-6 space-y-4">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-sm font-medium text-neutral-100">Confirming your subscription…</p>
+  </div>
+  } @else { @switch (status()) { @case ('success') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
+      <pc-icon [size]="6" name="check-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Subscription Confirmed!</h2>
+      <p class="text-sm text-neutral-300">
+        Thank you for confirming. You will now receive our newsletters. You can close this window.
+      </p>
+    </div>
+  </div>
+  } @case ('error') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error/10 text-error">
+      <pc-icon [size]="6" name="exclamation-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Confirmation Failed</h2>
+      <p class="text-sm text-neutral-300">{{ errorMessage() || 'The confirmation link expired or is invalid.' }}</p>
+    </div>
+  </div>
+  } } }
+
+  <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
+    <span class="text-neutral-400">
+      Copyright © 2026
+      <a href="" class="link link-hover">CampaignRaven</a>
+    </span>
+  </div>
+</pc-auth-layout>

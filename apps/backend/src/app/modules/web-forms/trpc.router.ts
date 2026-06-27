@@ -1,7 +1,7 @@
 import { AddWebFormObj, UpdateWebFormObj, getAllOptions } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
-import { authProcedure, router } from '../../../trpc';
+import { authProcedure, publicProcedure, router } from '../../../trpc';
 import { WebFormsController } from './controller';
 
 const webForms = new WebFormsController();
@@ -23,4 +23,7 @@ export const WebFormsRouter = router({
   getSubmissionsCount: authProcedure
     .input(z.string().uuid())
     .query(({ input, ctx }) => webForms.getSubmissionsCount(input, ctx.auth.tenant_id)),
+  confirmSubscription: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(({ input }) => webForms.confirmSubscription(input.token)),
 });

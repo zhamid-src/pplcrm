@@ -490,6 +490,13 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       text: payload.text,
       html: payload.html,
     });
+  } else if (payload.type === 'send-subscription-confirmation') {
+    await mailService.sendMail({
+      to: payload.email,
+      subject: 'Please confirm your subscription',
+      text: `Hi ${payload.firstName || 'there'},\n\nPlease confirm your subscription by visiting the link below:\n\n${payload.confirmUrl}\n\nIf you did not request this, you can safely ignore this email.`,
+      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Please confirm your subscription by clicking the button below.</p><p><a href="${payload.confirmUrl}" class="btn">Confirm subscription</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
+    });
   } else if (payload.import_id && payload.storage_key) {
     // 1. Mark import status as 'processing' in data_imports
     await importsRepo.update({
@@ -670,13 +677,20 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         'communications.sendgrid_subuser_username',
         'communications.default_from_name',
         'communications.default_from_email',
+        'communications.reply_to',
+        'communications.footer_disclaimer',
+        'communications.verified_emails',
+        'organization.address',
       ])
       .execute();
 
     const settingsMap: Record<string, string> = {};
+    let verifiedEmails: string[] = [];
     for (const row of settingsRows) {
       if (typeof row.value === 'string') {
         settingsMap[row.key] = row.value;
+      } else if (row.key === 'communications.verified_emails' && Array.isArray(row.value)) {
+        verifiedEmails = (row.value as unknown[]).map((e) => String(e).toLowerCase().trim());
       }
     }
 
@@ -684,6 +698,17 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
     const fromName = settingsMap['communications.default_from_name'] || 'PeopleCRM Team';
     const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
+
+    // Reply-to is only honored when it has been verified (mirrors settings save-time validation).
+    const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
+    const replyTo = replyToRaw && verifiedEmails.includes(replyToRaw) ? replyToRaw : undefined;
+
+    // Mandatory footer appended server-side so it cannot be removed from the editor: org address,
+    // tenant disclaimer, and a SendGrid-substituted unsubscribe link.
+    const footer = buildNewsletterFooter(
+      settingsMap['organization.address'],
+      settingsMap['communications.footer_disclaimer'],
+    );
 
     const batchSize = 500;
 
@@ -707,10 +732,11 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       const batchDelivered = await newsletterMailSvc.sendNewsletter({
         fromName,
         fromEmail,
+        replyTo,
         recipients: chunk,
         subject: newsletter.subject || 'Newsletter',
-        html: newsletter.html_content || '',
-        text: newsletter.plain_text_content || undefined,
+        html: (newsletter.html_content || '') + footer.html,
+        text: newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined,
         sendgridApiKey,
         subuserUsername,
         newsletterId,
@@ -1515,6 +1541,41 @@ async function pruneNewsletterEvents(db: any): Promise<void> {
       console.error(`[prune_newsletter_events] Failed for tenant ${tenant.id}:`, err);
     }
   }
+}
+
+/**
+ * Builds the mandatory newsletter footer appended server-side at send time (so it cannot be removed
+ * from the editor). Contains the organization address, the tenant footer disclaimer, and a SendGrid
+ * substitution tag (`<% unsubscribe %>`) that SendGrid replaces with a working unsubscribe link when
+ * subscription tracking is enabled.
+ */
+function buildNewsletterFooter(address?: string, disclaimer?: string): { html: string; text: string } {
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const htmlParts: string[] = [];
+  const textParts: string[] = [];
+
+  const addr = (address || '').trim();
+  if (addr) {
+    htmlParts.push(`<div>${esc(addr).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(addr);
+  }
+
+  const disc = (disclaimer || '').trim();
+  if (disc) {
+    htmlParts.push(`<div>${esc(disc).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(disc);
+  }
+
+  // SendGrid substitution tag — replaced with the recipient's unsubscribe URL.
+  htmlParts.push('<div><a href="<% unsubscribe %>">Unsubscribe</a></div>');
+  textParts.push('Unsubscribe: <% unsubscribe %>');
+
+  const html = `<hr style="margin-top:24px"><div style="font-size:12px;color:#888;margin-top:8px">${htmlParts.join('')}</div>`;
+  const text = `\n\n----\n${textParts.join('\n')}`;
+
+  return { html, text };
 }
 
 function getEntityFilterValues(entityFilter: string): string[] {

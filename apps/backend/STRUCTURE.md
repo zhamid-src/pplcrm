@@ -52,6 +52,7 @@ apps/
           2026-06-25-person-newsletter-engagements.ts
           2026-06-26-email-sync-per-tenant.ts
           2026-06-26-passkey-setup-dismissed.ts
+          2026-06-27-person-opt-in.ts
           schema.sql
         config/
           email-folders.config.ts
@@ -321,20 +322,31 @@ apps/
 
 # Files
 
-## File: apps/backend/src/app/\_migrations/2026-06-26-passkey-setup-dismissed.ts
+## File: apps/backend/src/app/\_migrations/2026-06-27-person-opt-in.ts
 
 ```typescript
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 
+/**
+ * Adds double opt-in tracking to persons. `opt_in_status` is NULL for records that never went through
+ * the public web-form double opt-in flow (treated as already-consented), 'pending' while awaiting email
+ * confirmation, and 'confirmed' once the subscriber clicks the confirmation link.
+ */
 export async function up(db: Kysely<any>): Promise<void> {
-  await sql`ALTER TABLE authusers ADD COLUMN IF NOT EXISTS passkey_setup_dismissed_at TIMESTAMP WITH TIME ZONE`.execute(
-    db,
-  );
+  await sql`
+    ALTER TABLE public.persons
+      ADD COLUMN IF NOT EXISTS opt_in_status text,
+      ADD COLUMN IF NOT EXISTS opt_in_confirmed_at timestamptz
+  `.execute(db);
 }
 
 export async function down(db: Kysely<any>): Promise<void> {
-  await sql`ALTER TABLE authusers DROP COLUMN IF EXISTS passkey_setup_dismissed_at`.execute(db);
+  await sql`
+    ALTER TABLE public.persons
+      DROP COLUMN IF EXISTS opt_in_status,
+      DROP COLUMN IF EXISTS opt_in_confirmed_at
+  `.execute(db);
 }
 ```
 
@@ -583,6 +595,7 @@ import { InternalError } from '../../errors/app-errors';
 export interface SendNewsletterOptions {
   fromName: string;
   fromEmail: string;
+  replyTo?: string;
   recipients: string[];
   subject: string;
   html: string;
@@ -600,10 +613,12 @@ export class NewsletterEmailService {
     if (!apiKey) {
       console.info(`[SENDGRID DEV MOCK] Newsletter Outbound:
         From: "${options.fromName}" <${options.fromEmail}>
+        Reply-To: ${options.replyTo || '(none)'}
         Recipients Count: ${options.recipients.length}
         Recipients: ${options.recipients.join(', ')}
         Subject: ${options.subject}
         HTML Length: ${options.html.length} chars
+        HTML Tail: ${options.html.slice(-300)}
       `);
       return options.recipients.length;
     }
@@ -637,6 +652,7 @@ export class NewsletterEmailService {
           email: options.fromEmail,
           name: options.fromName,
         },
+        ...(options.replyTo ? { reply_to: { email: options.replyTo } } : {}),
         subject: options.subject,
         content: [
           {
@@ -660,6 +676,14 @@ export class NewsletterEmailService {
               },
             }
           : {}),
+        // Enable subscription tracking so SendGrid replaces the `<% unsubscribe %>` substitution tag in
+        // the server-appended footer with a working, per-recipient unsubscribe URL.
+        tracking_settings: {
+          subscription_tracking: {
+            enable: true,
+            substitution_tag: '<% unsubscribe %>',
+          },
+        },
       };
 
       try {
@@ -5739,6 +5763,111 @@ export const EmailsRouter = router({
 });
 ```
 
+## File: apps/backend/src/app/modules/exports/repositories/exports.repo.ts
+
+```typescript
+import { ImportsRepo } from '../../imports/repositories/imports.repo';
+import { sql } from 'kysely';
+
+export class ExportsRepo {
+  public readonly db = new ImportsRepo().db;
+
+  public async create(row: {
+    tenant_id: string;
+    user_id: string;
+    entity: string;
+    file_name: string;
+    columns: string[] | null;
+  }) {
+    return this.db
+      .insertInto('data_exports' as any)
+      .values({
+        tenant_id: row.tenant_id,
+        user_id: row.user_id,
+        entity: row.entity,
+        file_name: row.file_name,
+        status: 'pending',
+        columns: row.columns ? JSON.stringify(row.columns) : null,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  public async updateStatus(
+    id: string,
+    tenant_id: string,
+    status: 'processing' | 'completed' | 'failed',
+    opts?: { rowCount?: number; storageKey?: string; error?: string },
+  ) {
+    return this.db
+      .updateTable('data_exports' as any)
+      .set({
+        status,
+        row_count: opts?.rowCount ?? null,
+        storage_key: opts?.storageKey ?? null,
+        error: opts?.error ?? null,
+        updated_at: new Date(),
+      })
+      .where('id', '=', id as any)
+      .where('tenant_id', '=', tenant_id as any)
+      .execute();
+  }
+
+  public async list(tenant_id: string) {
+    return this.db
+      .selectFrom('data_exports' as any)
+      .leftJoin('authusers as creator', 'creator.id', 'data_exports.user_id')
+      .select([
+        'data_exports.id',
+        'data_exports.entity',
+        'data_exports.file_name',
+        'data_exports.status',
+        'data_exports.row_count',
+        'data_exports.error',
+        'data_exports.created_at',
+        'data_exports.updated_at',
+        'data_exports.user_id',
+        'creator.email as creator_email',
+        'creator.first_name as creator_first_name',
+        'creator.last_name as creator_last_name',
+      ])
+      .where('data_exports.tenant_id', '=', tenant_id as any)
+      .orderBy('data_exports.created_at', 'desc')
+      .limit(50)
+      .execute();
+  }
+
+  public async getById(id: string, tenant_id: string) {
+    return this.db
+      .selectFrom('data_exports' as any)
+      .selectAll()
+      .where('id', '=', id as any)
+      .where('tenant_id', '=', tenant_id as any)
+      .executeTakeFirst();
+  }
+
+  public async delete(id: string, tenant_id: string) {
+    return this.db.transaction().execute(async (trx) => {
+      // 1. Delete matching pending/processing background job
+      await trx
+        .deleteFrom('background_jobs' as any)
+        .where('tenant_id', '=', tenant_id as any)
+        .where(sql`payload->>'type'`, '=', 'export_csv')
+        .where(sql`payload->>'export_id'`, '=', id)
+        .execute();
+
+      // 2. Delete export record
+      return await trx
+        .deleteFrom('data_exports' as any)
+        .where('id', '=', id as any)
+        .where('tenant_id', '=', tenant_id as any)
+        .returningAll()
+        .executeTakeFirst();
+    });
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/exports/routes/exports-download.route.ts
 
 ```typescript
@@ -5796,6 +5925,31 @@ const exportsDownloadRoute: FastifyPluginCallback = (fastify, _, done) => {
 };
 
 export default exportsDownloadRoute;
+```
+
+## File: apps/backend/src/app/modules/exports/trpc.router.ts
+
+```typescript
+import { queueExportInput, dataExportRecord } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { ExportsController } from './controller';
+
+const exports_ = new ExportsController();
+
+export const ExportsRouter = router({
+  queue: authProcedure
+    .input(queueExportInput)
+    .output(dataExportRecord)
+    .mutation(({ input, ctx }) => exports_.queueExport(input, ctx.auth)),
+
+  list: authProcedure.output(z.array(dataExportRecord)).query(({ ctx }) => exports_.list(ctx.auth)),
+
+  delete: authProcedure
+    .input(z.object({ id: z.string() }))
+    .output(z.object({ success: z.boolean() }))
+    .mutation(({ input, ctx }) => exports_.deleteExport(input.id, ctx.auth)),
+});
 ```
 
 ## File: apps/backend/src/app/modules/files/repositories/files.repo.ts
@@ -6434,6 +6588,523 @@ export class MapListsPersonsRepo extends BaseRepository<'map_lists_persons'> {
 }
 ```
 
+## File: apps/backend/src/app/modules/lists/controller.ts
+
+```typescript
+import type {
+  AddListType,
+  IAuthKeyPayload,
+  UpdateListType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+import { TRPCError } from '@trpc/server';
+
+import { BaseController } from '../../lib/base.controller';
+import { HouseholdsController } from '../households/controller';
+import { PersonsController } from '../persons/controller';
+import { ListsRepo } from './repositories/lists.repo';
+import { MapListsHouseholdsRepo } from './repositories/map-lists-households.repo';
+import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { WorkflowsController } from '../workflows/controller';
+
+export class ListsController extends BaseController<'lists', ListsRepo> {
+  private householdsController = new HouseholdsController();
+  private mapListsHouseholdsRepo = new MapListsHouseholdsRepo();
+  private mapListsPersonsRepo = new MapListsPersonsRepo();
+  private personsController = new PersonsController();
+
+  constructor() {
+    super(new ListsRepo());
+  }
+
+  public async addList(payload: AddListType, auth: IAuthKeyPayload) {
+    // Enforce unique list names per tenant
+    const existing = await this.getRepo().getOneBy('name', {
+      tenant_id: auth.tenant_id,
+      value: payload.name,
+    });
+    if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'A list with this name already exists.' });
+
+    const row = {
+      name: payload.name,
+      description: payload.description,
+      object: payload.object,
+      is_dynamic: payload.is_dynamic ?? false,
+      definition: payload.definition ?? null,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      status: (payload.is_dynamic ?? false) ? 'refreshing' : 'idle',
+    };
+
+    const list = await this.add(row as OperationDataType<'lists', 'insert'>);
+
+    // For dynamic lists, trigger an immediate initial refresh via background job
+    if (row.is_dynamic) {
+      await this.getRepo()
+        .db.insertInto('background_jobs' as any)
+        .values({
+          tenant_id: auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'refresh_list',
+            list_id: list.id,
+            tenant_id: auth.tenant_id,
+            user_id: auth.user_id,
+          }),
+          run_at: new Date(),
+        } as any)
+        .execute();
+    } else {
+      // For static lists, populate membership by explicit IDs if provided; otherwise by definition
+      const ids = payload.member_ids ?? [];
+
+      if (ids.length && payload.object === 'people') {
+        const rows = ids.map((person_id) => ({
+          tenant_id: auth.tenant_id,
+          list_id: list.id,
+          person_id,
+          createdby_id: auth.user_id,
+          updatedby_id: auth.user_id,
+        }));
+        await this.mapListsPersonsRepo.addMany({ rows: rows as OperationDataType<'map_lists_persons', 'insert'>[] });
+        try {
+          const workflowsController = new WorkflowsController();
+          for (const person_id of ids) {
+            await workflowsController.triggerWorkflow(auth.tenant_id, person_id, 'list_joined', list.id);
+          }
+        } catch (err) {
+          console.error('Failed to trigger list_joined workflow in addList (explicit IDs):', err);
+        }
+      } else if (ids.length && payload.object === 'households') {
+        const rows = ids.map((household_id) => ({
+          tenant_id: auth.tenant_id,
+          list_id: list.id,
+          household_id,
+          createdby_id: auth.user_id,
+          updatedby_id: auth.user_id,
+        }));
+        await this.mapListsHouseholdsRepo.addMany({
+          rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+        });
+      } else if (payload.definition) {
+        if (payload.object === 'people') {
+          const result = await this.personsController.getAllWithAddress(auth, payload.definition as getAllOptionsType);
+          const rows = result.rows.map((p) => ({
+            tenant_id: auth.tenant_id,
+            list_id: list.id,
+            person_id: String(p['id']),
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          }));
+          if (rows.length) {
+            await this.mapListsPersonsRepo.addMany({
+              rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
+            });
+            try {
+              const workflowsController = new WorkflowsController();
+              for (const r of rows) {
+                await workflowsController.triggerWorkflow(auth.tenant_id, r.person_id, 'list_joined', list.id);
+              }
+            } catch (err) {
+              console.error('Failed to trigger list_joined workflow in addList (definition):', err);
+            }
+          }
+        } else if (payload.object === 'households') {
+          const result = await this.householdsController.getAllWithPeopleCount(
+            auth,
+            payload.definition as getAllOptionsType,
+          );
+          const rows = result.rows.map((h) => ({
+            tenant_id: auth.tenant_id,
+            list_id: list.id,
+            household_id: h['id'],
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          }));
+          if (rows.length) {
+            await this.mapListsHouseholdsRepo.addMany({
+              rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+            });
+          }
+        }
+      }
+    }
+
+    return list;
+  }
+
+  public async refreshList(auth: IAuthKeyPayload, id: string): Promise<any> {
+    const list = (await super.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (!list) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
+    }
+    if (!list.is_dynamic) {
+      return list;
+    }
+
+    // Set list status to refreshing
+    await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: {
+        status: 'refreshing',
+        updatedby_id: auth.user_id,
+        updated_at: new Date(),
+      } as any,
+    });
+
+    // Queue background job
+    await this.getRepo()
+      .db.insertInto('background_jobs' as any)
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'refresh_list',
+          list_id: id,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+        }),
+        run_at: new Date(),
+      } as any)
+      .execute();
+
+    return { ...list, status: 'refreshing' };
+  }
+
+  public async executeListRefresh(tenant_id: string, id: string, user_id: string): Promise<any> {
+    const auth: IAuthKeyPayload = {
+      tenant_id,
+      user_id,
+      name: 'System Worker',
+      session_id: 'worker-session',
+    };
+
+    const list = (await this.getOneById({ tenant_id, id })) as any;
+    if (!list) {
+      throw new Error(`List ${id} not found`);
+    }
+    if (!list.is_dynamic) {
+      return list;
+    }
+
+    const definition = list.definition as getAllOptionsType;
+    if (!definition) {
+      // Set back to idle if no definition
+      await this.update({
+        tenant_id,
+        id,
+        row: {
+          status: 'idle',
+          updated_at: new Date(),
+          updatedby_id: user_id,
+        } as any,
+      });
+      return list;
+    }
+
+    try {
+      if (list.object === 'people') {
+        // Clear current mappings
+        await this.mapListsPersonsRepo.db
+          .deleteFrom('map_lists_persons')
+          .where('tenant_id', '=', tenant_id)
+          .where('list_id', '=', id)
+          .execute();
+
+        // Resolve and insert new mappings
+        const result = await this.personsController.getAllWithAddress(auth, definition);
+        const rows = result.rows.map((p) => ({
+          tenant_id: tenant_id,
+          list_id: list.id,
+          person_id: p['id'],
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        }));
+        if (rows.length) {
+          await this.mapListsPersonsRepo.addMany({
+            rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
+          });
+        }
+      } else if (list.object === 'households') {
+        // Clear current mappings
+        await this.mapListsHouseholdsRepo.db
+          .deleteFrom('map_lists_households')
+          .where('tenant_id', '=', tenant_id)
+          .where('list_id', '=', id)
+          .execute();
+
+        // Resolve and insert new mappings
+        const result = await this.householdsController.getAllWithPeopleCount(auth, definition);
+        const rows = result.rows.map((h) => ({
+          tenant_id: tenant_id,
+          list_id: list.id,
+          household_id: h['id'],
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        }));
+        if (rows.length) {
+          await this.mapListsHouseholdsRepo.addMany({
+            rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
+          });
+        }
+      }
+
+      // Update refreshed timestamp and status back to idle
+      const updated = await this.update({
+        tenant_id,
+        id,
+        row: {
+          status: 'idle',
+          last_refreshed_at: new Date(),
+          updated_at: new Date(),
+          updatedby_id: user_id,
+        } as any,
+      });
+
+      return updated;
+    } catch (error) {
+      // Set status to failed
+      await this.update({
+        tenant_id,
+        id,
+        row: {
+          status: 'failed',
+          updated_at: new Date(),
+          updatedby_id: user_id,
+        } as any,
+      });
+      throw error;
+    }
+  }
+
+  public async getListStats(auth: IAuthKeyPayload, id: string): Promise<any> {
+    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (!list) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
+    }
+
+    // Fetch all newsletters that are sent
+    const newsletters = await this.getRepo()
+      .db.selectFrom('newsletters')
+      .selectAll()
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('status', '=', 'sent')
+      .execute();
+
+    // Filter newsletters in JS where their target_lists matches this list
+    const targetedNewsletters = newsletters.filter((n) => {
+      if (!n.target_lists) return false;
+      // After migration 2026-07-01-a-schema-improvements, target_lists is a jsonb column returned as a parsed object.
+      // Support legacy string values too (pre-migration rows or test data).
+      let parsed: unknown = n.target_lists;
+      if (typeof parsed === 'string') {
+        try {
+          parsed = JSON.parse(parsed);
+        } catch {
+          /* fall through */
+        }
+      }
+      if (Array.isArray(parsed)) {
+        return parsed.includes(id);
+      }
+      if (parsed && typeof parsed === 'object') {
+        const obj = parsed as Record<string, unknown>;
+        const include = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
+        return include.includes(id);
+      }
+      if (typeof parsed === 'string') {
+        return parsed
+          .split(',')
+          .map((s) => s.trim())
+          .includes(id);
+      }
+      return false;
+    });
+
+    // Compute aggregated metrics
+    const totalNewsletters = targetedNewsletters.length;
+    let totalDelivered = 0;
+    let totalOpens = 0;
+    let totalClicks = 0;
+
+    for (const n of targetedNewsletters) {
+      totalDelivered += Number(n.delivered_count ?? 0);
+      totalOpens += Number(n.unique_opens ?? 0);
+      totalClicks += Number(n.unique_clicks ?? 0);
+    }
+
+    const avgOpenRate = totalDelivered > 0 ? (totalOpens / totalDelivered) * 100 : 0;
+    const avgClickRate = totalDelivered > 0 ? (totalClicks / totalDelivered) * 100 : 0;
+
+    return {
+      totalNewsletters,
+      totalDelivered,
+      avgOpenRate,
+      avgClickRate,
+      newsletters: targetedNewsletters.map((n) => ({
+        id: n.id,
+        name: n.name,
+        subject: n.subject,
+        send_date: n.send_date,
+        total_recipients: n.total_recipients,
+        delivered_count: n.delivered_count,
+        open_rate: n.open_rate,
+        click_rate: n.click_rate,
+      })),
+    };
+  }
+
+  public getHouseholdsByListId(auth: IAuthKeyPayload, list_id: string) {
+    return this.getRepo().getHouseholdsByListId({ tenant_id: auth.tenant_id, list_id });
+  }
+
+  public getPersonsByListId(auth: IAuthKeyPayload, list_id: string) {
+    return this.getRepo().getPersonsByListId({ tenant_id: auth.tenant_id, list_id });
+  }
+
+  public async getMemberCount(auth: IAuthKeyPayload, id: string): Promise<number> {
+    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (!list) return 0;
+    if (list.is_dynamic && list.definition) {
+      const opts = { ...(list.definition as getAllOptionsType), startRow: 0, endRow: 0 };
+      if (list.object === 'people') {
+        const data = await this.personsController.getAllWithAddress(auth, opts);
+        return data.count;
+      } else {
+        const data = await this.householdsController.getAllWithPeopleCount(auth, opts);
+        return data.count;
+      }
+    } else {
+      if (list.object === 'people') {
+        const result = await this.mapListsPersonsRepo.db
+          .selectFrom('map_lists_persons')
+          .select(({ fn }) => fn.countAll().as('count'))
+          .where('tenant_id', '=', auth.tenant_id as any)
+          .where('list_id', '=', id as any)
+          .executeTakeFirst();
+        return Number(result?.count ?? 0);
+      } else {
+        const result = await this.mapListsHouseholdsRepo.db
+          .selectFrom('map_lists_households')
+          .select(({ fn }) => fn.countAll().as('count'))
+          .where('tenant_id', '=', auth.tenant_id as any)
+          .where('list_id', '=', id as any)
+          .executeTakeFirst();
+        return Number(result?.count ?? 0);
+      }
+    }
+  }
+
+  public async updateList(id: string, row: UpdateListType, auth: IAuthKeyPayload) {
+    const rowWithUpdatedBy = {
+      ...row,
+      updatedby_id: auth.user_id,
+    };
+    const result = await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: rowWithUpdatedBy as OperationDataType<'lists', 'update'>,
+    });
+
+    // If the list is dynamic and definition or dynamics was updated, queue a refresh job
+    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    if (list && list.is_dynamic && (row.definition !== undefined || row.is_dynamic === true)) {
+      // Update status to refreshing
+      await this.update({
+        tenant_id: auth.tenant_id,
+        id,
+        row: {
+          status: 'refreshing',
+          updatedby_id: auth.user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+
+      await this.getRepo()
+        .db.insertInto('background_jobs' as any)
+        .values({
+          tenant_id: auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'refresh_list',
+            list_id: id,
+            tenant_id: auth.tenant_id,
+            user_id: auth.user_id,
+          }),
+          run_at: new Date(),
+        } as any)
+        .execute();
+    }
+
+    return result;
+  }
+
+  public override async delete(tenant_id: string, idToDelete: string, userId?: string) {
+    await this.mapListsPersonsRepo.db
+      .deleteFrom('map_lists_persons')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('list_id', '=', idToDelete as any)
+      .execute();
+
+    await this.mapListsHouseholdsRepo.db
+      .deleteFrom('map_lists_households')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('list_id', '=', idToDelete as any)
+      .execute();
+
+    return super.delete(tenant_id as any, idToDelete, userId);
+  }
+
+  public override async deleteMany(tenant_id: string, idsToDelete: string[]) {
+    if (idsToDelete.length === 0) return false;
+
+    await this.mapListsPersonsRepo.db
+      .deleteFrom('map_lists_persons')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('list_id', 'in', idsToDelete)
+      .execute();
+
+    await this.mapListsHouseholdsRepo.db
+      .deleteFrom('map_lists_households')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('list_id', 'in', idsToDelete)
+      .execute();
+
+    return super.deleteMany(tenant_id as any, idsToDelete);
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const list = (await super.getOneById(input)) as any;
+    if (list && list.is_dynamic) {
+      const oneDayAgo = new Date(Date.now() - 24 * 3600 * 1000);
+      if (!list.last_refreshed_at || new Date(list.last_refreshed_at) < oneDayAgo) {
+        if (list.status !== 'refreshing') {
+          // Lazily trigger refresh in background
+          const mockAuth: IAuthKeyPayload = {
+            tenant_id: input.tenant_id,
+            user_id: list.createdby_id,
+            name: 'System Worker',
+            session_id: 'lazy-refresh',
+          };
+          const promise = this.refreshList(mockAuth, input.id).catch((err) =>
+            console.error(`Failed to lazily queue refresh for list ${input.id}:`, err),
+          );
+          (this as any)._lastLazyRefreshPromise = promise;
+        }
+      }
+    }
+    if (!list) return list;
+    return this.resolveCreatorAndUpdater(input.tenant_id, list);
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/lists/trpc.router.ts
 
 ```typescript
@@ -6710,7 +7381,9 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       .selectFrom('persons')
       .where('persons.tenant_id', '=', tenant_id as any)
       .where('persons.email', 'is not', null)
-      .where('persons.email', '!=', '');
+      .where('persons.email', '!=', '')
+      // Exclude unconfirmed double opt-in subscribers (NULL = never required to opt in, so still included).
+      .where((eb) => eb.or([eb('persons.opt_in_status', 'is', null), eb('persons.opt_in_status', '!=', 'pending')]));
 
     query = query.where((eb) => {
       const conditions = [];
@@ -7444,6 +8117,259 @@ export class DuplicateMaintenanceService {
     }
   }
 }
+```
+
+## File: apps/backend/src/app/modules/persons/trpc.router.ts
+
+```typescript
+import {
+  UpdatePersonsObj,
+  exportCsvInput,
+  exportCsvResponse,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { PersonsController } from './controller';
+import { PersonsService } from './services/persons.service';
+
+const persons = new PersonsController();
+const personsService = new PersonsService();
+
+function add() {
+  return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => personsService.addPerson(input, ctx.auth));
+}
+
+function attachTag() {
+  return authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth));
+}
+
+function count() {
+  return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
+}
+
+const deleteOneInput = z.union([
+  idSchema,
+  z.object({
+    id: idSchema,
+    force: z.boolean().optional(),
+  }),
+]);
+
+function deleteOne() {
+  return authProcedure.input(deleteOneInput).mutation(({ input, ctx }) => {
+    const id = typeof input === 'string' ? input : input.id;
+    const force = typeof input === 'string' ? false : !!input.force;
+    return persons.delete(ctx.auth.tenant_id, id, ctx.auth.user_id, force);
+  });
+}
+
+const deleteManyInput = z.union([
+  z.array(idSchema).min(1, 'At least one ID is required'),
+  z.object({
+    ids: z.array(idSchema).min(1, 'At least one ID is required'),
+    force: z.boolean().optional(),
+  }),
+]);
+
+function deleteMany() {
+  return authProcedure.input(deleteManyInput).mutation(({ input, ctx }) => {
+    const ids = Array.isArray(input) ? input : input.ids;
+    const force = Array.isArray(input) ? false : !!input.force;
+    return persons.deleteMany(ctx.auth.tenant_id, ids, force);
+  });
+}
+
+function detachTag() {
+  return authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      personsService.detachTag({
+        tenant_id: ctx.auth.tenant_id,
+        person_id: input.id,
+        name: input.tag_name,
+        type: input.type ?? 'tag',
+        user_id: ctx.auth.user_id,
+      }),
+    );
+}
+
+function getAll() {
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAll(ctx.auth.tenant_id, input));
+}
+
+function getAllWithAddress() {
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth, input));
+}
+
+function getByHouseholdId() {
+  return authProcedure
+    .input(z.object({ id: idSchema, options: getAllOptions }))
+    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options));
+}
+
+function getByCompanyId() {
+  return authProcedure
+    .input(z.object({ id: idSchema, options: getAllOptions }))
+    .query(({ input, ctx }) => persons.getByCompanyId(input.id, ctx.auth, input.options));
+}
+
+function countByCompanyId() {
+  return authProcedure
+    .input(z.object({ id: idSchema }))
+    .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
+}
+
+function getById() {
+  return authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
+}
+
+function getActivity() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
+}
+
+// Distinct tags
+function getDistinctTags() {
+  return authProcedure
+    .input(z.enum(['tag', 'issue']).optional())
+    .query(({ input, ctx }) => persons.getDistinctTags(ctx.auth, input));
+}
+
+function exportCsv() {
+  return authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) => persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
+}
+
+function getTags() {
+  return authProcedure
+    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
+    .query(({ input, ctx }) => {
+      const id = typeof input === 'string' ? input : input.id;
+      const type = typeof input === 'string' ? undefined : input.type;
+      return persons.getTags(id, ctx.auth, type);
+    });
+}
+
+function update() {
+  return authProcedure
+    .input(z.object({ id: idSchema, data: UpdatePersonsObj }))
+    .mutation(({ input, ctx }) => personsService.updatePerson(input.id, input.data as any, ctx.auth));
+}
+
+function removeHousehold() {
+  return authProcedure.input(idSchema).mutation(({ input, ctx }) => personsService.removeHousehold(input, ctx.auth));
+}
+
+function importMany() {
+  const ImportRow = z.object({
+    first_name: z.string().trim().max(100).optional(),
+    last_name: z.string().trim().max(100).optional(),
+    email: z.string().trim().max(255).optional(),
+    mobile: z.string().trim().max(30).optional(),
+    notes: z.string().trim().max(10000).optional(),
+    home_phone: z.string().trim().max(30).optional(),
+    street_num: z.string().trim().max(30).optional(),
+    street1: z.string().trim().max(150).optional(),
+    street2: z.string().trim().max(150).optional(),
+    apt: z.string().trim().max(30).optional(),
+    city: z.string().trim().max(100).optional(),
+    state: z.string().trim().max(100).optional(),
+    zip: z.string().trim().max(20).optional(),
+    country: z.string().trim().max(100).optional(),
+  });
+
+  const Input = z.object({
+    rows: z.array(ImportRow),
+    tags: z.array(z.string().trim().min(1, 'Tag cannot be empty').max(50, 'Tag too long')).optional(),
+    skipped: z.number().int().nonnegative().optional(),
+    file_name: z.string().trim().min(1).max(255).optional(),
+  });
+
+  return authProcedure.input(Input).mutation(async ({ input, ctx }) => {
+    return personsService.importRows(input, ctx.auth);
+  });
+}
+
+function getPotentialDuplicates() {
+  return authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => personsService.getPotentialDuplicates(ctx.auth, input));
+}
+
+function getDuplicateCounts() {
+  return authProcedure.query(({ ctx }) => personsService.getDuplicateCounts(ctx.auth));
+}
+
+function mergePersons() {
+  return authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(({ input, ctx }) => personsService.mergePersons(input, ctx.auth));
+}
+
+function moveEntireHousehold() {
+  return authProcedure
+    .input(
+      z.object({
+        fromHouseholdId: idSchema,
+        toHouseholdId: idSchema,
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      persons.moveEntireHousehold(input.fromHouseholdId, input.toHouseholdId, ctx.auth.tenant_id),
+    );
+}
+
+export const PersonsRouter = router({
+  add: add(),
+  count: count(),
+  getAll: getAll(),
+  update: update(),
+  removeHousehold: removeHousehold(),
+  import: importMany(),
+  getTags: getTags(),
+  getById: getById(),
+  getActivity: getActivity(),
+  attachTag: attachTag(),
+  detachTag: detachTag(),
+  delete: deleteOne(),
+  deleteMany: deleteMany(),
+  getDistinctTags: getDistinctTags(),
+  getByHouseholdId: getByHouseholdId(),
+  getByCompanyId: getByCompanyId(),
+  countByCompanyId: countByCompanyId(),
+  getAllWithAddress: getAllWithAddress(),
+  exportCsv: exportCsv(),
+  getPotentialDuplicates: getPotentialDuplicates(),
+  getDuplicateCounts: getDuplicateCounts(),
+  mergePersons: mergePersons(),
+  moveEntireHousehold: moveEntireHousehold(),
+});
 ```
 
 ## File: apps/backend/src/app/modules/settings/repositories/settings.repo.ts
@@ -10021,7 +10947,7 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
 import { AddWebFormObj, UpdateWebFormObj, getAllOptions } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
-import { authProcedure, router } from '../../../trpc';
+import { authProcedure, publicProcedure, router } from '../../../trpc';
 import { WebFormsController } from './controller';
 
 const webForms = new WebFormsController();
@@ -10043,6 +10969,9 @@ export const WebFormsRouter = router({
   getSubmissionsCount: authProcedure
     .input(z.string().uuid())
     .query(({ input, ctx }) => webForms.getSubmissionsCount(input, ctx.auth.tenant_id)),
+  confirmSubscription: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(({ input }) => webForms.confirmSubscription(input.token)),
 });
 ```
 
@@ -10406,6 +11335,79 @@ declare module 'fastify' {
 }
 ```
 
+## File: apps/backend/src/app/kyselyinit.ts
+
+```typescript
+import { sql } from 'kysely';
+import { BaseRepository } from './lib/base.repo';
+import '../env';
+
+async function ensureMigrationTableUpdated(): Promise<void> {
+  try {
+    await sql`
+      UPDATE kysely_migration
+      SET name = '2026-07-01-a-schema-improvements'
+      WHERE name IN ('2026-06-31-schema-improvements', '2026-07-01-schema-improvements')
+    `.execute(BaseRepository.dbInstance);
+
+    await sql`
+      UPDATE kysely_migration
+      SET name = '2026-07-01-b-security-ops-improvements'
+      WHERE name IN ('2026-06-31-security-ops-improvements', '2026-07-01-security-ops-improvements')
+    `.execute(BaseRepository.dbInstance);
+  } catch (err) {
+    // Ignore if table doesn't exist or update fails
+  }
+}
+
+export async function migrateDown(): Promise<void> {
+  await ensureMigrationTableUpdated();
+  const { error, results } = await BaseRepository.migrator.migrateDown();
+
+  results?.forEach((it) => {
+    if (it.status === 'Success') {
+      console.log(`migration down"${it.migrationName}" successsful`);
+    } else if (it.status === 'Error') {
+      console.error(`failed to execute migration down"${it.migrationName}"`);
+    }
+  });
+
+  if (error) {
+    console.error('failed to migrate down: ', error);
+    process.exit(1);
+  }
+}
+
+export async function migrateToLatest(): Promise<void> {
+  console.log('Migration starting');
+
+  await ensureMigrationTableUpdated();
+  const { error, results } = await BaseRepository.migrator.migrateToLatest();
+
+  results?.forEach((it) => {
+    if (it.status === 'Success') {
+      console.log(`migration up:"${it.migrationName}" successful`);
+    } else if (it.status === 'Error') {
+      console.error(`failed to execute migration up"${it.migrationName}"`);
+    }
+  });
+
+  if (error) {
+    console.error('failed to migrate up: ', error);
+    process.exit(1);
+  }
+}
+
+// Automatically run migration when script is executed directly
+const isMain =
+  typeof process !== 'undefined' &&
+  process.argv[1] &&
+  (process.argv[1].endsWith('kyselyinit.ts') || process.argv[1].endsWith('kyselyinit.js'));
+if (isMain) {
+  void migrateToLatest();
+}
+```
+
 ## File: apps/backend/src/scratch/test-tasks.ts
 
 ```typescript
@@ -10517,6 +11519,70 @@ export function onShutdown(handler: any, { timeout = 500 } = {}) {
 }
 ```
 
+## File: apps/backend/src/test-assign3.ts
+
+```typescript
+import { Kysely, PostgresDialect } from 'kysely';
+import { Pool } from 'pg';
+import { Models } from '../../../libs/common/src/lib/kysely.models';
+import Cursor from 'pg-cursor';
+
+const db = new Kysely<Models>({
+  dialect: new PostgresDialect({
+    pool: new Pool({
+      user: 'postgres',
+      database: 'pplcrm',
+      host: 'localhost',
+      port: 5432,
+    }),
+    cursor: Cursor,
+  }),
+});
+
+async function run() {
+  const q = db.updateTable('emails').set({ assigned_to: '1' }).where('id', '=', '1');
+  console.log(q.compile().sql);
+  console.log(q.compile().parameters);
+  process.exit(0);
+}
+run();
+```
+
+## File: apps/backend/src/test-assign4.ts
+
+```typescript
+import { Kysely, PostgresDialect } from 'kysely';
+import { Pool } from 'pg';
+import { Models } from '../../../libs/common/src/lib/kysely.models';
+import Cursor from 'pg-cursor';
+
+const db = new Kysely<Models>({
+  dialect: new PostgresDialect({
+    pool: new Pool({
+      user: 'zeehamid',
+      database: 'pplcrm',
+      password: 'Eternity#1',
+      host: 'localhost',
+      port: 5432,
+    }),
+    cursor: Cursor,
+  }),
+});
+
+async function run() {
+  const q = db.updateTable('emails').set({ assigned_to: '1' }).where('id', '=', '29');
+  console.log(q.compile().sql);
+  const result = await q.executeTakeFirst();
+  console.log(result);
+
+  const updatedRow = await db.selectFrom('emails').selectAll().where('id', '=', '29').executeTakeFirst();
+  console.log('After update:', updatedRow?.assigned_to);
+
+  process.exit(0);
+}
+run();
+```
+
 ## File: apps/backend/src/test-assign5.js
 
 ```javascript
@@ -10535,6 +11601,27 @@ async function run() {
   process.exit(0);
 }
 run();
+```
+
+## File: apps/backend/src/test-kysely.ts
+
+```typescript
+import { Kysely, PostgresDialect } from 'kysely';
+import { Pool } from 'pg';
+import { Models } from '../../../libs/common/src/lib/kysely.models';
+import Cursor from 'pg-cursor';
+
+const db = new Kysely<Models>({
+  dialect: new PostgresDialect({
+    pool: new Pool(),
+    cursor: Cursor,
+  }),
+});
+
+const query = db.updateTable('emails').set({ assigned_to: '1' }).where('id', '=', '1').where('tenant_id', '=', '1');
+
+console.log(query.compile().sql);
+console.log(query.compile().parameters);
 ```
 
 ## File: apps/backend/src/test-trpc.js
@@ -11052,6 +12139,23 @@ export async function down(db: Kysely<any>): Promise<void> {
   await sql`ALTER TABLE ms_oauth_tokens ALTER COLUMN user_id SET NOT NULL`.execute(db);
   await sql`ALTER TABLE ms_oauth_tokens ADD CONSTRAINT ms_oauth_tokens_user_id_key UNIQUE (user_id)`.execute(db);
   await sql`CREATE INDEX ms_oauth_tokens_tenant_user_idx ON ms_oauth_tokens (tenant_id, user_id)`.execute(db);
+}
+```
+
+## File: apps/backend/src/app/\_migrations/2026-06-26-passkey-setup-dismissed.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE authusers ADD COLUMN IF NOT EXISTS passkey_setup_dismissed_at TIMESTAMP WITH TIME ZONE`.execute(
+    db,
+  );
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE authusers DROP COLUMN IF EXISTS passkey_setup_dismissed_at`.execute(db);
 }
 ```
 
@@ -12578,134 +13682,149 @@ export const EventsRouter = router({
 });
 ```
 
-## File: apps/backend/src/app/modules/exports/repositories/exports.repo.ts
+## File: apps/backend/src/app/modules/exports/controller.ts
 
 ```typescript
-import { ImportsRepo } from '../../imports/repositories/imports.repo';
-import { sql } from 'kysely';
+import { TRPCError } from '@trpc/server';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { QueueExportInputType } from '../../../../../../libs/common/src';
+import { ExportsRepo } from './repositories/exports.repo';
+import { StorageService } from '../../lib/storage.service';
 
-export class ExportsRepo {
-  public readonly db = new ImportsRepo().db;
+const ENTITY_LABEL_MAP: Record<string, string> = {
+  persons: 'persons',
+  households: 'households',
+  companies: 'companies',
+  tags: 'tags',
+  issues: 'tags',
+  tasks: 'tasks',
+  lists: 'lists',
+  newsletters: 'marketing_emails',
+  teams: 'teams',
+  users: 'authusers',
+  volunteer: 'volunteer_events',
+  forms: 'web_forms',
+  workflows: 'workflows',
+};
 
-  public async create(row: {
-    tenant_id: string;
-    user_id: string;
-    entity: string;
-    file_name: string;
-    columns: string[] | null;
-  }) {
-    return this.db
-      .insertInto('data_exports' as any)
+export class ExportsController {
+  private readonly repo = new ExportsRepo();
+
+  public async queueExport(input: QueueExportInputType, auth: IAuthKeyPayload) {
+    const entityKey = input.entity?.trim();
+    if (!entityKey) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'entity is required' });
+    }
+
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const fileName = input.fileName?.trim() || `${entityKey}-export-${ts}.csv`;
+    const columns = Array.isArray(input.columns) && input.columns.length ? input.columns : null;
+
+    const exportRecord = await this.repo.create({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entity: entityKey,
+      file_name: fileName,
+      columns,
+    });
+
+    const exportId = String((exportRecord as any).id);
+
+    await this.repo.db
+      .insertInto('background_jobs')
       .values({
-        tenant_id: row.tenant_id,
-        user_id: row.user_id,
-        entity: row.entity,
-        file_name: row.file_name,
+        tenant_id: auth.tenant_id,
+        queue: 'default',
         status: 'pending',
-        columns: row.columns ? JSON.stringify(row.columns) : null,
+        payload: JSON.stringify({
+          type: 'export_csv',
+          export_id: exportId,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          entity: entityKey,
+          table: ENTITY_LABEL_MAP[entityKey] ?? entityKey,
+          options: input.options ?? {},
+          columns,
+          file_name: fileName,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
       })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-  }
-
-  public async updateStatus(
-    id: string,
-    tenant_id: string,
-    status: 'processing' | 'completed' | 'failed',
-    opts?: { rowCount?: number; storageKey?: string; error?: string },
-  ) {
-    return this.db
-      .updateTable('data_exports' as any)
-      .set({
-        status,
-        row_count: opts?.rowCount ?? null,
-        storage_key: opts?.storageKey ?? null,
-        error: opts?.error ?? null,
-        updated_at: new Date(),
-      })
-      .where('id', '=', id as any)
-      .where('tenant_id', '=', tenant_id as any)
       .execute();
+
+    return {
+      id: exportId,
+      entity: entityKey,
+      file_name: fileName,
+      status: 'pending' as const,
+      row_count: null,
+      error: null,
+      created_at: (exportRecord as any).created_at?.toISOString?.() ?? new Date().toISOString(),
+      updated_at: (exportRecord as any).updated_at?.toISOString?.() ?? new Date().toISOString(),
+      createdBy: {
+        id: auth.user_id,
+        name: auth.name || null,
+        email: null,
+      },
+    };
   }
 
-  public async list(tenant_id: string) {
-    return this.db
-      .selectFrom('data_exports' as any)
-      .leftJoin('authusers as creator', 'creator.id', 'data_exports.user_id')
-      .select([
-        'data_exports.id',
-        'data_exports.entity',
-        'data_exports.file_name',
-        'data_exports.status',
-        'data_exports.row_count',
-        'data_exports.error',
-        'data_exports.created_at',
-        'data_exports.updated_at',
-        'data_exports.user_id',
-        'creator.email as creator_email',
-        'creator.first_name as creator_first_name',
-        'creator.last_name as creator_last_name',
-      ])
-      .where('data_exports.tenant_id', '=', tenant_id as any)
-      .orderBy('data_exports.created_at', 'desc')
-      .limit(50)
-      .execute();
-  }
-
-  public async getById(id: string, tenant_id: string) {
-    return this.db
-      .selectFrom('data_exports' as any)
-      .selectAll()
-      .where('id', '=', id as any)
-      .where('tenant_id', '=', tenant_id as any)
-      .executeTakeFirst();
-  }
-
-  public async delete(id: string, tenant_id: string) {
-    return this.db.transaction().execute(async (trx) => {
-      // 1. Delete matching pending/processing background job
-      await trx
-        .deleteFrom('background_jobs' as any)
-        .where('tenant_id', '=', tenant_id as any)
-        .where(sql`payload->>'type'`, '=', 'export_csv')
-        .where(sql`payload->>'export_id'`, '=', id)
-        .execute();
-
-      // 2. Delete export record
-      return await trx
-        .deleteFrom('data_exports' as any)
-        .where('id', '=', id as any)
-        .where('tenant_id', '=', tenant_id as any)
-        .returningAll()
-        .executeTakeFirst();
+  public async list(auth: IAuthKeyPayload) {
+    const rows = await this.repo.list(auth.tenant_id);
+    return rows.map((r: any) => {
+      const name = [r.creator_first_name, r.creator_last_name].filter(Boolean).join(' ').trim();
+      return {
+        id: String(r.id),
+        entity: String(r.entity),
+        file_name: String(r.file_name),
+        status: r.status as 'pending' | 'processing' | 'completed' | 'failed',
+        row_count: r.row_count != null ? Number(r.row_count) : null,
+        error: r.error ?? null,
+        created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+        updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
+        createdBy: r.user_id
+          ? {
+              id: r.user_id,
+              name: name || null,
+              email: r.creator_email || null,
+            }
+          : null,
+      };
     });
   }
+
+  public async getById(id: string, auth: IAuthKeyPayload) {
+    const row = await this.repo.getById(id, auth.tenant_id);
+    if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Export not found' });
+    return row;
+  }
+
+  public async deleteExport(id: string, auth: IAuthKeyPayload) {
+    const row = await this.repo.getById(id, auth.tenant_id);
+    if (!row) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Export not found' });
+    }
+
+    await this.repo.delete(id, auth.tenant_id);
+
+    if ((row as any).storage_key) {
+      try {
+        const storageService = new StorageService();
+        await storageService.delete((row as any).storage_key);
+      } catch (err) {
+        console.error(`Failed to delete storage file ${(row as any).storage_key}:`, err);
+      }
+    }
+
+    return { success: true };
+  }
+
+  public getRepo() {
+    return this.repo;
+  }
 }
-```
-
-## File: apps/backend/src/app/modules/exports/trpc.router.ts
-
-```typescript
-import { queueExportInput, dataExportRecord } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { ExportsController } from './controller';
-
-const exports_ = new ExportsController();
-
-export const ExportsRouter = router({
-  queue: authProcedure
-    .input(queueExportInput)
-    .output(dataExportRecord)
-    .mutation(({ input, ctx }) => exports_.queueExport(input, ctx.auth)),
-
-  list: authProcedure.output(z.array(dataExportRecord)).query(({ ctx }) => exports_.list(ctx.auth)),
-
-  delete: authProcedure
-    .input(z.object({ id: z.string() }))
-    .output(z.object({ success: z.boolean() }))
-    .mutation(({ input, ctx }) => exports_.deleteExport(input.id, ctx.auth)),
-});
 ```
 
 ## File: apps/backend/src/app/modules/households/trpc.router.ts
@@ -13241,523 +14360,6 @@ export class ListsRepo extends BaseRepository<'lists'> {
       .execute();
 
     return { rows, count: Number(total || 0) };
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/lists/controller.ts
-
-```typescript
-import type {
-  AddListType,
-  IAuthKeyPayload,
-  UpdateListType,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-import { TRPCError } from '@trpc/server';
-
-import { BaseController } from '../../lib/base.controller';
-import { HouseholdsController } from '../households/controller';
-import { PersonsController } from '../persons/controller';
-import { ListsRepo } from './repositories/lists.repo';
-import { MapListsHouseholdsRepo } from './repositories/map-lists-households.repo';
-import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { WorkflowsController } from '../workflows/controller';
-
-export class ListsController extends BaseController<'lists', ListsRepo> {
-  private householdsController = new HouseholdsController();
-  private mapListsHouseholdsRepo = new MapListsHouseholdsRepo();
-  private mapListsPersonsRepo = new MapListsPersonsRepo();
-  private personsController = new PersonsController();
-
-  constructor() {
-    super(new ListsRepo());
-  }
-
-  public async addList(payload: AddListType, auth: IAuthKeyPayload) {
-    // Enforce unique list names per tenant
-    const existing = await this.getRepo().getOneBy('name', {
-      tenant_id: auth.tenant_id,
-      value: payload.name,
-    });
-    if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'A list with this name already exists.' });
-
-    const row = {
-      name: payload.name,
-      description: payload.description,
-      object: payload.object,
-      is_dynamic: payload.is_dynamic ?? false,
-      definition: payload.definition ?? null,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      status: (payload.is_dynamic ?? false) ? 'refreshing' : 'idle',
-    };
-
-    const list = await this.add(row as OperationDataType<'lists', 'insert'>);
-
-    // For dynamic lists, trigger an immediate initial refresh via background job
-    if (row.is_dynamic) {
-      await this.getRepo()
-        .db.insertInto('background_jobs' as any)
-        .values({
-          tenant_id: auth.tenant_id,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({
-            type: 'refresh_list',
-            list_id: list.id,
-            tenant_id: auth.tenant_id,
-            user_id: auth.user_id,
-          }),
-          run_at: new Date(),
-        } as any)
-        .execute();
-    } else {
-      // For static lists, populate membership by explicit IDs if provided; otherwise by definition
-      const ids = payload.member_ids ?? [];
-
-      if (ids.length && payload.object === 'people') {
-        const rows = ids.map((person_id) => ({
-          tenant_id: auth.tenant_id,
-          list_id: list.id,
-          person_id,
-          createdby_id: auth.user_id,
-          updatedby_id: auth.user_id,
-        }));
-        await this.mapListsPersonsRepo.addMany({ rows: rows as OperationDataType<'map_lists_persons', 'insert'>[] });
-        try {
-          const workflowsController = new WorkflowsController();
-          for (const person_id of ids) {
-            await workflowsController.triggerWorkflow(auth.tenant_id, person_id, 'list_joined', list.id);
-          }
-        } catch (err) {
-          console.error('Failed to trigger list_joined workflow in addList (explicit IDs):', err);
-        }
-      } else if (ids.length && payload.object === 'households') {
-        const rows = ids.map((household_id) => ({
-          tenant_id: auth.tenant_id,
-          list_id: list.id,
-          household_id,
-          createdby_id: auth.user_id,
-          updatedby_id: auth.user_id,
-        }));
-        await this.mapListsHouseholdsRepo.addMany({
-          rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
-        });
-      } else if (payload.definition) {
-        if (payload.object === 'people') {
-          const result = await this.personsController.getAllWithAddress(auth, payload.definition as getAllOptionsType);
-          const rows = result.rows.map((p) => ({
-            tenant_id: auth.tenant_id,
-            list_id: list.id,
-            person_id: String(p['id']),
-            createdby_id: auth.user_id,
-            updatedby_id: auth.user_id,
-          }));
-          if (rows.length) {
-            await this.mapListsPersonsRepo.addMany({
-              rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
-            });
-            try {
-              const workflowsController = new WorkflowsController();
-              for (const r of rows) {
-                await workflowsController.triggerWorkflow(auth.tenant_id, r.person_id, 'list_joined', list.id);
-              }
-            } catch (err) {
-              console.error('Failed to trigger list_joined workflow in addList (definition):', err);
-            }
-          }
-        } else if (payload.object === 'households') {
-          const result = await this.householdsController.getAllWithPeopleCount(
-            auth,
-            payload.definition as getAllOptionsType,
-          );
-          const rows = result.rows.map((h) => ({
-            tenant_id: auth.tenant_id,
-            list_id: list.id,
-            household_id: h['id'],
-            createdby_id: auth.user_id,
-            updatedby_id: auth.user_id,
-          }));
-          if (rows.length) {
-            await this.mapListsHouseholdsRepo.addMany({
-              rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
-            });
-          }
-        }
-      }
-    }
-
-    return list;
-  }
-
-  public async refreshList(auth: IAuthKeyPayload, id: string): Promise<any> {
-    const list = (await super.getOneById({ tenant_id: auth.tenant_id, id })) as any;
-    if (!list) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
-    }
-    if (!list.is_dynamic) {
-      return list;
-    }
-
-    // Set list status to refreshing
-    await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: {
-        status: 'refreshing',
-        updatedby_id: auth.user_id,
-        updated_at: new Date(),
-      } as any,
-    });
-
-    // Queue background job
-    await this.getRepo()
-      .db.insertInto('background_jobs' as any)
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'refresh_list',
-          list_id: id,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-        }),
-        run_at: new Date(),
-      } as any)
-      .execute();
-
-    return { ...list, status: 'refreshing' };
-  }
-
-  public async executeListRefresh(tenant_id: string, id: string, user_id: string): Promise<any> {
-    const auth: IAuthKeyPayload = {
-      tenant_id,
-      user_id,
-      name: 'System Worker',
-      session_id: 'worker-session',
-    };
-
-    const list = (await this.getOneById({ tenant_id, id })) as any;
-    if (!list) {
-      throw new Error(`List ${id} not found`);
-    }
-    if (!list.is_dynamic) {
-      return list;
-    }
-
-    const definition = list.definition as getAllOptionsType;
-    if (!definition) {
-      // Set back to idle if no definition
-      await this.update({
-        tenant_id,
-        id,
-        row: {
-          status: 'idle',
-          updated_at: new Date(),
-          updatedby_id: user_id,
-        } as any,
-      });
-      return list;
-    }
-
-    try {
-      if (list.object === 'people') {
-        // Clear current mappings
-        await this.mapListsPersonsRepo.db
-          .deleteFrom('map_lists_persons')
-          .where('tenant_id', '=', tenant_id)
-          .where('list_id', '=', id)
-          .execute();
-
-        // Resolve and insert new mappings
-        const result = await this.personsController.getAllWithAddress(auth, definition);
-        const rows = result.rows.map((p) => ({
-          tenant_id: tenant_id,
-          list_id: list.id,
-          person_id: p['id'],
-          createdby_id: user_id,
-          updatedby_id: user_id,
-        }));
-        if (rows.length) {
-          await this.mapListsPersonsRepo.addMany({
-            rows: rows as OperationDataType<'map_lists_persons', 'insert'>[],
-          });
-        }
-      } else if (list.object === 'households') {
-        // Clear current mappings
-        await this.mapListsHouseholdsRepo.db
-          .deleteFrom('map_lists_households')
-          .where('tenant_id', '=', tenant_id)
-          .where('list_id', '=', id)
-          .execute();
-
-        // Resolve and insert new mappings
-        const result = await this.householdsController.getAllWithPeopleCount(auth, definition);
-        const rows = result.rows.map((h) => ({
-          tenant_id: tenant_id,
-          list_id: list.id,
-          household_id: h['id'],
-          createdby_id: user_id,
-          updatedby_id: user_id,
-        }));
-        if (rows.length) {
-          await this.mapListsHouseholdsRepo.addMany({
-            rows: rows as OperationDataType<'map_lists_households', 'insert'>[],
-          });
-        }
-      }
-
-      // Update refreshed timestamp and status back to idle
-      const updated = await this.update({
-        tenant_id,
-        id,
-        row: {
-          status: 'idle',
-          last_refreshed_at: new Date(),
-          updated_at: new Date(),
-          updatedby_id: user_id,
-        } as any,
-      });
-
-      return updated;
-    } catch (error) {
-      // Set status to failed
-      await this.update({
-        tenant_id,
-        id,
-        row: {
-          status: 'failed',
-          updated_at: new Date(),
-          updatedby_id: user_id,
-        } as any,
-      });
-      throw error;
-    }
-  }
-
-  public async getListStats(auth: IAuthKeyPayload, id: string): Promise<any> {
-    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
-    if (!list) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
-    }
-
-    // Fetch all newsletters that are sent
-    const newsletters = await this.getRepo()
-      .db.selectFrom('newsletters')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('status', '=', 'sent')
-      .execute();
-
-    // Filter newsletters in JS where their target_lists matches this list
-    const targetedNewsletters = newsletters.filter((n) => {
-      if (!n.target_lists) return false;
-      // After migration 2026-07-01-a-schema-improvements, target_lists is a jsonb column returned as a parsed object.
-      // Support legacy string values too (pre-migration rows or test data).
-      let parsed: unknown = n.target_lists;
-      if (typeof parsed === 'string') {
-        try {
-          parsed = JSON.parse(parsed);
-        } catch {
-          /* fall through */
-        }
-      }
-      if (Array.isArray(parsed)) {
-        return parsed.includes(id);
-      }
-      if (parsed && typeof parsed === 'object') {
-        const obj = parsed as Record<string, unknown>;
-        const include = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
-        return include.includes(id);
-      }
-      if (typeof parsed === 'string') {
-        return parsed
-          .split(',')
-          .map((s) => s.trim())
-          .includes(id);
-      }
-      return false;
-    });
-
-    // Compute aggregated metrics
-    const totalNewsletters = targetedNewsletters.length;
-    let totalDelivered = 0;
-    let totalOpens = 0;
-    let totalClicks = 0;
-
-    for (const n of targetedNewsletters) {
-      totalDelivered += Number(n.delivered_count ?? 0);
-      totalOpens += Number(n.unique_opens ?? 0);
-      totalClicks += Number(n.unique_clicks ?? 0);
-    }
-
-    const avgOpenRate = totalDelivered > 0 ? (totalOpens / totalDelivered) * 100 : 0;
-    const avgClickRate = totalDelivered > 0 ? (totalClicks / totalDelivered) * 100 : 0;
-
-    return {
-      totalNewsletters,
-      totalDelivered,
-      avgOpenRate,
-      avgClickRate,
-      newsletters: targetedNewsletters.map((n) => ({
-        id: n.id,
-        name: n.name,
-        subject: n.subject,
-        send_date: n.send_date,
-        total_recipients: n.total_recipients,
-        delivered_count: n.delivered_count,
-        open_rate: n.open_rate,
-        click_rate: n.click_rate,
-      })),
-    };
-  }
-
-  public getHouseholdsByListId(auth: IAuthKeyPayload, list_id: string) {
-    return this.getRepo().getHouseholdsByListId({ tenant_id: auth.tenant_id, list_id });
-  }
-
-  public getPersonsByListId(auth: IAuthKeyPayload, list_id: string) {
-    return this.getRepo().getPersonsByListId({ tenant_id: auth.tenant_id, list_id });
-  }
-
-  public async getMemberCount(auth: IAuthKeyPayload, id: string): Promise<number> {
-    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
-    if (!list) return 0;
-    if (list.is_dynamic && list.definition) {
-      const opts = { ...(list.definition as getAllOptionsType), startRow: 0, endRow: 0 };
-      if (list.object === 'people') {
-        const data = await this.personsController.getAllWithAddress(auth, opts);
-        return data.count;
-      } else {
-        const data = await this.householdsController.getAllWithPeopleCount(auth, opts);
-        return data.count;
-      }
-    } else {
-      if (list.object === 'people') {
-        const result = await this.mapListsPersonsRepo.db
-          .selectFrom('map_lists_persons')
-          .select(({ fn }) => fn.countAll().as('count'))
-          .where('tenant_id', '=', auth.tenant_id as any)
-          .where('list_id', '=', id as any)
-          .executeTakeFirst();
-        return Number(result?.count ?? 0);
-      } else {
-        const result = await this.mapListsHouseholdsRepo.db
-          .selectFrom('map_lists_households')
-          .select(({ fn }) => fn.countAll().as('count'))
-          .where('tenant_id', '=', auth.tenant_id as any)
-          .where('list_id', '=', id as any)
-          .executeTakeFirst();
-        return Number(result?.count ?? 0);
-      }
-    }
-  }
-
-  public async updateList(id: string, row: UpdateListType, auth: IAuthKeyPayload) {
-    const rowWithUpdatedBy = {
-      ...row,
-      updatedby_id: auth.user_id,
-    };
-    const result = await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: rowWithUpdatedBy as OperationDataType<'lists', 'update'>,
-    });
-
-    // If the list is dynamic and definition or dynamics was updated, queue a refresh job
-    const list = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
-    if (list && list.is_dynamic && (row.definition !== undefined || row.is_dynamic === true)) {
-      // Update status to refreshing
-      await this.update({
-        tenant_id: auth.tenant_id,
-        id,
-        row: {
-          status: 'refreshing',
-          updatedby_id: auth.user_id,
-          updated_at: new Date(),
-        } as any,
-      });
-
-      await this.getRepo()
-        .db.insertInto('background_jobs' as any)
-        .values({
-          tenant_id: auth.tenant_id,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({
-            type: 'refresh_list',
-            list_id: id,
-            tenant_id: auth.tenant_id,
-            user_id: auth.user_id,
-          }),
-          run_at: new Date(),
-        } as any)
-        .execute();
-    }
-
-    return result;
-  }
-
-  public override async delete(tenant_id: string, idToDelete: string, userId?: string) {
-    await this.mapListsPersonsRepo.db
-      .deleteFrom('map_lists_persons')
-      .where('tenant_id', '=', tenant_id as any)
-      .where('list_id', '=', idToDelete as any)
-      .execute();
-
-    await this.mapListsHouseholdsRepo.db
-      .deleteFrom('map_lists_households')
-      .where('tenant_id', '=', tenant_id as any)
-      .where('list_id', '=', idToDelete as any)
-      .execute();
-
-    return super.delete(tenant_id as any, idToDelete, userId);
-  }
-
-  public override async deleteMany(tenant_id: string, idsToDelete: string[]) {
-    if (idsToDelete.length === 0) return false;
-
-    await this.mapListsPersonsRepo.db
-      .deleteFrom('map_lists_persons')
-      .where('tenant_id', '=', tenant_id as any)
-      .where('list_id', 'in', idsToDelete)
-      .execute();
-
-    await this.mapListsHouseholdsRepo.db
-      .deleteFrom('map_lists_households')
-      .where('tenant_id', '=', tenant_id as any)
-      .where('list_id', 'in', idsToDelete)
-      .execute();
-
-    return super.deleteMany(tenant_id as any, idsToDelete);
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const list = (await super.getOneById(input)) as any;
-    if (list && list.is_dynamic) {
-      const oneDayAgo = new Date(Date.now() - 24 * 3600 * 1000);
-      if (!list.last_refreshed_at || new Date(list.last_refreshed_at) < oneDayAgo) {
-        if (list.status !== 'refreshing') {
-          // Lazily trigger refresh in background
-          const mockAuth: IAuthKeyPayload = {
-            tenant_id: input.tenant_id,
-            user_id: list.createdby_id,
-            name: 'System Worker',
-            session_id: 'lazy-refresh',
-          };
-          const promise = this.refreshList(mockAuth, input.id).catch((err) =>
-            console.error(`Failed to lazily queue refresh for list ${input.id}:`, err),
-          );
-          (this as any)._lastLazyRefreshPromise = promise;
-        }
-      }
-    }
-    if (!list) return list;
-    return this.resolveCreatorAndUpdater(input.tenant_id, list);
   }
 }
 ```
@@ -14383,259 +14985,6 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     return super.exportCsv(input, auth);
   }
 }
-```
-
-## File: apps/backend/src/app/modules/persons/trpc.router.ts
-
-```typescript
-import {
-  UpdatePersonsObj,
-  exportCsvInput,
-  exportCsvResponse,
-  getAllOptions,
-  idSchema,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { PersonsController } from './controller';
-import { PersonsService } from './services/persons.service';
-
-const persons = new PersonsController();
-const personsService = new PersonsService();
-
-function add() {
-  return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => personsService.addPerson(input, ctx.auth));
-}
-
-function attachTag() {
-  return authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth));
-}
-
-function count() {
-  return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
-}
-
-const deleteOneInput = z.union([
-  idSchema,
-  z.object({
-    id: idSchema,
-    force: z.boolean().optional(),
-  }),
-]);
-
-function deleteOne() {
-  return authProcedure.input(deleteOneInput).mutation(({ input, ctx }) => {
-    const id = typeof input === 'string' ? input : input.id;
-    const force = typeof input === 'string' ? false : !!input.force;
-    return persons.delete(ctx.auth.tenant_id, id, ctx.auth.user_id, force);
-  });
-}
-
-const deleteManyInput = z.union([
-  z.array(idSchema).min(1, 'At least one ID is required'),
-  z.object({
-    ids: z.array(idSchema).min(1, 'At least one ID is required'),
-    force: z.boolean().optional(),
-  }),
-]);
-
-function deleteMany() {
-  return authProcedure.input(deleteManyInput).mutation(({ input, ctx }) => {
-    const ids = Array.isArray(input) ? input : input.ids;
-    const force = Array.isArray(input) ? false : !!input.force;
-    return persons.deleteMany(ctx.auth.tenant_id, ids, force);
-  });
-}
-
-function detachTag() {
-  return authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      personsService.detachTag({
-        tenant_id: ctx.auth.tenant_id,
-        person_id: input.id,
-        name: input.tag_name,
-        type: input.type ?? 'tag',
-        user_id: ctx.auth.user_id,
-      }),
-    );
-}
-
-function getAll() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAll(ctx.auth.tenant_id, input));
-}
-
-function getAllWithAddress() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth, input));
-}
-
-function getByHouseholdId() {
-  return authProcedure
-    .input(z.object({ id: idSchema, options: getAllOptions }))
-    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options));
-}
-
-function getByCompanyId() {
-  return authProcedure
-    .input(z.object({ id: idSchema, options: getAllOptions }))
-    .query(({ input, ctx }) => persons.getByCompanyId(input.id, ctx.auth, input.options));
-}
-
-function countByCompanyId() {
-  return authProcedure
-    .input(z.object({ id: idSchema }))
-    .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
-}
-
-function getById() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
-}
-
-function getActivity() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
-}
-
-// Distinct tags
-function getDistinctTags() {
-  return authProcedure
-    .input(z.enum(['tag', 'issue']).optional())
-    .query(({ input, ctx }) => persons.getDistinctTags(ctx.auth, input));
-}
-
-function exportCsv() {
-  return authProcedure
-    .input(exportCsvInput)
-    .output(exportCsvResponse)
-    .mutation(({ input, ctx }) => persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
-}
-
-function getTags() {
-  return authProcedure
-    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
-    .query(({ input, ctx }) => {
-      const id = typeof input === 'string' ? input : input.id;
-      const type = typeof input === 'string' ? undefined : input.type;
-      return persons.getTags(id, ctx.auth, type);
-    });
-}
-
-function update() {
-  return authProcedure
-    .input(z.object({ id: idSchema, data: UpdatePersonsObj }))
-    .mutation(({ input, ctx }) => personsService.updatePerson(input.id, input.data as any, ctx.auth));
-}
-
-function removeHousehold() {
-  return authProcedure.input(idSchema).mutation(({ input, ctx }) => personsService.removeHousehold(input, ctx.auth));
-}
-
-function importMany() {
-  const ImportRow = z.object({
-    first_name: z.string().trim().max(100).optional(),
-    last_name: z.string().trim().max(100).optional(),
-    email: z.string().trim().max(255).optional(),
-    mobile: z.string().trim().max(30).optional(),
-    notes: z.string().trim().max(10000).optional(),
-    home_phone: z.string().trim().max(30).optional(),
-    street_num: z.string().trim().max(30).optional(),
-    street1: z.string().trim().max(150).optional(),
-    street2: z.string().trim().max(150).optional(),
-    apt: z.string().trim().max(30).optional(),
-    city: z.string().trim().max(100).optional(),
-    state: z.string().trim().max(100).optional(),
-    zip: z.string().trim().max(20).optional(),
-    country: z.string().trim().max(100).optional(),
-  });
-
-  const Input = z.object({
-    rows: z.array(ImportRow),
-    tags: z.array(z.string().trim().min(1, 'Tag cannot be empty').max(50, 'Tag too long')).optional(),
-    skipped: z.number().int().nonnegative().optional(),
-    file_name: z.string().trim().min(1).max(255).optional(),
-  });
-
-  return authProcedure.input(Input).mutation(async ({ input, ctx }) => {
-    return personsService.importRows(input, ctx.auth);
-  });
-}
-
-function getPotentialDuplicates() {
-  return authProcedure
-    .input(
-      z
-        .object({
-          page: z.number().int().positive().optional().default(1),
-          pageSize: z.number().int().positive().optional().default(20),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => personsService.getPotentialDuplicates(ctx.auth, input));
-}
-
-function getDuplicateCounts() {
-  return authProcedure.query(({ ctx }) => personsService.getDuplicateCounts(ctx.auth));
-}
-
-function mergePersons() {
-  return authProcedure
-    .input(z.object({ target_id: idSchema, source_id: idSchema }))
-    .mutation(({ input, ctx }) => personsService.mergePersons(input, ctx.auth));
-}
-
-function moveEntireHousehold() {
-  return authProcedure
-    .input(
-      z.object({
-        fromHouseholdId: idSchema,
-        toHouseholdId: idSchema,
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      persons.moveEntireHousehold(input.fromHouseholdId, input.toHouseholdId, ctx.auth.tenant_id),
-    );
-}
-
-export const PersonsRouter = router({
-  add: add(),
-  count: count(),
-  getAll: getAll(),
-  update: update(),
-  removeHousehold: removeHousehold(),
-  import: importMany(),
-  getTags: getTags(),
-  getById: getById(),
-  getActivity: getActivity(),
-  attachTag: attachTag(),
-  detachTag: detachTag(),
-  delete: deleteOne(),
-  deleteMany: deleteMany(),
-  getDistinctTags: getDistinctTags(),
-  getByHouseholdId: getByHouseholdId(),
-  getByCompanyId: getByCompanyId(),
-  countByCompanyId: countByCompanyId(),
-  getAllWithAddress: getAllWithAddress(),
-  exportCsv: exportCsv(),
-  getPotentialDuplicates: getPotentialDuplicates(),
-  getDuplicateCounts: getDuplicateCounts(),
-  mergePersons: mergePersons(),
-  moveEntireHousehold: moveEntireHousehold(),
-});
 ```
 
 ## File: apps/backend/src/app/modules/settings/controller.ts
@@ -17533,164 +17882,6 @@ export const ZapierRouter = router({
     .input(z.object({ event_type: eventTypeSchema }))
     .mutation(({ input, ctx }) => zapierService.unsubscribe(ctx.auth.tenant_id, input.event_type as ZapierEventType)),
 });
-```
-
-## File: apps/backend/src/app/kyselyinit.ts
-
-```typescript
-import { sql } from 'kysely';
-import { BaseRepository } from './lib/base.repo';
-import '../env';
-
-async function ensureMigrationTableUpdated(): Promise<void> {
-  try {
-    await sql`
-      UPDATE kysely_migration
-      SET name = '2026-07-01-a-schema-improvements'
-      WHERE name IN ('2026-06-31-schema-improvements', '2026-07-01-schema-improvements')
-    `.execute(BaseRepository.dbInstance);
-
-    await sql`
-      UPDATE kysely_migration
-      SET name = '2026-07-01-b-security-ops-improvements'
-      WHERE name IN ('2026-06-31-security-ops-improvements', '2026-07-01-security-ops-improvements')
-    `.execute(BaseRepository.dbInstance);
-  } catch (err) {
-    // Ignore if table doesn't exist or update fails
-  }
-}
-
-export async function migrateDown(): Promise<void> {
-  await ensureMigrationTableUpdated();
-  const { error, results } = await BaseRepository.migrator.migrateDown();
-
-  results?.forEach((it) => {
-    if (it.status === 'Success') {
-      console.log(`migration down"${it.migrationName}" successsful`);
-    } else if (it.status === 'Error') {
-      console.error(`failed to execute migration down"${it.migrationName}"`);
-    }
-  });
-
-  if (error) {
-    console.error('failed to migrate down: ', error);
-    process.exit(1);
-  }
-}
-
-export async function migrateToLatest(): Promise<void> {
-  console.log('Migration starting');
-
-  await ensureMigrationTableUpdated();
-  const { error, results } = await BaseRepository.migrator.migrateToLatest();
-
-  results?.forEach((it) => {
-    if (it.status === 'Success') {
-      console.log(`migration up:"${it.migrationName}" successful`);
-    } else if (it.status === 'Error') {
-      console.error(`failed to execute migration up"${it.migrationName}"`);
-    }
-  });
-
-  if (error) {
-    console.error('failed to migrate up: ', error);
-    process.exit(1);
-  }
-}
-
-// Automatically run migration when script is executed directly
-const isMain =
-  typeof process !== 'undefined' &&
-  process.argv[1] &&
-  (process.argv[1].endsWith('kyselyinit.ts') || process.argv[1].endsWith('kyselyinit.js'));
-if (isMain) {
-  void migrateToLatest();
-}
-```
-
-## File: apps/backend/src/test-assign3.ts
-
-```typescript
-import { Kysely, PostgresDialect } from 'kysely';
-import { Pool } from 'pg';
-import { Models } from '../../../libs/common/src/lib/kysely.models';
-import Cursor from 'pg-cursor';
-
-const db = new Kysely<Models>({
-  dialect: new PostgresDialect({
-    pool: new Pool({
-      user: 'postgres',
-      database: 'pplcrm',
-      host: 'localhost',
-      port: 5432,
-    }),
-    cursor: Cursor,
-  }),
-});
-
-async function run() {
-  const q = db.updateTable('emails').set({ assigned_to: '1' }).where('id', '=', '1');
-  console.log(q.compile().sql);
-  console.log(q.compile().parameters);
-  process.exit(0);
-}
-run();
-```
-
-## File: apps/backend/src/test-assign4.ts
-
-```typescript
-import { Kysely, PostgresDialect } from 'kysely';
-import { Pool } from 'pg';
-import { Models } from '../../../libs/common/src/lib/kysely.models';
-import Cursor from 'pg-cursor';
-
-const db = new Kysely<Models>({
-  dialect: new PostgresDialect({
-    pool: new Pool({
-      user: 'zeehamid',
-      database: 'pplcrm',
-      password: 'Eternity#1',
-      host: 'localhost',
-      port: 5432,
-    }),
-    cursor: Cursor,
-  }),
-});
-
-async function run() {
-  const q = db.updateTable('emails').set({ assigned_to: '1' }).where('id', '=', '29');
-  console.log(q.compile().sql);
-  const result = await q.executeTakeFirst();
-  console.log(result);
-
-  const updatedRow = await db.selectFrom('emails').selectAll().where('id', '=', '29').executeTakeFirst();
-  console.log('After update:', updatedRow?.assigned_to);
-
-  process.exit(0);
-}
-run();
-```
-
-## File: apps/backend/src/test-kysely.ts
-
-```typescript
-import { Kysely, PostgresDialect } from 'kysely';
-import { Pool } from 'pg';
-import { Models } from '../../../libs/common/src/lib/kysely.models';
-import Cursor from 'pg-cursor';
-
-const db = new Kysely<Models>({
-  dialect: new PostgresDialect({
-    pool: new Pool(),
-    cursor: Cursor,
-  }),
-});
-
-const query = db.updateTable('emails').set({ assigned_to: '1' }).where('id', '=', '1').where('tenant_id', '=', '1');
-
-console.log(query.compile().sql);
-console.log(query.compile().parameters);
 ```
 
 ## File: apps/backend/vite.config.ts
@@ -23933,6 +24124,1394 @@ GRANT ALL ON SCHEMA public TO PUBLIC;
 \unrestrict oPFHGUe6wVNuN0eNnQazqyJQjnNPomJSMJiQZMlpJpzgVIBdJCJVrckJoNfysZW
 ```
 
+## File: apps/backend/src/app/lib/jobs/worker.ts
+
+```typescript
+import { sql } from 'kysely';
+import { Client } from 'pg';
+
+import { env } from '../../../env';
+import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
+import { executeJob } from './job-handlers';
+
+export class BackgroundJobWorker {
+  private readonly importsRepo = new ImportsRepo();
+  private readonly db = this.importsRepo.db; // Kysely DB instance
+
+  private activeJobsCount = 0;
+  private isRunning = false;
+  private pgClient: Client | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private recoveryInterval: NodeJS.Timeout | null = null;
+  private shutdownResolver: (() => void) | null = null;
+  private timer: NodeJS.Timeout | null = null;
+
+  public start() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    console.log('Background Job Worker started.');
+
+    this.ensureCleanupJobScheduled().catch((err) => console.error('Failed to ensure cleanup job scheduled:', err));
+    this.ensureSyncSchedulerJobScheduled().catch((err) =>
+      console.error('Failed to ensure sync scheduler job scheduled:', err),
+    );
+    this.ensureDuplicatesRecomputeJobScheduled().catch((err) =>
+      console.error('Failed to ensure duplicates recompute job scheduled:', err),
+    );
+    this.ensureAddressFingerprintsJobScheduled().catch((err) =>
+      console.error('Failed to ensure address fingerprints job scheduled:', err),
+    );
+    this.ensureWorkflowsJobScheduled().catch((err) => console.error('Failed to ensure workflows job scheduled:', err));
+    this.ensurePerformScheduledDeletionsJobScheduled().catch((err) =>
+      console.error('Failed to ensure perform scheduled deletions job scheduled:', err),
+    );
+    this.ensureUsageLimitChecksScheduled().catch((err) =>
+      console.error('Failed to ensure usage limit checks scheduled:', err),
+    );
+    this.ensureDueTasksCheckScheduled().catch((err) =>
+      console.error('Failed to ensure due tasks check scheduled:', err),
+    );
+    this.ensureCompaniesGoogleRefreshJobScheduled().catch((err) =>
+      console.error('Failed to ensure companies google refresh job scheduled:', err),
+    );
+    this.ensurePruneNewsletterEventsJobScheduled().catch((err) =>
+      console.error('Failed to ensure prune newsletter events job scheduled:', err),
+    );
+
+    // Run stale job recovery on startup and then every 5 minutes
+    this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs on startup:', err));
+    this.recoveryInterval = setInterval(
+      () => {
+        this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs:', err));
+      },
+      5 * 60 * 1000,
+    );
+
+    this.setupListener();
+    this.poll();
+  }
+
+  public async stop(): Promise<void> {
+    this.isRunning = false;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.recoveryInterval) {
+      clearInterval(this.recoveryInterval);
+      this.recoveryInterval = null;
+    }
+    if (this.pgClient) {
+      try {
+        await this.pgClient.end();
+      } catch (err) {
+        console.error('Error closing Postgres listener client on shutdown:', err);
+      }
+      this.pgClient = null;
+    }
+
+    if (this.activeJobsCount > 0) {
+      console.log(
+        `Background Job Worker: Waiting for ${this.activeJobsCount} active jobs to complete before shutting down...`,
+      );
+      await new Promise<void>((resolve) => {
+        this.shutdownResolver = resolve;
+      });
+    }
+    console.log('Background Job Worker stopped.');
+  }
+
+  private async ensureAddressFingerprintsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling nightly address fingerprints recomputation background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'recompute_address_fingerprints' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure address fingerprints job scheduled:', err);
+    }
+  }
+
+  private async ensureCleanupJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'cleanup_activities')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily activity feed cleanup background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'cleanup_activities' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure cleanup job scheduled:', err);
+    }
+  }
+
+  private async ensureCompaniesGoogleRefreshJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'refresh_companies_google')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily company google enrichment background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'refresh_companies_google' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure companies google refresh job scheduled:', err);
+    }
+  }
+
+  private async ensureDueTasksCheckScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'check_due_tasks')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily due tasks check background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'check_due_tasks' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure due tasks check scheduled:', err);
+    }
+  }
+
+  private async ensureDuplicatesRecomputeJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling nightly duplicates recomputation background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'recompute_all_duplicates' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure duplicates recompute job scheduled:', err);
+    }
+  }
+
+  private async ensurePerformScheduledDeletionsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'perform_scheduled_deletions')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily scheduled deletions background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'perform_scheduled_deletions' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure perform scheduled deletions job scheduled:', err);
+    }
+  }
+
+  private async ensurePruneNewsletterEventsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'prune_newsletter_events')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily newsletter events pruning background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'prune_newsletter_events' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure prune newsletter events job scheduled:', err);
+    }
+  }
+
+  private async ensureSyncSchedulerJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'schedule_sync_jobs')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling sync scheduler background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'schedule_sync_jobs' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure sync scheduler job scheduled:', err);
+    }
+  }
+
+  private async ensureUsageLimitChecksScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'check_all_usage_limits')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling daily usage limits check background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'check_all_usage_limits' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure usage limit checks scheduled:', err);
+    }
+  }
+
+  private async ensureWorkflowsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx: any) => {
+        const existing = await trx
+          .selectFrom('background_jobs' as any)
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'process_drip_workflows')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          console.log('Scheduling periodic drip workflows processing background job…');
+          await trx
+            .insertInto('background_jobs' as any)
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'process_drip_workflows' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      console.error('Failed to ensure workflows job scheduled:', err);
+    }
+  }
+
+  private poll() {
+    if (!this.isRunning) return;
+
+    this.timer = setTimeout(async () => {
+      let processedAJob = false;
+      try {
+        this.activeJobsCount++;
+        processedAJob = await this.processNextJob();
+      } catch (err) {
+        console.error('Error in background job worker poll cycle:', err);
+      } finally {
+        this.activeJobsCount--;
+
+        // If shutdown was requested and no active jobs remain, resolve the stop() promise
+        if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
+          this.shutdownResolver();
+        } else {
+          // Poll again immediately (10ms) if we processed a job (to drain the queue),
+          // or back off to 30 seconds if no jobs were found.
+          const delay = processedAJob ? 10 : 30000;
+          this.pollWithDelay(delay);
+        }
+      }
+    }, 0);
+  }
+
+  private pollWithDelay(ms: number) {
+    if (!this.isRunning) return;
+    this.timer = setTimeout(() => this.poll(), ms);
+  }
+
+  private async processNextJob(): Promise<boolean> {
+    const workerId = `worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
+
+    // Try to find and lock a job using SKIP LOCKED
+    const job = await this.db.transaction().execute(async (trx: any) => {
+      const pendingJob = (await trx
+        .selectFrom('background_jobs' as any)
+        .selectAll()
+        .where('status', '=', 'pending')
+        .where('run_at', '<=', new Date())
+        .orderBy('id', 'asc')
+        .limit(1)
+        .forUpdate()
+        .skipLocked()
+        .executeTakeFirst()) as any;
+
+      if (!pendingJob) return null;
+
+      const updatedJob = await trx
+        .updateTable('background_jobs' as any)
+        .set({
+          status: 'processing',
+          locked_at: new Date(),
+          locked_by: workerId,
+          attempts: Number(pendingJob.attempts || 0) + 1,
+          updated_at: new Date(),
+        })
+        .where('id', '=', pendingJob.id)
+        .returningAll()
+        .executeTakeFirst();
+
+      return updatedJob;
+    });
+
+    if (!job) return false;
+
+    console.log(`Processing job ${job.id} (Queue: ${job.queue}, Status: ${job.status})`);
+
+    const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
+
+    try {
+      await executeJob(payload, this.db, job.id);
+
+      // Mark job as completed
+      await this.db
+        .updateTable('background_jobs' as any)
+        .set({
+          status: 'completed',
+          locked_at: null,
+          locked_by: null,
+          updated_at: new Date(),
+        })
+        .where('id', '=', job.id)
+        .execute();
+
+      console.log(`Job ${job.id} completed successfully.`);
+    } catch (err: any) {
+      const errorMsg = err?.message || String(err);
+      console.error(`Failed to process background job ${job.id}:`, err);
+
+      try {
+        // If it was an import job, mark the import as failed and store the error message
+        if (payload.import_id) {
+          await this.importsRepo.update({
+            tenant_id: payload.tenant_id as any,
+            id: payload.import_id as any,
+            row: {
+              status: 'failed',
+              error_message: errorMsg.substring(0, 1000), // Truncate just in case
+              processed_at: new Date(),
+              updated_at: new Date(),
+            } as any,
+          });
+        }
+      } catch (dbErr) {
+        console.error('Failed to mark data_imports as failed:', dbErr);
+      }
+
+      const attempts = Number(job.attempts || 0);
+      const maxAttempts = Number(job.max_attempts || 3);
+
+      if (attempts < maxAttempts) {
+        // Retry with backoff (exponential backoff for mail, linear for others)
+        const isMail =
+          payload.type === 'send-transactional-email' ||
+          payload.type === 'send-form-notifications' ||
+          payload.type === 'send-webform-notifications' ||
+          payload.type === 'send-shift-reminder' ||
+          payload.type === 'send-newsletter';
+        const delaySeconds = isMail ? Math.pow(2, attempts) * 30 : attempts * 30;
+        const runAt = new Date(Date.now() + delaySeconds * 1000);
+        console.log(`Rescheduling job ${job.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`);
+
+        await this.db
+          .updateTable('background_jobs' as any)
+          .set({
+            status: 'pending',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            run_at: runAt,
+            updated_at: new Date(),
+          })
+          .where('id', '=', job.id)
+          .execute();
+      } else {
+        console.error(`Job ${job.id} exceeded maximum attempts (${maxAttempts}). Marking as failed.`);
+        await this.db
+          .updateTable('background_jobs' as any)
+          .set({
+            status: 'failed',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            updated_at: new Date(),
+          })
+          .where('id', '=', job.id)
+          .execute();
+
+        if (payload.export_id) {
+          try {
+            const { ExportsRepo } = await import('../../modules/exports/repositories/exports.repo');
+            const exportsRepo = new ExportsRepo();
+            await exportsRepo.updateStatus(String(payload.export_id), String(payload.tenant_id), 'failed', {
+              error: `Export failed after all retries. Last error: ${errorMsg.substring(0, 400)}`,
+            });
+          } catch (exportErr) {
+            console.error('Failed to update export status on job permanent failure:', exportErr);
+          }
+        }
+
+        if (payload.type === 'ms_sync' && payload.userId) {
+          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
+          console.error(`[sync-error][${correlationId}] MS sync permanently failed for user ${payload.userId}:`, err);
+          try {
+            const { MsOAuthService } = await import('../../modules/ms-sync/ms-oauth.service');
+            const { env } = await import('../../../env');
+            const oauthSvc = new MsOAuthService(this.db as any, {
+              clientId: env.msClientId ?? '',
+              clientSecret: env.msClientSecret ?? '',
+              tenantId: env.msTenantId ?? 'common',
+              redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+            });
+            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
+          } catch (recordErr) {
+            console.error('Failed to record MS sync error on token:', recordErr);
+          }
+        }
+
+        if (payload.type === 'google_sync' && payload.userId) {
+          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
+          console.error(
+            `[sync-error][${correlationId}] Google sync permanently failed for user ${payload.userId}:`,
+            err,
+          );
+          try {
+            const { GoogleOAuthService } = await import('../../modules/google-sync/google-oauth.service');
+            const { env } = await import('../../../env');
+            const oauthSvc = new GoogleOAuthService(this.db as any, {
+              clientId: env.googleClientId ?? '',
+              clientSecret: env.googleClientSecret ?? '',
+              redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+            });
+            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
+          } catch (recordErr) {
+            console.error('Failed to record Google sync error on token:', recordErr);
+          }
+        }
+
+        // If a recurrent cron-like job fails permanently, schedule the next iteration
+        await this.rescheduleCronJobOnFailure(payload.type);
+      }
+    }
+
+    return true;
+  }
+
+  private reconnectListener() {
+    if (this.pgClient) {
+      this.pgClient.end().catch();
+      this.pgClient = null;
+    }
+    if (!this.isRunning) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.setupListener();
+    }, 5000);
+  }
+
+  private async recoverStaleJobs(): Promise<void> {
+    try {
+      const staleTime = new Date(Date.now() - 30 * 60 * 1000); // 30 minutes
+      await this.db
+        .updateTable('background_jobs' as any)
+        .set({
+          status: 'pending',
+          locked_at: null,
+          locked_by: null,
+          updated_at: new Date(),
+          error: 'Job processing timed out',
+        })
+        .where('status', '=', 'processing')
+        .where('locked_at', '<', staleTime)
+        .execute();
+
+      // Clean up/timeout data exports stuck in pending/processing for more than 1 hour
+      const staleExportTime = new Date(Date.now() - 60 * 60 * 1000); // 1 hour
+      const staleExports = await this.db
+        .selectFrom('data_exports' as any)
+        .select(['id', 'tenant_id'])
+        .where('status', 'in', ['pending', 'processing'])
+        .where('created_at', '<', staleExportTime)
+        .execute();
+
+      if (staleExports.length > 0) {
+        const ids = staleExports.map((e: any) => e.id as any);
+        await this.db
+          .updateTable('data_exports' as any)
+          .set({
+            status: 'failed',
+            error: 'Export processing timed out',
+            updated_at: new Date(),
+          })
+          .where('id', 'in', ids)
+          .execute();
+
+        for (const exp of staleExports) {
+          await this.db
+            .deleteFrom('background_jobs' as any)
+            .where('tenant_id', '=', exp.tenant_id as any)
+            .where(sql`payload->>'type'`, '=', 'export_csv')
+            .where(sql`payload->>'export_id'`, '=', String(exp.id))
+            .execute();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to recover stale background jobs:', err);
+    }
+  }
+
+  private async rescheduleCronJobOnFailure(type: string): Promise<void> {
+    let delayMs = 0;
+    if (type === 'cleanup_activities') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'schedule_sync_jobs') {
+      delayMs = 10 * 60 * 1000;
+    } else if (type === 'recompute_all_duplicates') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'recompute_address_fingerprints') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'process_drip_workflows') {
+      delayMs = 10 * 60 * 1000;
+    } else if (type === 'perform_scheduled_deletions') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'check_all_usage_limits') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'refresh_companies_google') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'prune_newsletter_events') {
+      delayMs = 24 * 60 * 60 * 1000;
+    }
+
+    if (delayMs > 0) {
+      try {
+        await this.db
+          .insertInto('background_jobs' as any)
+          .values({
+            tenant_id: null,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({ type }),
+            run_at: new Date(Date.now() + delayMs),
+            max_attempts: 3,
+          })
+          .execute();
+      } catch (schedErr) {
+        console.error(`Failed to reschedule failed cron job (${type}):`, schedErr);
+      }
+    }
+  }
+
+  private async setupListener() {
+    if (!this.isRunning) return;
+    try {
+      this.pgClient = new Client(env.db);
+      await this.pgClient.connect();
+
+      this.pgClient.on('notification', (msg) => {
+        if (msg.channel === 'background_jobs_channel') {
+          console.log('Background Job Worker received notify, waking up...');
+          this.wakeUp();
+        }
+      });
+
+      this.pgClient.on('error', (err) => {
+        console.error('Postgres listener client error:', err);
+        this.reconnectListener();
+      });
+
+      this.pgClient.on('end', () => {
+        console.warn('Postgres listener connection closed.');
+        this.reconnectListener();
+      });
+
+      await this.pgClient.query('LISTEN background_jobs_channel');
+      console.log('Listening for background_jobs notifications...');
+    } catch (err) {
+      console.error('Failed to setup Postgres listener:', err);
+      this.reconnectListener();
+    }
+  }
+
+  private wakeUp() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.poll();
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/base.repo.ts
+
+```typescript
+// tsco:ignore
+
+import type { INow, QueryBuilderGroupNode } from '../../../../../libs/common/src';
+
+import { promises as fs } from 'fs';
+import type {
+  DeleteQueryBuilder,
+  DeleteResult,
+  InsertQueryBuilder,
+  InsertResult,
+  OperandValueExpressionOrList,
+  OrderByExpression,
+  QueryResult,
+  ReferenceExpression,
+  SelectExpression,
+  SelectQueryBuilder,
+  Selectable,
+  Transaction,
+  UpdateQueryBuilder,
+  UpdateResult,
+} from 'kysely';
+import { FileMigrationProvider, Kysely, Migrator, PostgresDialect, sql } from 'kysely';
+import path from 'path';
+
+import type {
+  Models,
+  OperationDataType,
+  TypeId,
+  TypeTableColumns,
+  TypeTenantId,
+} from '../../../../../libs/common/src/lib/kysely.models';
+import { Pool } from 'pg';
+import { env } from '../../env';
+import Cursor from 'pg-cursor';
+const dialect = new PostgresDialect({
+  pool: new Pool(env.db),
+  cursor: Cursor,
+});
+
+type ColName<TB extends keyof Models> = keyof Models[TB] & string;
+
+export class BaseRepository<T extends keyof Models> {
+  private static _db = new Kysely<Models>({ dialect });
+  private static _migrationFolder = path.resolve(process.cwd(), 'apps/backend/src/app/_migrations');
+
+  public static get dbInstance(): Kysely<Models> {
+    return BaseRepository._db;
+  }
+
+  protected readonly table: T;
+
+  public static migrator = new Migrator({
+    db: BaseRepository._db,
+    provider: new FileMigrationProvider({
+      fs,
+      path,
+      migrationFolder: BaseRepository._migrationFolder,
+    }),
+  });
+
+  constructor(tableIn: T) {
+    this.table = tableIn;
+  }
+
+  public getTableName(): T {
+    return this.table;
+  }
+
+  public get db() {
+    return BaseRepository._db;
+  }
+
+  public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
+    const results = await this.addMany({ rows: [input.row] }, trx);
+    return results[0]!;
+  }
+
+  public async addMany(input: { rows: OperationDataType<T, 'insert'>[] }, trx?: Transaction<Models>) {
+    return this.getInsert(trx).values(input.rows).returningAll().execute();
+  }
+
+  public async addOrGet<K extends keyof Models[T] & string>(
+    input: {
+      row: OperationDataType<T, 'insert'>;
+      onConflictColumn: K;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<Selectable<Models[T]> | undefined> {
+    const insertResult = await this.getInsert(trx)
+      .values(input.row)
+      .onConflict((oc) => oc.columns(['tenant_id', input.onConflictColumn]).doNothing())
+      .returningAll()
+      .executeTakeFirst();
+
+    if (insertResult) return insertResult as unknown as Selectable<Models[T]>;
+
+    const matchValue = input.row[input.onConflictColumn as unknown as keyof OperationDataType<T, 'insert'>];
+    if (matchValue === undefined) {
+      throw new Error(`Missing value for conflict column: ${String(input.onConflictColumn)}`);
+    }
+
+    const lhs = input.onConflictColumn as ReferenceExpression<Models, T>;
+    return this.getSelect(trx)
+      .selectAll()
+      .where(lhs, '=', matchValue)
+      .where('tenant_id', '=', input.row.tenant_id as any)
+      .executeTakeFirst() as unknown as Selectable<Models[T]> | undefined;
+  }
+
+  public async count(tenant_id: TypeTenantId<T>, trx?: Transaction<Models>): Promise<number> {
+    let query = this.getSelect(trx).select(({ fn }) => [fn.countAll<number>().as('count')]);
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', tenant_id);
+    }
+    const result = await query.executeTakeFirst();
+    return Number(result?.count ?? 0);
+  }
+
+  public async delete(input: { tenant_id: TypeTenantId<T>; id: TypeId<T> }, trx?: Transaction<Models>) {
+    return this.deleteMany({ tenant_id: input.tenant_id, ids: [input.id] }, trx);
+  }
+
+  public async deleteMany(input: { tenant_id: TypeTenantId<T>; ids: TypeId<T>[] }, trx?: Transaction<Models>) {
+    // Convert to numbers if needed
+    const numericIds = input.ids;
+
+    if (numericIds.length === 0) return false;
+
+    const deleteQuery = this.getDelete(trx);
+    let query = deleteQuery.where('id' as ReferenceExpression<Models, T>, 'in', numericIds);
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
+    }
+    const result = await query.executeTakeFirst();
+
+    return Number(result?.numDeletedRows ?? 0) > 0;
+  }
+
+  public async exists(input: { key: string; column: keyof Models[T] }, trx?: Transaction<Models>): Promise<boolean> {
+    const columnRef = `${String(this.table)}.${String(input.column)}` as ReferenceExpression<Models, T>;
+    const result = await this.getSelect(trx).where(columnRef, '=', input.key).limit(1).execute();
+    return result.length > 0;
+  }
+
+  public find(
+    input: {
+      tenant_id: TypeTenantId<T>;
+      key: string;
+      column: ReferenceExpression<Models, T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const options: QueryParams<T> = {
+      columns: [input.column],
+      limit: 3,
+    };
+
+    if (!input.key) {
+      // If no key provided, return empty result
+      return Promise.resolve([]);
+    }
+
+    let query = this.getSelectWithColumns(options, trx).where(input.column, 'ilike', input.key + '%');
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
+    }
+    return query.limit(3).execute();
+  }
+
+  public getAll(
+    input: {
+      tenant_id: TypeTenantId<T>;
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    let query = this.getSelectWithColumns(input.options, trx);
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
+    }
+    return query.execute();
+  }
+
+  public async getAllWithCounts(
+    input: {
+      tenant_id: TypeTenantId<T>;
+      options?: QueryParams<any>;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    const rows = await this.getAll(input, trx);
+    return { rows, count: rows.length };
+  }
+
+  protected selectBy<C extends ColName<T>>(
+    column: C,
+    input: {
+      tenant_id: TypeTenantId<T>;
+      value: OperandValueExpressionOrList<Models, T, C>;
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    let query = this.getSelectWithColumns(input.options, trx).where(
+      column as ReferenceExpression<Models, T>,
+      '=',
+      input.value as OperandValueExpressionOrList<Models, T, ReferenceExpression<Models, T>>,
+    );
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
+    }
+    return query;
+  }
+
+  public getOneBy<C extends ColName<T>>(
+    column: C,
+    input: {
+      tenant_id: TypeTenantId<T>;
+      value: OperandValueExpressionOrList<Models, T, C>;
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    return this.selectBy(column, input, trx).executeTakeFirst();
+  }
+
+  protected getManyBy<C extends ColName<T>>(
+    column: C,
+    input: {
+      tenant_id: TypeTenantId<T>;
+      value: OperandValueExpressionOrList<Models, T, C>;
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    return this.selectBy(column, input, trx).execute();
+  }
+
+  public async nowTime(): Promise<QueryResult<INow>> {
+    return (await sql`select now()::timestamp`.execute(BaseRepository._db)) as QueryResult<INow>;
+  }
+
+  public transaction() {
+    return BaseRepository._db.transaction();
+  }
+
+  public async update(
+    input: {
+      tenant_id: TypeTenantId<T>;
+      id: TypeId<T>;
+      row: OperationDataType<T, 'update'>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    if (Object.keys(input.row).length === 0) {
+      return 0; // or just return early, nothing to update
+    }
+    let query = this.getUpdate(trx)
+      .set(input.row as any)
+      .where('id' as ReferenceExpression<Models, T>, '=', input.id);
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
+    }
+    return query.returningAll().executeTakeFirst();
+  }
+
+  protected applyOptions(query: SelectQueryBuilder<Models, T, unknown>, options?: QueryParams<T>) {
+    const opts: any = options ?? {};
+    query = options?.columns
+      ? query.select(
+          options.columns.map((c) => {
+            if (typeof c === 'string' && !c.includes('.')) {
+              return `${String(this.table)}.${c}` as any;
+            }
+            return c;
+          }) as SelectExpression<Models, T>[],
+        )
+      : query.selectAll(this.table);
+
+    // Map AG Grid pagination (startRow/endRow) to limit/offset if not provided explicitly
+    const hasLimit = typeof options?.limit === 'number';
+    const hasOffset = typeof options?.offset === 'number';
+    const startRow = typeof opts.startRow === 'number' ? opts.startRow : undefined;
+    const endRow = typeof opts.endRow === 'number' ? opts.endRow : undefined;
+    const derivedLimit = !hasLimit && typeof endRow === 'number' ? Math.max(0, endRow - (startRow ?? 0)) : undefined;
+    const derivedOffset = !hasOffset && typeof startRow === 'number' ? startRow : undefined;
+
+    const finalLimit = hasLimit ? options!.limit : derivedLimit;
+    const finalOffset = hasOffset ? options!.offset : derivedOffset;
+
+    query = typeof finalLimit === 'number' ? query.limit(finalLimit) : query;
+    query = typeof finalOffset === 'number' ? query.offset(finalOffset) : query;
+
+    // Map generic sortModel (from UI) to orderBy clauses when provided
+    if (opts.sortModel && Array.isArray(opts.sortModel) && opts.sortModel.length > 0) {
+      query = opts.sortModel.reduce((acc: any, sort: any) => {
+        const direction: 'asc' | 'desc' = sort.sort === 'desc' ? 'desc' : 'asc';
+        let col = sort.colId;
+        if (typeof col === 'string' && !col.includes('.')) {
+          // Check standard columns first
+          const standardCols = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
+          if (standardCols.includes(col)) {
+            col = `${String(this.table)}.${col}`;
+          } else {
+            // Custom table columns checks
+            const tableColsMap: Record<string, string[]> = {
+              tasks: [
+                'name',
+                'details',
+                'due_at',
+                'status',
+                'priority',
+                'completed_at',
+                'position',
+                'assigned_to',
+                'team_id',
+                'file_id',
+              ],
+              persons: [
+                'campaign_id',
+                'household_id',
+                'first_name',
+                'middle_names',
+                'last_name',
+                'email',
+                'email2',
+                'mobile',
+                'home_phone',
+                'file_id',
+                'company_id',
+                'json',
+                'notes',
+                'linkedin',
+                'twitter',
+                'facebook',
+                'instagram',
+                'assigned_to',
+              ],
+            };
+            const cols = tableColsMap[this.table as string];
+            if (cols && cols.includes(col)) {
+              col = `${String(this.table)}.${col}`;
+            }
+          }
+        }
+        // Skip dotted references that weren't resolved to a known table.column
+        if (typeof col === 'string' && col.includes('.') && !col.startsWith(`${String(this.table)}.`)) {
+          return acc;
+        }
+        return acc.orderBy(col as ReferenceExpression<Models, T>, direction);
+      }, query);
+    }
+    query = options?.orderBy ? query.orderBy(options.orderBy) : query;
+    query = options?.groupBy ? query.groupBy(options.groupBy as any) : query;
+    return query;
+  }
+
+  protected applyColumnFilter(query: any, column: string, filter: { op?: string; value?: any }) {
+    if (!filter) {
+      return query;
+    }
+    const op = filter.op || 'contains';
+    const val = filter.value;
+
+    if (op !== 'isEmpty' && op !== 'isNotEmpty') {
+      if (val === undefined || val === null || String(val).trim() === '') {
+        return query;
+      }
+    }
+
+    // Allow users to type * as a wildcard character; normalize to SQL %.
+    // The operator's own wrapping (startsWith → trailing %, contains → both, etc.)
+    // is always applied on top — Postgres collapses consecutive %% automatically,
+    // so 'zee*' with contains becomes '%zee%%' → effectively '%zee%'.
+    const normalized = String(val).replace(/\*/g, '%');
+
+    switch (op) {
+      case 'equals':
+        return query.where(column, 'ilike', normalized);
+      case 'startsWith':
+        return query.where(column, 'ilike', `${normalized}%`);
+      case 'endsWith':
+        return query.where(column, 'ilike', `%${normalized}`);
+      case 'notContains':
+        return query.where(column, 'not ilike', `%${normalized}%`);
+      case 'notEquals':
+        return query.where(column, 'not ilike', normalized);
+      case 'isEmpty':
+        return query.where((eb: any) => eb.or([eb(column, 'is', null), eb(column, '=', '')]));
+      case 'isNotEmpty':
+        return query.where((eb: any) => eb.and([eb(column, 'is not', null), eb(column, '!=', '')]));
+      case 'contains':
+      default:
+        return query.where(column, 'ilike', `%${normalized}%`);
+    }
+  }
+
+  protected applyCastColumnFilter(query: any, sqlExpression: any, filter: { op?: string; value?: any }) {
+    if (!filter) {
+      return query;
+    }
+    const op = filter.op || 'contains';
+    const val = filter.value;
+
+    if (op !== 'isEmpty' && op !== 'isNotEmpty') {
+      if (val === undefined || val === null || String(val).trim() === '') {
+        return query;
+      }
+    }
+
+    // Allow users to type * as a wildcard; normalize to SQL %.
+    // The operator's own wrapping is always applied — Postgres collapses %% naturally.
+    const normalized = String(val).replace(/\*/g, '%');
+
+    switch (op) {
+      case 'equals':
+        return query.where(sql`${sqlExpression} ILIKE ${normalized}` as any);
+      case 'startsWith':
+        return query.where(sql`${sqlExpression} ILIKE ${normalized + '%'}` as any);
+      case 'endsWith':
+        return query.where(sql`${sqlExpression} ILIKE ${'%' + normalized}` as any);
+      case 'notContains':
+        return query.where(sql`${sqlExpression} NOT ILIKE ${'%' + normalized + '%'}` as any);
+      case 'notEquals':
+        return query.where(sql`${sqlExpression} NOT ILIKE ${normalized}` as any);
+      case 'isEmpty':
+        return query.where(sql`${sqlExpression} IS NULL OR ${sqlExpression} = ''` as any);
+      case 'isNotEmpty':
+        return query.where(sql`${sqlExpression} IS NOT NULL AND ${sqlExpression} != ''` as any);
+      case 'contains':
+      default:
+        return query.where(sql`${sqlExpression} ILIKE ${'%' + normalized + '%'}` as any);
+    }
+  }
+
+  protected normalizeSearch(raw: string | null | undefined): string | undefined {
+    if (!raw || !raw.trim()) return undefined;
+    const lower = raw.trim().toLowerCase().replace(/\*/g, '%');
+    return `%${lower}%`;
+  }
+
+  protected getDelete(trx?: Transaction<Models>): DeleteQueryBuilder<Models, T, DeleteResult> {
+    return (trx
+      ? trx.deleteFrom(this.table)
+      : BaseRepository._db.deleteFrom(this.table)) as unknown as DeleteQueryBuilder<Models, T, DeleteResult>;
+  }
+
+  protected getInsert(trx?: Transaction<Models>): InsertQueryBuilder<Models, T, InsertResult> {
+    return trx ? trx.insertInto(this.table) : BaseRepository._db.insertInto(this.table);
+  }
+
+  protected getSelect(trx?: Transaction<Models>): SelectQueryBuilder<Models, T, Selectable<Models[T]>> {
+    const ret = trx ? trx.selectFrom(this.table) : BaseRepository._db.selectFrom(this.table);
+
+    return ret as unknown as SelectQueryBuilder<Models, T, Selectable<Models[T]>>;
+  }
+
+  protected getSelectWithColumns(options?: QueryParams<T>, trx?: Transaction<Models>) {
+    const query = this.getSelect(trx);
+    return this.applyOptions(query, options);
+  }
+
+  public getUpdate(trx?: Transaction<Models>): UpdateQueryBuilder<Models, T, T, UpdateResult> {
+    const ret = trx ? trx.updateTable(this.table) : BaseRepository._db.updateTable(this.table);
+    return ret as unknown as UpdateQueryBuilder<Models, T, T, UpdateResult>;
+  }
+
+  protected buildRuleExpression(eb: any, column: string, isCast: boolean, op: string, val: any) {
+    // Allow users to type * as a wildcard; normalize to SQL %.
+    // The operator's own wrapping is always applied — Postgres collapses %% naturally.
+    const normalized = String(val ?? '').replace(/\*/g, '%');
+
+    const pattern = op || 'contains';
+    switch (pattern) {
+      case 'equals':
+        return isCast ? sql`${sql.raw(column)} ILIKE ${normalized}` : eb(column, 'ilike', normalized);
+      case 'startsWith':
+        return isCast ? sql`${sql.raw(column)} ILIKE ${normalized + '%'}` : eb(column, 'ilike', `${normalized}%`);
+      case 'endsWith':
+        return isCast ? sql`${sql.raw(column)} ILIKE ${'%' + normalized}` : eb(column, 'ilike', `%${normalized}`);
+      case 'notContains':
+        return isCast
+          ? sql`${sql.raw(column)} NOT ILIKE ${'%' + normalized + '%'}`
+          : eb(column, 'not ilike', `%${normalized}%`);
+      case 'notEquals':
+        return isCast ? sql`${sql.raw(column)} NOT ILIKE ${normalized}` : eb(column, 'not ilike', normalized);
+      case 'isEmpty':
+      case 'empty':
+        return isCast
+          ? sql`${sql.raw(column)} IS NULL OR ${sql.raw(column)} = ''`
+          : eb.or([eb(column, 'is', null), eb(column, '=', '')]);
+      case 'isNotEmpty':
+      case 'notempty':
+        return isCast
+          ? sql`${sql.raw(column)} IS NOT NULL AND ${sql.raw(column)} != ''`
+          : eb.and([eb(column, 'is not', null), eb(column, '!=', '')]);
+      case 'contains':
+      default:
+        return isCast
+          ? sql`${sql.raw(column)} ILIKE ${'%' + normalized + '%'}`
+          : eb(column, 'ilike', `%${normalized}%`);
+    }
+  }
+
+  protected applyAdvancedFilters(
+    query: any,
+    advancedFilterModel:
+      | QueryBuilderGroupNode
+      | { conjunction: 'AND' | 'OR'; rules: { field: string; op: string; value: any }[] }
+      | undefined,
+    columnMapping: Record<string, { col: string; isCast?: boolean }>,
+  ) {
+    if (!advancedFilterModel) {
+      return query;
+    }
+
+    const isLegacy = !('kind' in advancedFilterModel) || (advancedFilterModel as any).kind !== 'group';
+    let rootGroup: QueryBuilderGroupNode;
+
+    if (isLegacy) {
+      const legacyModel = advancedFilterModel as {
+        conjunction: 'AND' | 'OR';
+        rules: { field: string; op: string; value: any }[];
+      };
+      if (!Array.isArray(legacyModel.rules) || legacyModel.rules.length === 0) {
+        return query;
+      }
+      rootGroup = {
+        kind: 'group',
+        id: 'legacy-root',
+        conjunction: legacyModel.conjunction,
+        rules: legacyModel.rules.map((r, i) => ({
+          kind: 'rule',
+          id: `legacy-rule-${i}`,
+          field: r.field,
+          op: r.op,
+          value: r.value,
+        })),
+      };
+    } else {
+      rootGroup = advancedFilterModel as QueryBuilderGroupNode;
+    }
+
+    return query.where((eb: any) => {
+      const expression = this.buildGroupExpression(eb, rootGroup, columnMapping);
+      return expression || sql`true`;
+    });
+  }
+
+  private buildGroupExpression(
+    eb: any,
+    group: QueryBuilderGroupNode,
+    columnMapping: Record<string, { col: string; isCast?: boolean }>,
+  ): any {
+    if (!group.rules || group.rules.length === 0) {
+      return null;
+    }
+
+    const expressions = group.rules
+      .map((node) => {
+        if (node.kind === 'rule') {
+          const mapping = columnMapping[node.field];
+          if (!mapping) return null;
+
+          if (node.op !== 'isEmpty' && node.op !== 'isNotEmpty' && node.op !== 'empty' && node.op !== 'notempty') {
+            if (node.value === undefined || node.value === null || String(node.value).trim() === '') {
+              return null;
+            }
+          }
+
+          const mappedOp = node.op === 'eq' ? 'equals' : node.op === 'neq' ? 'notEquals' : node.op;
+          return this.buildRuleExpression(eb, mapping.col, !!mapping.isCast, mappedOp, node.value);
+        } else {
+          return this.buildGroupExpression(eb, node, columnMapping);
+        }
+      })
+      .filter(Boolean);
+
+    if (expressions.length === 0) return null;
+    if (expressions.length === 1) return expressions[0];
+
+    return group.conjunction === 'OR' ? eb.or(expressions) : eb.and(expressions);
+  }
+}
+
+export type JoinedQueryParams = {
+  searchStr?: string;
+  startRow?: number;
+  endRow?: number;
+  sortModel?: {
+    colId: string;
+    sort: 'asc' | 'desc';
+  }[];
+  filterModel?: Record<string, unknown>;
+  columns?: (string | ReferenceExpression<Models, keyof Models> | TypeTableColumns<keyof Models>)[];
+  groupBy?: (string | SelectExpression<Models, keyof Models>)[];
+  limit?: number;
+  offset?: number;
+  orderBy?: OrderByExpression<Models, keyof Models, object>[];
+  advancedFilterModel?:
+    | QueryBuilderGroupNode
+    | {
+        conjunction: 'AND' | 'OR';
+        rules: { field: string; op: string; value: any }[];
+      };
+};
+
+export type QueryParams<T extends keyof Models> = {
+  searchStr?: string;
+  startRow?: number;
+  endRow?: number;
+  sortModel?: {
+    colId: string;
+    sort: 'asc' | 'desc';
+  }[];
+  filterModel?: Record<string, unknown>;
+  columns?: ReferenceExpression<Models, T>[];
+  groupBy?: (keyof Models[T])[];
+  limit?: number;
+  offset?: number;
+  orderBy?: OrderByExpression<Models, T, object>[];
+};
+
+export function ref<TTable extends keyof Models, TColumn extends keyof Models[TTable]>(
+  table: TTable,
+  column: TColumn,
+): ReferenceExpression<Models, TTable> {
+  return `${String(table)}.${String(column)}` as ReferenceExpression<Models, TTable>;
+}
+```
+
 ## File: apps/backend/src/app/lib/password-hash.ts
 
 ```typescript
@@ -24469,6 +26048,766 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 export default donationsWebhookRoute;
 ```
 
+## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { StorageService } from '../../../lib/storage.service';
+import { BaseRepository } from '../../../lib/base.repo';
+import { verifyAuthToken } from '../../../lib/auth-util';
+import { env } from '../../../../env';
+import crypto from 'crypto';
+import { Client } from '@microsoft/microsoft-graph-client';
+import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
+import { MsSyncService } from '../../ms-sync/ms-sync.service';
+import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
+import { GoogleSyncService } from '../../google-sync/google-sync.service';
+import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+
+function buildRawMime(options: {
+  fromName: string;
+  fromEmail: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  html: string;
+  attachments: { filename: string; content: Buffer; contentType: string }[];
+}): Buffer {
+  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
+  const headers: string[] = [];
+
+  const safeFromName = options.fromName.replace(/"/g, '\\"');
+  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
+  headers.push(`To: ${options.to.join(', ')}`);
+  if (options.cc.length > 0) {
+    headers.push(`Cc: ${options.cc.join(', ')}`);
+  }
+  if (options.bcc.length > 0) {
+    headers.push(`Bcc: ${options.bcc.join(', ')}`);
+  }
+
+  const base64Subject = Buffer.from(options.subject).toString('base64');
+  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
+
+  headers.push(`MIME-Version: 1.0`);
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  headers.push('');
+
+  const bodyParts: string[] = [];
+
+  bodyParts.push(`--${boundary}`);
+  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
+  bodyParts.push(`Content-Transfer-Encoding: base64`);
+  bodyParts.push('');
+  bodyParts.push(Buffer.from(options.html).toString('base64'));
+  bodyParts.push('');
+
+  for (const att of options.attachments) {
+    bodyParts.push(`--${boundary}`);
+    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Transfer-Encoding: base64`);
+    bodyParts.push('');
+    bodyParts.push(att.content.toString('base64'));
+    bodyParts.push('');
+  }
+
+  bodyParts.push(`--${boundary}--`);
+
+  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
+  return Buffer.from(rawMimeString, 'utf-8');
+}
+
+const storageService = new StorageService();
+
+let _oauthSvc: MsOAuthService | null = null;
+
+function getOAuthService(db: any) {
+  if (!_oauthSvc) {
+    _oauthSvc = new MsOAuthService(db, {
+      clientId: env.msClientId ?? '',
+      clientSecret: env.msClientSecret ?? '',
+      tenantId: env.msTenantId ?? 'common',
+      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+    });
+  }
+  return _oauthSvc;
+}
+
+export async function saveLocalEmail(
+  db: any,
+  tenantId: string,
+  userId: string,
+  fromEmail: string,
+  fromName: string,
+  toList: string[],
+  ccList: string[],
+  bccList: string[],
+  subject: string,
+  html: string,
+  uploadedFiles: any[],
+  previewKey: string,
+) {
+  return db.transaction().execute(async (trx: any) => {
+    // Ensure the Outbox folder row exists. email_folders uses global hardcoded
+    // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
+    // email_folders(id) — not tenant_id — so the existence check must be by id
+    // alone. onConflict guards against a concurrent/global row already present.
+
+    const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
+
+    if (!existingOutbox) {
+      await trx
+        .insertInto('email_folders')
+        .values({
+          id: '10',
+          tenant_id: tenantId,
+          name: 'Outbox',
+          createdby_id: userId,
+          updatedby_id: userId,
+          icon: 'clock',
+          sort_order: 10,
+          is_default: false,
+        })
+        .onConflict((oc: any) => oc.column('id').doNothing())
+        .execute();
+    }
+
+    // 1. Insert into emails table (using Outbox folder: '10')
+    const createdEmail = await trx
+      .insertInto('emails')
+      .values({
+        tenant_id: tenantId,
+        folder_id: '10', // Outbox folder is '10'
+        from_email: fromEmail,
+        to_email: toList.join(', '),
+        subject: subject,
+        preview: previewKey,
+        assigned_to: userId,
+        is_favourite: false,
+        deleted_at: null,
+        status: 'open',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    const emailId = String(createdEmail.id);
+
+    // 2. Insert html into email_bodies
+    await trx
+      .insertInto('email_bodies')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        body_html: html,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 3. Insert files and email_attachments metadata
+    for (let i = 0; i < uploadedFiles.length; i++) {
+      const uFile = uploadedFiles[i];
+      let fileId: string;
+
+      // Persist (or reuse, via sha256 dedup) the file row, then link the
+      // attachment to it so downloads can resolve the stored blob.
+      const existingFile = await trx
+        .selectFrom('files')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where('sha256_hex', '=', uFile.sha256_hex)
+        .executeTakeFirst();
+
+      if (existingFile) {
+        fileId = String(existingFile.id);
+      } else {
+        const fileResult = await trx
+          .insertInto('files')
+          .values({
+            tenant_id: tenantId,
+            filename: uFile.filename,
+            mime_type: uFile.content_type,
+            size_bytes: uFile.size_bytes,
+            storage_key: uFile.storage_key,
+            sha256_hex: uFile.sha256_hex,
+            uploaded_by: userId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        fileId = String(fileResult.id);
+      }
+
+      await trx
+        .insertInto('email_attachments')
+        .values({
+          tenant_id: tenantId,
+          email_id: emailId,
+          filename: uFile.filename,
+          content_type: uFile.content_type,
+          size_bytes: uFile.size_bytes,
+          cid: uFile.cid,
+          is_inline: uFile.is_inline,
+          pos: i + 1,
+          file_id: fileId,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+    }
+
+    // 4. Insert headers
+    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
+    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+
+    await trx
+      .insertInto('email_headers')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        headers_json: JSON.stringify({ internetMessageId }),
+        raw_headers: rawHeaders,
+        date_sent: new Date(),
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 5. Insert recipients
+    const recipientRows: any[] = [];
+    toList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'to',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    ccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'cc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    bccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'bcc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+
+    if (recipientRows.length > 0) {
+      await trx.insertInto('email_recipients').values(recipientRows).execute();
+    }
+
+    return createdEmail;
+  });
+}
+
+const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Send composed email
+  fastify.post('/send', async (req: any, reply) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing Authorization header' });
+    }
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token format' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
+    }
+
+    if (!payload?.tenant_id || !payload?.user_id) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token payload' });
+    }
+
+    const tenantId = payload.tenant_id;
+    const userId = payload.user_id;
+    const db = (BaseRepository as any)['_db'];
+
+    // Retrieve sender user details
+    const user = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', userId)
+      .executeTakeFirst();
+
+    if (!user) {
+      return reply.status(401).send({ error: 'Unauthorized: User not found' });
+    }
+
+    const fromEmail = user.email;
+    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
+
+    // Parse multipart request parts
+    const parts = req.parts();
+    const fields: any = {};
+    const files: any[] = [];
+
+    for await (const part of parts) {
+      if (part.file) {
+        const buffer = await part.toBuffer();
+        files.push({
+          filename: part.filename,
+          fieldname: part.fieldname,
+          mimetype: part.mimetype,
+          buffer,
+        });
+      } else {
+        fields[part.fieldname] = part.value;
+      }
+    }
+
+    // Parse recipient lists and content fields
+    const toList = fields.to ? JSON.parse(fields.to) : [];
+    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
+    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
+    const subject = fields.subject || '';
+    const html = sanitizeHtml(fields.html || '');
+
+    // Upload attachment files to storage outside transaction
+    const uploadedFiles: Array<{
+      filename: string;
+      content_type: string;
+      size_bytes: number;
+      storage_key: string;
+      sha256_hex: string;
+      cid: string | null;
+      is_inline: boolean;
+    }> = [];
+
+    for (const file of files) {
+      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
+      const fileUUID = crypto.randomUUID();
+      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
+
+      await storageService.upload(storage_key, file.buffer, file.mimetype);
+
+      uploadedFiles.push({
+        filename: file.filename,
+        content_type: file.mimetype,
+        size_bytes: file.buffer.length,
+        storage_key,
+        sha256_hex,
+        cid: null,
+        is_inline: false,
+      });
+    }
+
+    // Check if user has connected Microsoft and/or Google accounts
+    const msToken = await db
+      .selectFrom('ms_oauth_tokens')
+      .select(['user_id', 'ms_email'])
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const googleToken = await db
+      .selectFrom('google_oauth_tokens')
+      .select(['user_id', 'google_email'])
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const hasMsConnected = !!msToken;
+    const hasGoogleConnected = !!googleToken;
+
+    // Fail immediately if no send method is configured
+    if (!hasMsConnected && !hasGoogleConnected) {
+      return reply.status(400).send({
+        status: 'error',
+        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
+      });
+    }
+
+    // Save outbound email to database under Outbox folder '10' initially
+    const fallbackPreview =
+      html
+        .replace(/<[^>]*>/g, '')
+        .substring(0, 100)
+        .trim() || '';
+    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
+    try {
+      emailRow = await saveLocalEmail(
+        db,
+        tenantId,
+        userId,
+        fromEmail,
+        fromName,
+        toList,
+        ccList,
+        bccList,
+        subject,
+        html,
+        uploadedFiles,
+        fallbackPreview,
+      );
+    } catch (err: any) {
+      fastify.log.error(err, 'Failed to save outbound email to database');
+      return reply.jsendError(err.message || 'Failed to save email', 500);
+    }
+
+    // Determine send method prioritizing matching address
+    let sendMethod: 'ms' | 'google' = 'ms';
+    if (hasMsConnected && hasGoogleConnected) {
+      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
+        sendMethod = 'google';
+      } else {
+        sendMethod = 'ms';
+      }
+    } else if (hasMsConnected) {
+      sendMethod = 'ms';
+    } else if (hasGoogleConnected) {
+      sendMethod = 'google';
+    }
+
+    // Dispatch the email synchronously
+    try {
+      if (sendMethod === 'ms') {
+        const oauthSvc = getOAuthService(db);
+        let msDraftId: string | null = null;
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+          const client = Client.init({
+            authProvider: (done) => done(null, accessToken),
+          });
+
+          const msDraftMessage: any = {
+            subject: subject,
+            body: {
+              contentType: 'html',
+              content: html,
+            },
+            toRecipients: toList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            ccRecipients: ccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            bccRecipients: bccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+          };
+
+          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
+          msDraftId = createdDraft.id;
+          const graphInternetMessageId = createdDraft.internetMessageId;
+
+          // Update local email preview/dedupe key to `ms:${msDraftId}`
+          await db
+            .updateTable('emails')
+            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          if (graphInternetMessageId) {
+            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+            await db
+              .updateTable('email_headers')
+              .set({
+                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
+                raw_headers: rawHeaders,
+                updated_at: new Date(),
+              })
+              .where('tenant_id', '=', tenantId)
+              .where('email_id', '=', String(emailRow.id))
+              .execute();
+          }
+
+          // Upload attachments
+          for (const file of files) {
+            await client.api(`/me/messages/${msDraftId}/attachments`).post({
+              '@odata.type': '#microsoft.graph.fileAttachment',
+              name: file.filename,
+              contentType: file.mimetype,
+              contentBytes: file.buffer.toString('base64'),
+            });
+          }
+
+          // Send draft
+          await client.api(`/me/messages/${msDraftId}/send`).post({});
+
+          // Update local email folder to '3' (Sent) on success
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: '3', updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          // Trigger background sync to get folders/Sent items synchronized
+          const syncSvc = new MsSyncService(db, oauthSvc);
+          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (err) {
+            fastify.log.error(err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err: any) {
+          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
+          // Clean up local email
+          await db
+            .deleteFrom('emails')
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+          return reply.jsendError(err.message || 'Failed to send email via Microsoft Graph', 400);
+        }
+      } else if (sendMethod === 'google') {
+        const oauthSvc = new GoogleOAuthService(db, {
+          clientId: env.googleClientId ?? '',
+          clientSecret: env.googleClientSecret ?? '',
+          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+        });
+
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+
+          const rawMessageBuffer = buildRawMime({
+            fromName,
+            fromEmail,
+            to: toList,
+            cc: ccList,
+            bcc: bccList,
+            subject,
+            html,
+            attachments: files.map((file) => ({
+              filename: file.filename,
+              content: file.buffer,
+              contentType: file.mimetype,
+            })),
+          });
+
+          const rawBase64Url = rawMessageBuffer
+            .toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+
+          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              raw: rawBase64Url,
+            }),
+          });
+
+          if (!gmailRes.ok) {
+            const errText = await gmailRes.text();
+            throw new Error(`Gmail API send failed: ${errText}`);
+          }
+
+          const gmailData: any = await gmailRes.json();
+          const googleMsgId = gmailData.id;
+
+          await db
+            .updateTable('emails')
+            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: '3', updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
+          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (err) {
+            fastify.log.error(err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err: any) {
+          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
+          await db
+            .updateTable('emails')
+            .set({
+              // Revert back to the Drafts folder (folder_id '2' or '4' depending on schema)
+              folder_id: '4',
+              updated_at: new Date(),
+            })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          return reply.jsendError(err.message || 'Failed to send email via Google. Saved to Drafts.', 400);
+        }
+      }
+    } catch (err: any) {
+      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
+      // Clean up local email
+      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
+      return reply.jsendError(err.message || 'Unexpected error in send task', 500);
+    }
+  });
+
+  // Download attachment by ID
+  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
+    // Authenticate token via header or query string (for direct link downloading)
+    let token = req.query.token;
+    if (!token && req.headers.authorization) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+    }
+
+    const tenantId = payload.tenant_id;
+    const { id, attachmentId } = req.params;
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachmentId)
+      .where('email_id', '=', id)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
+      return reply.send(buffer);
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Failed to download attachment' });
+    }
+  });
+
+  // Serve inline attachment by CID
+  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
+    // Authenticate token via header or query string (for direct link downloading)
+    let token = req.query.token;
+    if (!token && req.headers.authorization) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+    }
+
+    const tenantId = payload.tenant_id;
+    const { id, cid } = req.params;
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('email_id', '=', id)
+      .where('cid', '=', cid)
+      .where('is_inline', '=', true)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Inline attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      reply.header('Cache-Control', 'public, max-age=31536000');
+      return reply.send(buffer);
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Failed to load inline image' });
+    }
+  });
+
+  done();
+};
+
+export default emailsApiRoute;
+```
+
 ## File: apps/backend/src/app/modules/events/routes/events-public.route.ts
 
 ```typescript
@@ -24996,151 +27335,6 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 };
 
 export default eventsPublicRoute;
-```
-
-## File: apps/backend/src/app/modules/exports/controller.ts
-
-```typescript
-import { TRPCError } from '@trpc/server';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { QueueExportInputType } from '../../../../../../libs/common/src';
-import { ExportsRepo } from './repositories/exports.repo';
-import { StorageService } from '../../lib/storage.service';
-
-const ENTITY_LABEL_MAP: Record<string, string> = {
-  persons: 'persons',
-  households: 'households',
-  companies: 'companies',
-  tags: 'tags',
-  issues: 'tags',
-  tasks: 'tasks',
-  lists: 'lists',
-  newsletters: 'marketing_emails',
-  teams: 'teams',
-  users: 'authusers',
-  volunteer: 'volunteer_events',
-  forms: 'web_forms',
-  workflows: 'workflows',
-};
-
-export class ExportsController {
-  private readonly repo = new ExportsRepo();
-
-  public async queueExport(input: QueueExportInputType, auth: IAuthKeyPayload) {
-    const entityKey = input.entity?.trim();
-    if (!entityKey) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'entity is required' });
-    }
-
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-    const fileName = input.fileName?.trim() || `${entityKey}-export-${ts}.csv`;
-    const columns = Array.isArray(input.columns) && input.columns.length ? input.columns : null;
-
-    const exportRecord = await this.repo.create({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entity: entityKey,
-      file_name: fileName,
-      columns,
-    });
-
-    const exportId = String((exportRecord as any).id);
-
-    await this.repo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'export_csv',
-          export_id: exportId,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          entity: entityKey,
-          table: ENTITY_LABEL_MAP[entityKey] ?? entityKey,
-          options: input.options ?? {},
-          columns,
-          file_name: fileName,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      })
-      .execute();
-
-    return {
-      id: exportId,
-      entity: entityKey,
-      file_name: fileName,
-      status: 'pending' as const,
-      row_count: null,
-      error: null,
-      created_at: (exportRecord as any).created_at?.toISOString?.() ?? new Date().toISOString(),
-      updated_at: (exportRecord as any).updated_at?.toISOString?.() ?? new Date().toISOString(),
-      createdBy: {
-        id: auth.user_id,
-        name: auth.name || null,
-        email: null,
-      },
-    };
-  }
-
-  public async list(auth: IAuthKeyPayload) {
-    const rows = await this.repo.list(auth.tenant_id);
-    return rows.map((r: any) => {
-      const name = [r.creator_first_name, r.creator_last_name].filter(Boolean).join(' ').trim();
-      return {
-        id: String(r.id),
-        entity: String(r.entity),
-        file_name: String(r.file_name),
-        status: r.status as 'pending' | 'processing' | 'completed' | 'failed',
-        row_count: r.row_count != null ? Number(r.row_count) : null,
-        error: r.error ?? null,
-        created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
-        updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
-        createdBy: r.user_id
-          ? {
-              id: r.user_id,
-              name: name || null,
-              email: r.creator_email || null,
-            }
-          : null,
-      };
-    });
-  }
-
-  public async getById(id: string, auth: IAuthKeyPayload) {
-    const row = await this.repo.getById(id, auth.tenant_id);
-    if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Export not found' });
-    return row;
-  }
-
-  public async deleteExport(id: string, auth: IAuthKeyPayload) {
-    const row = await this.repo.getById(id, auth.tenant_id);
-    if (!row) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Export not found' });
-    }
-
-    await this.repo.delete(id, auth.tenant_id);
-
-    if ((row as any).storage_key) {
-      try {
-        const storageService = new StorageService();
-        await storageService.delete((row as any).storage_key);
-      } catch (err) {
-        console.error(`Failed to delete storage file ${(row as any).storage_key}:`, err);
-      }
-    }
-
-    return { success: true };
-  }
-
-  public getRepo() {
-    return this.repo;
-  }
-}
 ```
 
 ## File: apps/backend/src/app/modules/google-sync/google-callback.route.ts
@@ -26763,6 +28957,103 @@ export const adminOrOwnerProcedure = authProcedure.use(async (opts) => {
 });
 ```
 
+## File: apps/backend/project.json
+
+```json
+{
+  "name": "backend",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/backend/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "generate-context": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx repomix --output apps/backend/STRUCTURE.md --include \"apps/backend/src/**/*\" --ignore \"apps/frontend/**,apps/libs/**,libs/**,**/STRUCTURE.md,**/_migrations/schema_dump.sql,**/*.spec.ts\""
+      }
+    },
+    "build": {
+      "executor": "@nx/esbuild:esbuild",
+      "dependsOn": ["generate-context"],
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "platform": "node",
+        "outputPath": "dist/apps/backend",
+        "format": ["esm"],
+        "main": "apps/backend/src/main.ts",
+        "tsConfig": "apps/backend/tsconfig.app.json",
+        "assets": ["apps/backend/src/assets"],
+        "generatePackageJson": false,
+        "esbuildOptions": {
+          "packages": "external",
+          "external": ["aws-sdk", "nock", "mock-aws-s3"],
+          "loader": {
+            ".html": "text"
+          },
+          "sourcemap": "inline",
+          "outExtension": {
+            ".js": ".js"
+          }
+        }
+      },
+      "configurations": {
+        "development": {
+          "bundle": true
+        },
+        "production": {
+          "bundle": true,
+          "esbuildOptions": {
+            "sourcemap": false,
+            "external": ["aws-sdk", "nock", "mock-aws-s3"],
+            "loader": {
+              ".html": "text"
+            },
+            "outExtension": {
+              ".js": ".js"
+            }
+          }
+        }
+      }
+    },
+    "serve": {
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "backend:build"
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "backend:build:development",
+          "runtimeArgs": ["--inspect=9229", "--enable-source-maps", "--env-file=.env.development"]
+        },
+        "production": {
+          "buildTarget": "backend:build:production",
+          "runtimeArgs": ["--enable-source-maps", "--env-file=.env.production"]
+        }
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "outputs": ["{workspaceRoot}/coverage/apps/backend"],
+      "options": {
+        "cwd": "apps/backend",
+        "command": "vitest run"
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint",
+      "outputs": ["{options.outputFile}"],
+      "options": {
+        "lintFilePatterns": ["apps/backend/**/*.ts"]
+      }
+    }
+  }
+}
+```
+
 ## File: apps/backend/src/app/\_migrations/0001_baseline.ts
 
 ```typescript
@@ -26831,637 +29122,403 @@ export async function down(_db: Kysely<any>): Promise<void> {
 }
 ```
 
-## File: apps/backend/src/app/lib/base.repo.ts
+## File: apps/backend/src/app/lib/jobs/webhook-worker.ts
 
 ```typescript
-// tsco:ignore
+import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
+import { BillingController } from '../../modules/billing/controller';
+import { DonationsController } from '../../modules/donations/controller';
+import { Client } from 'pg';
+import { env } from '../../../env';
 
-import type { INow, QueryBuilderGroupNode } from '../../../../../libs/common/src';
+export class WebhookEventWorker {
+  private isRunning = false;
+  private timer: NodeJS.Timeout | null = null;
+  private activeJobsCount = 0;
+  private shutdownResolver: (() => void) | null = null;
+  private pgClient: Client | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
 
-import { promises as fs } from 'fs';
-import type {
-  DeleteQueryBuilder,
-  DeleteResult,
-  InsertQueryBuilder,
-  InsertResult,
-  OperandValueExpressionOrList,
-  OrderByExpression,
-  QueryResult,
-  ReferenceExpression,
-  SelectExpression,
-  SelectQueryBuilder,
-  Selectable,
-  Transaction,
-  UpdateQueryBuilder,
-  UpdateResult,
-} from 'kysely';
-import { FileMigrationProvider, Kysely, Migrator, PostgresDialect, sql } from 'kysely';
-import path from 'path';
+  private readonly webhookEventsRepo = new WebhookEventsRepo();
+  private readonly db = this.webhookEventsRepo.db; // Kysely DB instance
 
-import type {
-  Models,
-  OperationDataType,
-  TypeId,
-  TypeTableColumns,
-  TypeTenantId,
-} from '../../../../../libs/common/src/lib/kysely.models';
-import { Pool } from 'pg';
-import { env } from '../../env';
-import Cursor from 'pg-cursor';
-const dialect = new PostgresDialect({
-  pool: new Pool(env.db),
-  cursor: Cursor,
-});
-
-type ColName<TB extends keyof Models> = keyof Models[TB] & string;
-
-export class BaseRepository<T extends keyof Models> {
-  private static _db = new Kysely<Models>({ dialect });
-  private static _migrationFolder = path.resolve(process.cwd(), 'apps/backend/src/app/_migrations');
-
-  public static get dbInstance(): Kysely<Models> {
-    return BaseRepository._db;
+  public start() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    console.log('Webhook Event Worker started.');
+    this.setupListener();
+    this.poll();
   }
 
-  protected readonly table: T;
-
-  public static migrator = new Migrator({
-    db: BaseRepository._db,
-    provider: new FileMigrationProvider({
-      fs,
-      path,
-      migrationFolder: BaseRepository._migrationFolder,
-    }),
-  });
-
-  constructor(tableIn: T) {
-    this.table = tableIn;
-  }
-
-  public getTableName(): T {
-    return this.table;
-  }
-
-  public get db() {
-    return BaseRepository._db;
-  }
-
-  public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
-    const results = await this.addMany({ rows: [input.row] }, trx);
-    return results[0]!;
-  }
-
-  public async addMany(input: { rows: OperationDataType<T, 'insert'>[] }, trx?: Transaction<Models>) {
-    return this.getInsert(trx).values(input.rows).returningAll().execute();
-  }
-
-  public async addOrGet<K extends keyof Models[T] & string>(
-    input: {
-      row: OperationDataType<T, 'insert'>;
-      onConflictColumn: K;
-    },
-    trx?: Transaction<Models>,
-  ): Promise<Selectable<Models[T]> | undefined> {
-    const insertResult = await this.getInsert(trx)
-      .values(input.row)
-      .onConflict((oc) => oc.columns(['tenant_id', input.onConflictColumn]).doNothing())
-      .returningAll()
-      .executeTakeFirst();
-
-    if (insertResult) return insertResult as unknown as Selectable<Models[T]>;
-
-    const matchValue = input.row[input.onConflictColumn as unknown as keyof OperationDataType<T, 'insert'>];
-    if (matchValue === undefined) {
-      throw new Error(`Missing value for conflict column: ${String(input.onConflictColumn)}`);
+  public async stop(): Promise<void> {
+    this.isRunning = false;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.pgClient) {
+      try {
+        await this.pgClient.end();
+      } catch (err) {
+        console.error('Error closing Postgres listener client on shutdown:', err);
+      }
+      this.pgClient = null;
     }
 
-    const lhs = input.onConflictColumn as ReferenceExpression<Models, T>;
-    return this.getSelect(trx)
-      .selectAll()
-      .where(lhs, '=', matchValue)
-      .where('tenant_id', '=', input.row.tenant_id as any)
-      .executeTakeFirst() as unknown as Selectable<Models[T]> | undefined;
-  }
-
-  public async count(tenant_id: TypeTenantId<T>, trx?: Transaction<Models>): Promise<number> {
-    let query = this.getSelect(trx).select(({ fn }) => [fn.countAll<number>().as('count')]);
-    if (this.table !== 'tenants') {
-      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', tenant_id);
+    if (this.activeJobsCount > 0) {
+      console.log(
+        `Webhook Event Worker: Waiting for ${this.activeJobsCount} active events to process before shutting down...`,
+      );
+      await new Promise<void>((resolve) => {
+        this.shutdownResolver = resolve;
+      });
     }
-    const result = await query.executeTakeFirst();
-    return Number(result?.count ?? 0);
+    console.log('Webhook Event Worker stopped.');
   }
 
-  public async delete(input: { tenant_id: TypeTenantId<T>; id: TypeId<T> }, trx?: Transaction<Models>) {
-    return this.deleteMany({ tenant_id: input.tenant_id, ids: [input.id] }, trx);
-  }
+  private async setupListener() {
+    if (!this.isRunning) return;
+    try {
+      this.pgClient = new Client(env.db);
+      await this.pgClient.connect();
 
-  public async deleteMany(input: { tenant_id: TypeTenantId<T>; ids: TypeId<T>[] }, trx?: Transaction<Models>) {
-    // Convert to numbers if needed
-    const numericIds = input.ids;
-
-    if (numericIds.length === 0) return false;
-
-    const deleteQuery = this.getDelete(trx);
-    let query = deleteQuery.where('id' as ReferenceExpression<Models, T>, 'in', numericIds);
-    if (this.table !== 'tenants') {
-      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
-    }
-    const result = await query.executeTakeFirst();
-
-    return Number(result?.numDeletedRows ?? 0) > 0;
-  }
-
-  public async exists(input: { key: string; column: keyof Models[T] }, trx?: Transaction<Models>): Promise<boolean> {
-    const columnRef = `${String(this.table)}.${String(input.column)}` as ReferenceExpression<Models, T>;
-    const result = await this.getSelect(trx).where(columnRef, '=', input.key).limit(1).execute();
-    return result.length > 0;
-  }
-
-  public find(
-    input: {
-      tenant_id: TypeTenantId<T>;
-      key: string;
-      column: ReferenceExpression<Models, T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    const options: QueryParams<T> = {
-      columns: [input.column],
-      limit: 3,
-    };
-
-    if (!input.key) {
-      // If no key provided, return empty result
-      return Promise.resolve([]);
-    }
-
-    let query = this.getSelectWithColumns(options, trx).where(input.column, 'ilike', input.key + '%');
-    if (this.table !== 'tenants') {
-      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
-    }
-    return query.limit(3).execute();
-  }
-
-  public getAll(
-    input: {
-      tenant_id: TypeTenantId<T>;
-      options?: QueryParams<T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    let query = this.getSelectWithColumns(input.options, trx);
-    if (this.table !== 'tenants') {
-      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
-    }
-    return query.execute();
-  }
-
-  public async getAllWithCounts(
-    input: {
-      tenant_id: TypeTenantId<T>;
-      options?: QueryParams<any>;
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
-    const rows = await this.getAll(input, trx);
-    return { rows, count: rows.length };
-  }
-
-  protected selectBy<C extends ColName<T>>(
-    column: C,
-    input: {
-      tenant_id: TypeTenantId<T>;
-      value: OperandValueExpressionOrList<Models, T, C>;
-      options?: QueryParams<T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    let query = this.getSelectWithColumns(input.options, trx).where(
-      column as ReferenceExpression<Models, T>,
-      '=',
-      input.value as OperandValueExpressionOrList<Models, T, ReferenceExpression<Models, T>>,
-    );
-    if (this.table !== 'tenants') {
-      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
-    }
-    return query;
-  }
-
-  public getOneBy<C extends ColName<T>>(
-    column: C,
-    input: {
-      tenant_id: TypeTenantId<T>;
-      value: OperandValueExpressionOrList<Models, T, C>;
-      options?: QueryParams<T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    return this.selectBy(column, input, trx).executeTakeFirst();
-  }
-
-  protected getManyBy<C extends ColName<T>>(
-    column: C,
-    input: {
-      tenant_id: TypeTenantId<T>;
-      value: OperandValueExpressionOrList<Models, T, C>;
-      options?: QueryParams<T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    return this.selectBy(column, input, trx).execute();
-  }
-
-  public async nowTime(): Promise<QueryResult<INow>> {
-    return (await sql`select now()::timestamp`.execute(BaseRepository._db)) as QueryResult<INow>;
-  }
-
-  public transaction() {
-    return BaseRepository._db.transaction();
-  }
-
-  public async update(
-    input: {
-      tenant_id: TypeTenantId<T>;
-      id: TypeId<T>;
-      row: OperationDataType<T, 'update'>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    if (Object.keys(input.row).length === 0) {
-      return 0; // or just return early, nothing to update
-    }
-    let query = this.getUpdate(trx)
-      .set(input.row as any)
-      .where('id' as ReferenceExpression<Models, T>, '=', input.id);
-    if (this.table !== 'tenants') {
-      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
-    }
-    return query.returningAll().executeTakeFirst();
-  }
-
-  protected applyOptions(query: SelectQueryBuilder<Models, T, unknown>, options?: QueryParams<T>) {
-    const opts: any = options ?? {};
-    query = options?.columns
-      ? query.select(
-          options.columns.map((c) => {
-            if (typeof c === 'string' && !c.includes('.')) {
-              return `${String(this.table)}.${c}` as any;
-            }
-            return c;
-          }) as SelectExpression<Models, T>[],
-        )
-      : query.selectAll(this.table);
-
-    // Map AG Grid pagination (startRow/endRow) to limit/offset if not provided explicitly
-    const hasLimit = typeof options?.limit === 'number';
-    const hasOffset = typeof options?.offset === 'number';
-    const startRow = typeof opts.startRow === 'number' ? opts.startRow : undefined;
-    const endRow = typeof opts.endRow === 'number' ? opts.endRow : undefined;
-    const derivedLimit = !hasLimit && typeof endRow === 'number' ? Math.max(0, endRow - (startRow ?? 0)) : undefined;
-    const derivedOffset = !hasOffset && typeof startRow === 'number' ? startRow : undefined;
-
-    const finalLimit = hasLimit ? options!.limit : derivedLimit;
-    const finalOffset = hasOffset ? options!.offset : derivedOffset;
-
-    query = typeof finalLimit === 'number' ? query.limit(finalLimit) : query;
-    query = typeof finalOffset === 'number' ? query.offset(finalOffset) : query;
-
-    // Map generic sortModel (from UI) to orderBy clauses when provided
-    if (opts.sortModel && Array.isArray(opts.sortModel) && opts.sortModel.length > 0) {
-      query = opts.sortModel.reduce((acc: any, sort: any) => {
-        const direction: 'asc' | 'desc' = sort.sort === 'desc' ? 'desc' : 'asc';
-        let col = sort.colId;
-        if (typeof col === 'string' && !col.includes('.')) {
-          // Check standard columns first
-          const standardCols = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
-          if (standardCols.includes(col)) {
-            col = `${String(this.table)}.${col}`;
-          } else {
-            // Custom table columns checks
-            const tableColsMap: Record<string, string[]> = {
-              tasks: [
-                'name',
-                'details',
-                'due_at',
-                'status',
-                'priority',
-                'completed_at',
-                'position',
-                'assigned_to',
-                'team_id',
-                'file_id',
-              ],
-              persons: [
-                'campaign_id',
-                'household_id',
-                'first_name',
-                'middle_names',
-                'last_name',
-                'email',
-                'email2',
-                'mobile',
-                'home_phone',
-                'file_id',
-                'company_id',
-                'json',
-                'notes',
-                'linkedin',
-                'twitter',
-                'facebook',
-                'instagram',
-                'assigned_to',
-              ],
-            };
-            const cols = tableColsMap[this.table as string];
-            if (cols && cols.includes(col)) {
-              col = `${String(this.table)}.${col}`;
-            }
-          }
+      this.pgClient.on('notification', (msg) => {
+        if (msg.channel === 'webhook_events_channel') {
+          console.log('Webhook Event Worker received notify, waking up...');
+          this.wakeUp();
         }
-        // Skip dotted references that weren't resolved to a known table.column
-        if (typeof col === 'string' && col.includes('.') && !col.startsWith(`${String(this.table)}.`)) {
-          return acc;
+      });
+
+      this.pgClient.on('error', (err) => {
+        console.error('Postgres listener client error:', err);
+        this.reconnectListener();
+      });
+
+      this.pgClient.on('end', () => {
+        console.warn('Postgres listener connection closed.');
+        this.reconnectListener();
+      });
+
+      await this.pgClient.query('LISTEN webhook_events_channel');
+      console.log('Listening for webhook_events notifications...');
+    } catch (err) {
+      console.error('Failed to setup Postgres listener:', err);
+      this.reconnectListener();
+    }
+  }
+
+  private reconnectListener() {
+    if (this.pgClient) {
+      this.pgClient.end().catch(() => {});
+      this.pgClient = null;
+    }
+    if (!this.isRunning) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.setupListener();
+    }, 5000);
+  }
+
+  private wakeUp() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.poll();
+  }
+
+  private poll() {
+    if (!this.isRunning) return;
+
+    this.timer = setTimeout(async () => {
+      let processedAnEvent = false;
+      try {
+        this.activeJobsCount++;
+        processedAnEvent = await this.processNextEvent();
+      } catch (err) {
+        console.error('Error in webhook event worker poll cycle:', err);
+      } finally {
+        this.activeJobsCount--;
+
+        // If shutdown was requested and no active jobs remain, resolve the stop() promise
+        if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
+          this.shutdownResolver();
+          return;
         }
-        return acc.orderBy(col as ReferenceExpression<Models, T>, direction);
-      }, query);
-    }
-    query = options?.orderBy ? query.orderBy(options.orderBy) : query;
-    query = options?.groupBy ? query.groupBy(options.groupBy as any) : query;
-    return query;
-  }
 
-  protected applyColumnFilter(query: any, column: string, filter: { op?: string; value?: any }) {
-    if (!filter) {
-      return query;
-    }
-    const op = filter.op || 'contains';
-    const val = filter.value;
-
-    if (op !== 'isEmpty' && op !== 'isNotEmpty') {
-      if (val === undefined || val === null || String(val).trim() === '') {
-        return query;
+        // Poll again immediately (10ms) if an event was processed to drain the queue quickly,
+        // or back off to 30 seconds if no events were found.
+        const delay = processedAnEvent ? 10 : 30000;
+        this.pollWithDelay(delay);
       }
-    }
-
-    // Allow users to type * as a wildcard character; normalize to SQL %.
-    // The operator's own wrapping (startsWith → trailing %, contains → both, etc.)
-    // is always applied on top — Postgres collapses consecutive %% automatically,
-    // so 'zee*' with contains becomes '%zee%%' → effectively '%zee%'.
-    const normalized = String(val).replace(/\*/g, '%');
-
-    switch (op) {
-      case 'equals':
-        return query.where(column, 'ilike', normalized);
-      case 'startsWith':
-        return query.where(column, 'ilike', `${normalized}%`);
-      case 'endsWith':
-        return query.where(column, 'ilike', `%${normalized}`);
-      case 'notContains':
-        return query.where(column, 'not ilike', `%${normalized}%`);
-      case 'notEquals':
-        return query.where(column, 'not ilike', normalized);
-      case 'isEmpty':
-        return query.where((eb: any) => eb.or([eb(column, 'is', null), eb(column, '=', '')]));
-      case 'isNotEmpty':
-        return query.where((eb: any) => eb.and([eb(column, 'is not', null), eb(column, '!=', '')]));
-      case 'contains':
-      default:
-        return query.where(column, 'ilike', `%${normalized}%`);
-    }
+    }, 0);
   }
 
-  protected applyCastColumnFilter(query: any, sqlExpression: any, filter: { op?: string; value?: any }) {
-    if (!filter) {
-      return query;
-    }
-    const op = filter.op || 'contains';
-    const val = filter.value;
-
-    if (op !== 'isEmpty' && op !== 'isNotEmpty') {
-      if (val === undefined || val === null || String(val).trim() === '') {
-        return query;
-      }
-    }
-
-    // Allow users to type * as a wildcard; normalize to SQL %.
-    // The operator's own wrapping is always applied — Postgres collapses %% naturally.
-    const normalized = String(val).replace(/\*/g, '%');
-
-    switch (op) {
-      case 'equals':
-        return query.where(sql`${sqlExpression} ILIKE ${normalized}` as any);
-      case 'startsWith':
-        return query.where(sql`${sqlExpression} ILIKE ${normalized + '%'}` as any);
-      case 'endsWith':
-        return query.where(sql`${sqlExpression} ILIKE ${'%' + normalized}` as any);
-      case 'notContains':
-        return query.where(sql`${sqlExpression} NOT ILIKE ${'%' + normalized + '%'}` as any);
-      case 'notEquals':
-        return query.where(sql`${sqlExpression} NOT ILIKE ${normalized}` as any);
-      case 'isEmpty':
-        return query.where(sql`${sqlExpression} IS NULL OR ${sqlExpression} = ''` as any);
-      case 'isNotEmpty':
-        return query.where(sql`${sqlExpression} IS NOT NULL AND ${sqlExpression} != ''` as any);
-      case 'contains':
-      default:
-        return query.where(sql`${sqlExpression} ILIKE ${'%' + normalized + '%'}` as any);
-    }
+  private pollWithDelay(ms: number) {
+    if (!this.isRunning) return;
+    this.timer = setTimeout(() => this.poll(), ms);
   }
 
-  protected normalizeSearch(raw: string | null | undefined): string | undefined {
-    if (!raw || !raw.trim()) return undefined;
-    const lower = raw.trim().toLowerCase().replace(/\*/g, '%');
-    return `%${lower}%`;
-  }
+  private async processNextEvent(): Promise<boolean> {
+    const workerId = `webhook-worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
 
-  protected getDelete(trx?: Transaction<Models>): DeleteQueryBuilder<Models, T, DeleteResult> {
-    return (trx
-      ? trx.deleteFrom(this.table)
-      : BaseRepository._db.deleteFrom(this.table)) as unknown as DeleteQueryBuilder<Models, T, DeleteResult>;
-  }
+    // Try to find and lock a webhook event using SKIP LOCKED
+    const eventRecord = await this.db.transaction().execute(async (trx: any) => {
+      const pendingEvent = (await trx
+        .selectFrom('webhook_events' as any)
+        .selectAll()
+        .where('status', '=', 'pending')
+        .where('run_at', '<=', new Date())
+        .orderBy('id', 'asc')
+        .limit(1)
+        .forUpdate()
+        .skipLocked()
+        .executeTakeFirst()) as any;
 
-  protected getInsert(trx?: Transaction<Models>): InsertQueryBuilder<Models, T, InsertResult> {
-    return trx ? trx.insertInto(this.table) : BaseRepository._db.insertInto(this.table);
-  }
+      if (!pendingEvent) return null;
 
-  protected getSelect(trx?: Transaction<Models>): SelectQueryBuilder<Models, T, Selectable<Models[T]>> {
-    const ret = trx ? trx.selectFrom(this.table) : BaseRepository._db.selectFrom(this.table);
+      const updatedEvent = await trx
+        .updateTable('webhook_events' as any)
+        .set({
+          status: 'processing',
+          locked_at: new Date(),
+          locked_by: workerId,
+          attempts: Number(pendingEvent.attempts || 0) + 1,
+          updated_at: new Date(),
+        })
+        .where('id', '=', pendingEvent.id)
+        .returningAll()
+        .executeTakeFirst();
 
-    return ret as unknown as SelectQueryBuilder<Models, T, Selectable<Models[T]>>;
-  }
-
-  protected getSelectWithColumns(options?: QueryParams<T>, trx?: Transaction<Models>) {
-    const query = this.getSelect(trx);
-    return this.applyOptions(query, options);
-  }
-
-  public getUpdate(trx?: Transaction<Models>): UpdateQueryBuilder<Models, T, T, UpdateResult> {
-    const ret = trx ? trx.updateTable(this.table) : BaseRepository._db.updateTable(this.table);
-    return ret as unknown as UpdateQueryBuilder<Models, T, T, UpdateResult>;
-  }
-
-  protected buildRuleExpression(eb: any, column: string, isCast: boolean, op: string, val: any) {
-    // Allow users to type * as a wildcard; normalize to SQL %.
-    // The operator's own wrapping is always applied — Postgres collapses %% naturally.
-    const normalized = String(val ?? '').replace(/\*/g, '%');
-
-    const pattern = op || 'contains';
-    switch (pattern) {
-      case 'equals':
-        return isCast ? sql`${sql.raw(column)} ILIKE ${normalized}` : eb(column, 'ilike', normalized);
-      case 'startsWith':
-        return isCast ? sql`${sql.raw(column)} ILIKE ${normalized + '%'}` : eb(column, 'ilike', `${normalized}%`);
-      case 'endsWith':
-        return isCast ? sql`${sql.raw(column)} ILIKE ${'%' + normalized}` : eb(column, 'ilike', `%${normalized}`);
-      case 'notContains':
-        return isCast
-          ? sql`${sql.raw(column)} NOT ILIKE ${'%' + normalized + '%'}`
-          : eb(column, 'not ilike', `%${normalized}%`);
-      case 'notEquals':
-        return isCast ? sql`${sql.raw(column)} NOT ILIKE ${normalized}` : eb(column, 'not ilike', normalized);
-      case 'isEmpty':
-      case 'empty':
-        return isCast
-          ? sql`${sql.raw(column)} IS NULL OR ${sql.raw(column)} = ''`
-          : eb.or([eb(column, 'is', null), eb(column, '=', '')]);
-      case 'isNotEmpty':
-      case 'notempty':
-        return isCast
-          ? sql`${sql.raw(column)} IS NOT NULL AND ${sql.raw(column)} != ''`
-          : eb.and([eb(column, 'is not', null), eb(column, '!=', '')]);
-      case 'contains':
-      default:
-        return isCast
-          ? sql`${sql.raw(column)} ILIKE ${'%' + normalized + '%'}`
-          : eb(column, 'ilike', `%${normalized}%`);
-    }
-  }
-
-  protected applyAdvancedFilters(
-    query: any,
-    advancedFilterModel:
-      | QueryBuilderGroupNode
-      | { conjunction: 'AND' | 'OR'; rules: { field: string; op: string; value: any }[] }
-      | undefined,
-    columnMapping: Record<string, { col: string; isCast?: boolean }>,
-  ) {
-    if (!advancedFilterModel) {
-      return query;
-    }
-
-    const isLegacy = !('kind' in advancedFilterModel) || (advancedFilterModel as any).kind !== 'group';
-    let rootGroup: QueryBuilderGroupNode;
-
-    if (isLegacy) {
-      const legacyModel = advancedFilterModel as {
-        conjunction: 'AND' | 'OR';
-        rules: { field: string; op: string; value: any }[];
-      };
-      if (!Array.isArray(legacyModel.rules) || legacyModel.rules.length === 0) {
-        return query;
-      }
-      rootGroup = {
-        kind: 'group',
-        id: 'legacy-root',
-        conjunction: legacyModel.conjunction,
-        rules: legacyModel.rules.map((r, i) => ({
-          kind: 'rule',
-          id: `legacy-rule-${i}`,
-          field: r.field,
-          op: r.op,
-          value: r.value,
-        })),
-      };
-    } else {
-      rootGroup = advancedFilterModel as QueryBuilderGroupNode;
-    }
-
-    return query.where((eb: any) => {
-      const expression = this.buildGroupExpression(eb, rootGroup, columnMapping);
-      return expression || sql`true`;
+      return updatedEvent;
     });
-  }
 
-  private buildGroupExpression(
-    eb: any,
-    group: QueryBuilderGroupNode,
-    columnMapping: Record<string, { col: string; isCast?: boolean }>,
-  ): any {
-    if (!group.rules || group.rules.length === 0) {
-      return null;
+    if (!eventRecord) return false;
+
+    console.log(
+      `Processing webhook event ${eventRecord.id} (Stripe Event: ${eventRecord.stripe_event_id}, Type: ${eventRecord.type})`,
+    );
+
+    const payload = typeof eventRecord.payload === 'string' ? JSON.parse(eventRecord.payload) : eventRecord.payload;
+
+    try {
+      const stripeObj = payload.data?.object;
+      const eventType: string = payload.type;
+
+      // Helper to resolve an admin userId for the tenant
+      const resolveUserId = async (tenantId: string, metaUserId: string | null): Promise<string> => {
+        if (metaUserId) return metaUserId;
+        const tenantRow = await this.db
+          .selectFrom('tenants')
+          .select('admin_id')
+          .where('id', '=', tenantId as any)
+          .executeTakeFirst();
+        if (!tenantRow?.admin_id) throw new Error(`Tenant ${tenantId} has no admin_id.`);
+        return String(tenantRow.admin_id);
+      };
+
+      const isOneTimeDonation =
+        eventType === 'checkout.session.completed' &&
+        stripeObj?.metadata?.personId &&
+        stripeObj?.metadata?.isRecurring !== 'true';
+      const isRecurringCheckoutComplete =
+        eventType === 'checkout.session.completed' &&
+        stripeObj?.metadata?.personId &&
+        stripeObj?.metadata?.isRecurring === 'true';
+      const isInvoicePaid = eventType === 'invoice.payment_succeeded' && stripeObj?.subscription;
+      const isSubscriptionUpdated = eventType === 'customer.subscription.updated';
+      const isSubscriptionDeleted = eventType === 'customer.subscription.deleted';
+      const isInvoiceFailed = eventType === 'invoice.payment_failed' && stripeObj?.subscription;
+
+      if (isOneTimeDonation) {
+        // Standard one-time donation via checkout.session.completed
+        const donationsController = new DonationsController();
+        const tenantId = String(stripeObj.metadata.tenantId);
+        const personId = String(stripeObj.metadata.personId);
+        const amountCents = Number(stripeObj.metadata.amount);
+        const province = String(stripeObj.metadata.residencyProvince || '');
+        const country = String(stripeObj.metadata.residencyCountry || '');
+        const sessionId = String(stripeObj.id);
+        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
+
+        await donationsController.recordSuccessfulDonation(
+          tenantId,
+          personId,
+          amountCents,
+          sessionId,
+          province,
+          country,
+          createdBy,
+        );
+      } else if (isRecurringCheckoutComplete) {
+        // Subscription checkout completed — create the pledge record.
+        // The first invoice payment is handled separately by invoice.payment_succeeded.
+        const donationsController = new DonationsController();
+        const tenantId = String(stripeObj.metadata.tenantId);
+        const personId = String(stripeObj.metadata.personId);
+        const monthlyAmountCents = Number(stripeObj.metadata.monthlyAmount);
+        const province = String(stripeObj.metadata.residencyProvince || '');
+        const country = String(stripeObj.metadata.residencyCountry || '');
+        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
+        const subscriptionId = String(stripeObj.subscription || '');
+        const customerId = stripeObj.customer ? String(stripeObj.customer) : null;
+
+        if (subscriptionId) {
+          await donationsController.recordNewPledge(
+            tenantId,
+            personId,
+            monthlyAmountCents,
+            subscriptionId,
+            customerId,
+            province,
+            country,
+            createdBy,
+          );
+        }
+      } else if (isInvoicePaid) {
+        // A subscription invoice was paid — record it as a donation installment.
+        const donationsController = new DonationsController();
+        const subscriptionId = String(stripeObj.subscription);
+        const invoiceId = String(stripeObj.id);
+        const amountPaidCents = Number(stripeObj.amount_paid || 0);
+
+        const pledge = (await this.db
+          .selectFrom('donation_pledges' as any)
+          .selectAll()
+          .where('stripe_subscription_id', '=', subscriptionId)
+          .executeTakeFirst()) as any;
+
+        if (pledge && amountPaidCents > 0) {
+          // Avoid duplicate recording (invoice id as session id key)
+          const alreadyRecorded = await this.db
+            .selectFrom('donations' as any)
+            .select('id')
+            .where('stripe_session_id', '=', invoiceId)
+            .executeTakeFirst();
+
+          if (!alreadyRecorded) {
+            const createdBy = await resolveUserId(String(pledge.tenant_id), null);
+            await donationsController.recordSuccessfulDonation(
+              String(pledge.tenant_id),
+              String(pledge.person_id),
+              amountPaidCents,
+              invoiceId,
+              pledge.state || '',
+              pledge.country || '',
+              createdBy,
+              String(pledge.id),
+            );
+          }
+        }
+      } else if (isSubscriptionUpdated) {
+        // Sync pledge status from Stripe subscription status
+        const subscriptionId = String(stripeObj.id);
+        const stripeStatus: string = stripeObj.status;
+        const statusMap: Record<string, string> = {
+          active: 'active',
+          past_due: 'past_due',
+          canceled: 'cancelled',
+          unpaid: 'unpaid',
+        };
+        const mappedStatus = statusMap[stripeStatus];
+        const nextBillingDate = stripeObj.current_period_end
+          ? new Date(stripeObj.current_period_end * 1000).toISOString().slice(0, 10)
+          : null;
+
+        if (mappedStatus) {
+          await this.db
+            .updateTable('donation_pledges' as any)
+            .set({
+              status: mappedStatus,
+              next_billing_date: nextBillingDate,
+              cancelled_at: mappedStatus === 'cancelled' ? new Date() : null,
+              updated_at: new Date(),
+            })
+            .where('stripe_subscription_id', '=', subscriptionId)
+            .execute();
+        }
+      } else if (isSubscriptionDeleted) {
+        const subscriptionId = String(stripeObj.id);
+        await this.db
+          .updateTable('donation_pledges' as any)
+          .set({ status: 'cancelled', cancelled_at: new Date(), updated_at: new Date() })
+          .where('stripe_subscription_id', '=', subscriptionId)
+          .execute();
+      } else if (isInvoiceFailed) {
+        const subscriptionId = String(stripeObj.subscription);
+        await this.db
+          .updateTable('donation_pledges' as any)
+          .set({ status: 'past_due', updated_at: new Date() })
+          .where('stripe_subscription_id', '=', subscriptionId)
+          .execute();
+      } else {
+        const billingController = new BillingController();
+        await billingController.processWebhookEvent(payload);
+      }
+
+      // Mark event as processed/completed
+      await this.db
+        .updateTable('webhook_events' as any)
+        .set({
+          status: 'processed',
+          locked_at: null,
+          locked_by: null,
+          processed_at: new Date(),
+          updated_at: new Date(),
+        })
+        .where('id', '=', eventRecord.id)
+        .execute();
+
+      console.log(`Webhook event ${eventRecord.id} completed successfully.`);
+    } catch (err: any) {
+      const errorMsg = err?.message || String(err);
+      console.error(`Failed to process webhook event ${eventRecord.id}:`, err);
+
+      const attempts = Number(eventRecord.attempts || 0);
+      const maxAttempts = Number(eventRecord.max_attempts || 3);
+
+      if (attempts < maxAttempts) {
+        // Retry with backoff (attempts * 30s delay)
+        const delaySeconds = attempts * 30;
+        const runAt = new Date(Date.now() + delaySeconds * 1000);
+        console.log(
+          `Rescheduling webhook event ${eventRecord.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`,
+        );
+
+        await this.db
+          .updateTable('webhook_events' as any)
+          .set({
+            status: 'pending',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            run_at: runAt,
+            updated_at: new Date(),
+          })
+          .where('id', '=', eventRecord.id)
+          .execute();
+      } else {
+        console.error(`Webhook event ${eventRecord.id} exceeded maximum attempts (${maxAttempts}). Marking as failed.`);
+        await this.db
+          .updateTable('webhook_events' as any)
+          .set({
+            status: 'failed',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            updated_at: new Date(),
+          })
+          .where('id', '=', eventRecord.id)
+          .execute();
+      }
     }
 
-    const expressions = group.rules
-      .map((node) => {
-        if (node.kind === 'rule') {
-          const mapping = columnMapping[node.field];
-          if (!mapping) return null;
-
-          if (node.op !== 'isEmpty' && node.op !== 'isNotEmpty' && node.op !== 'empty' && node.op !== 'notempty') {
-            if (node.value === undefined || node.value === null || String(node.value).trim() === '') {
-              return null;
-            }
-          }
-
-          const mappedOp = node.op === 'eq' ? 'equals' : node.op === 'neq' ? 'notEquals' : node.op;
-          return this.buildRuleExpression(eb, mapping.col, !!mapping.isCast, mappedOp, node.value);
-        } else {
-          return this.buildGroupExpression(eb, node, columnMapping);
-        }
-      })
-      .filter(Boolean);
-
-    if (expressions.length === 0) return null;
-    if (expressions.length === 1) return expressions[0];
-
-    return group.conjunction === 'OR' ? eb.or(expressions) : eb.and(expressions);
+    return true;
   }
-}
-
-export type JoinedQueryParams = {
-  searchStr?: string;
-  startRow?: number;
-  endRow?: number;
-  sortModel?: {
-    colId: string;
-    sort: 'asc' | 'desc';
-  }[];
-  filterModel?: Record<string, unknown>;
-  columns?: (string | ReferenceExpression<Models, keyof Models> | TypeTableColumns<keyof Models>)[];
-  groupBy?: (string | SelectExpression<Models, keyof Models>)[];
-  limit?: number;
-  offset?: number;
-  orderBy?: OrderByExpression<Models, keyof Models, object>[];
-  advancedFilterModel?:
-    | QueryBuilderGroupNode
-    | {
-        conjunction: 'AND' | 'OR';
-        rules: { field: string; op: string; value: any }[];
-      };
-};
-
-export type QueryParams<T extends keyof Models> = {
-  searchStr?: string;
-  startRow?: number;
-  endRow?: number;
-  sortModel?: {
-    colId: string;
-    sort: 'asc' | 'desc';
-  }[];
-  filterModel?: Record<string, unknown>;
-  columns?: ReferenceExpression<Models, T>[];
-  groupBy?: (keyof Models[T])[];
-  limit?: number;
-  offset?: number;
-  orderBy?: OrderByExpression<Models, T, object>[];
-};
-
-export function ref<TTable extends keyof Models, TColumn extends keyof Models[TTable]>(
-  table: TTable,
-  column: TColumn,
-): ReferenceExpression<Models, TTable> {
-  return `${String(table)}.${String(column)}` as ReferenceExpression<Models, TTable>;
 }
 ```
 
@@ -27904,766 +29961,6 @@ export const DonationsRouter = router({
     return controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id);
   }),
 });
-```
-
-## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { StorageService } from '../../../lib/storage.service';
-import { BaseRepository } from '../../../lib/base.repo';
-import { verifyAuthToken } from '../../../lib/auth-util';
-import { env } from '../../../../env';
-import crypto from 'crypto';
-import { Client } from '@microsoft/microsoft-graph-client';
-import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
-import { MsSyncService } from '../../ms-sync/ms-sync.service';
-import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
-import { GoogleSyncService } from '../../google-sync/google-sync.service';
-import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
-
-function buildRawMime(options: {
-  fromName: string;
-  fromEmail: string;
-  to: string[];
-  cc: string[];
-  bcc: string[];
-  subject: string;
-  html: string;
-  attachments: { filename: string; content: Buffer; contentType: string }[];
-}): Buffer {
-  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
-  const headers: string[] = [];
-
-  const safeFromName = options.fromName.replace(/"/g, '\\"');
-  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
-  headers.push(`To: ${options.to.join(', ')}`);
-  if (options.cc.length > 0) {
-    headers.push(`Cc: ${options.cc.join(', ')}`);
-  }
-  if (options.bcc.length > 0) {
-    headers.push(`Bcc: ${options.bcc.join(', ')}`);
-  }
-
-  const base64Subject = Buffer.from(options.subject).toString('base64');
-  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
-
-  headers.push(`MIME-Version: 1.0`);
-  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-  headers.push('');
-
-  const bodyParts: string[] = [];
-
-  bodyParts.push(`--${boundary}`);
-  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
-  bodyParts.push(`Content-Transfer-Encoding: base64`);
-  bodyParts.push('');
-  bodyParts.push(Buffer.from(options.html).toString('base64'));
-  bodyParts.push('');
-
-  for (const att of options.attachments) {
-    bodyParts.push(`--${boundary}`);
-    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Transfer-Encoding: base64`);
-    bodyParts.push('');
-    bodyParts.push(att.content.toString('base64'));
-    bodyParts.push('');
-  }
-
-  bodyParts.push(`--${boundary}--`);
-
-  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
-  return Buffer.from(rawMimeString, 'utf-8');
-}
-
-const storageService = new StorageService();
-
-let _oauthSvc: MsOAuthService | null = null;
-
-function getOAuthService(db: any) {
-  if (!_oauthSvc) {
-    _oauthSvc = new MsOAuthService(db, {
-      clientId: env.msClientId ?? '',
-      clientSecret: env.msClientSecret ?? '',
-      tenantId: env.msTenantId ?? 'common',
-      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-    });
-  }
-  return _oauthSvc;
-}
-
-export async function saveLocalEmail(
-  db: any,
-  tenantId: string,
-  userId: string,
-  fromEmail: string,
-  fromName: string,
-  toList: string[],
-  ccList: string[],
-  bccList: string[],
-  subject: string,
-  html: string,
-  uploadedFiles: any[],
-  previewKey: string,
-) {
-  return db.transaction().execute(async (trx: any) => {
-    // Ensure the Outbox folder row exists. email_folders uses global hardcoded
-    // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
-    // email_folders(id) — not tenant_id — so the existence check must be by id
-    // alone. onConflict guards against a concurrent/global row already present.
-
-    const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
-
-    if (!existingOutbox) {
-      await trx
-        .insertInto('email_folders')
-        .values({
-          id: '10',
-          tenant_id: tenantId,
-          name: 'Outbox',
-          createdby_id: userId,
-          updatedby_id: userId,
-          icon: 'clock',
-          sort_order: 10,
-          is_default: false,
-        })
-        .onConflict((oc: any) => oc.column('id').doNothing())
-        .execute();
-    }
-
-    // 1. Insert into emails table (using Outbox folder: '10')
-    const createdEmail = await trx
-      .insertInto('emails')
-      .values({
-        tenant_id: tenantId,
-        folder_id: '10', // Outbox folder is '10'
-        from_email: fromEmail,
-        to_email: toList.join(', '),
-        subject: subject,
-        preview: previewKey,
-        assigned_to: userId,
-        is_favourite: false,
-        deleted_at: null,
-        status: 'open',
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    const emailId = String(createdEmail.id);
-
-    // 2. Insert html into email_bodies
-    await trx
-      .insertInto('email_bodies')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        body_html: html,
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // 3. Insert files and email_attachments metadata
-    for (let i = 0; i < uploadedFiles.length; i++) {
-      const uFile = uploadedFiles[i];
-      let fileId: string;
-
-      // Persist (or reuse, via sha256 dedup) the file row, then link the
-      // attachment to it so downloads can resolve the stored blob.
-      const existingFile = await trx
-        .selectFrom('files')
-        .select('id')
-        .where('tenant_id', '=', tenantId)
-        .where('sha256_hex', '=', uFile.sha256_hex)
-        .executeTakeFirst();
-
-      if (existingFile) {
-        fileId = String(existingFile.id);
-      } else {
-        const fileResult = await trx
-          .insertInto('files')
-          .values({
-            tenant_id: tenantId,
-            filename: uFile.filename,
-            mime_type: uFile.content_type,
-            size_bytes: uFile.size_bytes,
-            storage_key: uFile.storage_key,
-            sha256_hex: uFile.sha256_hex,
-            uploaded_by: userId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-        fileId = String(fileResult.id);
-      }
-
-      await trx
-        .insertInto('email_attachments')
-        .values({
-          tenant_id: tenantId,
-          email_id: emailId,
-          filename: uFile.filename,
-          content_type: uFile.content_type,
-          size_bytes: uFile.size_bytes,
-          cid: uFile.cid,
-          is_inline: uFile.is_inline,
-          pos: i + 1,
-          file_id: fileId,
-          createdby_id: userId,
-          updatedby_id: userId,
-        })
-        .execute();
-    }
-
-    // 4. Insert headers
-    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
-    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-
-    await trx
-      .insertInto('email_headers')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        headers_json: JSON.stringify({ internetMessageId }),
-        raw_headers: rawHeaders,
-        date_sent: new Date(),
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // 5. Insert recipients
-    const recipientRows: any[] = [];
-    toList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'to',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    ccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'cc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    bccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'bcc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-
-    if (recipientRows.length > 0) {
-      await trx.insertInto('email_recipients').values(recipientRows).execute();
-    }
-
-    return createdEmail;
-  });
-}
-
-const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Send composed email
-  fastify.post('/send', async (req: any, reply) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing Authorization header' });
-    }
-    const token = authHeader.split(' ')[1];
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token format' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
-    }
-
-    if (!payload?.tenant_id || !payload?.user_id) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token payload' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const userId = payload.user_id;
-    const db = (BaseRepository as any)['_db'];
-
-    // Retrieve sender user details
-    const user = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', userId)
-      .executeTakeFirst();
-
-    if (!user) {
-      return reply.status(401).send({ error: 'Unauthorized: User not found' });
-    }
-
-    const fromEmail = user.email;
-    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
-
-    // Parse multipart request parts
-    const parts = req.parts();
-    const fields: any = {};
-    const files: any[] = [];
-
-    for await (const part of parts) {
-      if (part.file) {
-        const buffer = await part.toBuffer();
-        files.push({
-          filename: part.filename,
-          fieldname: part.fieldname,
-          mimetype: part.mimetype,
-          buffer,
-        });
-      } else {
-        fields[part.fieldname] = part.value;
-      }
-    }
-
-    // Parse recipient lists and content fields
-    const toList = fields.to ? JSON.parse(fields.to) : [];
-    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
-    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
-    const subject = fields.subject || '';
-    const html = sanitizeHtml(fields.html || '');
-
-    // Upload attachment files to storage outside transaction
-    const uploadedFiles: Array<{
-      filename: string;
-      content_type: string;
-      size_bytes: number;
-      storage_key: string;
-      sha256_hex: string;
-      cid: string | null;
-      is_inline: boolean;
-    }> = [];
-
-    for (const file of files) {
-      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
-      const fileUUID = crypto.randomUUID();
-      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
-
-      await storageService.upload(storage_key, file.buffer, file.mimetype);
-
-      uploadedFiles.push({
-        filename: file.filename,
-        content_type: file.mimetype,
-        size_bytes: file.buffer.length,
-        storage_key,
-        sha256_hex,
-        cid: null,
-        is_inline: false,
-      });
-    }
-
-    // Check if user has connected Microsoft and/or Google accounts
-    const msToken = await db
-      .selectFrom('ms_oauth_tokens')
-      .select(['user_id', 'ms_email'])
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const googleToken = await db
-      .selectFrom('google_oauth_tokens')
-      .select(['user_id', 'google_email'])
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const hasMsConnected = !!msToken;
-    const hasGoogleConnected = !!googleToken;
-
-    // Fail immediately if no send method is configured
-    if (!hasMsConnected && !hasGoogleConnected) {
-      return reply.status(400).send({
-        status: 'error',
-        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
-      });
-    }
-
-    // Save outbound email to database under Outbox folder '10' initially
-    const fallbackPreview =
-      html
-        .replace(/<[^>]*>/g, '')
-        .substring(0, 100)
-        .trim() || '';
-    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
-    try {
-      emailRow = await saveLocalEmail(
-        db,
-        tenantId,
-        userId,
-        fromEmail,
-        fromName,
-        toList,
-        ccList,
-        bccList,
-        subject,
-        html,
-        uploadedFiles,
-        fallbackPreview,
-      );
-    } catch (err: any) {
-      fastify.log.error(err, 'Failed to save outbound email to database');
-      return reply.jsendError(err.message || 'Failed to save email', 500);
-    }
-
-    // Determine send method prioritizing matching address
-    let sendMethod: 'ms' | 'google' = 'ms';
-    if (hasMsConnected && hasGoogleConnected) {
-      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
-        sendMethod = 'google';
-      } else {
-        sendMethod = 'ms';
-      }
-    } else if (hasMsConnected) {
-      sendMethod = 'ms';
-    } else if (hasGoogleConnected) {
-      sendMethod = 'google';
-    }
-
-    // Dispatch the email synchronously
-    try {
-      if (sendMethod === 'ms') {
-        const oauthSvc = getOAuthService(db);
-        let msDraftId: string | null = null;
-        try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-          const client = Client.init({
-            authProvider: (done) => done(null, accessToken),
-          });
-
-          const msDraftMessage: any = {
-            subject: subject,
-            body: {
-              contentType: 'html',
-              content: html,
-            },
-            toRecipients: toList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            ccRecipients: ccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            bccRecipients: bccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-          };
-
-          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
-          msDraftId = createdDraft.id;
-          const graphInternetMessageId = createdDraft.internetMessageId;
-
-          // Update local email preview/dedupe key to `ms:${msDraftId}`
-          await db
-            .updateTable('emails')
-            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          if (graphInternetMessageId) {
-            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-            await db
-              .updateTable('email_headers')
-              .set({
-                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
-                raw_headers: rawHeaders,
-                updated_at: new Date(),
-              })
-              .where('tenant_id', '=', tenantId)
-              .where('email_id', '=', String(emailRow.id))
-              .execute();
-          }
-
-          // Upload attachments
-          for (const file of files) {
-            await client.api(`/me/messages/${msDraftId}/attachments`).post({
-              '@odata.type': '#microsoft.graph.fileAttachment',
-              name: file.filename,
-              contentType: file.mimetype,
-              contentBytes: file.buffer.toString('base64'),
-            });
-          }
-
-          // Send draft
-          await client.api(`/me/messages/${msDraftId}/send`).post({});
-
-          // Update local email folder to '3' (Sent) on success
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          // Trigger background sync to get folders/Sent items synchronized
-          const syncSvc = new MsSyncService(db, oauthSvc);
-          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
-          });
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (err) {
-            fastify.log.error(err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
-          }
-
-          return reply.jsendSuccess(finalEmail);
-        } catch (err: any) {
-          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
-          // Clean up local email
-          await db
-            .deleteFrom('emails')
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-          return reply.jsendError(err.message || 'Failed to send email via Microsoft Graph', 400);
-        }
-      } else if (sendMethod === 'google') {
-        const oauthSvc = new GoogleOAuthService(db, {
-          clientId: env.googleClientId ?? '',
-          clientSecret: env.googleClientSecret ?? '',
-          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-        });
-
-        try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-
-          const rawMessageBuffer = buildRawMime({
-            fromName,
-            fromEmail,
-            to: toList,
-            cc: ccList,
-            bcc: bccList,
-            subject,
-            html,
-            attachments: files.map((file) => ({
-              filename: file.filename,
-              content: file.buffer,
-              contentType: file.mimetype,
-            })),
-          });
-
-          const rawBase64Url = rawMessageBuffer
-            .toString('base64')
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=+$/, '');
-
-          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              raw: rawBase64Url,
-            }),
-          });
-
-          if (!gmailRes.ok) {
-            const errText = await gmailRes.text();
-            throw new Error(`Gmail API send failed: ${errText}`);
-          }
-
-          const gmailData: any = await gmailRes.json();
-          const googleMsgId = gmailData.id;
-
-          await db
-            .updateTable('emails')
-            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
-          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
-          });
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (err) {
-            fastify.log.error(err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
-          }
-
-          return reply.jsendSuccess(finalEmail);
-        } catch (err: any) {
-          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
-          await db
-            .updateTable('emails')
-            .set({
-              // Revert back to the Drafts folder (folder_id '2' or '4' depending on schema)
-              folder_id: '4',
-              updated_at: new Date(),
-            })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          return reply.jsendError(err.message || 'Failed to send email via Google. Saved to Drafts.', 400);
-        }
-      }
-    } catch (err: any) {
-      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
-      // Clean up local email
-      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
-      return reply.jsendError(err.message || 'Unexpected error in send task', 500);
-    }
-  });
-
-  // Download attachment by ID
-  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const { id, attachmentId } = req.params;
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachmentId)
-      .where('email_id', '=', id)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
-      return reply.send(buffer);
-    } catch (err) {
-      fastify.log.error(err);
-      return reply.status(500).send({ error: 'Failed to download attachment' });
-    }
-  });
-
-  // Serve inline attachment by CID
-  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const { id, cid } = req.params;
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('email_id', '=', id)
-      .where('cid', '=', cid)
-      .where('is_inline', '=', true)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Inline attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Cache-Control', 'public, max-age=31536000');
-      return reply.send(buffer);
-    } catch (err) {
-      fastify.log.error(err);
-      return reply.status(500).send({ error: 'Failed to load inline image' });
-    }
-  });
-
-  done();
-};
-
-export default emailsApiRoute;
 ```
 
 ## File: apps/backend/src/app/modules/emails/services/email-ingester.service.ts
@@ -32541,1257 +33838,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
 }
 ```
 
-## File: apps/backend/project.json
-
-```json
-{
-  "name": "backend",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "apps/backend/src",
-  "projectType": "application",
-  "tags": [],
-  "targets": {
-    "generate-context": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "npx repomix --output apps/backend/STRUCTURE.md --include \"apps/backend/src/**/*\" --ignore \"apps/frontend/**,apps/libs/**,libs/**,**/STRUCTURE.md,**/_migrations/schema_dump.sql,**/*.spec.ts\""
-      }
-    },
-    "build": {
-      "executor": "@nx/esbuild:esbuild",
-      "dependsOn": ["generate-context"],
-      "outputs": ["{options.outputPath}"],
-      "defaultConfiguration": "production",
-      "options": {
-        "platform": "node",
-        "outputPath": "dist/apps/backend",
-        "format": ["esm"],
-        "main": "apps/backend/src/main.ts",
-        "tsConfig": "apps/backend/tsconfig.app.json",
-        "assets": ["apps/backend/src/assets"],
-        "generatePackageJson": false,
-        "esbuildOptions": {
-          "packages": "external",
-          "external": ["aws-sdk", "nock", "mock-aws-s3"],
-          "loader": {
-            ".html": "text"
-          },
-          "sourcemap": "inline",
-          "outExtension": {
-            ".js": ".js"
-          }
-        }
-      },
-      "configurations": {
-        "development": {
-          "bundle": true
-        },
-        "production": {
-          "bundle": true,
-          "esbuildOptions": {
-            "sourcemap": false,
-            "external": ["aws-sdk", "nock", "mock-aws-s3"],
-            "loader": {
-              ".html": "text"
-            },
-            "outExtension": {
-              ".js": ".js"
-            }
-          }
-        }
-      }
-    },
-    "serve": {
-      "executor": "@nx/js:node",
-      "defaultConfiguration": "development",
-      "options": {
-        "buildTarget": "backend:build"
-      },
-      "configurations": {
-        "development": {
-          "buildTarget": "backend:build:development",
-          "runtimeArgs": ["--inspect=9229", "--enable-source-maps", "--env-file=.env.development"]
-        },
-        "production": {
-          "buildTarget": "backend:build:production",
-          "runtimeArgs": ["--enable-source-maps", "--env-file=.env.production"]
-        }
-      }
-    },
-    "test": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "outputs": ["{workspaceRoot}/coverage/apps/backend"],
-      "options": {
-        "cwd": "apps/backend",
-        "command": "vitest run"
-      }
-    },
-    "lint": {
-      "executor": "@nx/eslint:lint",
-      "outputs": ["{options.outputFile}"],
-      "options": {
-        "lintFilePatterns": ["apps/backend/**/*.ts"]
-      }
-    }
-  }
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/webhook-worker.ts
-
-```typescript
-import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
-import { BillingController } from '../../modules/billing/controller';
-import { DonationsController } from '../../modules/donations/controller';
-import { Client } from 'pg';
-import { env } from '../../../env';
-
-export class WebhookEventWorker {
-  private isRunning = false;
-  private timer: NodeJS.Timeout | null = null;
-  private activeJobsCount = 0;
-  private shutdownResolver: (() => void) | null = null;
-  private pgClient: Client | null = null;
-  private reconnectTimer: NodeJS.Timeout | null = null;
-
-  private readonly webhookEventsRepo = new WebhookEventsRepo();
-  private readonly db = this.webhookEventsRepo.db; // Kysely DB instance
-
-  public start() {
-    if (this.isRunning) return;
-    this.isRunning = true;
-    console.log('Webhook Event Worker started.');
-    this.setupListener();
-    this.poll();
-  }
-
-  public async stop(): Promise<void> {
-    this.isRunning = false;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.pgClient) {
-      try {
-        await this.pgClient.end();
-      } catch (err) {
-        console.error('Error closing Postgres listener client on shutdown:', err);
-      }
-      this.pgClient = null;
-    }
-
-    if (this.activeJobsCount > 0) {
-      console.log(
-        `Webhook Event Worker: Waiting for ${this.activeJobsCount} active events to process before shutting down...`,
-      );
-      await new Promise<void>((resolve) => {
-        this.shutdownResolver = resolve;
-      });
-    }
-    console.log('Webhook Event Worker stopped.');
-  }
-
-  private async setupListener() {
-    if (!this.isRunning) return;
-    try {
-      this.pgClient = new Client(env.db);
-      await this.pgClient.connect();
-
-      this.pgClient.on('notification', (msg) => {
-        if (msg.channel === 'webhook_events_channel') {
-          console.log('Webhook Event Worker received notify, waking up...');
-          this.wakeUp();
-        }
-      });
-
-      this.pgClient.on('error', (err) => {
-        console.error('Postgres listener client error:', err);
-        this.reconnectListener();
-      });
-
-      this.pgClient.on('end', () => {
-        console.warn('Postgres listener connection closed.');
-        this.reconnectListener();
-      });
-
-      await this.pgClient.query('LISTEN webhook_events_channel');
-      console.log('Listening for webhook_events notifications...');
-    } catch (err) {
-      console.error('Failed to setup Postgres listener:', err);
-      this.reconnectListener();
-    }
-  }
-
-  private reconnectListener() {
-    if (this.pgClient) {
-      this.pgClient.end().catch(() => {});
-      this.pgClient = null;
-    }
-    if (!this.isRunning) return;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = setTimeout(() => {
-      this.setupListener();
-    }, 5000);
-  }
-
-  private wakeUp() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    this.poll();
-  }
-
-  private poll() {
-    if (!this.isRunning) return;
-
-    this.timer = setTimeout(async () => {
-      let processedAnEvent = false;
-      try {
-        this.activeJobsCount++;
-        processedAnEvent = await this.processNextEvent();
-      } catch (err) {
-        console.error('Error in webhook event worker poll cycle:', err);
-      } finally {
-        this.activeJobsCount--;
-
-        // If shutdown was requested and no active jobs remain, resolve the stop() promise
-        if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
-          this.shutdownResolver();
-          return;
-        }
-
-        // Poll again immediately (10ms) if an event was processed to drain the queue quickly,
-        // or back off to 30 seconds if no events were found.
-        const delay = processedAnEvent ? 10 : 30000;
-        this.pollWithDelay(delay);
-      }
-    }, 0);
-  }
-
-  private pollWithDelay(ms: number) {
-    if (!this.isRunning) return;
-    this.timer = setTimeout(() => this.poll(), ms);
-  }
-
-  private async processNextEvent(): Promise<boolean> {
-    const workerId = `webhook-worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
-
-    // Try to find and lock a webhook event using SKIP LOCKED
-    const eventRecord = await this.db.transaction().execute(async (trx: any) => {
-      const pendingEvent = (await trx
-        .selectFrom('webhook_events' as any)
-        .selectAll()
-        .where('status', '=', 'pending')
-        .where('run_at', '<=', new Date())
-        .orderBy('id', 'asc')
-        .limit(1)
-        .forUpdate()
-        .skipLocked()
-        .executeTakeFirst()) as any;
-
-      if (!pendingEvent) return null;
-
-      const updatedEvent = await trx
-        .updateTable('webhook_events' as any)
-        .set({
-          status: 'processing',
-          locked_at: new Date(),
-          locked_by: workerId,
-          attempts: Number(pendingEvent.attempts || 0) + 1,
-          updated_at: new Date(),
-        })
-        .where('id', '=', pendingEvent.id)
-        .returningAll()
-        .executeTakeFirst();
-
-      return updatedEvent;
-    });
-
-    if (!eventRecord) return false;
-
-    console.log(
-      `Processing webhook event ${eventRecord.id} (Stripe Event: ${eventRecord.stripe_event_id}, Type: ${eventRecord.type})`,
-    );
-
-    const payload = typeof eventRecord.payload === 'string' ? JSON.parse(eventRecord.payload) : eventRecord.payload;
-
-    try {
-      const stripeObj = payload.data?.object;
-      const eventType: string = payload.type;
-
-      // Helper to resolve an admin userId for the tenant
-      const resolveUserId = async (tenantId: string, metaUserId: string | null): Promise<string> => {
-        if (metaUserId) return metaUserId;
-        const tenantRow = await this.db
-          .selectFrom('tenants')
-          .select('admin_id')
-          .where('id', '=', tenantId as any)
-          .executeTakeFirst();
-        if (!tenantRow?.admin_id) throw new Error(`Tenant ${tenantId} has no admin_id.`);
-        return String(tenantRow.admin_id);
-      };
-
-      const isOneTimeDonation =
-        eventType === 'checkout.session.completed' &&
-        stripeObj?.metadata?.personId &&
-        stripeObj?.metadata?.isRecurring !== 'true';
-      const isRecurringCheckoutComplete =
-        eventType === 'checkout.session.completed' &&
-        stripeObj?.metadata?.personId &&
-        stripeObj?.metadata?.isRecurring === 'true';
-      const isInvoicePaid = eventType === 'invoice.payment_succeeded' && stripeObj?.subscription;
-      const isSubscriptionUpdated = eventType === 'customer.subscription.updated';
-      const isSubscriptionDeleted = eventType === 'customer.subscription.deleted';
-      const isInvoiceFailed = eventType === 'invoice.payment_failed' && stripeObj?.subscription;
-
-      if (isOneTimeDonation) {
-        // Standard one-time donation via checkout.session.completed
-        const donationsController = new DonationsController();
-        const tenantId = String(stripeObj.metadata.tenantId);
-        const personId = String(stripeObj.metadata.personId);
-        const amountCents = Number(stripeObj.metadata.amount);
-        const province = String(stripeObj.metadata.residencyProvince || '');
-        const country = String(stripeObj.metadata.residencyCountry || '');
-        const sessionId = String(stripeObj.id);
-        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
-
-        await donationsController.recordSuccessfulDonation(
-          tenantId,
-          personId,
-          amountCents,
-          sessionId,
-          province,
-          country,
-          createdBy,
-        );
-      } else if (isRecurringCheckoutComplete) {
-        // Subscription checkout completed — create the pledge record.
-        // The first invoice payment is handled separately by invoice.payment_succeeded.
-        const donationsController = new DonationsController();
-        const tenantId = String(stripeObj.metadata.tenantId);
-        const personId = String(stripeObj.metadata.personId);
-        const monthlyAmountCents = Number(stripeObj.metadata.monthlyAmount);
-        const province = String(stripeObj.metadata.residencyProvince || '');
-        const country = String(stripeObj.metadata.residencyCountry || '');
-        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
-        const subscriptionId = String(stripeObj.subscription || '');
-        const customerId = stripeObj.customer ? String(stripeObj.customer) : null;
-
-        if (subscriptionId) {
-          await donationsController.recordNewPledge(
-            tenantId,
-            personId,
-            monthlyAmountCents,
-            subscriptionId,
-            customerId,
-            province,
-            country,
-            createdBy,
-          );
-        }
-      } else if (isInvoicePaid) {
-        // A subscription invoice was paid — record it as a donation installment.
-        const donationsController = new DonationsController();
-        const subscriptionId = String(stripeObj.subscription);
-        const invoiceId = String(stripeObj.id);
-        const amountPaidCents = Number(stripeObj.amount_paid || 0);
-
-        const pledge = (await this.db
-          .selectFrom('donation_pledges' as any)
-          .selectAll()
-          .where('stripe_subscription_id', '=', subscriptionId)
-          .executeTakeFirst()) as any;
-
-        if (pledge && amountPaidCents > 0) {
-          // Avoid duplicate recording (invoice id as session id key)
-          const alreadyRecorded = await this.db
-            .selectFrom('donations' as any)
-            .select('id')
-            .where('stripe_session_id', '=', invoiceId)
-            .executeTakeFirst();
-
-          if (!alreadyRecorded) {
-            const createdBy = await resolveUserId(String(pledge.tenant_id), null);
-            await donationsController.recordSuccessfulDonation(
-              String(pledge.tenant_id),
-              String(pledge.person_id),
-              amountPaidCents,
-              invoiceId,
-              pledge.state || '',
-              pledge.country || '',
-              createdBy,
-              String(pledge.id),
-            );
-          }
-        }
-      } else if (isSubscriptionUpdated) {
-        // Sync pledge status from Stripe subscription status
-        const subscriptionId = String(stripeObj.id);
-        const stripeStatus: string = stripeObj.status;
-        const statusMap: Record<string, string> = {
-          active: 'active',
-          past_due: 'past_due',
-          canceled: 'cancelled',
-          unpaid: 'unpaid',
-        };
-        const mappedStatus = statusMap[stripeStatus];
-        const nextBillingDate = stripeObj.current_period_end
-          ? new Date(stripeObj.current_period_end * 1000).toISOString().slice(0, 10)
-          : null;
-
-        if (mappedStatus) {
-          await this.db
-            .updateTable('donation_pledges' as any)
-            .set({
-              status: mappedStatus,
-              next_billing_date: nextBillingDate,
-              cancelled_at: mappedStatus === 'cancelled' ? new Date() : null,
-              updated_at: new Date(),
-            })
-            .where('stripe_subscription_id', '=', subscriptionId)
-            .execute();
-        }
-      } else if (isSubscriptionDeleted) {
-        const subscriptionId = String(stripeObj.id);
-        await this.db
-          .updateTable('donation_pledges' as any)
-          .set({ status: 'cancelled', cancelled_at: new Date(), updated_at: new Date() })
-          .where('stripe_subscription_id', '=', subscriptionId)
-          .execute();
-      } else if (isInvoiceFailed) {
-        const subscriptionId = String(stripeObj.subscription);
-        await this.db
-          .updateTable('donation_pledges' as any)
-          .set({ status: 'past_due', updated_at: new Date() })
-          .where('stripe_subscription_id', '=', subscriptionId)
-          .execute();
-      } else {
-        const billingController = new BillingController();
-        await billingController.processWebhookEvent(payload);
-      }
-
-      // Mark event as processed/completed
-      await this.db
-        .updateTable('webhook_events' as any)
-        .set({
-          status: 'processed',
-          locked_at: null,
-          locked_by: null,
-          processed_at: new Date(),
-          updated_at: new Date(),
-        })
-        .where('id', '=', eventRecord.id)
-        .execute();
-
-      console.log(`Webhook event ${eventRecord.id} completed successfully.`);
-    } catch (err: any) {
-      const errorMsg = err?.message || String(err);
-      console.error(`Failed to process webhook event ${eventRecord.id}:`, err);
-
-      const attempts = Number(eventRecord.attempts || 0);
-      const maxAttempts = Number(eventRecord.max_attempts || 3);
-
-      if (attempts < maxAttempts) {
-        // Retry with backoff (attempts * 30s delay)
-        const delaySeconds = attempts * 30;
-        const runAt = new Date(Date.now() + delaySeconds * 1000);
-        console.log(
-          `Rescheduling webhook event ${eventRecord.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`,
-        );
-
-        await this.db
-          .updateTable('webhook_events' as any)
-          .set({
-            status: 'pending',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            run_at: runAt,
-            updated_at: new Date(),
-          })
-          .where('id', '=', eventRecord.id)
-          .execute();
-      } else {
-        console.error(`Webhook event ${eventRecord.id} exceeded maximum attempts (${maxAttempts}). Marking as failed.`);
-        await this.db
-          .updateTable('webhook_events' as any)
-          .set({
-            status: 'failed',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            updated_at: new Date(),
-          })
-          .where('id', '=', eventRecord.id)
-          .execute();
-      }
-    }
-
-    return true;
-  }
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/worker.ts
-
-```typescript
-import { sql } from 'kysely';
-import { Client } from 'pg';
-
-import { env } from '../../../env';
-import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
-import { executeJob } from './job-handlers';
-
-export class BackgroundJobWorker {
-  private readonly importsRepo = new ImportsRepo();
-  private readonly db = this.importsRepo.db; // Kysely DB instance
-
-  private activeJobsCount = 0;
-  private isRunning = false;
-  private pgClient: Client | null = null;
-  private reconnectTimer: NodeJS.Timeout | null = null;
-  private recoveryInterval: NodeJS.Timeout | null = null;
-  private shutdownResolver: (() => void) | null = null;
-  private timer: NodeJS.Timeout | null = null;
-
-  public start() {
-    if (this.isRunning) return;
-    this.isRunning = true;
-    console.log('Background Job Worker started.');
-
-    this.ensureCleanupJobScheduled().catch((err) => console.error('Failed to ensure cleanup job scheduled:', err));
-    this.ensureSyncSchedulerJobScheduled().catch((err) =>
-      console.error('Failed to ensure sync scheduler job scheduled:', err),
-    );
-    this.ensureDuplicatesRecomputeJobScheduled().catch((err) =>
-      console.error('Failed to ensure duplicates recompute job scheduled:', err),
-    );
-    this.ensureAddressFingerprintsJobScheduled().catch((err) =>
-      console.error('Failed to ensure address fingerprints job scheduled:', err),
-    );
-    this.ensureWorkflowsJobScheduled().catch((err) => console.error('Failed to ensure workflows job scheduled:', err));
-    this.ensurePerformScheduledDeletionsJobScheduled().catch((err) =>
-      console.error('Failed to ensure perform scheduled deletions job scheduled:', err),
-    );
-    this.ensureUsageLimitChecksScheduled().catch((err) =>
-      console.error('Failed to ensure usage limit checks scheduled:', err),
-    );
-    this.ensureDueTasksCheckScheduled().catch((err) =>
-      console.error('Failed to ensure due tasks check scheduled:', err),
-    );
-    this.ensureCompaniesGoogleRefreshJobScheduled().catch((err) =>
-      console.error('Failed to ensure companies google refresh job scheduled:', err),
-    );
-    this.ensurePruneNewsletterEventsJobScheduled().catch((err) =>
-      console.error('Failed to ensure prune newsletter events job scheduled:', err),
-    );
-
-    // Run stale job recovery on startup and then every 5 minutes
-    this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs on startup:', err));
-    this.recoveryInterval = setInterval(
-      () => {
-        this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs:', err));
-      },
-      5 * 60 * 1000,
-    );
-
-    this.setupListener();
-    this.poll();
-  }
-
-  public async stop(): Promise<void> {
-    this.isRunning = false;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.recoveryInterval) {
-      clearInterval(this.recoveryInterval);
-      this.recoveryInterval = null;
-    }
-    if (this.pgClient) {
-      try {
-        await this.pgClient.end();
-      } catch (err) {
-        console.error('Error closing Postgres listener client on shutdown:', err);
-      }
-      this.pgClient = null;
-    }
-
-    if (this.activeJobsCount > 0) {
-      console.log(
-        `Background Job Worker: Waiting for ${this.activeJobsCount} active jobs to complete before shutting down...`,
-      );
-      await new Promise<void>((resolve) => {
-        this.shutdownResolver = resolve;
-      });
-    }
-    console.log('Background Job Worker stopped.');
-  }
-
-  private async ensureAddressFingerprintsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling nightly address fingerprints recomputation background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'recompute_address_fingerprints' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure address fingerprints job scheduled:', err);
-    }
-  }
-
-  private async ensureCleanupJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'cleanup_activities')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily activity feed cleanup background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'cleanup_activities' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure cleanup job scheduled:', err);
-    }
-  }
-
-  private async ensureCompaniesGoogleRefreshJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'refresh_companies_google')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily company google enrichment background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'refresh_companies_google' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure companies google refresh job scheduled:', err);
-    }
-  }
-
-  private async ensureDueTasksCheckScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'check_due_tasks')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily due tasks check background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'check_due_tasks' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure due tasks check scheduled:', err);
-    }
-  }
-
-  private async ensureDuplicatesRecomputeJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling nightly duplicates recomputation background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'recompute_all_duplicates' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure duplicates recompute job scheduled:', err);
-    }
-  }
-
-  private async ensurePerformScheduledDeletionsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'perform_scheduled_deletions')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily scheduled deletions background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'perform_scheduled_deletions' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure perform scheduled deletions job scheduled:', err);
-    }
-  }
-
-  private async ensurePruneNewsletterEventsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'prune_newsletter_events')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily newsletter events pruning background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'prune_newsletter_events' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure prune newsletter events job scheduled:', err);
-    }
-  }
-
-  private async ensureSyncSchedulerJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'schedule_sync_jobs')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling sync scheduler background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'schedule_sync_jobs' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure sync scheduler job scheduled:', err);
-    }
-  }
-
-  private async ensureUsageLimitChecksScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'check_all_usage_limits')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling daily usage limits check background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'check_all_usage_limits' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure usage limit checks scheduled:', err);
-    }
-  }
-
-  private async ensureWorkflowsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx: any) => {
-        const existing = await trx
-          .selectFrom('background_jobs' as any)
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'process_drip_workflows')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          console.log('Scheduling periodic drip workflows processing background job…');
-          await trx
-            .insertInto('background_jobs' as any)
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'process_drip_workflows' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      console.error('Failed to ensure workflows job scheduled:', err);
-    }
-  }
-
-  private poll() {
-    if (!this.isRunning) return;
-
-    this.timer = setTimeout(async () => {
-      let processedAJob = false;
-      try {
-        this.activeJobsCount++;
-        processedAJob = await this.processNextJob();
-      } catch (err) {
-        console.error('Error in background job worker poll cycle:', err);
-      } finally {
-        this.activeJobsCount--;
-
-        // If shutdown was requested and no active jobs remain, resolve the stop() promise
-        if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
-          this.shutdownResolver();
-        } else {
-          // Poll again immediately (10ms) if we processed a job (to drain the queue),
-          // or back off to 30 seconds if no jobs were found.
-          const delay = processedAJob ? 10 : 30000;
-          this.pollWithDelay(delay);
-        }
-      }
-    }, 0);
-  }
-
-  private pollWithDelay(ms: number) {
-    if (!this.isRunning) return;
-    this.timer = setTimeout(() => this.poll(), ms);
-  }
-
-  private async processNextJob(): Promise<boolean> {
-    const workerId = `worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
-
-    // Try to find and lock a job using SKIP LOCKED
-    const job = await this.db.transaction().execute(async (trx: any) => {
-      const pendingJob = (await trx
-        .selectFrom('background_jobs' as any)
-        .selectAll()
-        .where('status', '=', 'pending')
-        .where('run_at', '<=', new Date())
-        .orderBy('id', 'asc')
-        .limit(1)
-        .forUpdate()
-        .skipLocked()
-        .executeTakeFirst()) as any;
-
-      if (!pendingJob) return null;
-
-      const updatedJob = await trx
-        .updateTable('background_jobs' as any)
-        .set({
-          status: 'processing',
-          locked_at: new Date(),
-          locked_by: workerId,
-          attempts: Number(pendingJob.attempts || 0) + 1,
-          updated_at: new Date(),
-        })
-        .where('id', '=', pendingJob.id)
-        .returningAll()
-        .executeTakeFirst();
-
-      return updatedJob;
-    });
-
-    if (!job) return false;
-
-    console.log(`Processing job ${job.id} (Queue: ${job.queue}, Status: ${job.status})`);
-
-    const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
-
-    try {
-      await executeJob(payload, this.db, job.id);
-
-      // Mark job as completed
-      await this.db
-        .updateTable('background_jobs' as any)
-        .set({
-          status: 'completed',
-          locked_at: null,
-          locked_by: null,
-          updated_at: new Date(),
-        })
-        .where('id', '=', job.id)
-        .execute();
-
-      console.log(`Job ${job.id} completed successfully.`);
-    } catch (err: any) {
-      const errorMsg = err?.message || String(err);
-      console.error(`Failed to process background job ${job.id}:`, err);
-
-      try {
-        // If it was an import job, mark the import as failed and store the error message
-        if (payload.import_id) {
-          await this.importsRepo.update({
-            tenant_id: payload.tenant_id as any,
-            id: payload.import_id as any,
-            row: {
-              status: 'failed',
-              error_message: errorMsg.substring(0, 1000), // Truncate just in case
-              processed_at: new Date(),
-              updated_at: new Date(),
-            } as any,
-          });
-        }
-      } catch (dbErr) {
-        console.error('Failed to mark data_imports as failed:', dbErr);
-      }
-
-      const attempts = Number(job.attempts || 0);
-      const maxAttempts = Number(job.max_attempts || 3);
-
-      if (attempts < maxAttempts) {
-        // Retry with backoff (exponential backoff for mail, linear for others)
-        const isMail =
-          payload.type === 'send-transactional-email' ||
-          payload.type === 'send-form-notifications' ||
-          payload.type === 'send-webform-notifications' ||
-          payload.type === 'send-shift-reminder' ||
-          payload.type === 'send-newsletter';
-        const delaySeconds = isMail ? Math.pow(2, attempts) * 30 : attempts * 30;
-        const runAt = new Date(Date.now() + delaySeconds * 1000);
-        console.log(`Rescheduling job ${job.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`);
-
-        await this.db
-          .updateTable('background_jobs' as any)
-          .set({
-            status: 'pending',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            run_at: runAt,
-            updated_at: new Date(),
-          })
-          .where('id', '=', job.id)
-          .execute();
-      } else {
-        console.error(`Job ${job.id} exceeded maximum attempts (${maxAttempts}). Marking as failed.`);
-        await this.db
-          .updateTable('background_jobs' as any)
-          .set({
-            status: 'failed',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            updated_at: new Date(),
-          })
-          .where('id', '=', job.id)
-          .execute();
-
-        if (payload.export_id) {
-          try {
-            const { ExportsRepo } = await import('../../modules/exports/repositories/exports.repo');
-            const exportsRepo = new ExportsRepo();
-            await exportsRepo.updateStatus(String(payload.export_id), String(payload.tenant_id), 'failed', {
-              error: `Export failed after all retries. Last error: ${errorMsg.substring(0, 400)}`,
-            });
-          } catch (exportErr) {
-            console.error('Failed to update export status on job permanent failure:', exportErr);
-          }
-        }
-
-        if (payload.type === 'ms_sync' && payload.userId) {
-          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
-          console.error(`[sync-error][${correlationId}] MS sync permanently failed for user ${payload.userId}:`, err);
-          try {
-            const { MsOAuthService } = await import('../../modules/ms-sync/ms-oauth.service');
-            const { env } = await import('../../../env');
-            const oauthSvc = new MsOAuthService(this.db as any, {
-              clientId: env.msClientId ?? '',
-              clientSecret: env.msClientSecret ?? '',
-              tenantId: env.msTenantId ?? 'common',
-              redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-            });
-            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
-          } catch (recordErr) {
-            console.error('Failed to record MS sync error on token:', recordErr);
-          }
-        }
-
-        if (payload.type === 'google_sync' && payload.userId) {
-          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
-          console.error(
-            `[sync-error][${correlationId}] Google sync permanently failed for user ${payload.userId}:`,
-            err,
-          );
-          try {
-            const { GoogleOAuthService } = await import('../../modules/google-sync/google-oauth.service');
-            const { env } = await import('../../../env');
-            const oauthSvc = new GoogleOAuthService(this.db as any, {
-              clientId: env.googleClientId ?? '',
-              clientSecret: env.googleClientSecret ?? '',
-              redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-            });
-            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
-          } catch (recordErr) {
-            console.error('Failed to record Google sync error on token:', recordErr);
-          }
-        }
-
-        // If a recurrent cron-like job fails permanently, schedule the next iteration
-        await this.rescheduleCronJobOnFailure(payload.type);
-      }
-    }
-
-    return true;
-  }
-
-  private reconnectListener() {
-    if (this.pgClient) {
-      this.pgClient.end().catch();
-      this.pgClient = null;
-    }
-    if (!this.isRunning) return;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = setTimeout(() => {
-      this.setupListener();
-    }, 5000);
-  }
-
-  private async recoverStaleJobs(): Promise<void> {
-    try {
-      const staleTime = new Date(Date.now() - 30 * 60 * 1000); // 30 minutes
-      await this.db
-        .updateTable('background_jobs' as any)
-        .set({
-          status: 'pending',
-          locked_at: null,
-          locked_by: null,
-          updated_at: new Date(),
-          error: 'Job processing timed out',
-        })
-        .where('status', '=', 'processing')
-        .where('locked_at', '<', staleTime)
-        .execute();
-
-      // Clean up/timeout data exports stuck in pending/processing for more than 1 hour
-      const staleExportTime = new Date(Date.now() - 60 * 60 * 1000); // 1 hour
-      const staleExports = await this.db
-        .selectFrom('data_exports' as any)
-        .select(['id', 'tenant_id'])
-        .where('status', 'in', ['pending', 'processing'])
-        .where('created_at', '<', staleExportTime)
-        .execute();
-
-      if (staleExports.length > 0) {
-        const ids = staleExports.map((e: any) => e.id as any);
-        await this.db
-          .updateTable('data_exports' as any)
-          .set({
-            status: 'failed',
-            error: 'Export processing timed out',
-            updated_at: new Date(),
-          })
-          .where('id', 'in', ids)
-          .execute();
-
-        for (const exp of staleExports) {
-          await this.db
-            .deleteFrom('background_jobs' as any)
-            .where('tenant_id', '=', exp.tenant_id as any)
-            .where(sql`payload->>'type'`, '=', 'export_csv')
-            .where(sql`payload->>'export_id'`, '=', String(exp.id))
-            .execute();
-        }
-      }
-    } catch (err) {
-      console.error('Failed to recover stale background jobs:', err);
-    }
-  }
-
-  private async rescheduleCronJobOnFailure(type: string): Promise<void> {
-    let delayMs = 0;
-    if (type === 'cleanup_activities') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'schedule_sync_jobs') {
-      delayMs = 10 * 60 * 1000;
-    } else if (type === 'recompute_all_duplicates') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'recompute_address_fingerprints') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'process_drip_workflows') {
-      delayMs = 10 * 60 * 1000;
-    } else if (type === 'perform_scheduled_deletions') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'check_all_usage_limits') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'refresh_companies_google') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'prune_newsletter_events') {
-      delayMs = 24 * 60 * 60 * 1000;
-    }
-
-    if (delayMs > 0) {
-      try {
-        await this.db
-          .insertInto('background_jobs' as any)
-          .values({
-            tenant_id: null,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({ type }),
-            run_at: new Date(Date.now() + delayMs),
-            max_attempts: 3,
-          })
-          .execute();
-      } catch (schedErr) {
-        console.error(`Failed to reschedule failed cron job (${type}):`, schedErr);
-      }
-    }
-  }
-
-  private async setupListener() {
-    if (!this.isRunning) return;
-    try {
-      this.pgClient = new Client(env.db);
-      await this.pgClient.connect();
-
-      this.pgClient.on('notification', (msg) => {
-        if (msg.channel === 'background_jobs_channel') {
-          console.log('Background Job Worker received notify, waking up...');
-          this.wakeUp();
-        }
-      });
-
-      this.pgClient.on('error', (err) => {
-        console.error('Postgres listener client error:', err);
-        this.reconnectListener();
-      });
-
-      this.pgClient.on('end', () => {
-        console.warn('Postgres listener connection closed.');
-        this.reconnectListener();
-      });
-
-      await this.pgClient.query('LISTEN background_jobs_channel');
-      console.log('Listening for background_jobs notifications...');
-    } catch (err) {
-      console.error('Failed to setup Postgres listener:', err);
-      this.reconnectListener();
-    }
-  }
-
-  private wakeUp() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    this.poll();
-  }
-}
-```
-
 ## File: apps/backend/src/app/modules/google-sync/google-sync.service.ts
 
 ```typescript
@@ -36291,6 +36337,109 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 ```
 
+## File: apps/backend/src/app/modules/donations/repositories/donations.repo.ts
+
+```typescript
+import { Selectable } from 'kysely';
+
+import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class DonationsRepo extends BaseRepository<'donations'> {
+  constructor() {
+    super('donations');
+  }
+
+  /**
+   * Get the cumulative sum of successful donations for a person in a given year.
+   * Amounts are represented in cents.
+   */
+  public async getPersonCumulativeDonations(tenantId: string, personId: string, year: number): Promise<number> {
+    const startOfYear = new Date(year, 0, 1);
+    const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
+
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.sum<string | number>('amount').as('total')])
+      .where('tenant_id', '=', tenantId as any)
+      .where('person_id', '=', personId as any)
+      .where('status', '=', 'succeeded')
+      .where('created_at', '>=', startOfYear)
+      .where('created_at', '<=', endOfYear)
+      .executeTakeFirst();
+
+    return Number(result?.total || 0);
+  }
+
+  /**
+   * Get the cumulative sum of successful donations for a person within an explicit date range.
+   * Used when a donation_period has been configured.
+   */
+  public async getPersonCumulativeDonationsForPeriod(
+    tenantId: string,
+    personId: string,
+    startDate: Date,
+    endDate: Date | null,
+  ): Promise<number> {
+    let query = this.getSelect()
+      .select(({ fn }) => [fn.sum<string | number>('amount').as('total')])
+      .where('tenant_id', '=', tenantId as any)
+      .where('person_id', '=', personId as any)
+      .where('status', '=', 'succeeded')
+      .where('created_at', '>=', startDate);
+
+    if (endDate) {
+      const endOfDay = new Date(endDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      query = query.where('created_at', '<=', endOfDay);
+    }
+
+    const result = await query.executeTakeFirst();
+    return Number(result?.total || 0);
+  }
+
+  /**
+   * Retrieve the list of donations for a given person, ordered by date descending.
+   */
+  public async getPersonDonationsList(tenantId: string, personId: string): Promise<Selectable<Models['donations']>[]> {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', tenantId as any)
+      .where('person_id', '=', personId as any)
+      .orderBy('created_at', 'desc')
+      .execute();
+  }
+
+  /**
+   * Retrieve all donations for a tenant, joined with live donor details, ordered by date descending.
+   * Uses a LEFT JOIN so donations whose contact was later deleted (person_id = NULL) are still returned.
+   * The snapshot columns (first_name / last_name / email) recorded on the donation row serve as the
+   * fallback when the linked person has since been deleted.
+   */
+  public async getTenantDonationsList(tenantId: string) {
+    return this.db
+      .selectFrom('donations')
+      .leftJoin('persons', 'persons.id', 'donations.person_id')
+      .select([
+        'donations.id',
+        'donations.tenant_id',
+        'donations.person_id',
+        'donations.amount',
+        'donations.status',
+        'donations.stripe_session_id',
+        'donations.state',
+        'donations.country',
+        'donations.created_at',
+        this.db.fn.coalesce('persons.first_name', 'donations.first_name').as('person_first_name'),
+        this.db.fn.coalesce('persons.last_name', 'donations.last_name').as('person_last_name'),
+        this.db.fn.coalesce('persons.email', 'donations.email').as('person_email'),
+      ])
+      .where('donations.tenant_id', '=', tenantId as any)
+      .orderBy('donations.created_at', 'desc')
+      .execute();
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/auth/trpc.router.ts
 
 ```typescript
@@ -36470,8 +36619,8 @@ function verifyEmail() {
 function resendVerificationEmail() {
   return publicProcedure.input(z.object({ email: z.string().trim().email() })).mutation(({ input, ctx }) => {
     const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:resendVerification`, 3, MIN15);
-    checkRateLimit(`resendVerification:${input.email}`, 3, MIN15);
+    checkRateLimit(`${ip}:resendVerification`, 5, MIN15);
+    checkRateLimit(`resendVerification:${input.email}`, 5, MIN15);
     return controller.resendVerificationEmail(input.email);
   });
 }
@@ -36584,109 +36733,6 @@ export const AuthRouter = router({
 });
 ```
 
-## File: apps/backend/src/app/modules/donations/repositories/donations.repo.ts
-
-```typescript
-import { Selectable } from 'kysely';
-
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { BaseRepository } from '../../../lib/base.repo';
-
-export class DonationsRepo extends BaseRepository<'donations'> {
-  constructor() {
-    super('donations');
-  }
-
-  /**
-   * Get the cumulative sum of successful donations for a person in a given year.
-   * Amounts are represented in cents.
-   */
-  public async getPersonCumulativeDonations(tenantId: string, personId: string, year: number): Promise<number> {
-    const startOfYear = new Date(year, 0, 1);
-    const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
-
-    const result = await this.getSelect()
-      .select(({ fn }) => [fn.sum<string | number>('amount').as('total')])
-      .where('tenant_id', '=', tenantId as any)
-      .where('person_id', '=', personId as any)
-      .where('status', '=', 'succeeded')
-      .where('created_at', '>=', startOfYear)
-      .where('created_at', '<=', endOfYear)
-      .executeTakeFirst();
-
-    return Number(result?.total || 0);
-  }
-
-  /**
-   * Get the cumulative sum of successful donations for a person within an explicit date range.
-   * Used when a donation_period has been configured.
-   */
-  public async getPersonCumulativeDonationsForPeriod(
-    tenantId: string,
-    personId: string,
-    startDate: Date,
-    endDate: Date | null,
-  ): Promise<number> {
-    let query = this.getSelect()
-      .select(({ fn }) => [fn.sum<string | number>('amount').as('total')])
-      .where('tenant_id', '=', tenantId as any)
-      .where('person_id', '=', personId as any)
-      .where('status', '=', 'succeeded')
-      .where('created_at', '>=', startDate);
-
-    if (endDate) {
-      const endOfDay = new Date(endDate);
-      endOfDay.setHours(23, 59, 59, 999);
-      query = query.where('created_at', '<=', endOfDay);
-    }
-
-    const result = await query.executeTakeFirst();
-    return Number(result?.total || 0);
-  }
-
-  /**
-   * Retrieve the list of donations for a given person, ordered by date descending.
-   */
-  public async getPersonDonationsList(tenantId: string, personId: string): Promise<Selectable<Models['donations']>[]> {
-    return this.getSelect()
-      .selectAll()
-      .where('tenant_id', '=', tenantId as any)
-      .where('person_id', '=', personId as any)
-      .orderBy('created_at', 'desc')
-      .execute();
-  }
-
-  /**
-   * Retrieve all donations for a tenant, joined with live donor details, ordered by date descending.
-   * Uses a LEFT JOIN so donations whose contact was later deleted (person_id = NULL) are still returned.
-   * The snapshot columns (first_name / last_name / email) recorded on the donation row serve as the
-   * fallback when the linked person has since been deleted.
-   */
-  public async getTenantDonationsList(tenantId: string) {
-    return this.db
-      .selectFrom('donations')
-      .leftJoin('persons', 'persons.id', 'donations.person_id')
-      .select([
-        'donations.id',
-        'donations.tenant_id',
-        'donations.person_id',
-        'donations.amount',
-        'donations.status',
-        'donations.stripe_session_id',
-        'donations.state',
-        'donations.country',
-        'donations.created_at',
-        this.db.fn.coalesce('persons.first_name', 'donations.first_name').as('person_first_name'),
-        this.db.fn.coalesce('persons.last_name', 'donations.last_name').as('person_last_name'),
-        this.db.fn.coalesce('persons.email', 'donations.email').as('person_email'),
-      ])
-      .where('donations.tenant_id', '=', tenantId as any)
-      .orderBy('donations.created_at', 'desc')
-      .execute();
-  }
-}
-```
-
 ## File: apps/backend/src/app/modules/web-forms/controller.ts
 
 ```typescript
@@ -36697,6 +36743,7 @@ import type { Models } from '../../../../../../libs/common/src/lib/kysely.models
 import { type Transaction, sql } from 'kysely';
 import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
+import { createSigner, createVerifier } from 'fast-jwt';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
 import { HouseholdRepo } from '../households/repositories/households.repo';
 
@@ -36987,6 +37034,10 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 
         const campaignId = await this.getCampaignId(tenantId, trx);
 
+        // When the tenant requires double opt-in, new subscribers are created as 'pending' and only
+        // counted once they confirm via the emailed link (see confirm-subscription route).
+        const doubleOptIn = await this.isDoubleOptInEnabled(tenantId, trx);
+
         let finalHouseholdId = householdId;
 
         const street1 = (payload['street1'] || payload['street_address'] || '').trim();
@@ -37093,6 +37144,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
             email: email,
             mobile: mobile,
             notes: notes,
+            opt_in_status: doubleOptIn ? 'pending' : null,
           };
           const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
           personId = String(insertRes.id);
@@ -37103,6 +37155,16 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
             await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
           } catch (err) {
             console.error('Failed to trigger contact_created workflow in WebFormsController:', err);
+          }
+
+          // Queue the double opt-in confirmation email (transactional outbox) for brand-new subscribers.
+          if (doubleOptIn) {
+            await this.enqueueSubscriptionConfirmation(trx, {
+              tenantId,
+              personId,
+              email,
+              firstName,
+            });
           }
         }
 
@@ -37294,6 +37356,95 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     }
 
     return { redirect_url: form.redirect_url || null };
+  }
+
+  /**
+   * Confirms a pending double opt-in subscription from a signed link. Public (unauthenticated) — the
+   * token carries the tenant and person identity. Idempotent: an already-confirmed person stays confirmed.
+   */
+  public async confirmSubscription(token: string): Promise<{ success: boolean }> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Server misconfiguration: SHARED_SECRET is missing.',
+      });
+    }
+
+    const verifier = createVerifier({ algorithms: ['HS256'], key, ignoreExpiration: false });
+
+    let payload: any;
+    try {
+      payload = await verifier(token);
+    } catch {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This confirmation link is invalid or has expired.' });
+    }
+
+    if (!payload || payload.purpose !== 'confirm-subscription' || !payload.tenant_id || !payload.person_id) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
+    }
+
+    await this.getRepo()
+      .db.updateTable('persons')
+      .set({ opt_in_status: 'confirmed', opt_in_confirmed_at: sql`now()` } as any)
+      .where('tenant_id', '=', String(payload.tenant_id) as any)
+      .where('id', '=', String(payload.person_id) as any)
+      .execute();
+
+    return { success: true };
+  }
+
+  private async isDoubleOptInEnabled(tenantId: string, trx: Transaction<Models>): Promise<boolean> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId as any)
+      .where('key', '=', 'communications.double_opt_in')
+      .executeTakeFirst();
+
+    return row?.value === true || row?.value === 'true';
+  }
+
+  /**
+   * Inserts a transactional-outbox job that emails a new subscriber a signed confirmation link. The job
+   * runs only if the surrounding submission transaction commits, keeping the pending person and the
+   * confirmation email consistent.
+   */
+  private async enqueueSubscriptionConfirmation(
+    trx: Transaction<Models>,
+    args: { tenantId: string; personId: string; email: string; firstName: string | null },
+  ): Promise<void> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      console.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
+      return;
+    }
+
+    const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '7d' });
+    const token = signer({
+      tenant_id: args.tenantId,
+      person_id: args.personId,
+      email: args.email.toLowerCase().trim(),
+      purpose: 'confirm-subscription',
+    });
+    const confirmUrl = `${env.appUrl}/confirm-subscription?token=${token}`;
+
+    await trx
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: args.tenantId as any,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-subscription-confirmation',
+          tenantId: args.tenantId,
+          email: args.email,
+          firstName: args.firstName,
+          confirmUrl,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
   }
 
   private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
@@ -37840,6 +37991,13 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       text: payload.text,
       html: payload.html,
     });
+  } else if (payload.type === 'send-subscription-confirmation') {
+    await mailService.sendMail({
+      to: payload.email,
+      subject: 'Please confirm your subscription',
+      text: `Hi ${payload.firstName || 'there'},\n\nPlease confirm your subscription by visiting the link below:\n\n${payload.confirmUrl}\n\nIf you did not request this, you can safely ignore this email.`,
+      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Please confirm your subscription by clicking the button below.</p><p><a href="${payload.confirmUrl}" class="btn">Confirm subscription</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
+    });
   } else if (payload.import_id && payload.storage_key) {
     // 1. Mark import status as 'processing' in data_imports
     await importsRepo.update({
@@ -38020,13 +38178,20 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         'communications.sendgrid_subuser_username',
         'communications.default_from_name',
         'communications.default_from_email',
+        'communications.reply_to',
+        'communications.footer_disclaimer',
+        'communications.verified_emails',
+        'organization.address',
       ])
       .execute();
 
     const settingsMap: Record<string, string> = {};
+    let verifiedEmails: string[] = [];
     for (const row of settingsRows) {
       if (typeof row.value === 'string') {
         settingsMap[row.key] = row.value;
+      } else if (row.key === 'communications.verified_emails' && Array.isArray(row.value)) {
+        verifiedEmails = (row.value as unknown[]).map((e) => String(e).toLowerCase().trim());
       }
     }
 
@@ -38034,6 +38199,17 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
     const fromName = settingsMap['communications.default_from_name'] || 'PeopleCRM Team';
     const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
+
+    // Reply-to is only honored when it has been verified (mirrors settings save-time validation).
+    const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
+    const replyTo = replyToRaw && verifiedEmails.includes(replyToRaw) ? replyToRaw : undefined;
+
+    // Mandatory footer appended server-side so it cannot be removed from the editor: org address,
+    // tenant disclaimer, and a SendGrid-substituted unsubscribe link.
+    const footer = buildNewsletterFooter(
+      settingsMap['organization.address'],
+      settingsMap['communications.footer_disclaimer'],
+    );
 
     const batchSize = 500;
 
@@ -38057,10 +38233,11 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       const batchDelivered = await newsletterMailSvc.sendNewsletter({
         fromName,
         fromEmail,
+        replyTo,
         recipients: chunk,
         subject: newsletter.subject || 'Newsletter',
-        html: newsletter.html_content || '',
-        text: newsletter.plain_text_content || undefined,
+        html: (newsletter.html_content || '') + footer.html,
+        text: newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined,
         sendgridApiKey,
         subuserUsername,
         newsletterId,
@@ -38865,6 +39042,41 @@ async function pruneNewsletterEvents(db: any): Promise<void> {
       console.error(`[prune_newsletter_events] Failed for tenant ${tenant.id}:`, err);
     }
   }
+}
+
+/**
+ * Builds the mandatory newsletter footer appended server-side at send time (so it cannot be removed
+ * from the editor). Contains the organization address, the tenant footer disclaimer, and a SendGrid
+ * substitution tag (`<% unsubscribe %>`) that SendGrid replaces with a working unsubscribe link when
+ * subscription tracking is enabled.
+ */
+function buildNewsletterFooter(address?: string, disclaimer?: string): { html: string; text: string } {
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const htmlParts: string[] = [];
+  const textParts: string[] = [];
+
+  const addr = (address || '').trim();
+  if (addr) {
+    htmlParts.push(`<div>${esc(addr).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(addr);
+  }
+
+  const disc = (disclaimer || '').trim();
+  if (disc) {
+    htmlParts.push(`<div>${esc(disc).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(disc);
+  }
+
+  // SendGrid substitution tag — replaced with the recipient's unsubscribe URL.
+  htmlParts.push('<div><a href="<% unsubscribe %>">Unsubscribe</a></div>');
+  textParts.push('Unsubscribe: <% unsubscribe %>');
+
+  const html = `<hr style="margin-top:24px"><div style="font-size:12px;color:#888;margin-top:8px">${htmlParts.join('')}</div>`;
+  const text = `\n\n----\n${textParts.join('\n')}`;
+
+  return { html, text };
 }
 
 function getEntityFilterValues(entityFilter: string): string[] {
@@ -40434,6 +40646,16 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const email = input.email.toLowerCase();
     await this.verifyUserDoesNotExist(email);
 
+    // Fall back to the tenant's configured default invite role when the caller didn't specify one.
+    let role = input.role ?? null;
+    if (!role) {
+      const defaultRole = await this.getTenantSetting(auth.tenant_id, 'access.default_role');
+      if (typeof defaultRole === 'string' && defaultRole.trim()) role = defaultRole.trim();
+    }
+    if (callerRole === 'admin' && role === 'owner') {
+      throw new ForbiddenError('Admins cannot invite users with the Owner role.');
+    }
+
     const tempPassword = this.generateTempPassword();
     const password = await hashPassword(tempPassword);
     const repo = this.getRepo();
@@ -40444,7 +40666,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         email,
         password,
         first_name: input.first_name,
-        role: input.role ?? null,
+        role,
         verified: false,
         createdby_id: auth.user_id,
         updatedby_id: auth.user_id,
@@ -40884,8 +41106,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       );
     }
 
+    // Tenant-wide MFA enforcement: when enabled, every user gets the email-OTP challenge on a new
+    // device/location, even if they never individually enabled two-factor auth.
+    const tenantMfaRequired = (await this.getTenantSetting(user.tenant_id, 'access.mfa_required')) === true;
     const requires2FA =
-      user.two_factor_enabled && (await this.isNewDeviceOrLocation(String(user.id), ipAddress, userAgent));
+      (user.two_factor_enabled || tenantMfaRequired) &&
+      (await this.isNewDeviceOrLocation(String(user.id), ipAddress, userAgent));
 
     if (requires2FA) {
       const otpCode = randomInt(100000, 1000000).toString();
@@ -41609,6 +41835,18 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return randomBytes(Math.max(12, Math.ceil(length / 2)))
       .toString('base64url')
       .slice(0, length);
+  }
+
+  /** Reads a single tenant configuration value from the settings key/value table. */
+  private async getTenantSetting(tenant_id: string | number | null | undefined, key: string): Promise<unknown> {
+    if (tenant_id === null || tenant_id === undefined) return undefined;
+    const row = await this.getRepo()
+      .db.selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenant_id as any)
+      .where('key', '=', key)
+      .executeTakeFirst();
+    return row?.value;
   }
 
   private async getCodeAge(code: string): Promise<number> {

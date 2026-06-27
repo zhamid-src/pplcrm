@@ -1,4 +1,4 @@
-import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
+import type { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
 import { sql } from 'kysely';
 
 import { BaseController } from '../../lib/base.controller';
@@ -17,7 +17,12 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     if (auth) {
       const result = await this.getRepo().getAllWithCount(auth.tenant_id, input?.options as any);
       const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as { csv: string; fileName: string; columns: string[]; rowCount: number };
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
       await this.userActivity.log({
         tenant_id: auth.tenant_id,
         user_id: auth.user_id,
@@ -87,7 +92,9 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       .selectFrom('persons')
       .where('persons.tenant_id', '=', tenant_id as any)
       .where('persons.email', 'is not', null)
-      .where('persons.email', '!=', '');
+      .where('persons.email', '!=', '')
+      // Exclude unconfirmed double opt-in subscribers (NULL = never required to opt in, so still included).
+      .where((eb) => eb.or([eb('persons.opt_in_status', 'is', null), eb('persons.opt_in_status', '!=', 'pending')]));
 
     query = query.where((eb) => {
       const conditions = [];
