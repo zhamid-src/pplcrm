@@ -31,10 +31,10 @@ export function toTRPCError(err: unknown): TRPCError {
                         : /* default */ 'INTERNAL_SERVER_ERROR';
 
     let message = err.message;
-    if (isDevOrTest && (err as any).cause instanceof Error) {
-      message = `${err.message} (Cause: ${(err as any).cause.message})`;
-    } else if (isDevOrTest && typeof (err as any).cause === 'string') {
-      message = `${err.message} (Cause: ${(err as any).cause})`;
+    if (isDevOrTest && err.cause instanceof Error) {
+      message = `${err.message} (Cause: ${err.cause.message})`;
+    } else if (isDevOrTest && typeof err.cause === 'string') {
+      message = `${err.message} (Cause: ${err.cause})`;
     }
 
     return new TRPCError({
