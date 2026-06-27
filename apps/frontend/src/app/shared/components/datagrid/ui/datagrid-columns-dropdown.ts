@@ -1,4 +1,4 @@
-import { Component, input } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
 
 /**
  * Column visibility dropdown shared by the mobile and desktop toolbars.
@@ -7,6 +7,11 @@ import { Component, input } from '@angular/core';
  *
  * The grid is passed in as an input rather than injected: as projected
  * content it does not reliably resolve the same `DataGrid` instance.
+ *
+ * `getColDefsForToolbar()` returns a plain (non-signal) array that is filled
+ * in after init, so as an isolated component this would render once and stay
+ * empty. `cols` reads the reactive `getColVisibilityMap()` (the colVisibility
+ * signal) to recompute once the columns are populated.
  */
 @Component({
   selector: 'pc-dg-columns-dropdown',
@@ -17,7 +22,7 @@ import { Component, input } from '@angular/core';
         <button class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
         <button class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
       </li>
-      @for (col of grid().getColDefsForToolbar(); track col.field) {
+      @for (col of cols(); track col.field) {
         @if (col.field) {
           <li>
             <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
@@ -44,4 +49,11 @@ import { Component, input } from '@angular/core';
 })
 export class DataGridColumnsDropdownComponent {
   public readonly grid = input.required<any>();
+
+  protected readonly cols = computed<any[]>(() => {
+    // Establish a reactive dependency on the colVisibility signal so the list
+    // recomputes once the (non-signal) column defs are populated after init.
+    this.grid().getColVisibilityMap();
+    return this.grid().getColDefsForToolbar();
+  });
 }
