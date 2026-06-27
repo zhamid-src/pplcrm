@@ -13,7 +13,7 @@
     "context:libs": "npx repomix --output apps/libs/STRUCTURE.md --include \"libs/common/src/**/*,libs/uxcommon/src/**/*\" --ignore \"apps/**,**/STRUCTURE.md,**/*.spec.ts\""
   },
   "lint-staged": {
-    "*.{ts,html}": "eslint --fix",
+    "*.{ts,html}": "eslint --fix --report-unused-disable-directives-severity=off",
     "*.{ts,html,css,json,md}": "prettier --write"
   },
   "private": true,
