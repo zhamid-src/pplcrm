@@ -50,6 +50,7 @@ export class PasskeyController {
       .selectFrom('passkeys')
       .select(['credential_id', 'transports'])
       .where('user_id', '=', auth.user_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .execute();
 
     const options = await generateRegistrationOptions({
@@ -140,6 +141,7 @@ export class PasskeyController {
     const challenge = consumeChallenge(`auth:${nonce}`);
     if (!challenge) throw new UnauthorizedError('Authentication challenge expired. Please try again.');
 
+     
     const passkey = await this.db
       .selectFrom('passkeys')
       .selectAll()
@@ -164,7 +166,7 @@ export class PasskeyController {
 
     if (!verification.verified) throw new UnauthorizedError('Passkey authentication failed.');
 
-    // Update counter
+     
     await this.db
       .updateTable('passkeys')
       .set({ counter: verification.authenticationInfo.newCounter as any })
@@ -199,7 +201,7 @@ export class PasskeyController {
   async checkEmailPasskeys(email: string): Promise<{ hasPasskeys: boolean }> {
     const user = await this.db
       .selectFrom('authusers')
-      .select('id')
+      .select(['id', 'tenant_id'])
       .where('email', '=', email.trim().toLowerCase())
       .executeTakeFirst();
 
@@ -209,6 +211,7 @@ export class PasskeyController {
       .selectFrom('passkeys')
       .select(this.db.fn.countAll<string>().as('count'))
       .where('user_id', '=', user.id as any)
+      .where('tenant_id', '=', user.tenant_id)
       .executeTakeFirst();
 
     return { hasPasskeys: Number(row?.count ?? 0) > 0 };
@@ -221,6 +224,7 @@ export class PasskeyController {
       .selectFrom('passkeys')
       .select(['id', 'friendly_name', 'device_type', 'backed_up', 'aaguid', 'transports', 'created_at'])
       .where('user_id', '=', auth.user_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .orderBy('created_at', 'asc')
       .execute();
   }
@@ -230,6 +234,7 @@ export class PasskeyController {
       .deleteFrom('passkeys')
       .where('id', '=', id as any)
       .where('user_id', '=', auth.user_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .executeTakeFirst();
 
     if (Number(result.numDeletedRows) === 0) {
@@ -244,6 +249,7 @@ export class PasskeyController {
       .set({ friendly_name: friendlyName })
       .where('id', '=', id as any)
       .where('user_id', '=', auth.user_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .executeTakeFirst();
 
     if (Number(result.numUpdatedRows) === 0) {
