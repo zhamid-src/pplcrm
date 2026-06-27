@@ -224,6 +224,18 @@ export class BaseRepository<T extends keyof Models> {
     return this.selectBy(column, input, trx).executeTakeFirst();
   }
 
+  public getOneById(input: { tenant_id: TypeTenantId<T>; id: string }, trx?: Transaction<Models>) {
+    let query = this.getSelectWithColumns(undefined, trx).where(
+      'id' as ReferenceExpression<Models, T>,
+      '=',
+      input.id as TypeId<T>,
+    );
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
+    }
+    return query.executeTakeFirst();
+  }
+
   protected getManyBy<C extends ColName<T>>(
     column: C,
     input: {
