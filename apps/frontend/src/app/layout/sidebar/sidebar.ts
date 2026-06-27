@@ -84,7 +84,7 @@ export class Sidebar {
     effect(() => {
       const flatItems = this.flattenItems(this.items());
       for (const item of flatItems) {
-        const key = item.name + (item.route ?? '');
+        const key = this.getItemKey(item);
         const visible = !item.hidden && !item.hiddenByFavourite;
         const existing = this.visibilitySignals.get(key);
         if (existing) {
@@ -104,8 +104,13 @@ export class Sidebar {
     return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
   }
 
+  private getItemKey(item: ISidebarItem): string {
+    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
+    return prefix + item.name + (item.route ?? '');
+  }
+
   protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
-    const key = item.name + (item.route ?? '');
+    const key = this.getItemKey(item);
     return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
   }
 
