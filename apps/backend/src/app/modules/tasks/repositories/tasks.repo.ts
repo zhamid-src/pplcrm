@@ -1,7 +1,12 @@
-import { sql, Transaction } from 'kysely';
+import type { RawBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
 
-import { BaseRepository, QueryParams } from '../../../lib/base.repo';
-import { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+type TaskStatus = NonNullable<Models['tasks']['status']>;
+type TaskPriority = NonNullable<Models['tasks']['priority']>;
 
 export class TasksRepo extends BaseRepository<'tasks'> {
   constructor() {
@@ -11,8 +16,8 @@ export class TasksRepo extends BaseRepository<'tasks'> {
   public async countArchived(tenant_id: string) {
     const res = await this.getSelect()
       .select(({ fn }) => [fn.count<number>('id').as('total')])
-      .where('tasks.tenant_id', '=', tenant_id as any)
-      .where('tasks.status', '=', 'archived' as any)
+      .where('tasks.tenant_id', '=', tenant_id)
+      .where('tasks.status', '=', 'archived')
       .execute();
     const total = res?.[0]?.['total'] as unknown as number;
     return Number(total || 0);
@@ -21,16 +26,16 @@ export class TasksRepo extends BaseRepository<'tasks'> {
   public async countExcludingArchived(tenant_id: string) {
     const res = await this.getSelect()
       .select(({ fn }) => [fn.count<number>('id').as('total')])
-      .where('tenant_id', '=', tenant_id as any)
-      .where('status', '!=', 'archived' as any)
+      .where('tenant_id', '=', tenant_id)
+      .where('status', '!=', 'archived')
       .execute();
     const total = res?.[0]?.['total'] as unknown as number;
     return Number(total || 0);
   }
 
   private buildTasksQueryBuilder(tenant_id: string, isArchived: boolean, options?: QueryParams<'tasks'>) {
-    const text = this.normalizeSearch((options as any)?.searchStr);
-    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
+    const text = this.normalizeSearch(options?.searchStr);
+    const filterModel: Record<string, any> = options?.filterModel ?? {};
     // Extract priority/assigned_to sort to apply custom ordering
     const pri = options?.sortModel?.find((s) => s.colId === 'priority');
     const ass = options?.sortModel?.find((s) => s.colId === 'assigned_to');
@@ -50,69 +55,64 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       qb
         .$if(!!filterModel?.['name']?.value, (q) => q.where('tasks.name', 'ilike', `%${filterModel['name'].value}%`))
         .$if(!!filterModel?.['status']?.value, (q) => {
-          const raw = filterModel['status'].value as any;
+          const raw = filterModel['status'].value;
           const vals = Array.isArray(raw) ? raw : [raw];
           const norm = vals.map((v) => String(v).trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
-          return norm.length ? q.where('tasks.status', 'in', norm as any) : q;
+          return norm.length ? q.where('tasks.status', 'in', norm as TaskStatus[]) : q;
         })
         .$if(!!filterModel?.['priority']?.value, (q) => {
-          const raw = filterModel['priority'].value as any;
+          const raw = filterModel['priority'].value;
           const vals = Array.isArray(raw) ? raw : [raw];
           const norm = vals.map((v) => String(v).trim().toLowerCase()).filter(Boolean);
-          return norm.length ? q.where('tasks.priority', 'in', norm as any) : q;
+          return norm.length ? q.where('tasks.priority', 'in', norm as TaskPriority[]) : q;
         })
         .$if(!!filterModel?.['due_at']?.value, (q) =>
-          q.where(sql`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}` as any),
+          q.where(sql<boolean>`CAST(tasks.due_at AS TEXT) ILIKE ${'%' + filterModel['due_at'].value + '%'}`),
         )
         .$if(!!hasAssignedFilter, (q) => {
-          const raw = (filterModel['assigned_to']?.value ?? filterModel['assigned_to']) as any;
+          const raw = filterModel['assigned_to']?.value ?? filterModel['assigned_to'];
           const arr = Array.isArray(raw) ? raw : [raw];
           const parts = arr
             .map((v) => String(v || '').trim())
             .filter(Boolean)
-            .map((val) => {
+            .map((val): RawBuilder<boolean> | null => {
               const low = val.toLowerCase();
-              const isNull = low === 'not assigned' || low === 'unassigned';
-              if (isNull) return sql`tasks.assigned_to IS NULL` as any;
+              if (low === 'not assigned' || low === 'unassigned') return sql<boolean>`tasks.assigned_to IS NULL`;
               const isNumeric = /^\d+$/.test(val);
               if (isNumeric)
-                return sql`(
+                return sql<boolean>`(
                   COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'} OR
                   tasks.assigned_to = ${Number(val)}
-                )` as any;
-              return sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}` as any;
-            });
+                )`;
+              return sql<boolean>`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '') ILIKE ${'%' + val + '%'}`;
+            })
+            .filter((p): p is RawBuilder<boolean> => p !== null);
           if (!parts.length) return q;
-          const orExpr = parts.reduce(
-            (acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`),
-            parts[0],
-          );
-          return q.where(sql`(${orExpr})` as any);
+          const orExpr = parts.reduce((acc, cur) => sql<boolean>`${acc} OR ${cur}`);
+          return q.where(sql<boolean>`(${orExpr})`);
         })
         .$if(!!hasCreatedFilter, (q) => {
-          const raw = (filterModel['createdby_id']?.value ?? filterModel['createdby_id']) as any;
+          const raw = filterModel['createdby_id']?.value ?? filterModel['createdby_id'];
           const arr = Array.isArray(raw) ? raw : [raw];
           const parts = arr
             .map((v) => String(v || '').trim())
             .filter(Boolean)
-            .map((val) => {
+            .map((val): RawBuilder<boolean> | null => {
               const isNumeric = /^\d+$/.test(val);
               if (isNumeric)
-                return sql`(
+                return sql<boolean>`(
                   COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'} OR
                   tasks.createdby_id = ${Number(val)}
-                )` as any;
-              return sql`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}` as any;
-            });
+                )`;
+              return sql<boolean>`COALESCE(au_created.first_name || ' ' || au_created.last_name, '') ILIKE ${'%' + val + '%'}`;
+            })
+            .filter((p): p is RawBuilder<boolean> => p !== null);
           if (!parts.length) return q;
-          const orExpr2 = parts.reduce(
-            (acc: any, cur: any, idx: number) => (idx === 0 ? cur : sql`${acc} OR ${cur}`),
-            parts[0],
-          );
-          return q.where(sql`(${orExpr2})` as any);
+          const orExpr = parts.reduce((acc, cur) => sql<boolean>`${acc} OR ${cur}`);
+          return q.where(sql<boolean>`(${orExpr})`);
         })
         .$if(!!filterModel?.['team_id']?.value, (q) =>
-          q.where('tasks.team_id', '=', filterModel['team_id'].value as any),
+          q.where('tasks.team_id', '=', filterModel['team_id'].value as string),
         );
 
     return applyGridFilters(this.getSelectWithColumns(rest))
@@ -120,11 +120,11 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       .$if(joinCreator, (qb) => qb.leftJoin('authusers as au_created', 'au_created.id', 'tasks.createdby_id'))
       .leftJoin('teams', 'teams.id', 'tasks.team_id')
       .select('teams.name as team_name')
-      .where('tasks.tenant_id', '=', tenant_id as any)
-      .where('tasks.status', isArchived ? '=' : '!=', 'archived' as any)
+      .where('tasks.tenant_id', '=', tenant_id)
+      .where('tasks.status', isArchived ? '=' : '!=', 'archived')
       .$if(!!text, (qb) =>
         qb.where(
-          sql`(
+          sql<boolean>`(
             LOWER(tasks.name) LIKE ${text} OR
             LOWER(COALESCE(tasks.details, '')) LIKE ${text} OR
             LOWER(COALESCE(tasks.status, '')) LIKE ${text} OR
@@ -136,18 +136,16 @@ export class TasksRepo extends BaseRepository<'tasks'> {
             LOWER(COALESCE(au_created.first_name, '')) LIKE ${text} OR
             LOWER(COALESCE(au_created.last_name, '')) LIKE ${text} OR
             LOWER(COALESCE(au_created.first_name || ' ' || au_created.last_name, '')) LIKE ${text}
-          )` as any,
+          )`,
         ),
       )
       .$if(!!pri, (qb) =>
         qb.orderBy(
           sql`CASE tasks.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END`,
-          (pri as any).sort,
+          pri!.sort,
         ),
       )
-      .$if(!!ass, (qb) =>
-        qb.orderBy(sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '')`, (ass as any).sort),
-      );
+      .$if(!!ass, (qb) => qb.orderBy(sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '')`, ass!.sort));
   }
 
   public async getAllArchived(tenant_id: string, options?: QueryParams<'tasks'>) {
@@ -155,12 +153,11 @@ export class TasksRepo extends BaseRepository<'tasks'> {
   }
 
   public async getAllArchivedWithCount(tenant_id: string, options?: QueryParams<'tasks'>) {
-    const rows = await this.buildTasksQueryBuilder(tenant_id, true, options)
+    const rows = (await this.buildTasksQueryBuilder(tenant_id, true, options)
       .select(() => [sql<number>`count(*) over()`.as('total')])
-      .execute();
-    const count = Number((rows as any)?.[0]?.total ?? 0);
-    rows?.forEach?.((r) => delete (r as any).total);
-    return { rows, count } as { rows: any[]; count: number };
+      .execute()) as Array<Record<string, unknown> & { total: number }>;
+    const count = Number(rows[0]?.total ?? 0);
+    return { rows: rows.map(({ total: _total, ...rest }) => rest), count };
   }
 
   public async getAllExcludingArchived(tenant_id: string, options?: QueryParams<'tasks'>) {
@@ -168,12 +165,11 @@ export class TasksRepo extends BaseRepository<'tasks'> {
   }
 
   public async getAllExcludingArchivedWithCount(tenant_id: string, options?: QueryParams<'tasks'>) {
-    const rows = await this.buildTasksQueryBuilder(tenant_id, false, options)
+    const rows = (await this.buildTasksQueryBuilder(tenant_id, false, options)
       .select(() => [sql<number>`count(*) over()`.as('total')])
-      .execute();
-    const count = Number((rows as any)?.[0]?.total ?? 0);
-    rows?.forEach?.((r) => delete (r as any).total);
-    return { rows, count };
+      .execute()) as Array<Record<string, unknown> & { total: number }>;
+    const count = Number(rows[0]?.total ?? 0);
+    return { rows: rows.map(({ total: _total, ...rest }) => rest), count };
   }
 
   public async getIdsByFileId(
@@ -196,11 +192,11 @@ export class TasksRepo extends BaseRepository<'tasks'> {
     await this.getUpdate(trx)
       .set({
         file_id: null,
-        updated_at: sql`now()` as any,
+        updated_at: new Date(),
         updatedby_id: input.user_id,
       } as OperationDataType<'tasks', 'update'>)
-      .where('tenant_id', '=', input.tenant_id as any)
-      .where('file_id', '=', input.import_id as any)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
       .executeTakeFirst();
   }
 }

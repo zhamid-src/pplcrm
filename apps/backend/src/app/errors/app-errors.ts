@@ -7,9 +7,8 @@ export abstract class AppError extends Error {
     public readonly data?: unknown,
     opts?: { cause?: unknown },
   ) {
-    super(message);
+    super(message, { cause: opts?.cause });
     this.name = new.target.name;
-    if (opts?.cause) (this as any).cause = opts.cause;
     Error.captureStackTrace?.(this, new.target);
   }
 }
