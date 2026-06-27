@@ -1,14 +1,15 @@
 import { Component, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
+
 import { FormActions } from '../form-actions/form-actions';
 
 @Component({
   selector: 'pc-detail-header',
   imports: [Icon, FormActions],
   template: `
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-base-200 pb-4 mb-6">
-      <div class="flex items-center gap-3">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-base-200 pb-4">
+      <div class="flex justify-center gap-3">
         @if (icon()) {
           <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
         }
@@ -24,6 +25,7 @@ import { FormActions } from '../form-actions/form-actions';
         <ng-content select="[pc-actions-prefix]"></ng-content>
         @if (showActions()) {
           <pc-form-actions
+            class="w-full"
             [isLoading]="isLoading()"
             [signalForm]="form()"
             [disabled]="disabled()"
@@ -42,20 +44,20 @@ import { FormActions } from '../form-actions/form-actions';
   `,
 })
 export class DetailHeader {
-  public title = input.required<string>();
-  public subtitle = input<string | null | undefined>();
+  public readonly delete = output<void>();
+  public readonly save = output<any>();
+
+  public btn1Icon = input<PcIconNameType>('save');
+  public btn1Text = input<string>('SAVE');
+  public buttonsToShow = input<'two' | 'three'>('three');
+  public deleteText = input<string>('DELETE');
+  public disabled = input<boolean>(false);
+  public form = input<any>();
   public icon = input<PcIconNameType | null | undefined>();
   public iconSize = input<number>(5);
-  public form = input<any>();
   public isLoading = input.required<boolean>();
-  public disabled = input<boolean>(false);
-  public buttonsToShow = input<'two' | 'three'>('three');
-  public btn1Text = input<string>('SAVE');
-  public btn1Icon = input<PcIconNameType>('save');
-  public showDelete = input<boolean>(false);
-  public deleteText = input<string>('DELETE');
   public showActions = input<boolean>(true);
-
-  public readonly save = output<any>();
-  public readonly delete = output<void>();
+  public showDelete = input<boolean>(false);
+  public subtitle = input<string | null | undefined>();
+  public title = input.required<string>();
 }
