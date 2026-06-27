@@ -1,4 +1,4 @@
-import type { ComponentFixture} from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
 import { SignInPage } from './signin-page';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -36,7 +36,7 @@ describe('SignInPage', () => {
     };
 
     mockTokenSvc = {
-      getPersistence: vi.fn().mockReturnValue(signal(true)),
+      getPersistence: vi.fn().mockReturnValue(true),
       setPersistence: vi.fn(),
       clearAll: vi.fn(),
     };
