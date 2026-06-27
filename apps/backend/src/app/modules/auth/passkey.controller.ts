@@ -143,6 +143,7 @@ export class PasskeyController {
     const challenge = consumeChallenge(`auth:${nonce}`);
     if (!challenge) throw new UnauthorizedError('Authentication challenge expired. Please try again.');
 
+     
     const passkey = await this.db
       .selectFrom('passkeys')
       .selectAll()
@@ -171,6 +172,7 @@ export class PasskeyController {
       .updateTable('passkeys')
       .set({ counter: verification.authenticationInfo.newCounter as any })
       .where('credential_id', '=', passkey.credential_id)
+      .where('tenant_id', '=', passkey.tenant_id)
       .execute();
 
     // Fetch the user
