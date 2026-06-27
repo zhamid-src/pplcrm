@@ -39,6 +39,10 @@
 
 ## Backend Standards (Fastify 5 + tRPC + Kysely)
 
+### General
+
+- Never do 'as any', unless there's no way to avoid it.
+
 ### API Endpoints
 
 - **tRPC First:** Expose all internal client-server endpoints via tRPC routers to maintain end-to-end type safety.
