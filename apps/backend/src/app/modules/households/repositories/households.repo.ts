@@ -1,9 +1,9 @@
-import type { SelectQueryBuilder, Transaction } from 'kysely';
+import type { ReferenceExpression, Selectable, SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
-import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
 import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
 
@@ -67,10 +67,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       }));
 
     if (jobs.length > 0) {
-      await db
-        .insertInto('background_jobs')
-        .values(jobs as any)
-        .execute();
+      await db.insertInto('background_jobs').values(jobs).execute();
     }
 
     return createdRows;
@@ -107,10 +104,10 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     await this.getUpdate(trx)
       .set({
         file_id: null,
-        updated_at: sql`now()` as any,
-      } as OperationDataType<'households', 'update'>)
-      .where('tenant_id', '=', input.tenant_id as any)
-      .where('file_id', '=', input.import_id as any)
+        updated_at: sql<Date>`now()`,
+      } as unknown as OperationDataType<'households', 'update'>)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
       .executeTakeFirst();
   }
 
@@ -173,7 +170,10 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const searchStr = this.normalizeSearch(options.searchStr);
     const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
     const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
-    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
+    const filterModel = ((options as JoinedQueryParams & { issues?: string[] })?.filterModel ?? {}) as Record<
+      string,
+      any
+    >;
 
     // Shared where clause builder (for both queries)
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
@@ -202,13 +202,13 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         .$if(!!searchStr, (qb) => {
           const text = searchStr;
           return qb.where(
-            sql`(
+            sql<boolean>`(
               LOWER(households.city) LIKE ${text} OR
               LOWER(households.street1) LIKE ${text} OR
               LOWER(households.street2) LIKE ${text} OR
               LOWER(households.notes) LIKE ${text} OR
               LOWER(tags.name) LIKE ${text}
-            )` as any,
+            )`,
           );
         });
 
@@ -226,8 +226,8 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
         q = q.where((eb) =>
           eb.or([
-            eb.and([eb('tags.type', '=', 'tag' as any), eb('tags.name', 'ilike', tagVal)]),
-            eb.and([eb('tags.type', '=', 'issue' as any), eb('tags.name', 'ilike', issueVal)]),
+            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
+            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
           ]),
         );
       } else if (filterModel['tags']?.value) {
@@ -251,7 +251,8 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         tags: { col: 'tags.name' },
         issues: { col: 'tags.name' },
       };
-      const advModel = options.advancedFilterModel || (options.filterModel as any)?.tags_expression;
+      const advModel =
+        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
       q = this.applyAdvancedFilters(q, advModel, columnMapping);
 
       return q;
@@ -370,7 +371,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
               col = `households.${col}`;
             }
           }
-          return acc.orderBy(col as any, sort.sort);
+          return acc.orderBy(col as ReferenceExpression<Models, 'households'>, sort.sort);
         }, qb),
       )
       .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
@@ -389,7 +390,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const result = await this.getSelect()
       .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
       .where('households.tenant_id', '=', tenant_id)
-      .where('households.id', 'in', candidates as any)
+      .where('households.id', 'in', candidates)
       .whereRef('tenants.placeholder_household_id', '=', 'households.id')
       .select('households.id')
       .execute();
@@ -422,13 +423,13 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       if (placeholderId != null) {
         await trx
           .updateTable('persons')
-          .set({ household_id: placeholderId as any, updated_at: sql`now()`, updatedby_id: input.user_id })
+          .set({ household_id: placeholderId, updated_at: sql<Date>`now()`, updatedby_id: input.user_id })
           .where('tenant_id', '=', input.tenant_id)
-          .where('household_id', 'in', input.ids as any)
+          .where('household_id', 'in', input.ids)
           .execute();
       }
 
-      return this.deleteMany({ tenant_id: input.tenant_id as any, ids: input.ids as any }, trx);
+      return this.deleteMany({ tenant_id: input.tenant_id, ids: input.ids }, trx);
     });
   }
 
@@ -481,7 +482,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       )
       .select([sql<number>`count(group_key)`.as('total')])
       .executeTakeFirst();
-    return Number((countResult as any)?.total || 0);
+    return Number(countResult?.total ?? 0);
   }
 
   public async getPotentialDuplicates(
@@ -505,7 +506,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       )
       .select([sql<number>`count(group_key)`.as('total')])
       .executeTakeFirst();
-    const total = Number((countResult as any)?.total || 0);
+    const total = Number(countResult?.total ?? 0);
 
     if (total === 0) {
       return { groups: [], total: 0 };
@@ -591,15 +592,23 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 
     const sortedGroups = groupKeys
       .map((key) => groupsMap.get(key))
-      .filter((g) => g && g.households.length > 1) as any[];
+      .filter((g): g is NonNullable<typeof g> => !!(g && g.households.length > 1));
 
     return { groups: sortedGroups, total };
   }
 
   public async mergeHouseholds(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
     return this.transaction().execute(async (trx) => {
-      const target = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.target_id }, trx)) as any;
-      const source = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.source_id }, trx)) as any;
+      const target = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.target_id },
+        trx,
+      )) as Selectable<Models['households']>;
+      const source = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.source_id },
+        trx,
+      )) as Selectable<Models['households']>;
 
       if (!target || !source) {
         throw new Error('Target or Source household not found');
@@ -699,7 +708,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
             .values({
               tenant_id: input.tenant_id,
               household_id: input.target_id,
-              list_id: sl.list_id as any,
+              list_id: sl.list_id,
               createdby_id: input.user_id,
               updatedby_id: input.user_id,
             })
@@ -715,7 +724,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       // 4. Reassign people (persons.household_id)
       await trx
         .updateTable('persons')
-        .set({ household_id: input.target_id as any, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .set({ household_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
         .where('tenant_id', '=', input.tenant_id)
         .where('household_id', '=', input.source_id)
         .execute();

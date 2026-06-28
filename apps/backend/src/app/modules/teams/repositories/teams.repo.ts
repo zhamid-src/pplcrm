@@ -19,7 +19,7 @@ export class TeamsRepo extends BaseRepository<'teams'> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
+    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as Record<string, any>;
 
     const startRow = typeof options.startRow === 'number' ? Math.max(0, options.startRow) : 0;
     const endRowCandidate =
@@ -41,22 +41,22 @@ export class TeamsRepo extends BaseRepository<'teams'> {
         .$if(!!searchStr, (builder) => {
           const text = searchStr;
           return builder.where(
-            sql`(
+            sql<boolean>`(
               LOWER(teams.name) LIKE ${text} OR
               LOWER(COALESCE(teams.description, '')) LIKE ${text} OR
               LOWER(COALESCE(captain.first_name || ' ' || captain.last_name, '')) LIKE ${text} OR
               LOWER(COALESCE(lead_user.first_name || ' ' || lead_user.last_name, '')) LIKE ${text}
-            )` as any,
+            )`,
           );
         })
         .$if(!!filterModel['name']?.value, (builder) =>
           builder.where('teams.name', 'ilike', `%${filterModel['name'].value}%`),
         )
         .$if(!!filterModel['team_captain_id']?.value, (builder) =>
-          builder.where('teams.team_captain_id', '=', filterModel['team_captain_id'].value as any),
+          builder.where('teams.team_captain_id', '=', filterModel['team_captain_id'].value as string),
         )
         .$if(!!filterModel['team_lead_user_id']?.value, (builder) =>
-          builder.where('teams.team_lead_user_id', '=', filterModel['team_lead_user_id'].value as any),
+          builder.where('teams.team_lead_user_id', '=', filterModel['team_lead_user_id'].value as string),
         );
 
     const countRow = await applyFilters(this.getSelect(trx))
@@ -119,10 +119,10 @@ export class TeamsRepo extends BaseRepository<'teams'> {
                   col = `teams.${col}`;
                 }
               }
-              return acc.orderBy(col as any, sort.sort);
+              return acc.orderBy(col, sort.sort);
             }
           }
-        }, builder as any),
+        }, builder),
       )
       .offset(startRow)
       .limit(limit)

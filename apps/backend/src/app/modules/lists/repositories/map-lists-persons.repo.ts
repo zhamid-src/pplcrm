@@ -10,8 +10,8 @@ export class MapListsPersonsRepo extends BaseRepository<'map_lists_persons'> {
   public async deleteByPersonIds(input: { tenant_id: string; person_ids: string[] }, trx?: Transaction<Models>) {
     if (!input.person_ids.length) return 0;
     const res = await this.getDelete(trx)
-      .where('tenant_id', '=', input.tenant_id as any)
-      .where('person_id', 'in', input.person_ids as any)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('person_id', 'in', input.person_ids)
       .executeTakeFirst();
     return Number(res?.numDeletedRows ?? 0);
   }

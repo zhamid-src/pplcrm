@@ -53,13 +53,13 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
           link: `/tasks/${task.id}`,
         });
 
-        const assignedToNum = Number(payload.assigned_to);
-        if (!isNaN(assignedToNum)) {
+        const assignedTo = payload.assigned_to;
+        if (assignedTo) {
           const assignee = await this.getRepo()
             .db.selectFrom('authusers')
             .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
             .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-            .where('authusers.id', '=', assignedToNum as any)
+            .where('authusers.id', '=', assignedTo)
             .executeTakeFirst();
           if (assignee && assignee.email) {
             let optedIn = true;
@@ -117,13 +117,13 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
           link: `/tasks/${id}`,
         });
 
-        const assignedToNum = Number(row.assigned_to);
-        if (!isNaN(assignedToNum)) {
+        const assignedTo = row.assigned_to;
+        if (assignedTo) {
           const assignee = await this.getRepo()
             .db.selectFrom('authusers')
             .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
             .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-            .where('authusers.id', '=', assignedToNum as any)
+            .where('authusers.id', '=', assignedTo)
             .executeTakeFirst();
           if (assignee && assignee.email) {
             let optedIn = true;
@@ -166,7 +166,12 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
         ? await this.getArchivedTasks(auth, input?.options)
         : await this.getAllTasks(auth, input?.options);
       const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as { csv: string; fileName: string; columns: string[]; rowCount: number };
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
       await this.userActivity.log({
         tenant_id: auth.tenant_id,
         user_id: auth.user_id,
@@ -254,15 +259,15 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
     }
 
     await this.importsRepo.update({
-      tenant_id: auth.tenant_id as any,
-      id: importRecordId as any,
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
       row: {
         metadata: JSON.stringify({ storage_key: storageKey }),
       } as any,
     });
 
     await this.importsRepo.db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: auth.tenant_id,
         queue: 'default',
@@ -277,7 +282,7 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
           source: 'tasks',
         }),
         run_at: new Date(),
-      } as any)
+      })
       .execute();
 
     return {
@@ -384,7 +389,7 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
               const CHUNK_SIZE = 2000;
               for (let i = 0; i < taskRows.length; i += CHUNK_SIZE) {
                 const chunk = taskRows.slice(i, i + CHUNK_SIZE);
-                await (trx as any)
+                await trx
                   .insertInto('tasks')
                   .values(chunk)
                   .returningAll() // Adheres to repository rules
@@ -399,8 +404,8 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
       }
 
       await this.importsRepo.update({
-        tenant_id: tenant_id as any,
-        id: import_id as any,
+        tenant_id: tenant_id,
+        id: import_id,
         row: {
           inserted_count: results.inserted,
           error_count: results.errors,

@@ -12,7 +12,7 @@ export class ExportsRepo {
     columns: string[] | null;
   }) {
     return this.db
-      .insertInto('data_exports' as any)
+      .insertInto('data_exports')
       .values({
         tenant_id: row.tenant_id,
         user_id: row.user_id,
@@ -32,7 +32,7 @@ export class ExportsRepo {
     opts?: { rowCount?: number; storageKey?: string; error?: string },
   ) {
     return this.db
-      .updateTable('data_exports' as any)
+      .updateTable('data_exports')
       .set({
         status,
         row_count: opts?.rowCount ?? null,
@@ -40,14 +40,14 @@ export class ExportsRepo {
         error: opts?.error ?? null,
         updated_at: new Date(),
       })
-      .where('id', '=', id as any)
-      .where('tenant_id', '=', tenant_id as any)
+      .where('id', '=', id)
+      .where('tenant_id', '=', tenant_id)
       .execute();
   }
 
   public async list(tenant_id: string) {
     return this.db
-      .selectFrom('data_exports' as any)
+      .selectFrom('data_exports')
       .leftJoin('authusers as creator', 'creator.id', 'data_exports.user_id')
       .select([
         'data_exports.id',
@@ -63,7 +63,7 @@ export class ExportsRepo {
         'creator.first_name as creator_first_name',
         'creator.last_name as creator_last_name',
       ])
-      .where('data_exports.tenant_id', '=', tenant_id as any)
+      .where('data_exports.tenant_id', '=', tenant_id)
       .orderBy('data_exports.created_at', 'desc')
       .limit(50)
       .execute();
@@ -71,10 +71,10 @@ export class ExportsRepo {
 
   public async getById(id: string, tenant_id: string) {
     return this.db
-      .selectFrom('data_exports' as any)
+      .selectFrom('data_exports')
       .selectAll()
-      .where('id', '=', id as any)
-      .where('tenant_id', '=', tenant_id as any)
+      .where('id', '=', id)
+      .where('tenant_id', '=', tenant_id)
       .executeTakeFirst();
   }
 
@@ -82,17 +82,17 @@ export class ExportsRepo {
     return this.db.transaction().execute(async (trx) => {
       // 1. Delete matching pending/processing background job
       await trx
-        .deleteFrom('background_jobs' as any)
-        .where('tenant_id', '=', tenant_id as any)
+        .deleteFrom('background_jobs')
+        .where('tenant_id', '=', tenant_id)
         .where(sql`payload->>'type'`, '=', 'export_csv')
         .where(sql`payload->>'export_id'`, '=', id)
         .execute();
 
       // 2. Delete export record
       return await trx
-        .deleteFrom('data_exports' as any)
-        .where('id', '=', id as any)
-        .where('tenant_id', '=', tenant_id as any)
+        .deleteFrom('data_exports')
+        .where('id', '=', id)
+        .where('tenant_id', '=', tenant_id)
         .returningAll()
         .executeTakeFirst();
     });

@@ -79,8 +79,8 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
           await db
             .insertInto('newsletter_events')
             .values({
-              tenant_id: tenantId as any,
-              newsletter_id: newsletterId as any,
+              tenant_id: tenantId,
+              newsletter_id: newsletterId,
               email,
               event_type: eventType,
               sg_event_id: sgEventId,
@@ -102,7 +102,7 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
 
       // Recompute aggregates for each processed newsletter
       for (const key of processedNewsletters) {
-        const [tenantId, newsletterId] = key.split(':');
+        const [tenantId, newsletterId] = key.split(':') as [string, string];
 
         await db.transaction().execute(async (trx) => {
           // 1. Fetch aggregates
@@ -117,8 +117,8 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
               sql<number>`COUNT(id) FILTER (WHERE event_type = 'spamreport')`.as('spamreports'),
               sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('open', 'click'))`.as('last_engagement'),
             ])
-            .where('newsletter_id', '=', newsletterId as any)
-            .where('tenant_id', '=', tenantId as any)
+            .where('newsletter_id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
             .executeTakeFirst();
 
           // 2. Fetch top links clicked
@@ -126,8 +126,8 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
             .selectFrom('newsletter_events')
             .select(['url'])
             .select(({ fn }) => fn.count<number>('id').as('clicks'))
-            .where('newsletter_id', '=', newsletterId as any)
-            .where('tenant_id', '=', tenantId as any)
+            .where('newsletter_id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
             .where('event_type', '=', 'click')
             .where('url', 'is not', null)
             .groupBy('url')
@@ -143,8 +143,8 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
           const newsletter = await trx
             .selectFrom('newsletters')
             .select(['total_recipients'])
-            .where('id', '=', newsletterId as any)
-            .where('tenant_id', '=', tenantId as any)
+            .where('id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
             .executeTakeFirst();
 
           const totalRecipients = Number(newsletter?.total_recipients ?? 0);
@@ -164,13 +164,13 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
               unsubscribe_count: Number(stats?.unsubscribes ?? 0),
               spam_complaint_count: Number(stats?.spamreports ?? 0),
               last_engagement_at: stats?.last_engagement || null,
-              open_rate: openRate as any,
-              click_rate: clickRate as any,
+              open_rate: openRate,
+              click_rate: clickRate,
               top_links: JSON.stringify(topLinks) as any,
               updated_at: new Date(),
             })
-            .where('id', '=', newsletterId as any)
-            .where('tenant_id', '=', tenantId as any)
+            .where('id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
             .execute();
         });
       }

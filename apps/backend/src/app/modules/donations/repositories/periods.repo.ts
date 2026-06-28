@@ -11,7 +11,7 @@ export class DonationPeriodsRepo extends BaseRepository<'donation_periods'> {
     return this.db
       .selectFrom('donation_periods')
       .selectAll()
-      .where('tenant_id', '=', tenantId as any)
+      .where('tenant_id', '=', tenantId)
       .orderBy('start_date', 'desc')
       .execute();
   }
@@ -25,10 +25,10 @@ export class DonationPeriodsRepo extends BaseRepository<'donation_periods'> {
     const row = await this.db
       .selectFrom('donation_periods')
       .selectAll()
-      .where('tenant_id', '=', tenantId as any)
-      .where('is_active', '=', true as any)
-      .where('start_date', '<=', today as any)
-      .where((eb) => eb.or([eb('end_date', 'is', null), eb('end_date', '>=', today as any)]))
+      .where('tenant_id', '=', tenantId)
+      .where('is_active', '=', true)
+      .where('start_date', '<=', new Date(today))
+      .where((eb) => eb.or([eb('end_date', 'is', null), eb('end_date', '>=', new Date(today))]))
       .orderBy('start_date', 'desc')
       .limit(1)
       .executeTakeFirst();

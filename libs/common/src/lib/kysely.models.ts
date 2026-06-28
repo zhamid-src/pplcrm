@@ -90,6 +90,8 @@ export interface Models {
   workflow_enrollments: WorkflowEnrollments;
   person_connections: PersonConnections;
   passkeys: Passkeys;
+  zapier_subscriptions: ZapierSubscriptions;
+  email_folders: EmailFolders;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -298,9 +300,11 @@ interface Profiles extends RecordType, AddressType {
   json: Json | null;
 }
 
-interface Settings extends RecordType {
+interface Settings extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
   key: string;
   value: JsonValue;
+  createdby_id: string | null;
+  updatedby_id: string | null;
 }
 
 export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
@@ -434,16 +438,16 @@ interface Newsletters extends RecordType {
   audience_description: string | null;
   target_lists: Json | null;
   segments: Json | null;
-  total_recipients: number;
-  delivered_count: number;
-  bounce_count: number;
-  open_rate: number;
-  click_rate: number;
-  unique_opens: number;
-  unique_clicks: number;
-  unsubscribe_count: number;
-  spam_complaint_count: number;
-  reply_count: number;
+  total_recipients: Generated<number>;
+  delivered_count: Generated<number>;
+  bounce_count: Generated<number>;
+  open_rate: Generated<number>;
+  click_rate: Generated<number>;
+  unique_opens: Generated<number>;
+  unique_clicks: Generated<number>;
+  unsubscribe_count: Generated<number>;
+  spam_complaint_count: Generated<number>;
+  reply_count: Generated<number>;
   send_date: Timestamp | null;
   last_engagement_at: Timestamp | null;
   summary: string | null;
@@ -856,18 +860,40 @@ export interface PersonConnections extends RecordType {
 }
 
 interface Passkeys {
-  id: Generated<bigint>;
+  id: Generated<string>;
   user_id: string;
   tenant_id: string;
   credential_id: string;
   public_key: string;
-  counter: Generated<bigint>;
+  counter: Generated<number>;
   device_type: string;
   backed_up: Generated<boolean>;
   transports: string[] | null;
   aaguid: string | null;
   friendly_name: string | null;
   created_at: Generated<Timestamp>;
+}
+
+interface ZapierSubscriptions {
+  id: Generated<string>;
+  tenant_id: string;
+  event_type: string;
+  webhook_url: string;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
+}
+
+interface EmailFolders {
+  id: Generated<string>;
+  tenant_id: string;
+  name: string;
+  icon: string | null;
+  sort_order: Generated<number>;
+  is_default: Generated<boolean>;
+  createdby_id: string;
+  updatedby_id: string;
+  created_at: Generated<Timestamp>;
+  updated_at: Generated<Timestamp>;
 }
 
 type UnwrapSelect<T> = T extends ColumnType<infer S, any, any> ? S : T;

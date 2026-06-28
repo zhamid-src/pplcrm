@@ -1,8 +1,8 @@
-import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
-import { BillingController } from '../../modules/billing/controller';
-import { DonationsController } from '../../modules/donations/controller';
 import { Client } from 'pg';
 import { env } from '../../../env';
+import { BillingController } from '../../modules/billing/controller';
+import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
+import { DonationsController } from '../../modules/donations/controller';
 
 export class WebhookEventWorker {
   private isRunning = false;
@@ -86,7 +86,9 @@ export class WebhookEventWorker {
 
   private reconnectListener() {
     if (this.pgClient) {
-      this.pgClient.end().catch(() => {});
+      this.pgClient.end().catch(() => {
+        /* noop */
+      });
       this.pgClient = null;
     }
     if (!this.isRunning) return;
@@ -120,13 +122,12 @@ export class WebhookEventWorker {
         // If shutdown was requested and no active jobs remain, resolve the stop() promise
         if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
           this.shutdownResolver();
-          return;
+        } else {
+          // Poll again immediately (10ms) if an event was processed to drain the queue quickly,
+          // or back off to 30 seconds if no events were found.
+          const delay = processedAnEvent ? 10 : 30000;
+          this.pollWithDelay(delay);
         }
-
-        // Poll again immediately (10ms) if an event was processed to drain the queue quickly,
-        // or back off to 30 seconds if no events were found.
-        const delay = processedAnEvent ? 10 : 30000;
-        this.pollWithDelay(delay);
       }
     }, 0);
   }
@@ -142,7 +143,7 @@ export class WebhookEventWorker {
     // Try to find and lock a webhook event using SKIP LOCKED
     const eventRecord = await this.db.transaction().execute(async (trx: any) => {
       const pendingEvent = (await trx
-        .selectFrom('webhook_events' as any)
+        .selectFrom('webhook_events')
         .selectAll()
         .where('status', '=', 'pending')
         .where('run_at', '<=', new Date())
@@ -155,7 +156,7 @@ export class WebhookEventWorker {
       if (!pendingEvent) return null;
 
       const updatedEvent = await trx
-        .updateTable('webhook_events' as any)
+        .updateTable('webhook_events')
         .set({
           status: 'processing',
           locked_at: new Date(),
@@ -188,14 +189,20 @@ export class WebhookEventWorker {
         const tenantRow = await this.db
           .selectFrom('tenants')
           .select('admin_id')
-          .where('id', '=', tenantId as any)
+          .where('id', '=', tenantId)
           .executeTakeFirst();
         if (!tenantRow?.admin_id) throw new Error(`Tenant ${tenantId} has no admin_id.`);
         return String(tenantRow.admin_id);
       };
 
-      const isOneTimeDonation = eventType === 'checkout.session.completed' && stripeObj?.metadata?.personId && stripeObj?.metadata?.isRecurring !== 'true';
-      const isRecurringCheckoutComplete = eventType === 'checkout.session.completed' && stripeObj?.metadata?.personId && stripeObj?.metadata?.isRecurring === 'true';
+      const isOneTimeDonation =
+        eventType === 'checkout.session.completed' &&
+        stripeObj?.metadata?.personId &&
+        stripeObj?.metadata?.isRecurring !== 'true';
+      const isRecurringCheckoutComplete =
+        eventType === 'checkout.session.completed' &&
+        stripeObj?.metadata?.personId &&
+        stripeObj?.metadata?.isRecurring === 'true';
       const isInvoicePaid = eventType === 'invoice.payment_succeeded' && stripeObj?.subscription;
       const isSubscriptionUpdated = eventType === 'customer.subscription.updated';
       const isSubscriptionDeleted = eventType === 'customer.subscription.deleted';
@@ -212,8 +219,15 @@ export class WebhookEventWorker {
         const sessionId = String(stripeObj.id);
         const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
 
-        await donationsController.recordSuccessfulDonation(tenantId, personId, amountCents, sessionId, province, country, createdBy);
-
+        await donationsController.recordSuccessfulDonation(
+          tenantId,
+          personId,
+          amountCents,
+          sessionId,
+          province,
+          country,
+          createdBy,
+        );
       } else if (isRecurringCheckoutComplete) {
         // Subscription checkout completed — create the pledge record.
         // The first invoice payment is handled separately by invoice.payment_succeeded.
@@ -228,9 +242,17 @@ export class WebhookEventWorker {
         const customerId = stripeObj.customer ? String(stripeObj.customer) : null;
 
         if (subscriptionId) {
-          await donationsController.recordNewPledge(tenantId, personId, monthlyAmountCents, subscriptionId, customerId, province, country, createdBy);
+          await donationsController.recordNewPledge(
+            tenantId,
+            personId,
+            monthlyAmountCents,
+            subscriptionId,
+            customerId,
+            province,
+            country,
+            createdBy,
+          );
         }
-
       } else if (isInvoicePaid) {
         // A subscription invoice was paid — record it as a donation installment.
         const donationsController = new DonationsController();
@@ -238,16 +260,16 @@ export class WebhookEventWorker {
         const invoiceId = String(stripeObj.id);
         const amountPaidCents = Number(stripeObj.amount_paid || 0);
 
-        const pledge = await this.db
-          .selectFrom('donation_pledges' as any)
+        const pledge = (await this.db
+          .selectFrom('donation_pledges')
           .selectAll()
           .where('stripe_subscription_id', '=', subscriptionId)
-          .executeTakeFirst() as any;
+          .executeTakeFirst()) as any;
 
         if (pledge && amountPaidCents > 0) {
           // Avoid duplicate recording (invoice id as session id key)
           const alreadyRecorded = await this.db
-            .selectFrom('donations' as any)
+            .selectFrom('donations')
             .select('id')
             .where('stripe_session_id', '=', invoiceId)
             .executeTakeFirst();
@@ -266,7 +288,6 @@ export class WebhookEventWorker {
             );
           }
         }
-
       } else if (isSubscriptionUpdated) {
         // Sync pledge status from Stripe subscription status
         const subscriptionId = String(stripeObj.id);
@@ -284,7 +305,7 @@ export class WebhookEventWorker {
 
         if (mappedStatus) {
           await this.db
-            .updateTable('donation_pledges' as any)
+            .updateTable('donation_pledges')
             .set({
               status: mappedStatus,
               next_billing_date: nextBillingDate,
@@ -294,23 +315,20 @@ export class WebhookEventWorker {
             .where('stripe_subscription_id', '=', subscriptionId)
             .execute();
         }
-
       } else if (isSubscriptionDeleted) {
         const subscriptionId = String(stripeObj.id);
         await this.db
-          .updateTable('donation_pledges' as any)
+          .updateTable('donation_pledges')
           .set({ status: 'cancelled', cancelled_at: new Date(), updated_at: new Date() })
           .where('stripe_subscription_id', '=', subscriptionId)
           .execute();
-
       } else if (isInvoiceFailed) {
         const subscriptionId = String(stripeObj.subscription);
         await this.db
-          .updateTable('donation_pledges' as any)
+          .updateTable('donation_pledges')
           .set({ status: 'past_due', updated_at: new Date() })
           .where('stripe_subscription_id', '=', subscriptionId)
           .execute();
-
       } else {
         const billingController = new BillingController();
         await billingController.processWebhookEvent(payload);
@@ -318,7 +336,7 @@ export class WebhookEventWorker {
 
       // Mark event as processed/completed
       await this.db
-        .updateTable('webhook_events' as any)
+        .updateTable('webhook_events')
         .set({
           status: 'processed',
           locked_at: null,
@@ -346,7 +364,7 @@ export class WebhookEventWorker {
         );
 
         await this.db
-          .updateTable('webhook_events' as any)
+          .updateTable('webhook_events')
           .set({
             status: 'pending',
             locked_at: null,
@@ -360,7 +378,7 @@ export class WebhookEventWorker {
       } else {
         console.error(`Webhook event ${eventRecord.id} exceeded maximum attempts (${maxAttempts}). Marking as failed.`);
         await this.db
-          .updateTable('webhook_events' as any)
+          .updateTable('webhook_events')
           .set({
             status: 'failed',
             locked_at: null,

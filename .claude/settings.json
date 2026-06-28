@@ -1,4 +1,28 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(perl -i -pe \"s/import type \\\\{ SelectQueryBuilder, Transaction \\\\} from 'kysely';/import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';/\" apps/backend/src/app/modules/persons/repositories/persons.repo.ts)",
+      "Bash(perl -i -pe \"s/const target = await this\\\\.getOneBy\\\\\\('id', \\\\{ tenant_id: input\\\\.tenant_id as TypeTenantId<'persons'>, value: input\\\\.target_id \\\\}, trx\\\\\\);/const target = \\(await this.getOneBy\\('id', { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.target_id }, trx\\)\\) as Selectable<Models['persons']>;/\" apps/backend/src/app/modules/persons/repositories/persons.repo.ts)",
+      "Bash(perl -i -pe \"s/const source = await this\\\\.getOneBy\\\\\\('id', \\\\{ tenant_id: input\\\\.tenant_id as TypeTenantId<'persons'>, value: input\\\\.source_id \\\\}, trx\\\\\\);/const source = \\(await this.getOneBy\\('id', { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.source_id }, trx\\)\\) as Selectable<Models['persons']>;/\" apps/backend/src/app/modules/persons/repositories/persons.repo.ts)",
+      "Bash(perl -i -pe \"s/import type \\\\{ ReferenceExpression, SelectQueryBuilder, Transaction \\\\} from 'kysely';/import type { ReferenceExpression, Selectable, SelectQueryBuilder, Transaction } from 'kysely';/\" apps/backend/src/app/modules/households/repositories/households.repo.ts)",
+      "Bash(perl -i -pe \"s/const target = await this\\\\.getOneBy\\\\\\('id', \\\\{ tenant_id: input\\\\.tenant_id as TypeTenantId<'households'>, value: input\\\\.target_id \\\\}, trx\\\\\\);/const target = \\(await this.getOneBy\\('id', { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.target_id }, trx\\)\\) as Selectable<Models['households']>;/\" apps/backend/src/app/modules/households/repositories/households.repo.ts)",
+      "Bash(perl -i -pe \"s/const source = await this\\\\.getOneBy\\\\\\('id', \\\\{ tenant_id: input\\\\.tenant_id as TypeTenantId<'households'>, value: input\\\\.source_id \\\\}, trx\\\\\\);/const source = \\(await this.getOneBy\\('id', { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.source_id }, trx\\)\\) as Selectable<Models['households']>;/\" apps/backend/src/app/modules/households/repositories/households.repo.ts)",
+      "Bash(perl -i -pe \"s/import type \\\\{ Transaction \\\\} from 'kysely';/import type { Selectable, Transaction } from 'kysely';/\" apps/backend/src/app/modules/companies/repositories/companies.repo.ts)",
+      "Bash(perl -i -pe \"s/const target = await this\\\\.getOneBy\\\\\\('id', \\\\{ tenant_id: input\\\\.tenant_id as TypeTenantId<'companies'>, value: input\\\\.target_id \\\\}, trx\\\\\\);/const target = \\(await this.getOneBy\\('id', { tenant_id: input.tenant_id as TypeTenantId<'companies'>, value: input.target_id }, trx\\)\\) as Selectable<Models['companies']>;/\" apps/backend/src/app/modules/companies/repositories/companies.repo.ts)",
+      "Bash(perl -i -pe \"s/const source = await this\\\\.getOneBy\\\\\\('id', \\\\{ tenant_id: input\\\\.tenant_id as TypeTenantId<'companies'>, value: input\\\\.source_id \\\\}, trx\\\\\\);/const source = \\(await this.getOneBy\\('id', { tenant_id: input.tenant_id as TypeTenantId<'companies'>, value: input.source_id }, trx\\)\\) as Selectable<Models['companies']>;/\" apps/backend/src/app/modules/companies/repositories/companies.repo.ts)",
+      "Bash(perl -i -pe \"s/import type \\\\{ EmailStatus, TypeTenantId \\\\} from '\\\\.\\\\.\\\\/\\\\.\\\\.\\\\/\\\\.\\\\.\\\\/\\\\.\\\\.\\\\/\\\\.\\\\.\\\\/\\\\.\\\\.\\\\/\\\\.\\\\.\\\\/libs\\\\/common\\\\/src';/import type { EmailStatus } from '..\\\\/..\\\\/..\\\\/..\\\\/..\\\\/..\\\\/..\\\\/libs\\\\/common\\\\/src';\\\\nimport type { TypeTenantId } from '..\\\\/..\\\\/..\\\\/..\\\\/..\\\\/..\\\\/..\\\\/libs\\\\/common\\\\/src\\\\/lib\\\\/kysely.models';/\" apps/backend/src/app/modules/emails/repositories/email.repo.ts)",
+      "Bash(perl -i -pe \"s/\\\\.where\\\\\\('start_date', '<=', today\\\\\\)/.where\\('start_date', '<=', new Date\\(today\\)\\)/g\" apps/backend/src/app/modules/donations/repositories/periods.repo.ts)",
+      "Bash(python3 -c ' *)",
+      "Bash(perl -i -pe \"s/\\\\.where\\\\\\('user_id', '=', BigInt\\\\\\(userId\\\\\\)\\\\\\)/.where\\('user_id', '=', userId\\)/g\" apps/backend/src/app/lib/jobs/job-handlers.ts)",
+      "Bash(perl -i -pe \"s/\\\\.where\\\\\\('auth_id', '=', BigInt\\\\\\(userId\\\\\\)\\\\\\)/.where\\('auth_id', '=', userId\\)/g\" apps/backend/src/app/lib/jobs/job-handlers.ts)",
+      "Bash(perl -i -pe \"s/\\\\.where\\\\\\('id', '=', BigInt\\\\\\(userId\\\\\\)\\\\\\)/.where\\('id', '=', userId\\)/g\" apps/backend/src/app/lib/jobs/job-handlers.ts)",
+      "Bash(perl -i -pe \"s/\\\\.where\\\\\\('tenant_id', '=', BigInt\\\\\\(tenantId\\\\\\)\\\\\\)/.where\\('tenant_id', '=', tenantId\\)/g\" apps/backend/src/app/lib/jobs/job-handlers.ts)",
+      "Bash(perl -i -pe \"s/const tid = BigInt\\\\\\(tenantId\\\\\\) as any;/const tid = tenantId;/g\" apps/backend/src/app/lib/jobs/job-handlers.ts)"
+    ]
+  },
+  "enabledPlugins": {
+    "nx@nx-claude-plugins": true
+  },
   "extraKnownMarketplaces": {
     "nx-claude-plugins": {
       "source": {
@@ -6,9 +30,6 @@
         "repo": "nrwl/nx-ai-agents-config"
       }
     }
-  },
-  "enabledPlugins": {
-    "nx@nx-claude-plugins": true
   },
   "sandbox": {
     "network": {

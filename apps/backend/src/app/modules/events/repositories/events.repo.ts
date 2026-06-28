@@ -22,15 +22,15 @@ export class EventsRepo extends BaseRepository<'events'> {
       let q = qb.where('events.tenant_id', '=', tenantId).$if(!!searchStr, (qb2) => {
         const text = searchStr;
         return qb2.where(
-          sql`(
+          sql<boolean>`(
             LOWER(events.name) LIKE ${text} OR
             LOWER(events.description) LIKE ${text} OR
             LOWER(events.location_address) LIKE ${text}
-          )` as any,
+          )`,
         );
       });
 
-      const includeArchived = (options as any).includeArchived === true;
+      const includeArchived = (options as { includeArchived?: boolean }).includeArchived === true;
       if (includeArchived) {
         q = q.where('events.end_time', '<', new Date());
       } else {
@@ -74,7 +74,10 @@ export class EventsRepo extends BaseRepository<'events'> {
           .as('registrations_count'),
       ])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce((acc: any, sort: any) => acc.orderBy(sort.colId as any, sort.sort), qb),
+        options.sortModel!.reduce(
+          (acc: typeof qb, sort: { colId: string; sort: 'asc' | 'desc' }) => acc.orderBy(sort.colId, sort.sort),
+          qb,
+        ),
       )
       .$if(!options.sortModel?.length, (qb) => qb.orderBy('events.start_time', 'asc'))
       .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
@@ -86,7 +89,7 @@ export class EventsRepo extends BaseRepository<'events'> {
   }
 
   public async getTicketTypesForEvent(input: { tenant_id: string; event_id: string }, trx?: Transaction<Models>) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     return db
       .selectFrom('event_ticket_types')
       .selectAll()
@@ -110,7 +113,7 @@ export class EventsRepo extends BaseRepository<'events'> {
     },
     trx?: Transaction<Models>,
   ) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     return db
       .insertInto('event_ticket_types')
       .values({
@@ -143,7 +146,7 @@ export class EventsRepo extends BaseRepository<'events'> {
     },
     trx?: Transaction<Models>,
   ) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     return db
       .updateTable('event_ticket_types')
       .set({ ...input.row, updatedby_id: input.user_id, updated_at: sql`now()` })
@@ -154,7 +157,7 @@ export class EventsRepo extends BaseRepository<'events'> {
   }
 
   public async deleteTicketType(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     const res = await db
       .deleteFrom('event_ticket_types')
       .where('tenant_id', '=', input.tenant_id)
@@ -164,7 +167,7 @@ export class EventsRepo extends BaseRepository<'events'> {
   }
 
   public async getRegistrationsForEvent(input: { tenant_id: string; event_id: string }, trx?: Transaction<Models>) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     return db
       .selectFrom('event_registrations')
       .innerJoin('persons', 'persons.id', 'event_registrations.person_id')
@@ -204,7 +207,7 @@ export class EventsRepo extends BaseRepository<'events'> {
     },
     trx?: Transaction<Models>,
   ) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     return db
       .insertInto('event_registrations')
       .values({
@@ -235,7 +238,7 @@ export class EventsRepo extends BaseRepository<'events'> {
     },
     trx?: Transaction<Models>,
   ) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     return db
       .updateTable('event_registrations')
       .set({ ...input.row, updatedby_id: input.user_id, updated_at: sql`now()` })
@@ -246,7 +249,7 @@ export class EventsRepo extends BaseRepository<'events'> {
   }
 
   public async deleteRegistration(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     const res = await db
       .deleteFrom('event_registrations')
       .where('tenant_id', '=', input.tenant_id)
@@ -256,7 +259,7 @@ export class EventsRepo extends BaseRepository<'events'> {
   }
 
   public async getHistoryForPerson(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     return db
       .selectFrom('event_registrations')
       .innerJoin('events', 'events.id', 'event_registrations.event_id')
@@ -281,14 +284,14 @@ export class EventsRepo extends BaseRepository<'events'> {
   }
 
   public async getEventStats(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     const result = await db
       .selectFrom('event_registrations')
-      .select((eb: any) => [eb.fn.count('id').as('events_count')])
+      .select(({ fn }) => [fn.count<number>('id').as('events_count')])
       .where('tenant_id', '=', input.tenant_id)
       .where('person_id', '=', input.person_id)
       .where('status', '=', 'attended')
       .executeTakeFirst();
-    return { events_count: Number((result as any)?.events_count || 0) };
+    return { events_count: Number(result?.events_count ?? 0) };
   }
 }

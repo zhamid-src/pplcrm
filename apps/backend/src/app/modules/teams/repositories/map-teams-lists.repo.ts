@@ -14,7 +14,7 @@ export class MapTeamsListsRepo extends BaseRepository<'map_teams_lists'> {
       .where('tenant_id', '=', input.tenant_id)
       .where('team_id', '=', input.team_id)
       .execute();
-    return rows.map((row) => String((row as any).list_id));
+    return rows.map((row) => String(row.list_id));
   }
 
   public async deleteByTeam(input: { tenant_id: string; team_id: string }, trx?: Transaction<Models>) {
@@ -36,7 +36,7 @@ export class MapTeamsListsRepo extends BaseRepository<'map_teams_lists'> {
         .where('tenant_id', '=', input.tenant_id)
         .where('team_id', '=', input.team_id)
         .execute();
-      const currentIds = new Set(currentRows.map((row) => String((row as any).list_id)));
+      const currentIds = new Set(currentRows.map((row) => String(row.list_id)));
       const incoming = new Set(uniqueIds);
 
       const toRemove = Array.from(currentIds).filter((id) => !incoming.has(id));

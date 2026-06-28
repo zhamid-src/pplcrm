@@ -85,10 +85,10 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
       id: String(row['id']),
       target_tags: Array.isArray(row['target_tags'])
         ? row['target_tags']
-        : JSON.parse((row['target_tags'] as any) || '[]'),
+        : JSON.parse(String(row['target_tags'] || '[]')),
       target_lists: Array.isArray(row['target_lists'])
         ? row['target_lists']
-        : JSON.parse((row['target_lists'] as any) || '[]'),
+        : JSON.parse(String(row['target_lists'] || '[]')),
     }));
 
     return {

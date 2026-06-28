@@ -29,7 +29,7 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
         this.db.fn.coalesce('persons.last_name', 'donation_pledges.last_name').as('person_last_name'),
         this.db.fn.coalesce('persons.email', 'donation_pledges.email').as('person_email'),
       ])
-      .where('donation_pledges.tenant_id', '=', tenantId as any)
+      .where('donation_pledges.tenant_id', '=', tenantId)
       .orderBy('donation_pledges.created_at', 'desc')
       .execute();
   }
@@ -38,8 +38,8 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
     return this.db
       .selectFrom('donation_pledges')
       .selectAll()
-      .where('tenant_id', '=', tenantId as any)
-      .where('person_id', '=', personId as any)
+      .where('tenant_id', '=', tenantId)
+      .where('person_id', '=', personId)
       .orderBy('created_at', 'desc')
       .execute();
   }
@@ -63,8 +63,8 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
     const result = await this.db
       .selectFrom('donation_pledges')
       .select(({ fn }) => [fn.sum<string | number>('monthly_amount').as('total')])
-      .where('tenant_id', '=', tenantId as any)
-      .where('person_id', '=', personId as any)
+      .where('tenant_id', '=', tenantId)
+      .where('person_id', '=', personId)
       .where('status', '=', 'active')
       .executeTakeFirst();
 

@@ -64,7 +64,7 @@ module.exports = [
         ...globals.node,
       },
     },
-    plugins: { 
+    plugins: {
       '@typescript-eslint': tsPlugin,
       local: localRules,
     },
@@ -79,7 +79,7 @@ module.exports = [
       '@typescript-eslint/no-inferrable-types': 'off',
 
       /* General best practices */
-      'no-console': ['warn', { allow: ['warn', 'error'] }],
+      'no-console': ['warn', { allow: ['warn', 'error', 'log'] }],
       'prefer-const': 'warn',
       'no-var': 'error',
       'no-empty': ['warn', { allowEmptyCatch: true }],

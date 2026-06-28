@@ -1,9 +1,9 @@
-import type { SelectQueryBuilder, Transaction } from 'kysely';
+import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Models, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { HouseholdRepo } from '../../households/repositories/households.repo';
 import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
@@ -197,8 +197,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
         q = q.where((eb) =>
           eb.or([
-            eb.and([eb('tags.type', '=', 'tag' as any), eb('tags.name', 'ilike', tagVal)]),
-            eb.and([eb('tags.type', '=', 'issue' as any), eb('tags.name', 'ilike', issueVal)]),
+            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
+            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
           ]),
         );
       } else if (filterModel['tags']?.value) {
@@ -226,7 +226,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         issues: { col: 'tags.name' },
         company_name: { col: 'companies.name' },
       };
-      const advModel = options.advancedFilterModel || (options.filterModel as any)?.tags_expression;
+      const advModel =
+        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
       q = this.applyAdvancedFilters(q, advModel, columnMapping);
 
       return q;
@@ -342,7 +343,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
               }
             }
           }
-          return acc.orderBy(col as any, sort.sort);
+          return acc.orderBy(col, sort.sort);
         }, qb),
       )
       .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
@@ -427,7 +428,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       )
       .select([sql<number>`count(group_key)`.as('total')])
       .executeTakeFirst();
-    return Number((countResult as any)?.total || 0);
+    return Number(countResult?.total ?? 0);
   }
 
   public async getPotentialDuplicates(
@@ -451,7 +452,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       )
       .select([sql<number>`count(group_key)`.as('total')])
       .executeTakeFirst();
-    const total = Number((countResult as any)?.total || 0);
+    const total = Number(countResult?.total ?? 0);
 
     if (total === 0) {
       return { groups: [], total: 0 };
@@ -511,15 +512,25 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       });
     }
 
-    const sortedGroups = groupKeys.map((key) => groupsMap.get(key)).filter((g) => g && g.persons.length > 1) as any[];
+    const sortedGroups = groupKeys
+      .map((key) => groupsMap.get(key))
+      .filter((g): g is NonNullable<typeof g> => !!(g && g.persons.length > 1));
 
     return { groups: sortedGroups, total };
   }
 
   public async mergePersons(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
     return this.transaction().execute(async (trx) => {
-      const target = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.target_id }, trx)) as any;
-      const source = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.source_id }, trx)) as any;
+      const target = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.target_id },
+        trx,
+      )) as Selectable<Models['persons']>;
+      const source = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.source_id },
+        trx,
+      )) as Selectable<Models['persons']>;
 
       if (!target || !source) {
         throw new Error('Target or Source person not found');
@@ -618,7 +629,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
             .values({
               tenant_id: input.tenant_id,
               person_id: input.target_id,
-              list_id: sl.list_id as any,
+              list_id: sl.list_id,
               createdby_id: input.user_id,
               updatedby_id: input.user_id,
             })
@@ -654,7 +665,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
             .values({
               tenant_id: input.tenant_id,
               person_id: input.target_id,
-              team_id: st.team_id as any,
+              team_id: st.team_id,
               createdby_id: input.user_id,
               updatedby_id: input.user_id,
             })
@@ -670,7 +681,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       // 5. Reassign captaincy if source was captain of any team
       await trx
         .updateTable('teams')
-        .set({ team_captain_id: input.target_id as any, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .set({ team_captain_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
         .where('tenant_id', '=', input.tenant_id)
         .where('team_captain_id', '=', input.source_id)
         .execute();

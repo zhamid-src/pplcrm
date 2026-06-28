@@ -139,8 +139,8 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     // Parse configuration fields
     const formFields: string[] = form.fields
       ? Array.isArray(form.fields)
-        ? (form.fields as any)
-        : JSON.parse(form.fields as any)
+        ? (form.fields as string[])
+        : JSON.parse(String(form.fields))
       : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
     // Map payload key aliases helper
@@ -218,7 +218,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       const existing = await this.getRepo()
         .db.selectFrom('persons')
         .select('id')
-        .where('tenant_id', '=', tenantId as any)
+        .where('tenant_id', '=', tenantId)
         .where(sql`lower(email)`, '=', email.toLowerCase())
         .executeTakeFirst();
 
@@ -279,7 +279,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         const tenantRow = await trx
           .selectFrom('tenants')
           .select(['placeholder_household_id'])
-          .where('id', '=', tenantId as any)
+          .where('id', '=', tenantId)
           .executeTakeFirst();
 
         const householdId = tenantRow?.placeholder_household_id;
@@ -324,8 +324,8 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           const existingHh = await trx
             .selectFrom('households')
             .select('id')
-            .where('tenant_id', '=', tenantId as any)
-            .where('campaign_id', '=', campaignId as any)
+            .where('tenant_id', '=', tenantId)
+            .where('campaign_id', '=', campaignId)
             .where('address_fp_full', '=', fp_full)
             .executeTakeFirst();
 
@@ -336,10 +336,10 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
               {
                 rows: [
                   {
-                    tenant_id: tenantId as any,
-                    campaign_id: campaignId as any,
-                    createdby_id: creatorId as any,
-                    updatedby_id: creatorId as any,
+                    tenant_id: tenantId,
+                    campaign_id: campaignId,
+                    createdby_id: creatorId,
+                    updatedby_id: creatorId,
                     street1,
                     city,
                     state,
@@ -362,7 +362,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         const existing = await trx
           .selectFrom('persons')
           .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId as any)
+          .where('tenant_id', '=', tenantId)
           .where(sql`lower(email)`, '=', email.toLowerCase())
           .executeTakeFirst();
 
@@ -390,17 +390,17 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
             await trx
               .updateTable('persons')
               .set(updateRow)
-              .where('tenant_id', '=', tenantId as any)
+              .where('tenant_id', '=', tenantId)
               .where('id', '=', existing.id)
               .execute();
           }
         } else {
           const insertRow = {
-            tenant_id: tenantId as any,
-            campaign_id: campaignId as any,
-            household_id: finalHouseholdId as any,
-            createdby_id: creatorId as any,
-            updatedby_id: creatorId as any,
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: finalHouseholdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
             first_name: firstName,
             last_name: lastName,
             email: email,
@@ -451,7 +451,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           let tag = await trx
             .selectFrom('tags')
             .select('id')
-            .where('tenant_id', '=', tenantId as any)
+            .where('tenant_id', '=', tenantId)
             .where('name', '=', normalizedTagName)
             .where('type', '=', 'tag')
             .executeTakeFirst();
@@ -460,12 +460,12 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
             const insertTagRes = await trx
               .insertInto('tags')
               .values({
-                tenant_id: tenantId as any,
+                tenant_id: tenantId,
                 name: normalizedTagName,
                 type: 'tag',
                 deletable: true,
-                createdby_id: creatorId as any,
-                updatedby_id: creatorId as any,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
               })
               .returning('id')
               .executeTakeFirstOrThrow();
@@ -475,20 +475,20 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           const mapExists = await trx
             .selectFrom('map_peoples_tags')
             .select('person_id')
-            .where('tenant_id', '=', tenantId as any)
-            .where('person_id', '=', personId as any)
-            .where('tag_id', '=', tag.id as any)
+            .where('tenant_id', '=', tenantId)
+            .where('person_id', '=', personId)
+            .where('tag_id', '=', tag.id)
             .executeTakeFirst();
 
           if (!mapExists) {
             await trx
               .insertInto('map_peoples_tags')
               .values({
-                tenant_id: tenantId as any,
-                person_id: personId as any,
-                tag_id: tag.id as any,
-                createdby_id: creatorId as any,
-                updatedby_id: creatorId as any,
+                tenant_id: tenantId,
+                person_id: personId,
+                tag_id: tag.id,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
               })
               .execute();
 
@@ -510,8 +510,8 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           const listExists = await trx
             .selectFrom('lists')
             .select('id')
-            .where('tenant_id', '=', tenantId as any)
-            .where('id', '=', listId as any)
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', listId)
             .executeTakeFirst();
 
           if (!listExists) continue;
@@ -519,20 +519,20 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           const inList = await trx
             .selectFrom('map_lists_persons')
             .select('person_id')
-            .where('tenant_id', '=', tenantId as any)
-            .where('person_id', '=', personId as any)
-            .where('list_id', '=', listId as any)
+            .where('tenant_id', '=', tenantId)
+            .where('person_id', '=', personId)
+            .where('list_id', '=', listId)
             .executeTakeFirst();
 
           if (!inList) {
             await trx
               .insertInto('map_lists_persons')
               .values({
-                tenant_id: tenantId as any,
-                person_id: personId as any,
-                list_id: listId as any,
-                createdby_id: creatorId as any,
-                updatedby_id: creatorId as any,
+                tenant_id: tenantId,
+                person_id: personId,
+                list_id: listId,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
               })
               .execute();
 
@@ -572,7 +572,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         await trx
           .insertInto('background_jobs')
           .values({
-            tenant_id: tenantId as any,
+            tenant_id: tenantId,
             queue: 'default',
             status: 'pending',
             payload: JSON.stringify({
@@ -648,9 +648,9 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 
     await this.getRepo()
       .db.updateTable('persons')
-      .set({ opt_in_status: 'confirmed', opt_in_confirmed_at: sql`now()` } as any)
-      .where('tenant_id', '=', String(payload.tenant_id) as any)
-      .where('id', '=', String(payload.person_id) as any)
+      .set({ opt_in_status: 'confirmed', opt_in_confirmed_at: sql`now()` })
+      .where('tenant_id', '=', String(payload.tenant_id))
+      .where('id', '=', String(payload.person_id))
       .execute();
 
     return { success: true };
@@ -660,7 +660,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     const row = await trx
       .selectFrom('settings')
       .select('value')
-      .where('tenant_id', '=', tenantId as any)
+      .where('tenant_id', '=', tenantId)
       .where('key', '=', 'communications.double_opt_in')
       .executeTakeFirst();
 
@@ -694,7 +694,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     await trx
       .insertInto('background_jobs')
       .values({
-        tenant_id: args.tenantId as any,
+        tenant_id: args.tenantId,
         queue: 'default',
         status: 'pending',
         payload: JSON.stringify({
@@ -713,7 +713,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     const row = await trx
       .selectFrom('settings')
       .select('value')
-      .where('tenant_id', '=', tenantId as any)
+      .where('tenant_id', '=', tenantId)
       .where('key', '=', 'current_campaign')
       .executeTakeFirst();
 
@@ -733,7 +733,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     const campaignRow = await trx
       .selectFrom('campaigns')
       .select('id')
-      .where('tenant_id', '=', tenantId as any)
+      .where('tenant_id', '=', tenantId)
       .limit(1)
       .executeTakeFirst();
 

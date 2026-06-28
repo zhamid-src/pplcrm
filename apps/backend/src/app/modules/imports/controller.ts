@@ -110,7 +110,7 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
           if (companyIds.length > 0) {
             await trx
               .updateTable('persons')
-              .set({ company_id: null, updated_at: sql`now()` as any, updatedby_id: auth.user_id })
+              .set({ company_id: null, updated_at: sql`now()`, updatedby_id: auth.user_id })
               .where('tenant_id', '=', auth.tenant_id)
               .where('company_id', 'in', companyIds)
               .execute();

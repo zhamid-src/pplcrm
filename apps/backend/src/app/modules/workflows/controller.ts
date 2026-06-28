@@ -23,8 +23,8 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     const steps = await db
       .selectFrom('workflow_steps')
       .selectAll()
-      .where('tenant_id', '=', tenantId as any)
-      .where('workflow_id', '=', workflowId as any)
+      .where('tenant_id', '=', tenantId)
+      .where('workflow_id', '=', workflowId)
       .orderBy('step_number', 'asc')
       .execute();
     return steps.map((s) => ({
@@ -42,8 +42,8 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
         const workflow = await trx
           .selectFrom('workflows')
           .select('id')
-          .where('tenant_id', '=', tenantId as any)
-          .where('id', '=', workflowId as any)
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', workflowId)
           .executeTakeFirst();
 
         if (!workflow) {
@@ -56,8 +56,8 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
         // 2. Delete all existing steps
         await trx
           .deleteFrom('workflow_steps')
-          .where('tenant_id', '=', tenantId as any)
-          .where('workflow_id', '=', workflowId as any)
+          .where('tenant_id', '=', tenantId)
+          .where('workflow_id', '=', workflowId)
           .execute();
 
         // 3. Insert new steps
@@ -118,8 +118,8 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
       const person = await t
         .selectFrom('persons')
         .select(['id', 'first_name', 'last_name', 'email'])
-        .where('tenant_id', '=', tenantId as any)
-        .where('id', '=', personId as any)
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', personId)
         .executeTakeFirst();
 
       if (!person) {
@@ -133,8 +133,8 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
       const workflow = await t
         .selectFrom('workflows')
         .select(['id', 'status', 'name'])
-        .where('tenant_id', '=', tenantId as any)
-        .where('id', '=', workflowId as any)
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', workflowId)
         .executeTakeFirst();
 
       if (!workflow) {
@@ -148,9 +148,9 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
       const existing = await t
         .selectFrom('workflow_enrollments')
         .select('id')
-        .where('tenant_id', '=', tenantId as any)
-        .where('workflow_id', '=', workflowId as any)
-        .where('person_id', '=', personId as any)
+        .where('tenant_id', '=', tenantId)
+        .where('workflow_id', '=', workflowId)
+        .where('person_id', '=', personId)
         .where('status', '=', 'active')
         .executeTakeFirst();
 
@@ -165,8 +165,8 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
       const firstStep = await t
         .selectFrom('workflow_steps')
         .select(['step_number', 'delay_days', 'delay_unit'])
-        .where('tenant_id', '=', tenantId as any)
-        .where('workflow_id', '=', workflowId as any)
+        .where('tenant_id', '=', tenantId)
+        .where('workflow_id', '=', workflowId)
         .orderBy('step_number', 'asc')
         .executeTakeFirst();
 
@@ -243,8 +243,8 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
         const enrollment = await trx
           .selectFrom('workflow_enrollments')
           .select(['id', 'workflow_id', 'person_id', 'status'])
-          .where('tenant_id', '=', tenantId as any)
-          .where('id', '=', enrollmentId as any)
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', enrollmentId)
           .executeTakeFirst();
 
         if (!enrollment) {
@@ -268,15 +268,15 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
             next_run_at: null,
             updated_at: new Date(),
           })
-          .where('tenant_id', '=', tenantId as any)
-          .where('id', '=', enrollmentId as any)
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', enrollmentId)
           .execute();
 
         // Look up person's name for log
         const person = await trx
           .selectFrom('persons')
           .select(['first_name', 'last_name'])
-          .where('tenant_id', '=', tenantId as any)
+          .where('tenant_id', '=', tenantId)
           .where('id', '=', enrollment.person_id)
           .executeTakeFirst();
 
@@ -313,7 +313,7 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     let query = db
       .selectFrom('workflows')
       .select(['id', 'name'])
-      .where('tenant_id', '=', tenantId as any)
+      .where('tenant_id', '=', tenantId)
       .where('trigger_type', '=', triggerType)
       .where('status', '=', 'active');
 
@@ -329,11 +329,7 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     if (activeWorkflows.length === 0) return;
 
     // Look up the default tenant admin actor ID
-    const tenantRow = await db
-      .selectFrom('tenants')
-      .select('admin_id')
-      .where('id', '=', tenantId as any)
-      .executeTakeFirst();
+    const tenantRow = await db.selectFrom('tenants').select('admin_id').where('id', '=', tenantId).executeTakeFirst();
     if (!tenantRow?.admin_id) {
       console.warn(`triggerWorkflow: skipping automation for tenant ${tenantId} — admin_id not configured.`);
       return;

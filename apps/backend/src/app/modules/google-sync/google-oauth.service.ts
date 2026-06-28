@@ -118,7 +118,7 @@ export class GoogleOAuthService {
         .execute();
 
       await trx
-        .insertInto('background_jobs' as any)
+        .insertInto('background_jobs')
         .values({
           tenant_id: tenantId,
           queue: 'default',
@@ -184,9 +184,7 @@ export class GoogleOAuthService {
     return newAccessToken;
   }
 
-  public async getConnectionStatus(
-    tenantId: string,
-  ): Promise<{
+  public async getConnectionStatus(tenantId: string): Promise<{
     connected: boolean;
     googleEmail: string | null;
     syncedAt: Date | null;

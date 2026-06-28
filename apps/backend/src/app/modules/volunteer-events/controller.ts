@@ -35,7 +35,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     const existing = await this.getRepo()
       .db.selectFrom('volunteer_events')
       .select('id')
-      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .where('slug', '=', payload.slug)
       .executeTakeFirst();
     if (existing) {
@@ -76,10 +76,10 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     let query = this.getRepo()
       .db.selectFrom('volunteer_events')
       .select('id')
-      .where('tenant_id', '=', _auth.tenant_id as any)
+      .where('tenant_id', '=', _auth.tenant_id)
       .where('slug', '=', slug);
     if (excludeId) {
-      query = query.where('id', '!=', excludeId as any);
+      query = query.where('id', '!=', excludeId);
     }
     const existing = await query.executeTakeFirst();
     return { unique: !existing };
@@ -90,9 +90,9 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       const existing = await this.getRepo()
         .db.selectFrom('volunteer_events')
         .select('id')
-        .where('tenant_id', '=', auth.tenant_id as any)
+        .where('tenant_id', '=', auth.tenant_id)
         .where('slug', '=', payload.slug)
-        .where('id', '!=', id as any)
+        .where('id', '!=', id)
         .executeTakeFirst();
       if (existing) {
         throw new TRPCError({
@@ -119,7 +119,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     if (payload.send_reminder === false) {
       try {
         await this.getRepo()
-          .db.deleteFrom('background_jobs' as any)
+          .db.deleteFrom('background_jobs')
           .where('tenant_id', '=', auth.tenant_id)
           .where('status', '=', 'pending')
           .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
@@ -155,7 +155,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
             for (const shift of shifts) {
               // Delete existing pending reminder for safety
               await this.getRepo()
-                .db.deleteFrom('background_jobs' as any)
+                .db.deleteFrom('background_jobs')
                 .where('tenant_id', '=', auth.tenant_id)
                 .where('status', '=', 'pending')
                 .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
@@ -164,7 +164,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
 
               // Queue new reminder
               await this.getRepo()
-                .db.insertInto('background_jobs' as any)
+                .db.insertInto('background_jobs')
                 .values({
                   tenant_id: auth.tenant_id,
                   queue: 'default',
@@ -222,7 +222,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           if (startMs > nowMs) {
             const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
             await this.getRepo()
-              .db.insertInto('background_jobs' as any)
+              .db.insertInto('background_jobs')
               .values({
                 tenant_id: auth.tenant_id,
                 queue: 'default',
@@ -329,7 +329,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         if (payload.status && payload.status !== 'signed_up') {
           // Cancel/remove pending reminder
           await this.getRepo()
-            .db.deleteFrom('background_jobs' as any)
+            .db.deleteFrom('background_jobs')
             .where('tenant_id', '=', auth.tenant_id)
             .where('status', '=', 'pending')
             .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
@@ -338,7 +338,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         } else if (payload.status === 'signed_up') {
           // Remove existing pending reminders first
           await this.getRepo()
-            .db.deleteFrom('background_jobs' as any)
+            .db.deleteFrom('background_jobs')
             .where('tenant_id', '=', auth.tenant_id)
             .where('status', '=', 'pending')
             .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
@@ -359,7 +359,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
             if (startMs > nowMs) {
               const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
               await this.getRepo()
-                .db.insertInto('background_jobs' as any)
+                .db.insertInto('background_jobs')
                 .values({
                   tenant_id: auth.tenant_id,
                   queue: 'default',
@@ -407,7 +407,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     if (result) {
       try {
         await this.getRepo()
-          .db.deleteFrom('background_jobs' as any)
+          .db.deleteFrom('background_jobs')
           .where('tenant_id', '=', auth.tenant_id)
           .where('status', '=', 'pending')
           .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
@@ -450,11 +450,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
   }
 
   public async getTenantPublic(tenantId: string) {
-    return this.getRepo()
-      .db.selectFrom('tenants')
-      .select(['name'])
-      .where('id', '=', tenantId as any)
-      .executeTakeFirst();
+    return this.getRepo().db.selectFrom('tenants').select(['name']).where('id', '=', tenantId).executeTakeFirst();
   }
 
   public async getUpcomingEventsPublic(tenantId: string) {
@@ -482,7 +478,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
           .as('volunteers_count'),
       ])
-      .where('volunteer_events.tenant_id', '=', tenantId as any)
+      .where('volunteer_events.tenant_id', '=', tenantId)
       .where('volunteer_events.end_time', '>=', new Date())
       .where('volunteer_events.is_private', '=', false)
       .orderBy('volunteer_events.start_time', 'asc')
@@ -623,7 +619,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         const tenantRow = await trx
           .selectFrom('tenants')
           .select(['placeholder_household_id', 'admin_id'])
-          .where('id', '=', tenantId as any)
+          .where('id', '=', tenantId)
           .executeTakeFirst();
 
         const householdId = tenantRow?.placeholder_household_id;
@@ -642,7 +638,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         const existing = await trx
           .selectFrom('persons')
           .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId as any)
+          .where('tenant_id', '=', tenantId)
           .where(sql`lower(email)`, '=', email.toLowerCase())
           .executeTakeFirst();
 
@@ -667,17 +663,17 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
             await trx
               .updateTable('persons')
               .set(updateRow)
-              .where('tenant_id', '=', tenantId as any)
+              .where('tenant_id', '=', tenantId)
               .where('id', '=', existing.id)
               .execute();
           }
         } else {
           const insertRow = {
-            tenant_id: tenantId as any,
-            campaign_id: campaignId as any,
-            household_id: householdId as any,
-            createdby_id: creatorId as any,
-            updatedby_id: creatorId as any,
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: householdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
             first_name: firstName,
             last_name: lastName,
             email: email,
@@ -700,9 +696,9 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         const existingShift = await trx
           .selectFrom('volunteer_shifts')
           .select('id')
-          .where('tenant_id', '=', tenantId as any)
-          .where('event_id', '=', event.id as any)
-          .where('person_id', '=', personId as any)
+          .where('tenant_id', '=', tenantId)
+          .where('event_id', '=', event.id)
+          .where('person_id', '=', personId)
           .executeTakeFirst();
 
         if (existingShift) {
@@ -723,7 +719,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           let tag = await trx
             .selectFrom('tags')
             .select('id')
-            .where('tenant_id', '=', tenantId as any)
+            .where('tenant_id', '=', tenantId)
             .where('name', '=', normalizedTagName)
             .where('type', '=', 'tag')
             .executeTakeFirst();
@@ -733,12 +729,12 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
               const insertTagRes = await trx
                 .insertInto('tags')
                 .values({
-                  tenant_id: tenantId as any,
+                  tenant_id: tenantId,
                   name: normalizedTagName,
                   type: 'tag',
                   deletable: true,
-                  createdby_id: creatorId as any,
-                  updatedby_id: creatorId as any,
+                  createdby_id: creatorId,
+                  updatedby_id: creatorId,
                 })
                 .returning('id')
                 .executeTakeFirst();
@@ -750,7 +746,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
               tag = await trx
                 .selectFrom('tags')
                 .select('id')
-                .where('tenant_id', '=', tenantId as any)
+                .where('tenant_id', '=', tenantId)
                 .where('name', '=', normalizedTagName)
                 .where('type', '=', 'tag')
                 .executeTakeFirst();
@@ -762,20 +758,20 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
             const mapExists = await trx
               .selectFrom('map_peoples_tags')
               .select('person_id')
-              .where('tenant_id', '=', tenantId as any)
-              .where('person_id', '=', personId as any)
-              .where('tag_id', '=', tag.id as any)
+              .where('tenant_id', '=', tenantId)
+              .where('person_id', '=', personId)
+              .where('tag_id', '=', tag.id)
               .executeTakeFirst();
 
             if (!mapExists) {
               await trx
                 .insertInto('map_peoples_tags')
                 .values({
-                  tenant_id: tenantId as any,
-                  person_id: personId as any,
-                  tag_id: tag.id as any,
-                  createdby_id: creatorId as any,
-                  updatedby_id: creatorId as any,
+                  tenant_id: tenantId,
+                  person_id: personId,
+                  tag_id: tag.id,
+                  createdby_id: creatorId,
+                  updatedby_id: creatorId,
                 })
                 .onConflict((oc) => oc.columns(['tenant_id', 'person_id', 'tag_id']).doNothing())
                 .execute();
@@ -794,13 +790,13 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         const shiftResult = await trx
           .insertInto('volunteer_shifts')
           .values({
-            tenant_id: tenantId as any,
-            event_id: event.id as any,
-            person_id: personId as any,
+            tenant_id: tenantId,
+            event_id: event.id,
+            person_id: personId,
             status: 'signed_up',
             notes: notes,
-            createdby_id: creatorId as any,
-            updatedby_id: creatorId as any,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
           })
           .returning('id')
           .executeTakeFirstOrThrow();
@@ -825,9 +821,9 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
 
         // Queue email notification job in background
         await trx
-          .insertInto('background_jobs' as any)
+          .insertInto('background_jobs')
           .values({
-            tenant_id: tenantId as any,
+            tenant_id: tenantId,
             queue: 'default',
             status: 'pending',
             payload: JSON.stringify({
@@ -851,9 +847,9 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           if (startMs > nowMs) {
             const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
             await trx
-              .insertInto('background_jobs' as any)
+              .insertInto('background_jobs')
               .values({
-                tenant_id: tenantId as any,
+                tenant_id: tenantId,
                 queue: 'default',
                 status: 'pending',
                 payload: JSON.stringify({
@@ -884,7 +880,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     const row = await trx
       .selectFrom('settings')
       .select('value')
-      .where('tenant_id', '=', tenantId as any)
+      .where('tenant_id', '=', tenantId)
       .where('key', '=', 'current_campaign')
       .executeTakeFirst();
 
@@ -904,7 +900,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     const campaignRow = await trx
       .selectFrom('campaigns')
       .select('id')
-      .where('tenant_id', '=', tenantId as any)
+      .where('tenant_id', '=', tenantId)
       .limit(1)
       .executeTakeFirst();
 

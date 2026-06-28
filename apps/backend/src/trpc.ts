@@ -91,8 +91,8 @@ const isAuthed = middleware(async (opts) => {
     const record = await BaseRepository.dbInstance
       .selectFrom('authusers')
       .select(['role', 'verified'])
-      .where('id', '=', ctx.auth.user_id as any)
-      .where('tenant_id', '=', ctx.auth.tenant_id as any)
+      .where('id', '=', ctx.auth.user_id)
+      .where('tenant_id', '=', ctx.auth.tenant_id)
       .executeTakeFirst();
     if (record) {
       user = {

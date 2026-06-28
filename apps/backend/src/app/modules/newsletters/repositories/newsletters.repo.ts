@@ -14,7 +14,7 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
   ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
     const opts: QueryParams<'newsletters'> = options ?? {};
     const searchStr = this.normalizeSearch(opts.searchStr);
-    const filterModel = ((opts as any)?.filterModel ?? {}) as Record<string, any>;
+    const filterModel = (opts?.filterModel ?? {}) as Record<string, any>;
     const startRow =
       typeof opts.startRow === 'number' ? opts.startRow : typeof opts.offset === 'number' ? opts.offset : 0;
     const limit =
@@ -26,55 +26,57 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
 
     const applyFilters = <QB extends ReturnType<typeof this.getSelect>>(qb: QB) =>
       qb
-        .where('newsletters.tenant_id', '=', tenant_id as any)
-        .$if(!!searchStr, (q) => q.where(sql`LOWER(newsletters.name) LIKE ${searchStr}` as any))
+        .where('newsletters.tenant_id', '=', tenant_id)
+        .$if(!!searchStr, (q) => q.where(sql<boolean>`LOWER(newsletters.name) LIKE ${searchStr}`))
         .$if(!!filterModel['name']?.value, (q) =>
           q.where('newsletters.name', 'ilike', `%${filterModel['name'].value}%`),
         )
         .$if(!!filterModel['status']?.value || typeof filterModel['status'] === 'string', (q) => {
-          const raw = (filterModel['status']?.value ?? filterModel['status']) as any;
+          const raw: unknown = filterModel['status']?.value ?? filterModel['status'];
           const text = String(raw ?? '')
             .trim()
             .toLowerCase();
           if (!text) return q;
-          return q.where('newsletters.status', '=', text as any);
+          return q.where('newsletters.status', '=', text);
         })
         .$if(!!filterModel['delivered_count']?.value || typeof filterModel['delivered_count'] === 'string', (q) => {
-          const raw = (filterModel['delivered_count']?.value ?? filterModel['delivered_count']) as any;
+          const raw: unknown = filterModel['delivered_count']?.value ?? filterModel['delivered_count'];
           const text = String(raw ?? '').trim();
           if (!text) return q;
-          if (/^\d+$/.test(text)) return q.where('newsletters.delivered_count', '=', Number(text) as any);
-          return q.where(sql`CAST(newsletters.delivered_count AS TEXT) ILIKE ${'%' + text + '%'}` as any);
+          if (/^\d+$/.test(text)) return q.where('newsletters.delivered_count', '=', Number(text));
+          return q.where(sql<boolean>`CAST(newsletters.delivered_count AS TEXT) ILIKE ${'%' + text + '%'}`);
         })
         .$if(!!filterModel['open_rate']?.value || typeof filterModel['open_rate'] === 'string', (q) => {
-          const raw = (filterModel['open_rate']?.value ?? filterModel['open_rate']) as any;
+          const raw: unknown = filterModel['open_rate']?.value ?? filterModel['open_rate'];
           const text = String(raw ?? '').trim();
           if (!text) return q;
           const numeric = Number(text.replace(/%/g, ''));
-          if (!Number.isNaN(numeric)) return q.where('newsletters.open_rate', '=', numeric as any);
-          return q.where(sql`CAST(newsletters.open_rate AS TEXT) ILIKE ${'%' + text + '%'}` as any);
+          if (!Number.isNaN(numeric)) return q.where('newsletters.open_rate', '=', numeric);
+          return q.where(sql<boolean>`CAST(newsletters.open_rate AS TEXT) ILIKE ${'%' + text + '%'}`);
         })
         .$if(!!filterModel['click_rate']?.value || typeof filterModel['click_rate'] === 'string', (q) => {
-          const raw = (filterModel['click_rate']?.value ?? filterModel['click_rate']) as any;
+          const raw: unknown = filterModel['click_rate']?.value ?? filterModel['click_rate'];
           const text = String(raw ?? '').trim();
           if (!text) return q;
           const numeric = Number(text.replace(/%/g, ''));
-          if (!Number.isNaN(numeric)) return q.where('newsletters.click_rate', '=', numeric as any);
-          return q.where(sql`CAST(newsletters.click_rate AS TEXT) ILIKE ${'%' + text + '%'}` as any);
+          if (!Number.isNaN(numeric)) return q.where('newsletters.click_rate', '=', numeric);
+          return q.where(sql<boolean>`CAST(newsletters.click_rate AS TEXT) ILIKE ${'%' + text + '%'}`);
         })
         .$if(!!filterModel['send_date']?.value, (q) =>
-          q.where(sql`CAST(newsletters.send_date AS TEXT) ILIKE ${'%' + filterModel['send_date'].value + '%'}` as any),
+          q.where(
+            sql<boolean>`CAST(newsletters.send_date AS TEXT) ILIKE ${'%' + filterModel['send_date'].value + '%'}`,
+          ),
         )
         .$if(!!filterModel['total_recipients']?.value || typeof filterModel['total_recipients'] === 'string', (q) => {
-          const raw = (filterModel['total_recipients']?.value ?? filterModel['total_recipients']) as any;
+          const raw: unknown = filterModel['total_recipients']?.value ?? filterModel['total_recipients'];
           const text = String(raw ?? '').trim();
           if (!text) return q;
-          if (/^\d+$/.test(text)) return q.where('newsletters.total_recipients', '=', Number(text) as any);
-          return q.where(sql`CAST(newsletters.total_recipients AS TEXT) ILIKE ${'%' + text + '%'}` as any);
+          if (/^\d+$/.test(text)) return q.where('newsletters.total_recipients', '=', Number(text));
+          return q.where(sql<boolean>`CAST(newsletters.total_recipients AS TEXT) ILIKE ${'%' + text + '%'}`);
         })
         .$if(!!filterModel['updated_at']?.value, (q) =>
           q.where(
-            sql`CAST(newsletters.updated_at AS TEXT) ILIKE ${'%' + filterModel['updated_at'].value + '%'}` as any,
+            sql<boolean>`CAST(newsletters.updated_at AS TEXT) ILIKE ${'%' + filterModel['updated_at'].value + '%'}`,
           ),
         )
         .$if(!!filterModel['subject']?.value, (q) =>
@@ -104,7 +106,7 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
     ]);
 
     if (opts.sortModel?.length) {
-      query = opts.sortModel.reduce((acc: typeof query, sort) => acc.orderBy(sort.colId as any, sort.sort), query);
+      query = opts.sortModel.reduce((acc: typeof query, sort) => acc.orderBy(sql.ref(sort.colId), sort.sort), query);
     }
 
     if (startRow > 0) {
@@ -117,7 +119,7 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
 
     const rowsRaw = await query.execute();
 
-    const rows = rowsRaw.map((row: any) => ({
+    const rows = rowsRaw.map((row) => ({
       id: String(row.id),
       name: row.name,
       status: row.status,

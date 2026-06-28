@@ -25,10 +25,10 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
     for (const row of results) {
       const activity = String(row['activity'] ?? '');
       if (!activity) continue;
-      const count = Number((row as any).count ?? 0);
-      const totalQtyRaw = (row as any).total_quantity;
+      const count = Number(row['count'] ?? 0);
+      const totalQtyRaw = row['total_quantity'];
       const total_quantity = totalQtyRaw == null ? 0 : Number(totalQtyRaw);
-      const lastAtValue = (row as any).last_activity_at ?? null;
+      const lastAtValue = row['last_activity_at'] ?? null;
       const last_activity_at = lastAtValue ? new Date(lastAtValue) : null;
       mapped[activity] = { count, total_quantity, last_activity_at };
     }

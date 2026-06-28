@@ -602,15 +602,15 @@ export class PersonsService {
     }
 
     await this.importsRepo.update({
-      tenant_id: auth.tenant_id as any,
-      id: importRecordId as any,
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
       row: {
         metadata: JSON.stringify({ storage_key: storageKey }),
       } as any,
     });
 
     await this.importsRepo.db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: auth.tenant_id,
         queue: 'default',
@@ -626,7 +626,7 @@ export class PersonsService {
           file_name: baseFileName,
         }),
         run_at: new Date(),
-      } as any)
+      })
       .execute();
 
     return {
@@ -741,8 +741,8 @@ export class PersonsService {
 
       if (validEntries.length === 0) {
         await this.importsRepo.update({
-          tenant_id: tenant_id as any,
-          id: import_id as any,
+          tenant_id: tenant_id,
+          id: import_id,
           row: {
             tag_id: autoTagId,
             inserted_count: results.inserted,
@@ -793,7 +793,7 @@ export class PersonsService {
             ...new Set(validEntries.filter((e) => !e.isBlankAddress && e.fp_full).map((e) => e.fp_full as string)),
           ];
           if (uniqueFps.length > 0) {
-            const existingHouseholds = await (trx as any)
+            const existingHouseholds = await trx
               .selectFrom('households')
               .select(['id', 'address_fp_full'])
               .where('tenant_id', '=', tenant_id)
@@ -853,7 +853,7 @@ export class PersonsService {
             notes: sanitized.notes ?? null,
             json: null,
           }));
-          const insertedPersons: any[] = await (trx as any)
+          const insertedPersons: any[] = await trx
             .insertInto('persons')
             .values(personRows)
             .onConflict((oc: any) => oc.doNothing())
@@ -934,8 +934,8 @@ export class PersonsService {
 
       // Update intermediate counts after each chunk
       await this.importsRepo.update({
-        tenant_id: tenant_id as any,
-        id: import_id as any,
+        tenant_id: tenant_id,
+        id: import_id,
         row: {
           tag_id: autoTagId,
           inserted_count: results.inserted,

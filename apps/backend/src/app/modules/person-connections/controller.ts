@@ -22,14 +22,17 @@ export class PersonConnectionsController extends BaseController<'person_connecti
     const existing = await this.getRepo()
       .db.selectFrom('person_connections')
       .select('id')
-      .where('tenant_id', '=', auth.tenant_id as any)
-      .where('from_person_id', '=', person_id as any)
-      .where('to_person_id', '=', data.to_person_id as any)
-      .where('relation_type', '=', data.relation_type as any)
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('from_person_id', '=', person_id)
+      .where('to_person_id', '=', data.to_person_id)
+      .where('relation_type', '=', data.relation_type)
       .executeTakeFirst();
 
     if (existing) {
-      throw new TRPCError({ code: 'CONFLICT', message: 'A connection of this type already exists between these contacts.' });
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: 'A connection of this type already exists between these contacts.',
+      });
     }
 
     const row = {
@@ -47,17 +50,20 @@ export class PersonConnectionsController extends BaseController<'person_connecti
     const result = await this.add(row);
 
     try {
-      await this.getRepo().db.insertInto('user_activity' as any).values({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'assign',
-        entity: 'persons',
-        entity_id: person_id,
-        quantity: 1,
-        metadata: JSON.stringify({ relation_type: data.relation_type, to_person_id: data.to_person_id }),
-        created_at: new Date(),
-        updated_at: new Date(),
-      }).execute();
+      await this.getRepo()
+        .db.insertInto('user_activity' as any)
+        .values({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'assign',
+          entity: 'persons',
+          entity_id: person_id,
+          quantity: 1,
+          metadata: JSON.stringify({ relation_type: data.relation_type, to_person_id: data.to_person_id }),
+          created_at: new Date(),
+          updated_at: new Date(),
+        })
+        .execute();
     } catch (e) {
       console.error('Failed to log connection activity', e);
     }
@@ -69,8 +75,8 @@ export class PersonConnectionsController extends BaseController<'person_connecti
     const connection = await this.getRepo()
       .db.selectFrom('person_connections')
       .select(['from_person_id', 'to_person_id', 'relation_type'])
-      .where('id', '=', id as any)
-      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('id', '=', id)
+      .where('tenant_id', '=', auth.tenant_id)
       .executeTakeFirst();
 
     if (!connection) {
@@ -80,17 +86,20 @@ export class PersonConnectionsController extends BaseController<'person_connecti
     await this.delete(auth.tenant_id, id, auth.user_id);
 
     try {
-      await this.getRepo().db.insertInto('user_activity' as any).values({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'unassign',
-        entity: 'persons',
-        entity_id: String(connection.from_person_id),
-        quantity: 1,
-        metadata: JSON.stringify({ relation_type: connection.relation_type, to_person_id: connection.to_person_id }),
-        created_at: new Date(),
-        updated_at: new Date(),
-      }).execute();
+      await this.getRepo()
+        .db.insertInto('user_activity' as any)
+        .values({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'unassign',
+          entity: 'persons',
+          entity_id: String(connection.from_person_id),
+          quantity: 1,
+          metadata: JSON.stringify({ relation_type: connection.relation_type, to_person_id: connection.to_person_id }),
+          created_at: new Date(),
+          updated_at: new Date(),
+        })
+        .execute();
     } catch (e) {
       console.error('Failed to log connection removal activity', e);
     }

@@ -11,6 +11,7 @@ import { GoogleSyncService } from '../../modules/google-sync/google-sync.service
 import { MsOAuthService } from '../../modules/ms-sync/ms-oauth.service';
 import { MsSyncService } from '../../modules/ms-sync/ms-sync.service';
 import { env } from '../../../env';
+import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { TransactionalEmailService } from '../mail/transactional-mail.service';
 import { UserActivityRepo } from '../user-activity.repo';
@@ -20,12 +21,13 @@ import { geocodeAndMapHousehold } from '../gis/geocoding';
 import { ExportsRepo } from '../../modules/exports/repositories/exports.repo';
 import { Readable } from 'stream';
 import { CsvTransformStream } from '../csv-stream';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 
 const storageService = new StorageService();
 const importsRepo = new ImportsRepo();
 const mailService = new TransactionalEmailService();
 
-export async function executeJob(payload: any, db: any, jobId?: string): Promise<void> {
+export async function executeJob(payload: any, db: Kysely<Models>, jobId?: string): Promise<void> {
   if (payload.type === 'refresh_list') {
     const listsController = new ListsController();
     await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
@@ -42,7 +44,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
     if (!payload.tenant_id) {
       await db
-        .insertInto('background_jobs' as any)
+        .insertInto('background_jobs')
         .values({
           tenant_id: null,
           queue: 'default',
@@ -59,7 +61,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
     // Schedule next cleanup_activities job 24 hours later
     await db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: null,
         queue: 'default',
@@ -74,7 +76,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
     // Schedule next schedule_sync_jobs job 10 minutes later
     await db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: null,
         queue: 'default',
@@ -103,7 +105,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
   } else if (payload.type === 'recompute_all_duplicates') {
     const lastJob = await db
-      .selectFrom('background_jobs' as any)
+      .selectFrom('background_jobs')
       .select(['updated_at'])
       .where('status', '=', 'completed')
       .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
@@ -158,7 +160,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     }
 
     await db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: null,
         queue: 'default',
@@ -181,7 +183,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         'send_signup_confirmation',
         'send_volunteer_alert',
       ])
-      .where('id', '=', payload.eventId as any)
+      .where('id', '=', payload.eventId)
       .executeTakeFirst();
 
     if (!event) {
@@ -220,7 +222,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         const admin = await db
           .selectFrom('authusers')
           .select('email')
-          .where('tenant_id', '=', payload.tenantId as any)
+          .where('tenant_id', '=', payload.tenantId)
           .limit(1)
           .executeTakeFirst();
         if (admin && admin.email) {
@@ -262,11 +264,11 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       return;
     }
 
-    const event = (await db
+    const event = await db
       .selectFrom('volunteer_events')
       .selectAll()
-      .where('id', '=', shift.event_id as any)
-      .executeTakeFirst()) as any;
+      .where('id', '=', shift.event_id)
+      .executeTakeFirst();
 
     if (!event) {
       console.log(`Skipping shift reminder: event ${shift.event_id} not found.`);
@@ -278,11 +280,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       return;
     }
 
-    const person = (await db
-      .selectFrom('persons')
-      .selectAll()
-      .where('id', '=', shift.person_id as any)
-      .executeTakeFirst()) as any;
+    const person = await db.selectFrom('persons').selectAll().where('id', '=', shift.person_id).executeTakeFirst();
 
     if (!person) {
       console.log(`Skipping shift reminder: person ${shift.person_id} not found.`);
@@ -332,7 +330,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     const form = await db
       .selectFrom('web_forms')
       .select(['name', 'send_confirmation', 'send_alert', 'tenant_id'])
-      .where('id', '=', payload.formId as any)
+      .where('id', '=', payload.formId)
       .executeTakeFirst();
 
     if (!form) {
@@ -355,7 +353,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       const admin = await db
         .selectFrom('authusers')
         .select(['email', 'first_name'])
-        .where('tenant_id', '=', form.tenant_id as any)
+        .where('tenant_id', '=', form.tenant_id)
         .limit(1)
         .executeTakeFirst();
 
@@ -391,7 +389,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         'contact_phone',
         'send_registration_confirmation',
       ])
-      .where('id', '=', registration.event_id as any)
+      .where('id', '=', registration.event_id)
       .executeTakeFirst();
 
     if (!event || event.send_registration_confirmation === false) {
@@ -402,7 +400,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     const person = await db
       .selectFrom('persons')
       .select(['first_name', 'email'])
-      .where('id', '=', registration.person_id as any)
+      .where('id', '=', registration.person_id)
       .executeTakeFirst();
 
     if (!person || !person.email) {
@@ -447,11 +445,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       return;
     }
 
-    const event = await db
-      .selectFrom('events')
-      .selectAll()
-      .where('id', '=', registration.event_id as any)
-      .executeTakeFirst();
+    const event = await db.selectFrom('events').selectAll().where('id', '=', registration.event_id).executeTakeFirst();
 
     if (!event || event.send_reminder === false) {
       console.log(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
@@ -461,7 +455,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     const person = await db
       .selectFrom('persons')
       .select(['first_name', 'email'])
-      .where('id', '=', registration.person_id as any)
+      .where('id', '=', registration.person_id)
       .executeTakeFirst();
 
     if (!person || !person.email) {
@@ -500,8 +494,8 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
   } else if (payload.import_id && payload.storage_key) {
     // 1. Mark import status as 'processing' in data_imports
     await importsRepo.update({
-      tenant_id: payload.tenant_id as any,
-      id: payload.import_id as any,
+      tenant_id: payload.tenant_id,
+      id: payload.import_id,
       row: {
         status: 'processing',
         updated_at: new Date(),
@@ -546,8 +540,8 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
     // 4. Update import status to 'completed'
     await importsRepo.update({
-      tenant_id: payload.tenant_id as any,
-      id: payload.import_id as any,
+      tenant_id: payload.tenant_id,
+      id: payload.import_id,
       row: {
         status: 'completed',
         processed_at: new Date(),
@@ -566,7 +560,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         .selectFrom('authusers')
         .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
         .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-        .where('authusers.id', '=', Number(payload.user_id) as any)
+        .where('authusers.id', '=', payload.user_id)
         .executeTakeFirst();
 
       if (user && user.email) {
@@ -611,7 +605,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
     // Schedule next check_due_tasks job 24 hours later
     await db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: null,
         queue: 'default',
@@ -671,7 +665,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     const settingsRows = await db
       .selectFrom('settings')
       .select(['key', 'value'])
-      .where('tenant_id', '=', tenantId as any)
+      .where('tenant_id', '=', tenantId)
       .where('key', 'in', [
         'communications.sendgrid_api_key',
         'communications.sendgrid_subuser_username',
@@ -821,7 +815,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     // Schedule next run 24 hours later if periodic/cron-like (no tenant_id)
     if (!payload.tenant_id) {
       await db
-        .insertInto('background_jobs' as any)
+        .insertInto('background_jobs')
         .values({
           tenant_id: null,
           queue: 'default',
@@ -846,7 +840,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
     for (const enrollment of pendingEnrollments) {
       try {
-        await db.transaction().execute(async (trx: any) => {
+        await db.transaction().execute(async (trx) => {
           const lockedEnrollment = await trx
             .selectFrom('workflow_enrollments')
             .selectAll()
@@ -892,9 +886,9 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
               step.html_content || `<p>Hello ${person.first_name || 'there'},</p><p>This is an automated message.</p>`;
 
             await trx
-              .insertInto('background_jobs' as any)
+              .insertInto('background_jobs')
               .values({
-                tenant_id: lockedEnrollment.tenant_id as any,
+                tenant_id: lockedEnrollment.tenant_id,
                 queue: 'default',
                 status: 'pending',
                 payload: JSON.stringify({
@@ -985,7 +979,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
     const runAt = pendingEnrollments.length === 500 ? new Date() : new Date(Date.now() + 10 * 60 * 1000);
     await db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: null,
         queue: 'default',
@@ -1006,19 +1000,10 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
     for (const user of expiredUsers) {
       const userId = String(user.id);
-      await db.transaction().execute(async (trx: any) => {
-        await trx
-          .deleteFrom('sessions')
-          .where('user_id', '=', BigInt(userId) as any)
-          .execute();
-        await trx
-          .deleteFrom('profiles')
-          .where('auth_id', '=', BigInt(userId) as any)
-          .execute();
-        await trx
-          .deleteFrom('authusers')
-          .where('id', '=', BigInt(userId) as any)
-          .execute();
+      await db.transaction().execute(async (trx) => {
+        await trx.deleteFrom('sessions').where('user_id', '=', userId).execute();
+        await trx.deleteFrom('profiles').where('auth_id', '=', userId).execute();
+        await trx.deleteFrom('authusers').where('id', '=', userId).execute();
       });
     }
 
@@ -1035,13 +1020,13 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
       const ownerUsers = await db
         .selectFrom('authusers')
         .select(['email', 'first_name'])
-        .where('tenant_id', '=', BigInt(tenantId) as any)
+        .where('tenant_id', '=', tenantId)
         .where('role', '=', 'owner')
         .execute();
 
       console.log(`Hard-deleting tenant ${tenantId} (deletion_scheduled_at <= now)…`);
-      await db.transaction().execute(async (trx: any) => {
-        const tid = BigInt(tenantId) as any;
+      await db.transaction().execute(async (trx) => {
+        const tid = tenantId;
 
         // ── Collaboration ─────────────────────────────────────────────────
         await trx.deleteFrom('task_attachments').where('tenant_id', '=', tid).execute();
@@ -1071,10 +1056,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         await trx.deleteFrom('web_forms').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('background_jobs').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('webhook_events').where('tenant_id', '=', tid).execute();
-        await trx
-          .deleteFrom('zapier_subscriptions' as any)
-          .where('tenant_id', '=', tid)
-          .execute();
+        await trx.deleteFrom('zapier_subscriptions').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('volunteer_shifts').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('volunteer_events').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('event_registrations').where('tenant_id', '=', tid).execute();
@@ -1105,7 +1087,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 
         // ── Auth & Identity (last) ─────────────────────────────────────────
         // Null out FK references on tenants before deleting authusers
-        await trx.updateTable('tenants').set({ admin_id: null, createdby_id: null }).where('id', '=', tid).execute();
+        await trx.updateTable('tenants').set({ admin_id: null }).where('id', '=', tid).execute();
         await trx.deleteFrom('sessions').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('profiles').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('authusers').where('tenant_id', '=', tid).execute();
@@ -1133,13 +1115,13 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     // Permanently delete completed background jobs older than 7 days to prevent unbounded table growth
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     await db
-      .deleteFrom('background_jobs' as any)
+      .deleteFrom('background_jobs')
       .where('status', '=', 'completed')
       .where('updated_at', '<=', sevenDaysAgo)
       .execute();
 
     await db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: null,
         queue: 'default',
@@ -1160,7 +1142,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
     const { checkAllUsageLimits } = await import('../../modules/billing/usage-limits');
     await checkAllUsageLimits(db);
     await db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: null,
         queue: 'default',
@@ -1240,9 +1222,9 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
         }
       } else {
         query = db
-          .selectFrom(table as any)
+          .selectFrom(table as keyof Models)
           .selectAll()
-          .where('tenant_id', '=', tenantId as any);
+          .where('tenant_id', '=', tenantId);
 
         // Issues are tags with type='issue'
         if (payload.entity === 'issues') {
@@ -1309,7 +1291,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
             .selectFrom('authusers')
             .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
             .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-            .where('authusers.id', '=', Number(payload.user_id) as any)
+            .where('authusers.id', '=', payload.user_id)
             .executeTakeFirst();
 
           if (user) {
@@ -1369,7 +1351,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
   } else if (payload.type === 'prune_newsletter_events') {
     await pruneNewsletterEvents(db);
     await db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: null,
         queue: 'default',
@@ -1388,7 +1370,7 @@ export async function executeJob(payload: any, db: any, jobId?: string): Promise
 // Delivery-only events (delivered, deferred, processed) are not stored.
 const ENGAGEMENT_EVENT_TYPES = new Set(['open', 'click', 'unsubscribe', 'group_unsubscribe', 'bounce', 'spamreport']);
 
-async function pruneNewsletterEvents(db: any): Promise<void> {
+async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
   const tenants: { id: string; subscription_plan: string | null }[] = await db
     .selectFrom('tenants')
     .select(['id', 'subscription_plan'])
@@ -1485,7 +1467,7 @@ async function pruneNewsletterEvents(db: any): Promise<void> {
 
       // Upsert aggregated rows, then delete the raw events.
       if (grouped.size > 0) {
-        await db.transaction().execute(async (trx: any) => {
+        await db.transaction().execute(async (trx) => {
           for (const row of grouped.values()) {
             await trx
               .insertInto('person_newsletter_engagements')
@@ -1610,7 +1592,7 @@ function getEntityFilterValues(entityFilter: string): string[] {
   return [ent];
 }
 
-async function recomputeTenantAddressFingerprints(tenantId: string, db: any): Promise<void> {
+async function recomputeTenantAddressFingerprints(tenantId: string, db: Kysely<Models>): Promise<void> {
   const households = await db.selectFrom('households').selectAll().where('tenant_id', '=', tenantId).execute();
 
   for (const hh of households) {
@@ -1648,7 +1630,7 @@ async function recomputeTenantAddressFingerprints(tenantId: string, db: any): Pr
   await maintenanceSvc.recomputeAllDuplicates(tenantId);
 }
 
-async function queueUserSyncJobs(db: any): Promise<void> {
+async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
   try {
     // Find all tenants with a connected Google account
     const googleTokens = await db.selectFrom('google_oauth_tokens').select('tenant_id').execute();
@@ -1658,7 +1640,7 @@ async function queueUserSyncJobs(db: any): Promise<void> {
 
       // Check if there is already a pending or processing sync job for this tenant
       const existing = await db
-        .selectFrom('background_jobs' as any)
+        .selectFrom('background_jobs')
         .select('id')
         .where('status', 'in', ['pending', 'processing'])
         .where(sql`payload->>'type'`, '=', 'google_sync')
@@ -1668,9 +1650,9 @@ async function queueUserSyncJobs(db: any): Promise<void> {
       if (!existing) {
         console.log(`Auto-scheduling Google sync job for tenant ${tenantId}`);
         await db
-          .insertInto('background_jobs' as any)
+          .insertInto('background_jobs')
           .values({
-            tenant_id: tenantId as any,
+            tenant_id: tenantId,
             queue: 'default',
             status: 'pending',
             payload: JSON.stringify({
@@ -1693,7 +1675,7 @@ async function queueUserSyncJobs(db: any): Promise<void> {
 
       // Check if there is already a pending or processing sync job for this tenant
       const existing = await db
-        .selectFrom('background_jobs' as any)
+        .selectFrom('background_jobs')
         .select('id')
         .where('status', 'in', ['pending', 'processing'])
         .where(sql`payload->>'type'`, '=', 'ms_sync')
@@ -1703,9 +1685,9 @@ async function queueUserSyncJobs(db: any): Promise<void> {
       if (!existing) {
         console.log(`Auto-scheduling MS sync job for tenant ${tenantId}`);
         await db
-          .insertInto('background_jobs' as any)
+          .insertInto('background_jobs')
           .values({
-            tenant_id: tenantId as any,
+            tenant_id: tenantId,
             queue: 'default',
             status: 'pending',
             payload: JSON.stringify({
@@ -1724,7 +1706,7 @@ async function queueUserSyncJobs(db: any): Promise<void> {
   }
 }
 
-export async function checkDueTasks(db: any): Promise<void> {
+export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
   const now = new Date();
   try {
     const dueTasks = await db

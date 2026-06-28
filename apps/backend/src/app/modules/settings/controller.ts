@@ -108,7 +108,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       user_id: auth.user_id,
       entries: entries.map((entry) => ({
         key: entry.key,
-        value: entry.value as any,
+        value: entry.value,
       })),
     });
 
@@ -222,7 +222,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
         const tenant = await this.getRepo()
           .db.selectFrom('tenants')
           .select('admin_id')
-          .where('id', '=', BigInt(tenantId) as any)
+          .where('id', '=', tenantId)
           .executeTakeFirst();
         const adminId = tenant?.admin_id ? String(tenant.admin_id) : '1';
 
@@ -247,7 +247,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     const tenant = await this.getRepo()
       .db.selectFrom('tenants')
       .selectAll()
-      .where('id', '=', BigInt(auth.tenant_id) as any)
+      .where('id', '=', auth.tenant_id)
       .executeTakeFirst();
     if (!tenant) {
       throw new TRPCError({
@@ -268,13 +268,13 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     await this.getRepo()
       .db.updateTable('tenants')
       .set({ deletion_scheduled_at: deletionDate })
-      .where('id', '=', BigInt(auth.tenant_id) as any)
+      .where('id', '=', auth.tenant_id)
       .execute();
 
     const admin = await this.getRepo()
       .db.selectFrom('authusers')
       .select(['email', 'first_name'])
-      .where('id', '=', BigInt(auth.user_id) as any)
+      .where('id', '=', auth.user_id)
       .executeTakeFirst();
 
     if (admin && admin.email) {
@@ -301,7 +301,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     const tenant = await this.getRepo()
       .db.selectFrom('tenants')
       .selectAll()
-      .where('id', '=', BigInt(auth.tenant_id) as any)
+      .where('id', '=', auth.tenant_id)
       .executeTakeFirst();
     if (!tenant) {
       throw new TRPCError({
@@ -320,13 +320,13 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     await this.getRepo()
       .db.updateTable('tenants')
       .set({ deletion_scheduled_at: null })
-      .where('id', '=', BigInt(auth.tenant_id) as any)
+      .where('id', '=', auth.tenant_id)
       .execute();
 
     const admin = await this.getRepo()
       .db.selectFrom('authusers')
       .select(['email', 'first_name'])
-      .where('id', '=', BigInt(auth.user_id) as any)
+      .where('id', '=', auth.user_id)
       .executeTakeFirst();
 
     if (admin && admin.email) {
@@ -351,7 +351,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     const settingsRows = await db
       .selectFrom('settings')
       .select(['key', 'value'])
-      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .where('key', 'in', [
         'communications.sendgrid_api_key',
         'communications.sendgrid_subuser_username',
@@ -463,7 +463,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     const settingsRows = await db
       .selectFrom('settings')
       .select(['key', 'value'])
-      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
       .execute();
 
@@ -589,7 +589,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     const settingsRows = await db
       .selectFrom('settings')
       .select(['key', 'value'])
-      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
       .execute();
 

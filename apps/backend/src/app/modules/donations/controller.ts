@@ -45,14 +45,14 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     return this.periodsRepo.db
       .insertInto('donation_periods')
       .values({
-        tenant_id: tenantId as any,
+        tenant_id: tenantId,
         name: payload.name,
-        start_date: payload.start_date as any,
+        start_date: payload.start_date,
         end_date: payload.end_date ? (payload.end_date as any) : null,
         limit_amount: payload.limit_amount,
         is_active: true,
-        createdby_id: userId as any,
-        updatedby_id: userId as any,
+        createdby_id: userId,
+        updatedby_id: userId,
       })
       .returningAll()
       .executeTakeFirstOrThrow();
@@ -80,8 +80,8 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     return this.periodsRepo.db
       .updateTable('donation_periods')
       .set(set)
-      .where('id', '=', id as any)
-      .where('tenant_id', '=', tenantId as any)
+      .where('id', '=', id)
+      .where('tenant_id', '=', tenantId)
       .returningAll()
       .executeTakeFirstOrThrow();
   }
@@ -89,8 +89,8 @@ export class DonationsController extends BaseController<'donations', DonationsRe
   public async deleteDonationPeriod(tenantId: string, id: string) {
     await this.periodsRepo.db
       .deleteFrom('donation_periods')
-      .where('id', '=', id as any)
-      .where('tenant_id', '=', tenantId as any)
+      .where('id', '=', id)
+      .where('tenant_id', '=', tenantId)
       .execute();
   }
 
@@ -108,8 +108,8 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     const pledge = await this.pledgesRepo.db
       .selectFrom('donation_pledges')
       .selectAll()
-      .where('id', '=', pledgeId as any)
-      .where('tenant_id', '=', tenantId as any)
+      .where('id', '=', pledgeId)
+      .where('tenant_id', '=', tenantId)
       .executeTakeFirst();
 
     if (!pledge) {
@@ -135,11 +135,11 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       .set({
         status: 'cancelled',
         cancelled_at: new Date(),
-        updatedby_id: userId as any,
+        updatedby_id: userId,
         updated_at: new Date(),
       })
-      .where('id', '=', pledgeId as any)
-      .where('tenant_id', '=', tenantId as any)
+      .where('id', '=', pledgeId)
+      .where('tenant_id', '=', tenantId)
       .returningAll()
       .executeTakeFirstOrThrow();
   }
@@ -454,7 +454,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     const existing = await this.getRepo()
       .db.selectFrom('donations')
       .selectAll()
-      .where('tenant_id', '=', tenantId as any)
+      .where('tenant_id', '=', tenantId)
       .where('stripe_session_id', '=', sessionId)
       .executeTakeFirst();
 
@@ -509,7 +509,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     const existing = await this.getRepo()
       .db.selectFrom('donations')
       .selectAll()
-      .where('tenant_id', '=', tenantId as any)
+      .where('tenant_id', '=', tenantId)
       .where('stripe_session_id', '=', sessionId)
       .executeTakeFirst();
 
@@ -568,13 +568,13 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     const person = await this.pledgesRepo.db
       .selectFrom('persons')
       .select(['first_name', 'last_name', 'email'])
-      .where('id', '=', personId as any)
-      .where('tenant_id', '=', tenantId as any)
+      .where('id', '=', personId)
+      .where('tenant_id', '=', tenantId)
       .executeTakeFirst();
 
     const pledge = await this.pledgesRepo.db.transaction().execute(async (trx) => {
       const inserted = (await trx
-        .insertInto('donation_pledges' as any)
+        .insertInto('donation_pledges')
         .values({
           tenant_id: tenantId,
           person_id: personId,
@@ -589,7 +589,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
           country: country || null,
           createdby_id: userId,
           updatedby_id: userId,
-        } as any)
+        })
         .returningAll()
         .executeTakeFirstOrThrow()) as Selectable<Models['donation_pledges']>;
 
@@ -598,7 +598,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       let tag = await trx
         .selectFrom('tags')
         .select('id')
-        .where('tenant_id', '=', tenantId as any)
+        .where('tenant_id', '=', tenantId)
         .where('name', '=', tagName)
         .where('type', '=', 'tag')
         .executeTakeFirst();
@@ -607,12 +607,12 @@ export class DonationsController extends BaseController<'donations', DonationsRe
         const insertTagRes = await trx
           .insertInto('tags')
           .values({
-            tenant_id: tenantId as any,
+            tenant_id: tenantId,
             name: tagName,
             type: 'tag',
             deletable: true,
-            createdby_id: userId as any,
-            updatedby_id: userId as any,
+            createdby_id: userId,
+            updatedby_id: userId,
           })
           .returning('id')
           .executeTakeFirstOrThrow();
@@ -622,20 +622,20 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       const mapExists = await trx
         .selectFrom('map_peoples_tags')
         .select('person_id')
-        .where('tenant_id', '=', tenantId as any)
-        .where('person_id', '=', personId as any)
-        .where('tag_id', '=', tag.id as any)
+        .where('tenant_id', '=', tenantId)
+        .where('person_id', '=', personId)
+        .where('tag_id', '=', tag.id)
         .executeTakeFirst();
 
       if (!mapExists) {
         await trx
           .insertInto('map_peoples_tags')
           .values({
-            tenant_id: tenantId as any,
-            person_id: personId as any,
-            tag_id: tag.id as any,
-            createdby_id: userId as any,
-            updatedby_id: userId as any,
+            tenant_id: tenantId,
+            person_id: personId,
+            tag_id: tag.id,
+            createdby_id: userId,
+            updatedby_id: userId,
           })
           .execute();
         try {
@@ -647,7 +647,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       }
 
       await trx
-        .insertInto('user_activity' as any)
+        .insertInto('user_activity')
         .values({
           tenant_id: tenantId,
           user_id: userId,
@@ -657,7 +657,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
           quantity: 1,
           createdby_id: userId,
           updatedby_id: userId,
-        } as any)
+        })
         .execute();
 
       return inserted;
@@ -679,15 +679,15 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     const person = await this.getRepo()
       .db.selectFrom('persons')
       .select(['first_name', 'last_name', 'email'])
-      .where('id', '=', personId as any)
-      .where('tenant_id', '=', tenantId as any)
+      .where('id', '=', personId)
+      .where('tenant_id', '=', tenantId)
       .executeTakeFirst();
 
     const record = await this.getRepo()
       .db.transaction()
       .execute(async (trx) => {
         const inserted = (await trx
-          .insertInto('donations' as any)
+          .insertInto('donations')
           .values({
             tenant_id: tenantId,
             person_id: personId,
@@ -700,7 +700,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
             state: province || null,
             country: country || null,
             pledge_id: pledgeId ? pledgeId : null,
-          } as any)
+          })
           .returningAll()
           .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;
 
@@ -708,7 +708,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
         let tag = await trx
           .selectFrom('tags')
           .select('id')
-          .where('tenant_id', '=', tenantId as any)
+          .where('tenant_id', '=', tenantId)
           .where('name', '=', tagName)
           .where('type', '=', 'tag')
           .executeTakeFirst();
@@ -717,12 +717,12 @@ export class DonationsController extends BaseController<'donations', DonationsRe
           const insertTagRes = await trx
             .insertInto('tags')
             .values({
-              tenant_id: tenantId as any,
+              tenant_id: tenantId,
               name: tagName,
               type: 'tag',
               deletable: true,
-              createdby_id: userId as any,
-              updatedby_id: userId as any,
+              createdby_id: userId,
+              updatedby_id: userId,
             })
             .returning('id')
             .executeTakeFirstOrThrow();
@@ -732,20 +732,20 @@ export class DonationsController extends BaseController<'donations', DonationsRe
         const mapExists = await trx
           .selectFrom('map_peoples_tags')
           .select('person_id')
-          .where('tenant_id', '=', tenantId as any)
-          .where('person_id', '=', personId as any)
-          .where('tag_id', '=', tag.id as any)
+          .where('tenant_id', '=', tenantId)
+          .where('person_id', '=', personId)
+          .where('tag_id', '=', tag.id)
           .executeTakeFirst();
 
         if (!mapExists) {
           await trx
             .insertInto('map_peoples_tags')
             .values({
-              tenant_id: tenantId as any,
-              person_id: personId as any,
-              tag_id: tag.id as any,
-              createdby_id: userId as any,
-              updatedby_id: userId as any,
+              tenant_id: tenantId,
+              person_id: personId,
+              tag_id: tag.id,
+              createdby_id: userId,
+              updatedby_id: userId,
             })
             .execute();
 
@@ -759,7 +759,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
 
         try {
           await trx
-            .insertInto('user_activity' as any)
+            .insertInto('user_activity')
             .values({
               tenant_id: tenantId,
               user_id: userId,
@@ -769,7 +769,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
               quantity: 1,
               createdby_id: userId,
               updatedby_id: userId,
-            } as any)
+            })
             .execute();
         } catch (err) {
           console.error('Failed to write audit activity log for donation:', err);

@@ -32,7 +32,7 @@ export class ActivityController extends BaseController<'user_activity', UserActi
 
       await this.getRepo()
         .db.deleteFrom('user_activity')
-        .where('tenant_id', '=', tenant.id as any)
+        .where('tenant_id', '=', tenant.id)
         .where('created_at', '<', thresholdDate)
         .execute();
     }
@@ -78,7 +78,7 @@ export class ActivityController extends BaseController<'user_activity', UserActi
     const exportId = String((exportRecord as any).id);
 
     await this.getRepo()
-      .db.insertInto('background_jobs' as any)
+      .db.insertInto('background_jobs')
       .values({
         tenant_id: auth.tenant_id,
         queue: 'default',

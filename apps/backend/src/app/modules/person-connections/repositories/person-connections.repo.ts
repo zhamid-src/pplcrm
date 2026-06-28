@@ -12,10 +12,10 @@ export class PersonConnectionsRepo extends BaseRepository<'person_connections'> 
     return this.db
       .selectFrom('person_connections as pc')
       .innerJoin('persons as fp', (join) =>
-        join.onRef('fp.id', '=', 'pc.from_person_id').on('fp.tenant_id', '=', tenant_id as any),
+        join.onRef('fp.id', '=', 'pc.from_person_id').on('fp.tenant_id', '=', tenant_id),
       )
       .innerJoin('persons as tp', (join) =>
-        join.onRef('tp.id', '=', 'pc.to_person_id').on('tp.tenant_id', '=', tenant_id as any),
+        join.onRef('tp.id', '=', 'pc.to_person_id').on('tp.tenant_id', '=', tenant_id),
       )
       .select([
         'pc.id',
@@ -32,11 +32,11 @@ export class PersonConnectionsRepo extends BaseRepository<'person_connections'> 
         'tp.first_name as to_first_name',
         'tp.last_name as to_last_name',
       ])
-      .where('pc.tenant_id', '=', tenant_id as any)
+      .where('pc.tenant_id', '=', tenant_id)
       .where((eb) =>
         eb.or([
-          eb('pc.from_person_id', '=', person_id as any),
-          eb.and([eb('pc.is_mutual', '=', true as any), eb('pc.to_person_id', '=', person_id as any)]),
+          eb('pc.from_person_id', '=', person_id),
+          eb.and([eb('pc.is_mutual', '=', true), eb('pc.to_person_id', '=', person_id)]),
         ]),
       )
       .orderBy('pc.created_at', 'desc')
@@ -48,11 +48,11 @@ export class PersonConnectionsRepo extends BaseRepository<'person_connections'> 
     const result = await this.db
       .selectFrom('person_connections as pc')
       .select(({ fn }) => [fn.count<number>('pc.id').as('cnt')])
-      .where('pc.tenant_id', '=', tenant_id as any)
+      .where('pc.tenant_id', '=', tenant_id)
       .where((eb) =>
         eb.or([
-          eb('pc.from_person_id', '=', person_id as any),
-          eb.and([eb('pc.is_mutual', '=', true as any), eb('pc.to_person_id', '=', person_id as any)]),
+          eb('pc.from_person_id', '=', person_id),
+          eb.and([eb('pc.is_mutual', '=', true), eb('pc.to_person_id', '=', person_id)]),
         ]),
       )
       .executeTakeFirst();
@@ -64,8 +64,8 @@ export class PersonConnectionsRepo extends BaseRepository<'person_connections'> 
     const { tenant_id, person_id } = input;
     return db
       .deleteFrom('person_connections')
-      .where('tenant_id', '=', tenant_id as any)
-      .where((eb) => eb.or([eb('from_person_id', '=', person_id as any), eb('to_person_id', '=', person_id as any)]))
+      .where('tenant_id', '=', tenant_id)
+      .where((eb) => eb.or([eb('from_person_id', '=', person_id), eb('to_person_id', '=', person_id)]))
       .execute();
   }
 }

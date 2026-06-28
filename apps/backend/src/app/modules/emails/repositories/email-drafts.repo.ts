@@ -12,7 +12,7 @@ export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
       .where('tenant_id', '=', tenant_id)
       .where('user_id', '=', user_id)
       .executeTakeFirst();
-    return Number((res as any)?.count || 0);
+    return Number(res?.count ?? 0);
   }
 
   public listByUser(tenant_id: string, user_id: string, limit?: number, offset?: number) {
@@ -49,7 +49,7 @@ export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
       bcc_list: draft.bcc_list || [],
       subject: draft.subject ?? null,
       body_html: draft.body_html ?? null,
-      body_delta: (draft.body_delta as any) ?? null,
+      body_delta: draft.body_delta ?? null,
       meta: null,
       thread_id: null,
       is_locked: false,
