@@ -1,7 +1,9 @@
-import { ReferenceExpression, SelectQueryBuilder, Transaction, sql, Selectable } from 'kysely';
+import type { ReferenceExpression, SelectQueryBuilder, Transaction, Selectable } from 'kysely';
+import { sql } from 'kysely';
 
-import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import {
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type {
   Models,
   OperationDataType,
   TypeId,

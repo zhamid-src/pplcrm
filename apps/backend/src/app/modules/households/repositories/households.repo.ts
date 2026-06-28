@@ -1,4 +1,4 @@
-import type { SelectQueryBuilder, Transaction} from 'kysely';
+import type { SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
@@ -228,7 +228,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
           eb.or([
             eb.and([eb('tags.type', '=', 'tag' as any), eb('tags.name', 'ilike', tagVal)]),
             eb.and([eb('tags.type', '=', 'issue' as any), eb('tags.name', 'ilike', issueVal)]),
-          ])
+          ]),
         );
       } else if (filterModel['tags']?.value) {
         q = q.where('tags.type', '=', 'tag');
@@ -467,7 +467,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   }
 
   public async getDuplicateCount(tenant_id: string): Promise<number> {
-     
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -491,7 +491,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const page = options?.page ?? 1;
     const pageSize = options?.pageSize ?? 20;
 
-     
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb

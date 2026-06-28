@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { Swap } from './swap';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { By } from '@angular/platform-browser';

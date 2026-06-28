@@ -11,7 +11,7 @@ import { SidebarService } from '../sidebar/sidebar-service';
   template: `
     <div class="breadcrumbs mt-auto pl-2 text-sm font-light text-gray-500">
       <ul>
-        <li>home</li>
+        <li i18n>home</li>
         @for (crumb of crumbs; track crumb) {
           <li>
             <span class="cursor-pointer" (click)="navigate(crumb)">{{ crumb }}</span>

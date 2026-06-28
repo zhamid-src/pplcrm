@@ -1,4 +1,5 @@
-import { InjectionToken, Provider } from '@angular/core';
+import type { Provider } from '@angular/core';
+import { InjectionToken } from '@angular/core';
 import type { BaseDialogOptions } from '@frontend/services/shared-dialog.service';
 import type { QueueExportInputType } from '../../../../../../../libs/common/src';
 

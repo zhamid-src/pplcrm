@@ -13,7 +13,9 @@ import { CompaniesService } from '../services/companies-service';
       <pc-datagrid
         #grid
         title="Companies"
+        i18n-title
         description="Manage corporate contacts, associate people with companies, and track organization profiles."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="false"
         [disableMerge]="false"
@@ -24,6 +26,7 @@ import { CompaniesService } from '../services/companies-service';
         [addRoute]="'add'"
         (importCSV)="openImportDialog()"
         plusIcon="add-company"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
 
@@ -106,11 +109,7 @@ export class CompaniesGrid {
     const fileName = (payload?.fileName ?? '').trim();
 
     try {
-      const res = await this.companiesService.import(
-        rows,
-        skippedReported,
-        fileName || undefined,
-      );
+      const res = await this.companiesService.import(rows, skippedReported, fileName || undefined);
 
       const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
       const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;

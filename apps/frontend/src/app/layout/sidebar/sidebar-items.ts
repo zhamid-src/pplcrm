@@ -1,4 +1,4 @@
-import { PcIconNameType } from '@icons/icons.index';
+import type { PcIconNameType } from '@icons/icons.index';
 
 export interface ISidebarItem {
   adminOnly?: boolean;

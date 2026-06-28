@@ -18,9 +18,9 @@ import { Component, computed, input } from '@angular/core';
   template: `
     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
       <li class="px-2 py-1 flex gap-2">
-        <button class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
-        <button class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
-        <button class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
       </li>
       @for (col of cols(); track col.field) {
         @if (col.field) {

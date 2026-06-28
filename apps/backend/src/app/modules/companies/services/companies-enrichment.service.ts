@@ -1,5 +1,6 @@
-import { Kysely, sql } from 'kysely';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { env } from '../../../../env';
 
 export class CompaniesEnrichmentService {

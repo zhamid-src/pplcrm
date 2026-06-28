@@ -12,14 +12,18 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
     <div class="flex flex-col gap-6">
       <pc-datagrid
         title="Forms"
+        i18n-title
         description="Manage public and internal web forms, configure fields, and view submission statistics."
+        i18n-description
         [colDefs]="col"
         [showDescription]="true"
         [disableDelete]="false"
         [allowFilter]="false"
         [disableView]="false"
         addRoute="add"
+        i18n-addRoute
         plusIcon="add-form"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,
@@ -40,6 +44,4 @@ export class FormsGridComponent {
       valueFormatter: (p: any) => (p.value ? new Date(p.value).toLocaleDateString() : ''),
     },
   ];
-
-  constructor() {}
 }

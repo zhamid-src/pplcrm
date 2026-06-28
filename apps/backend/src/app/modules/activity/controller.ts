@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { BaseController } from '../../lib/base.controller';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
-import { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
+import type { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
 import { ExportsRepo } from '../exports/repositories/exports.repo';
 
 export class ActivityController extends BaseController<'user_activity', UserActivityRepo> {

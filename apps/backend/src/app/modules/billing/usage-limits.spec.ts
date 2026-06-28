@@ -91,7 +91,7 @@ describe('Usage Limits System', () => {
 
     // With 1 seat, we are at 100% of seats limit (limit: 1).
     // Let's verify that a background job to alert is enqueued
-    let jobs = await db.selectFrom('background_jobs').selectAll().where('tenant_id', '=', tenantId).execute();
+    const jobs = await db.selectFrom('background_jobs').selectAll().where('tenant_id', '=', tenantId).execute();
 
     // Since we are at 100% capacity, we should have enqueued a transactional email job
     expect(jobs.length).toBeGreaterThan(0);

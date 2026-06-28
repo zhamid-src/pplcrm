@@ -1,6 +1,7 @@
-import { BaseRepository, QueryParams } from '../../../lib/base.repo';
-import { Transaction } from 'kysely';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Transaction } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class WorkflowEnrollmentsRepo extends BaseRepository<'workflow_enrollments'> {
   constructor() {
@@ -19,7 +20,7 @@ export class WorkflowEnrollmentsRepo extends BaseRepository<'workflow_enrollment
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 50;
 
-    let query = this.getSelect(trx)
+    const query = this.getSelect(trx)
       .innerJoin('persons', 'persons.id', 'workflow_enrollments.person_id')
       .select([
         'workflow_enrollments.id',

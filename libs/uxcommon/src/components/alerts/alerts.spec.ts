@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { Alerts } from './alerts';
 import { AlertService } from './alert-service';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -53,7 +54,6 @@ describe('Alerts Component', () => {
     expect(mockAlertSvc.OKBtnCallback).toHaveBeenCalledWith('1');
     expect(mockAlertSvc.dismiss).toHaveBeenCalledWith('1');
   });
-
 
   it('should return correct enter animation based on position', () => {
     fixture.componentRef.setInput('position', 'bottom');

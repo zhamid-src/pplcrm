@@ -1,4 +1,4 @@
-import { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback } from 'fastify';
 import { MsOAuthService } from '../ms-sync/ms-oauth.service';
 import { env } from '../../../env';
 import { BaseRepository } from '../../lib/base.repo';
@@ -39,7 +39,9 @@ const msSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
     const sep = (base: string) => (base.includes('?') ? '&' : '?');
 
     if (error) {
-      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=${encodeURIComponent(error_description ?? error)}`);
+      return reply.redirect(
+        `${returnBase}${sep(returnBase)}ms_error=${encodeURIComponent(error_description ?? error)}`,
+      );
     }
 
     if (!code || !state) {

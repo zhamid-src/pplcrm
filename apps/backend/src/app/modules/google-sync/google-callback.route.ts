@@ -1,4 +1,4 @@
-import { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback } from 'fastify';
 import { GoogleOAuthService } from './google-oauth.service';
 import { env } from '../../../env';
 import { BaseRepository } from '../../lib/base.repo';
@@ -38,7 +38,9 @@ const googleSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) =>
     const sep = (base: string) => (base.includes('?') ? '&' : '?');
 
     if (error) {
-      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=${encodeURIComponent(error_description ?? error)}`);
+      return reply.redirect(
+        `${returnBase}${sep(returnBase)}google_error=${encodeURIComponent(error_description ?? error)}`,
+      );
     }
 
     if (!code || !state) {

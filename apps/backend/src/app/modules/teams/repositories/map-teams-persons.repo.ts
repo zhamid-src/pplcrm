@@ -1,7 +1,8 @@
-import { Transaction, sql } from 'kysely';
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class MapTeamsPersonsRepo extends BaseRepository<'map_teams_persons'> {
   constructor() {

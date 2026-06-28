@@ -1,6 +1,6 @@
-import { IAuthKeyPayload } from '../../../libs/common/src';
-import { inferAsyncReturnType } from '@trpc/server';
-import { CreateFastifyContextOptions } from '@trpc/server/adapters/fastify';
+import type { IAuthKeyPayload } from '../../../libs/common/src';
+import type { inferAsyncReturnType } from '@trpc/server';
+import type { CreateFastifyContextOptions } from '@trpc/server/adapters/fastify';
 
 import { verifyAuthToken } from './app/lib/auth-util';
 

@@ -1,7 +1,7 @@
 import { getAllOptions, idSchema, exportCsvInput, exportCsvResponse } from '../../../../../libs/common/src';
 import { z } from 'zod';
 import { authProcedure } from '../../trpc';
-import { BaseController } from './base.controller';
+import type { BaseController } from './base.controller';
 
 export function createCrudRouter<
   TController extends BaseController<any, any>,

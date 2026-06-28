@@ -14,20 +14,16 @@ vi.mock('../../../env', async (importOriginal) => {
 });
 
 // Spy on Stripe constructor and webhooks constructEvent
-vi.mock('stripe', () => {
-  return {
-    default: class MockStripe {
-      webhooks = {
-        constructEvent: (payload: string) => {
-          return JSON.parse(payload);
-        },
-      };
-      subscriptions = {
-        retrieve: vi.fn(),
-      };
-    },
-  };
-});
+vi.mock('stripe', () => ({
+  default: class MockStripe {
+    webhooks = {
+      constructEvent: (payload: string) => JSON.parse(payload),
+    };
+    subscriptions = {
+      retrieve: vi.fn(),
+    };
+  },
+}));
 
 import { BillingController } from './controller';
 import { BaseRepository } from '../../lib/base.repo';

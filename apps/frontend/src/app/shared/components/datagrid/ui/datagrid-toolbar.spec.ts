@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { DataGridToolbarComponent } from './datagrid-toolbar';
 import { DataGrid } from '../datagrid';
 import { describe, it, expect, vi, beforeEach } from 'vitest';

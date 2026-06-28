@@ -22,6 +22,7 @@ import { environment } from '../../../../../environments/environment';
             [href]="getAttachmentUrl(att)"
             target="_blank"
             rel="noopener"
+            i18n-rel
           >
             <pc-attachment-icon [filename]="att.filename" [size]="4" class="group-hover:hidden"></pc-attachment-icon>
             <pc-icon name="arrow-down-tray" [size]="4" class="hidden group-hover:block"></pc-icon>

@@ -1,7 +1,8 @@
-import { Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
 
-import { BaseRepository, QueryParams } from '../../../lib/base.repo';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class UserProfiles extends BaseRepository<'profiles'> {
   constructor() {

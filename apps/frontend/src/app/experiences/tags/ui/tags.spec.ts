@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { Tags } from './tags';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { TagPaletteService } from './tag-palette.service';

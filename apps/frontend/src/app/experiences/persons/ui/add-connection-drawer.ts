@@ -14,17 +14,21 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
   selector: 'pc-add-connection-drawer',
   imports: [SideDrawer, Icon, FormsModule],
   template: `
-    <pc-side-drawer [isOpen]="isOpen()" title="Add Connection" size="sm" (close)="onClose()">
+    <pc-side-drawer [isOpen]="isOpen()" title="Add Connection" i18n-title size="sm" i18n-size (close)="onClose()">
       <div class="flex flex-col gap-4">
         <!-- Person search -->
         <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-semibold text-base-content/80">Search Contact</label>
+          <label i18n class="text-sm font-semibold text-base-content/80">Search Contact</label>
           @if (selectedPerson()) {
             <div class="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-xl border border-primary/30">
-              <div class="w-7 h-7 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold flex-shrink-0">
+              <div
+                class="w-7 h-7 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold flex-shrink-0"
+              >
                 {{ initials(selectedPerson()!) }}
               </div>
-              <span class="text-sm font-medium flex-1 truncate">{{ selectedPerson()!.first_name }} {{ selectedPerson()!.last_name }}</span>
+              <span class="text-sm font-medium flex-1 truncate"
+                >{{ selectedPerson()!.first_name }} {{ selectedPerson()!.last_name }}</span
+              >
               <button type="button" class="btn btn-ghost btn-xs btn-circle" (click)="clearSelection()">
                 <pc-icon name="x-mark" [size]="3"></pc-icon>
               </button>
@@ -35,10 +39,15 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
                 type="text"
                 class="input input-bordered w-full pr-10 text-sm"
                 placeholder="Type a name or email..."
+                i18n-placeholder
                 [ngModel]="searchStr()"
                 (ngModelChange)="onSearchChange($event)"
               />
-              <pc-icon name="magnifying-glass" [size]="4" class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"></pc-icon>
+              <pc-icon
+                name="magnifying-glass"
+                [size]="4"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
+              ></pc-icon>
             </div>
             @if (searchResults().length > 0) {
               <div class="border border-base-300 rounded-xl bg-base-100 shadow-lg max-h-48 overflow-y-auto">
@@ -48,7 +57,9 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
                     class="w-full text-left px-3 py-2.5 hover:bg-base-200 transition-colors flex items-center gap-2.5 border-b border-base-200 last:border-0"
                     (click)="selectPerson(p)"
                   >
-                    <div class="w-7 h-7 rounded-full bg-neutral text-neutral-content flex items-center justify-center text-xs font-bold flex-shrink-0">
+                    <div
+                      class="w-7 h-7 rounded-full bg-neutral text-neutral-content flex items-center justify-center text-xs font-bold flex-shrink-0"
+                    >
                       {{ initials(p) }}
                     </div>
                     <div class="flex flex-col min-w-0">
@@ -62,15 +73,19 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
               </div>
             }
             @if (isSearching() && searchStr().length > 0) {
-              <span class="text-xs text-base-content/40 italic">Searching...</span>
+              <span i18n class="text-xs text-base-content/40 italic">Searching...</span>
             }
           }
         </div>
 
         <!-- Relation type -->
         <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-semibold text-base-content/80">Relationship Type</label>
-          <select class="select select-bordered w-full text-sm" [ngModel]="relationType()" (ngModelChange)="relationType.set($event)">
+          <label i18n class="text-sm font-semibold text-base-content/80">Relationship Type</label>
+          <select
+            class="select select-bordered w-full text-sm"
+            [ngModel]="relationType()"
+            (ngModelChange)="relationType.set($event)"
+          >
             @for (type of relationTypes; track type) {
               <option [value]="type">{{ relationTypeLabels[type] }}</option>
             }
@@ -80,11 +95,12 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
         <!-- Custom label (shown when type = 'custom') -->
         @if (relationType() === 'custom') {
           <div class="flex flex-col gap-1.5">
-            <label class="text-sm font-semibold text-base-content/80">Custom Label</label>
+            <label i18n class="text-sm font-semibold text-base-content/80">Custom Label</label>
             <input
               type="text"
               class="input input-bordered w-full text-sm"
               placeholder="e.g. Major donor contact, Advisor..."
+              i18n-placeholder
               maxlength="100"
               [ngModel]="customLabel()"
               (ngModelChange)="customLabel.set($event)"
@@ -95,8 +111,8 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
         <!-- Mutual toggle -->
         <div class="flex items-center justify-between">
           <div class="flex flex-col gap-0.5">
-            <span class="text-sm font-semibold text-base-content/80">Mutual Connection</span>
-            <span class="text-xs text-base-content/50">Shows on both profiles with ↔ indicator</span>
+            <span i18n class="text-sm font-semibold text-base-content/80">Mutual Connection</span>
+            <span i18n class="text-xs text-base-content/50">Shows on both profiles with ↔ indicator</span>
           </div>
           <input
             type="checkbox"
@@ -108,11 +124,14 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
 
         <!-- Notes -->
         <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-semibold text-base-content/80">Notes <span class="text-base-content/40 font-normal">(optional)</span></label>
+          <label class="text-sm font-semibold text-base-content/80"
+            >Notes <span i18n class="text-base-content/40 font-normal">(optional)</span></label
+          >
           <textarea
             class="textarea textarea-bordered w-full text-sm resize-none"
             rows="3"
             placeholder="Add context about this connection..."
+            i18n-placeholder
             maxlength="1000"
             [ngModel]="notes()"
             (ngModelChange)="notes.set($event)"
@@ -122,13 +141,10 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
 
       <!-- Footer -->
       <div pc-drawer-footer class="p-4 border-t border-base-300 flex gap-2">
-        <button type="button" class="btn btn-ghost flex-1" (click)="onClose()" [disabled]="isSaving()">Cancel</button>
-        <button
-          type="button"
-          class="btn btn-primary flex-1"
-          [disabled]="!canSave()"
-          (click)="onSave()"
-        >
+        <button i18n type="button" class="btn btn-ghost flex-1" (click)="onClose()" [disabled]="isSaving()">
+          Cancel
+        </button>
+        <button i18n type="button" class="btn btn-primary flex-1" [disabled]="!canSave()" (click)="onSave()">
           @if (isSaving()) {
             <span class="loading loading-spinner loading-sm"></span>
           }

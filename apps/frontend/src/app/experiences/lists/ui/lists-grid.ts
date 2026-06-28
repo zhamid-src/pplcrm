@@ -15,13 +15,17 @@ import { provideDataGridConfig } from '@frontend/shared/components/datagrid/data
       <pc-datagrid
         #grid
         title="Lists"
+        i18n-title
         description="Organize contacts into custom static or dynamic lists for targeted outreach and campaigns."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"
         [allowFilter]="false"
         plusIcon="add-list"
+        i18n-plusIcon
         addRoute="add"
+        i18n-addRoute
       ></pc-datagrid>
     </div>
   `,

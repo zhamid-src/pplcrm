@@ -11,7 +11,7 @@ import { EmailsStore } from '../../services/store/emailstore';
   selector: 'pc-email-assign',
   imports: [Icon],
   template: `<div class="flex items-center gap-2 mt-1">
-    <span class="text-xs text-base-content/70">Owner:</span>
+    <span i18n class="text-xs text-base-content/70">Owner:</span>
     <div class="dropdown">
       <div tabindex="0" class="badge badge-xs text-xs badge-info badge-outline cursor-pointer">
         <span>{{ getUserName(assignedTo()) }}</span>
@@ -25,7 +25,7 @@ import { EmailsStore } from '../../services/store/emailstore';
           </li>
         }
         @if (assignedTo()) {
-          <li><button type="button" (click)="assign(null); closeDropdown()">Unassign</button></li>
+          <li><button i18n type="button" (click)="assign(null); closeDropdown()">Unassign</button></li>
         }
       </ul>
     </div>

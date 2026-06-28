@@ -33,9 +33,7 @@ export const FilesRouter = router({
         sha256Hex: z.string().nullable().optional(),
       }),
     )
-    .mutation(async ({ input, ctx }) => {
-      return files.registerFile(input, ctx.auth);
-    }),
+    .mutation(async ({ input, ctx }) => files.registerFile(input, ctx.auth)),
 
   delete: authProcedure
     .input(idSchema)

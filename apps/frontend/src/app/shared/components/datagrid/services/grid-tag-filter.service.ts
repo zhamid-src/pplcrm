@@ -1,6 +1,6 @@
 import { computed, signal } from '@angular/core';
 
-import { TagOptionsService } from './tag-options.service';
+import type { TagOptionsService } from './tag-options.service';
 
 export class GridTagFilterService {
   // ── Tag filter signals ────────────────────────────────────────────────────
@@ -120,5 +120,7 @@ export class GridTagFilterService {
   }
 
   // ── Private ───────────────────────────────────────────────────────────────
-  private _doRefresh: () => void = () => {};
+  private _doRefresh: () => void = () => {
+    /* noop */
+  };
 }

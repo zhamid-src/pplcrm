@@ -605,124 +605,12 @@ export default '';
 export default '';
 ```
 
-## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.html
-
-```html
-<pc-auth-layout>
-  @if (isLoading()) {
-  <div class="flex flex-col items-center justify-center py-6 space-y-4">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-sm font-medium text-neutral-100">Confirming your subscription…</p>
-  </div>
-  } @else { @switch (status()) { @case ('success') {
-  <div class="space-y-6 py-4 text-center">
-    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
-      <pc-icon [size]="6" name="check-circle" />
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Subscription Confirmed!</h2>
-      <p class="text-sm text-neutral-300">
-        Thank you for confirming. You will now receive our newsletters. You can close this window.
-      </p>
-    </div>
-  </div>
-  } @case ('error') {
-  <div class="space-y-6 py-4 text-center">
-    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error/10 text-error">
-      <pc-icon [size]="6" name="exclamation-circle" />
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Confirmation Failed</h2>
-      <p class="text-sm text-neutral-300">{{ errorMessage() || 'The confirmation link expired or is invalid.' }}</p>
-    </div>
-  </div>
-  } } }
-
-  <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
-    <span class="text-neutral-400">
-      Copyright © 2026
-      <a href="" class="link link-hover">CampaignRaven</a>
-    </span>
-  </div>
-</pc-auth-layout>
-```
-
-## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.ts
-
-```typescript
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { ConfirmSubscriptionService } from './confirm-subscription-service';
-
-@Component({
-  selector: 'pc-confirm-subscription',
-  imports: [RouterLink, AuthLayoutComponent, Icon],
-  templateUrl: './confirm-subscription-page.html',
-})
-export class ConfirmSubscriptionPage implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-  private readonly confirmSvc = inject(ConfirmSubscriptionService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-
-  protected readonly status = signal<'idle' | 'success' | 'error'>('idle');
-  protected readonly errorMessage = signal<string>('');
-
-  public async ngOnInit() {
-    const token = this.route.snapshot.queryParamMap.get('token');
-
-    if (!token) {
-      this.status.set('error');
-      this.errorMessage.set('Invalid or missing confirmation token.');
-      return;
-    }
-
-    const end = this._loading.begin();
-    this.status.set('idle');
-
-    try {
-      const result = await this.confirmSvc.confirmSubscription(token);
-      if (result && result.success) {
-        this.status.set('success');
-      } else {
-        this.status.set('error');
-        this.errorMessage.set('Confirmation failed. The link may be invalid or expired.');
-      }
-    } catch (err: any) {
-      this.status.set('error');
-      this.errorMessage.set(err.message || 'An unexpected error occurred during confirmation.');
-    } finally {
-      end();
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-
-import { TRPCService } from '../../services/api/trpc-service';
-
-@Service()
-export class ConfirmSubscriptionService extends TRPCService<unknown> {
-  public async confirmSubscription(token: string) {
-    return this.api.webForms.confirmSubscription.mutate({ token });
-  }
-}
-```
-
 ## File: apps/frontend/src/app/auth/login/login-guard.ts
 
 ```typescript
 import { inject } from '@angular/core';
-import { CanActivateFn, Router } from '@angular/router';
+import type { CanActivateFn } from '@angular/router';
+import { Router } from '@angular/router';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
@@ -1326,7 +1214,7 @@ import { Alerts } from '@uxcommon/components/alerts/alerts';
   selector: 'pc-auth-layout',
   imports: [Alerts],
   template: `
-    <div class="bg-image flex min-h-screen font-light" data-theme="light">
+    <div class="bg-image flex min-h-screen font-light" data-theme="light" i18n-data-theme>
       <div class="card card-compact glass m-auto w-96 shadow-xl">
         <div class="card-title justify-center shadow-lg">
           <img class="p-5" src="assets/logo.png" />
@@ -1345,7 +1233,8 @@ export class AuthLayoutComponent {}
 ## File: apps/frontend/src/app/auth/auth-utils.ts
 
 ```typescript
-import { FormBuilder, NonNullableFormBuilder, Validators } from '@angular/forms';
+import type { FormBuilder, NonNullableFormBuilder } from '@angular/forms';
+import { Validators } from '@angular/forms';
 
 // Consolidated form control builders and password breach utilities
 export type AnyFormBuilder = FormBuilder | NonNullableFormBuilder;
@@ -1828,7 +1717,9 @@ import { CompaniesService } from '../services/companies-service';
       <pc-datagrid
         #grid
         title="Companies"
+        i18n-title
         description="Manage corporate contacts, associate people with companies, and track organization profiles."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="false"
         [disableMerge]="false"
@@ -1839,6 +1730,7 @@ import { CompaniesService } from '../services/companies-service';
         [addRoute]="'add'"
         (importCSV)="openImportDialog()"
         plusIcon="add-company"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
 
@@ -2268,7 +2160,7 @@ import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models'
   template: `<div>
     <ul class="space-y-1.5">
       @if (!peopleInCompany().length && !isLoading()) {
-        <span class="text-sm text-base-content/50 italic">No employees found.</span>
+        <span i18n class="text-sm text-base-content/50 italic">No employees found.</span>
       }
       @for (person of peopleInCompany(); track person.id) {
         <li class="flex items-center gap-2">
@@ -2283,7 +2175,13 @@ import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models'
     </ul>
     @if (hasMore()) {
       <div class="mt-2">
-        <button type="button" class="btn btn-xs btn-ghost text-primary" (click)="loadMore()" [disabled]="isLoading()">
+        <button
+          i18n
+          type="button"
+          class="btn btn-xs btn-ghost text-primary"
+          (click)="loadMore()"
+          [disabled]="isLoading()"
+        >
           - More -
         </button>
       </div>
@@ -3116,7 +3014,7 @@ export class DuplicatePageShellComponent {
 
         <div class="space-y-3 text-sm flex-1">
           @if (!hasSelections()) {
-            <div class="text-base-content/50 py-4 italic text-center text-xs">
+            <div i18n class="text-base-content/50 py-4 italic text-center text-xs">
               Select which record to Keep and which to Merge.
             </div>
           } @else {
@@ -3125,13 +3023,13 @@ export class DuplicatePageShellComponent {
                 <span>{{ mergeDescription() }}</span>
               </div>
               <div class="text-xs space-y-1.5 bg-base-100 p-2.5 rounded-lg border border-base-300">
-                <div class="font-semibold text-base-content/70">Merge Actions:</div>
+                <div i18n class="font-semibold text-base-content/70">Merge Actions:</div>
                 <div class="flex justify-between text-success gap-2">
-                  <span class="flex-shrink-0">Keep Primary:</span>
+                  <span i18n class="flex-shrink-0">Keep Primary:</span>
                   <span class="font-bold truncate text-right flex-1" [title]="targetName()">{{ targetName() }}</span>
                 </div>
                 <div class="flex justify-between text-error gap-2">
-                  <span class="flex-shrink-0">Remove Duplicate:</span>
+                  <span i18n class="flex-shrink-0">Remove Duplicate:</span>
                   <span class="font-bold truncate text-right flex-1" [title]="sourceName()">{{ sourceName() }}</span>
                 </div>
               </div>
@@ -4217,6 +4115,7 @@ import { environment } from '../../../../../environments/environment';
             [href]="getAttachmentUrl(att)"
             target="_blank"
             rel="noopener"
+            i18n-rel
           >
             <pc-attachment-icon [filename]="att.filename" [size]="4" class="group-hover:hidden"></pc-attachment-icon>
             <pc-icon name="arrow-down-tray" [size]="4" class="hidden group-hover:block"></pc-icon>
@@ -5404,6 +5303,100 @@ export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType
 }
 ```
 
+## File: apps/frontend/src/app/experiences/households/services/households-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateHouseholdsType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Service()
+export class HouseholdsService extends AbstractAPIService<'households', never> {
+  protected override readonly endpointName = 'households';
+
+  public add(household: UpdateHouseholdsType) {
+    return this.api.households.add.mutate(household);
+  }
+
+  public override addMany(rows: never[]): Promise<unknown> {
+    return Promise.resolve(rows);
+  }
+
+  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.households.attachTag.mutate({ id: id, tag_name, type });
+  }
+
+  public count(): Promise<number> {
+    return this.api.households.count.query();
+  }
+
+  public detachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.households.detachTag.mutate({ id: id, tag_name, type });
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.getAllWithPeopleCount(options);
+  }
+
+  // We don't support archives
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public getById(id: string) {
+    return this.api.households.getById.query(id);
+  }
+
+  public async getTags(id: string, type?: 'tag' | 'issue') {
+    const tags = await this.api.households.getTags.query({ id, type });
+    return tags.map((tag: { name: string }) => tag.name);
+  }
+
+  public getPeopleCount(id: string) {
+    return this.api.households.getPeopleCount.query(id);
+  }
+
+  public update(id: string, data: UpdateHouseholdsType) {
+    return this.api.households.update.mutate({ id: id, data });
+  }
+
+  private async getAllWithPeopleCount(options?: getAllOptionsType) {
+    return this.api.households.getAllWithPeopleCount.query(options, {
+      signal: this.ac.signal,
+    });
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.households.exportCsv.mutate(input);
+  }
+
+  public getPotentialDuplicates(options?: {
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ groups: any[]; total: number }> {
+    return this.api.households.getPotentialDuplicates.query(options);
+  }
+
+  public mergeHouseholds(targetId: string, sourceId: string): Promise<any> {
+    return this.api.households.mergeHouseholds.mutate({ target_id: targetId, source_id: sourceId });
+  }
+
+  public getLastFingerprintRecomputation(): Promise<{ lastRunAt: string | null }> {
+    return this.api.households.getLastFingerprintRecomputation.query();
+  }
+
+  public recomputeAddressFingerprints(): Promise<void> {
+    return this.api.households.recomputeAddressFingerprints.mutate();
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/households/ui/household-view.html
 
 ```html
@@ -5669,7 +5662,9 @@ interface ParamsType {
         #grid
         [showToolbar]="!inline()"
         title="Households"
+        i18n-title
         description="Manage household groups, track shared addresses, and organize family relationships."
+        i18n-description
         [listId]="listId()"
         [colDefs]="col"
         [disableDelete]="false"
@@ -5680,7 +5675,9 @@ interface ParamsType {
         [rowCanSelect]="rowCanSelectFn"
         (importCSV)="openImportDialog()"
         addRoute="add"
+        i18n-addRoute
         plusIcon="add-home"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
 
@@ -5696,10 +5693,11 @@ interface ParamsType {
       (closeSummary)="importSummary.set(null)"
     >
       <div pc-import-extras class="grid gap-2">
-        <label class="font-semibold">3) Add tags to all imported rows (optional)</label>
+        <label i18n class="font-semibold">3) Add tags to all imported rows (optional)</label>
         <input
           class="input input-bordered"
           placeholder="Comma separated e.g. neighborhood, parish"
+          i18n-placeholder
           [(ngModel)]="tagsInput"
         />
       </div>
@@ -6789,13 +6787,17 @@ import { provideDataGridConfig } from '@frontend/shared/components/datagrid/data
       <pc-datagrid
         #grid
         title="Lists"
+        i18n-title
         description="Organize contacts into custom static or dynamic lists for targeted outreach and campaigns."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"
         [allowFilter]="false"
         plusIcon="add-list"
+        i18n-plusIcon
         addRoute="add"
+        i18n-addRoute
       ></pc-datagrid>
     </div>
   `,
@@ -9154,6 +9156,7 @@ import { NewslettersDashboardComponent } from './newsletters-dashboard';
         [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-newsletter"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,
@@ -10281,7 +10284,7 @@ import { PersonsService } from '../services/persons-service';
   template: `<div>
     <ul>
       @if (!peopleInHousehold().length && !isLoading()) {
-        <span> No one else </span>
+        <span i18n> No one else </span>
       }
       @for (person of peopleInHousehold(); track person.id) {
         <li>
@@ -10291,7 +10294,7 @@ import { PersonsService } from '../services/persons-service';
     </ul>
     @if (hasMore()) {
       <div class="mt-2">
-        <button type="button" class="link" (click)="loadMore()" [disabled]="isLoading()">- More -</button>
+        <button i18n type="button" class="link" (click)="loadMore()" [disabled]="isLoading()">- More -</button>
       </div>
     }
   </div>`,
@@ -11230,6 +11233,600 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       },
       queryParamsHandling: 'merge',
     });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/settings/domains/domains-settings.html
+
+```html
+<div class="space-y-6">
+  <!-- Add Domain Card -->
+  <div class="card border border-base-200 bg-base-50/50 p-6 rounded-xl">
+    <h3 class="text-lg font-semibold border-b border-base-200 pb-3 mb-4">Add Sender Domain</h3>
+    <form (submit)="addDomain(); $event.preventDefault();" class="flex flex-col sm:flex-row gap-3">
+      <div class="flex-1">
+        <label for="new-domain-input" class="sr-only">Domain Name</label>
+        <input
+          id="new-domain-input"
+          type="text"
+          class="input input-bordered focus:input-primary w-full bg-base-100"
+          placeholder="e.g. newsletter.myorganization.org"
+          [(ngModel)]="newDomain"
+          name="newDomain"
+          [disabled]="addingDomain()"
+        />
+      </div>
+      <button type="submit" class="btn btn-primary min-w-[130px]" [disabled]="addingDomain() || !newDomain().trim()">
+        @if (addingDomain()) {
+        <span class="loading loading-spinner loading-xs mr-2"></span>
+        } Add Domain
+      </button>
+    </form>
+    <p class="text-[13px] text-base-content/50 mt-2">
+      Verify your domain ownership by adding DNS records to your registrar. Once verified, you can send newsletters from
+      addresses under this domain.
+    </p>
+  </div>
+
+  <!-- Domains List -->
+  <div class="space-y-4">
+    <h3 class="text-lg font-semibold border-b border-base-200 pb-2">Configured Domains</h3>
+
+    @if (domainsList().length === 0) {
+    <div
+      class="flex flex-col items-center justify-center py-12 text-base-content/40 bg-base-50/30 rounded-xl border border-dashed border-base-200"
+    >
+      <pc-icon name="globe-americas" class="opacity-30 mb-3" [size]="40"></pc-icon>
+      <p class="font-medium text-sm">No custom domains configured yet.</p>
+      <p class="text-xs text-base-content/50 mt-1">Add a domain above to start verifying.</p>
+    </div>
+    } @else {
+    <div class="space-y-3">
+      @for (item of domainsList(); track item.domain) {
+      <div class="border border-base-200 rounded-xl overflow-hidden bg-base-100 shadow-sm transition-all duration-200">
+        <!-- Domain Entry Row -->
+        <div class="flex items-center justify-between p-4 flex-wrap gap-3 bg-base-50/30 border-b border-base-200/50">
+          <div class="flex items-center gap-3">
+            <pc-icon name="globe-americas" class="text-base-content/60" [size]="20"></pc-icon>
+            <span class="font-semibold text-base-content/95">{{ item.domain }}</span>
+            @if (item.status === 'verified') {
+            <span class="badge badge-success text-success-content gap-1 font-semibold py-2">
+              <pc-icon name="check-circle" [size]="14"></pc-icon> Verified
+            </span>
+            } @else {
+            <span class="badge badge-warning text-warning-content gap-1 font-semibold py-2">
+              <span class="loading loading-spinner loading-xs scale-75"></span> Pending Verification
+            </span>
+            }
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" class="btn btn-sm btn-ghost hover:bg-base-200" (click)="toggleExpand(item.domain)">
+              {{ expandedDomain() === item.domain ? 'Hide DNS Setup' : 'Show DNS Setup' }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-circle btn-ghost text-error hover:bg-error/10"
+              (click)="deleteDomain(item.domain)"
+              title="Remove domain"
+            >
+              <pc-icon name="trash" [size]="8"></pc-icon>
+            </button>
+          </div>
+        </div>
+
+        <!-- DNS Records Details (Expanded) -->
+        @if (expandedDomain() === item.domain) {
+        <div class="p-5 bg-base-100 border-t border-base-100 space-y-5 animate-slide-down">
+          <div class="space-y-1">
+            <h4 class="text-sm font-bold text-base-content/90">DNS Verification Setup</h4>
+            <p class="text-xs text-base-content/60">
+              Please add the following CNAME and TXT records to your DNS provider (e.g. Cloudflare, GoDaddy, Namecheap)
+              to verify domain sending authorization, link branding, and DMARC policy validation.
+            </p>
+          </div>
+
+          <div class="space-y-4">
+            <!-- SPF Record -->
+            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
+                  SPF (Domain Sending Auth)
+                  <span [class]="item.spf ? 'text-success' : 'text-warning'">
+                    <pc-icon [name]="item.spf ? 'check-circle' : 'exclamation-circle'"></pc-icon>
+                  </span>
+                </span>
+                <span
+                  class="badge badge-sm font-semibold"
+                  [class.badge-success]="item.spf"
+                  [class.badge-ghost]="!item.spf"
+                >
+                  {{ item.spf ? 'Verified' : 'Pending' }}
+                </span>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                <div>
+                  <strong class="text-base-content/60">Type:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">CNAME</span>
+                </div>
+                <div>
+                  <strong class="text-base-content/60">Host:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono"
+                    >{{ item.domainAuthDns?.mail_cname?.host || 'em.' + item.domain }}</span
+                  >
+                </div>
+                <div class="md:col-span-3">
+                  <strong class="text-base-content/60">Value / Points To:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
+                    >{{ item.domainAuthDns?.mail_cname?.data || 'u12345.wl.sendgrid.net' }}</span
+                  >
+                </div>
+              </div>
+            </div>
+
+            <!-- DKIM CNAME 1 -->
+            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
+                  DKIM Signature Record 1
+                  <span [class]="item.dkim ? 'text-success' : 'text-warning'">
+                    <pc-icon [name]="item.dkim ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
+                  </span>
+                </span>
+                <span
+                  class="badge badge-sm font-semibold"
+                  [class.badge-success]="item.dkim"
+                  [class.badge-ghost]="!item.dkim"
+                >
+                  {{ item.dkim ? 'Verified' : 'Pending' }}
+                </span>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                <div>
+                  <strong class="text-base-content/60">Type:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">CNAME</span>
+                </div>
+                <div>
+                  <strong class="text-base-content/60">Host:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono"
+                    >{{ item.domainAuthDns?.dkim1?.host || 's1._domainkey.' + item.domain }}</span
+                  >
+                </div>
+                <div class="md:col-span-3">
+                  <strong class="text-base-content/60">Value / Points To:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
+                    >{{ item.domainAuthDns?.dkim1?.data || 's1.domainkey.u12345.wl.sendgrid.net' }}</span
+                  >
+                </div>
+              </div>
+            </div>
+
+            <!-- DKIM CNAME 2 -->
+            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
+                  DKIM Signature Record 2
+                  <span [class]="item.dkim ? 'text-success' : 'text-warning'">
+                    <pc-icon [name]="item.dkim ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
+                  </span>
+                </span>
+                <span
+                  class="badge badge-sm font-semibold"
+                  [class.badge-success]="item.dkim"
+                  [class.badge-ghost]="!item.dkim"
+                >
+                  {{ item.dkim ? 'Verified' : 'Pending' }}
+                </span>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                <div>
+                  <strong class="text-base-content/60">Type:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">CNAME</span>
+                </div>
+                <div>
+                  <strong class="text-base-content/60">Host:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono"
+                    >{{ item.domainAuthDns?.dkim2?.host || 's2._domainkey.' + item.domain }}</span
+                  >
+                </div>
+                <div class="md:col-span-3">
+                  <strong class="text-base-content/60">Value / Points To:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
+                    >{{ item.domainAuthDns?.dkim2?.data || 's2.domainkey.u12345.wl.sendgrid.net' }}</span
+                  >
+                </div>
+              </div>
+            </div>
+
+            <!-- Link Branding CNAME -->
+            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
+                  Link Branding (URL Whitelabel)
+                  <span [class]="item.linkBranded ? 'text-success' : 'text-warning'">
+                    <pc-icon [name]="item.linkBranded ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
+                  </span>
+                </span>
+                <span
+                  class="badge badge-sm font-semibold"
+                  [class.badge-success]="item.linkBranded"
+                  [class.badge-ghost]="!item.linkBranded"
+                >
+                  {{ item.linkBranded ? 'Verified' : 'Pending' }}
+                </span>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                <div>
+                  <strong class="text-base-content/60">Type:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">CNAME</span>
+                </div>
+                <div>
+                  <strong class="text-base-content/60">Host:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono"
+                    >{{ item.linkBrandingDns?.domain?.host || 'email.' + item.domain }}</span
+                  >
+                </div>
+                <div class="md:col-span-3">
+                  <strong class="text-base-content/60">Value / Points To:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
+                    >{{ item.linkBrandingDns?.domain?.data || 'sendgrid.net' }}</span
+                  >
+                </div>
+              </div>
+            </div>
+
+            <!-- DMARC Record -->
+            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
+                  DMARC Policy (Anti-Spoofing)
+                  <span [class]="item.dmarc ? 'text-success' : 'text-warning'">
+                    <pc-icon [name]="item.dmarc ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
+                  </span>
+                </span>
+                <span
+                  class="badge badge-sm font-semibold"
+                  [class.badge-success]="item.dmarc"
+                  [class.badge-ghost]="!item.dmarc"
+                >
+                  {{ item.dmarc ? 'Verified' : 'Pending' }}
+                </span>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                <div>
+                  <strong class="text-base-content/60">Type:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">TXT</span>
+                </div>
+                <div>
+                  <strong class="text-base-content/60">Host:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">_dmarc.{{ item.domain }}</span>
+                </div>
+                <div class="md:col-span-3">
+                  <strong class="text-base-content/60">Value / Points To:</strong>
+                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
+                    >v=DMARC1; p=none; rua=mailto:dmarc@{{ item.domain }}</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-end pt-2">
+            <button
+              type="button"
+              class="btn btn-primary"
+              (click)="verifyDomain(item.domain)"
+              [disabled]="verifyingDomain() !== null || isDomainVerifyCooldown(item.domain)"
+            >
+              @if (verifyingDomain() === item.domain) {
+              <span class="loading loading-spinner loading-xs mr-2"></span>
+              Checking records... } @else if (domainCooldownSeconds()[item.domain]) { Wait
+              <span class="countdown font-mono text-sm"
+                ><span [style.--value]="domainCooldownSeconds()[item.domain]"></span></span
+              >s } @else {
+              <pc-icon name="arrow-path" class="mr-2"></pc-icon>
+              Verify DNS Records }
+            </button>
+          </div>
+        </div>
+        }
+      </div>
+      }
+    </div>
+    }
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/settings/domains/domains-settings.ts
+
+```typescript
+import { Component, signal, computed, inject, OnInit, linkedSignal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { SettingsService } from '../services/settings-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+export interface DNSVerificationRecord {
+  host: string;
+  type: string;
+  data: string;
+  valid: boolean;
+}
+
+export interface VerifiedDomain {
+  domain: string;
+  status: 'verified' | 'pending';
+  spf: boolean;
+  dkim: boolean;
+  dmarc: boolean;
+  domainAuthId?: number;
+  linkBrandingId?: number;
+  domainAuthDns?: {
+    mail_cname?: DNSVerificationRecord;
+    dkim1?: DNSVerificationRecord;
+    dkim2?: DNSVerificationRecord;
+  };
+  linkBrandingDns?: {
+    domain?: DNSVerificationRecord;
+  };
+  linkBranded?: boolean;
+}
+
+@Component({
+  selector: 'pc-domains-settings',
+  imports: [FormsModule, Icon],
+  templateUrl: './domains-settings.html',
+})
+export class DomainSettingsComponent implements OnInit {
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly newDomain = signal('');
+  protected readonly addingDomain = signal(false);
+  protected readonly verifyingDomain = signal<string | null>(null);
+  protected readonly lastDomainVerificationTimes = signal<Record<string, number>>({});
+  protected readonly domainCooldownSeconds = signal<Record<string, number>>({});
+  protected readonly expandedDomain = linkedSignal<VerifiedDomain[], string | null>({
+    source: () => this.domainsList(),
+    computation: (list, prev) => {
+      const prevVal = prev?.value;
+      if (prevVal && list.some((d) => d.domain === prevVal)) {
+        return prevVal;
+      }
+      return null;
+    },
+  });
+
+  protected readonly domainsList = computed<VerifiedDomain[]>(() => {
+    return this.settingsSvc.getValue<VerifiedDomain[]>('communications.verified_domains') || [];
+  });
+
+  ngOnInit() {
+    // Ensure settings are loaded
+    void this.settingsSvc.load();
+  }
+
+  protected toggleExpand(domainName: string) {
+    if (this.expandedDomain() === domainName) {
+      this.expandedDomain.set(null);
+    } else {
+      this.expandedDomain.set(domainName);
+    }
+  }
+
+  protected async addDomain() {
+    const domainVal = this.newDomain().trim().toLowerCase();
+    if (!domainVal) return;
+
+    // Basic domain validation
+    const domainRegex = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,24}$/i;
+    if (!domainRegex.test(domainVal)) {
+      this.alerts.showError('Please provide a valid domain name (e.g. example.com).');
+      return;
+    }
+
+    const currentList = this.domainsList();
+    if (currentList.some((d) => d.domain === domainVal)) {
+      this.alerts.showError('This domain is already added.');
+      return;
+    }
+
+    this.addingDomain.set(true);
+
+    try {
+      await this.settingsSvc.addVerifiedDomain(domainVal);
+      this.newDomain.set('');
+      this.expandedDomain.set(domainVal); // Auto-expand to show DNS records
+      this.alerts.showSuccess(`Domain ${domainVal} added successfully. Please configure DNS records.`);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to add domain.';
+      this.alerts.showError(errMsg);
+    } finally {
+      this.addingDomain.set(false);
+    }
+  }
+
+  protected isDomainVerifyCooldown(domainName: string): boolean {
+    const lastTime = this.lastDomainVerificationTimes()[domainName];
+    if (!lastTime) return false;
+    return Date.now() - lastTime < 60000;
+  }
+
+  private startDomainCooldown(domainName: string) {
+    this.domainCooldownSeconds.update((prev) => ({ ...prev, [domainName]: 60 }));
+    const interval = setInterval(() => {
+      const current = this.domainCooldownSeconds()[domainName] || 0;
+      if (current <= 1) {
+        clearInterval(interval);
+        this.domainCooldownSeconds.update((prev) => {
+          const next = { ...prev };
+          delete next[domainName];
+          return next;
+        });
+      } else {
+        this.domainCooldownSeconds.update((prev) => ({ ...prev, [domainName]: current - 1 }));
+      }
+    }, 1000);
+  }
+
+  protected async verifyDomain(domainName: string) {
+    if (this.isDomainVerifyCooldown(domainName)) {
+      this.alerts.showError('Please wait at least one minute before verifying this domain again.');
+      return;
+    }
+
+    this.verifyingDomain.set(domainName);
+
+    try {
+      const updatedList = (await this.settingsSvc.verifyVerifiedDomain(domainName)) as VerifiedDomain[];
+      this.lastDomainVerificationTimes.update((prev) => ({
+        ...prev,
+        [domainName]: Date.now(),
+      }));
+      this.startDomainCooldown(domainName);
+      const updatedDomain = updatedList.find((d: VerifiedDomain) => d.domain === domainName);
+
+      if (updatedDomain && updatedDomain.status === 'verified') {
+        this.alerts.showSuccess(`Domain ${domainName} has been successfully verified!`);
+      } else {
+        this.alerts.showWarn(`DNS check completed for ${domainName}. Some records are still pending verification.`);
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to verify domain.';
+      this.alerts.showError(errMsg);
+    } finally {
+      this.verifyingDomain.set(null);
+    }
+  }
+
+  protected async deleteDomain(domainName: string) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Domain',
+      message: `Are you sure you want to remove the domain ${domainName}?`,
+      variant: 'danger',
+      confirmText: 'Remove',
+    });
+    if (!confirmed) return;
+
+    try {
+      await this.settingsSvc.deleteVerifiedDomain(domainName);
+      this.alerts.showSuccess(`Domain ${domainName} removed.`);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to remove domain.';
+      this.alerts.showError(errMsg);
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/settings/services/settings-service.ts
+
+```typescript
+import { signal, Service } from '@angular/core';
+
+import { SettingsEntryType } from '../../../../../../../libs/common/src';
+
+import { TRPCService } from '../../../services/api/trpc-service';
+
+export type TenantSettingsSnapshot = Record<string, unknown>;
+
+@Service()
+export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
+  public readonly snapshotSignal = signal<TenantSettingsSnapshot>({});
+  private readonly isPendingSignal = signal<boolean>(false);
+
+  public async load(force = false) {
+    if (!force && Object.keys(this.snapshotSignal()).length) return this.snapshotSignal();
+
+    this.isPendingSignal.set(true);
+    try {
+      const data = (await this.api.settings.getSnapshot.query()) ?? {};
+      this.snapshotSignal.set(data);
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public getValue<T = unknown>(key: string, fallback: T): T;
+  public getValue<T = unknown>(key: string): T | undefined;
+  public getValue<T = unknown>(key: string, fallback?: T) {
+    const value = this.snapshotSignal()[key];
+    return (value === undefined ? fallback : (value as T)) ?? fallback;
+  }
+
+  public async upsert(entries: SettingsEntryType[]) {
+    if (!entries.length) return this.snapshotSignal();
+
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.upsert.mutate({ entries });
+      this.snapshotSignal.set(data ?? {});
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public async requestEmailVerification(email: string) {
+    return this.api.settings.requestEmailVerification.mutate({ email });
+  }
+
+  public async verifySenderEmail(token: string) {
+    return this.api.settings.verifySenderEmail.mutate({ token });
+  }
+
+  public async addVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.addVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public async verifyVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.verifyVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public async deleteVerifiedDomain(domain: string) {
+    this.isPendingSignal.set(true);
+    try {
+      const data = await this.api.settings.deleteVerifiedDomain.mutate({ domain });
+      this.snapshotSignal.update((snap) => ({
+        ...snap,
+        'communications.verified_domains': data,
+      }));
+      return data;
+    } finally {
+      this.isPendingSignal.set(false);
+    }
+  }
+
+  public snapshot(): TenantSettingsSnapshot {
+    return this.snapshotSignal();
+  }
+
+  public pending(): boolean {
+    return this.isPendingSignal();
   }
 }
 ```
@@ -12646,12 +13243,16 @@ class IssuesService extends TagsService {
     <div class="flex flex-col gap-6">
       <pc-datagrid
         title="Issues"
+        i18n-title
         description="Manage political or support issues to track contact stances and interests."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="false"
         [allowFilter]="false"
         addRoute="add"
+        i18n-addRoute
         plusIcon="add-issue"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,
@@ -14493,7 +15094,9 @@ import { TeamsService } from '../services/teams-service';
     <div class="flex flex-col gap-6">
       <pc-datagrid
         title="Teams"
+        i18n-title
         description="Organize volunteers and staff into structured teams, assign captains, and coordinate group activities."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"
@@ -14502,6 +15105,7 @@ import { TeamsService } from '../services/teams-service';
         [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-group"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,
@@ -14582,122 +15186,6 @@ export class TeamsGridComponent {
     }
   </form>
 </section>
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-add.ts
-
-```typescript
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
-import { form, required, email } from '@angular/forms/signals';
-import { ActivatedRoute, Router } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-
-import { UserAdminService } from '../services/useradmin-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SettingsService } from '../../settings/services/settings-service';
-
-@Component({
-  selector: 'pc-user-add',
-  imports: [PcInput, PcSelect, PcDetailHeader],
-  templateUrl: './user-add.html',
-})
-export class UserAddComponent implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly settings = inject(SettingsService);
-
-  protected readonly error = signal<string | null>(null);
-
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
-
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-    role: 'user',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-  });
-
-  protected readonly submitting = signal(false);
-
-  public async ngOnInit(): Promise<void> {
-    const state = window.history.state;
-    if (state && state.cloneData) {
-      const data = state.cloneData;
-      this.payload.set({
-        email: data.email || '',
-        first_name: data.first_name || '',
-        last_name: data.last_name || '',
-        role: data.role || '',
-      });
-      return;
-    }
-
-    // Prefill the role with the tenant's configured default invite role.
-    await this.settings.load();
-    const defaultRole = this.settings.getValue<string>('access.default_role');
-    if (defaultRole) {
-      this.payload.update((p) => ({ ...p, role: defaultRole }));
-    }
-  }
-
-  protected cancel() {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  protected async submit(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      return;
-    }
-
-    this.submitting.set(true);
-    this.error.set(null);
-    try {
-      const payload = this.toPayload();
-      await this.users.add(payload);
-      this.users.triggerRefresh();
-      this.alerts.showSuccess('Invitation sent');
-      this.form().reset();
-      if (typeof done === 'function') {
-        done();
-      } else {
-        await this.router.navigate(['../'], { relativeTo: this.route });
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to invite user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.submitting.set(false);
-    }
-  }
-
-  private toPayload() {
-    const raw = this.payload();
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: raw.last_name?.trim() ? raw.last_name.trim() : null,
-      role: raw.role?.trim() ? raw.role.trim() : null,
-    };
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/users/ui/user-view.html
@@ -15005,7 +15493,9 @@ import { UserService } from '@frontend/services/user.service';
       <pc-datagrid
         #grid
         title="Users"
+        i18n-title
         description="Manage administrator and staff user accounts, assign security roles, and monitor system access."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="true"
         [disableView]="false"
@@ -15014,6 +15504,7 @@ import { UserService } from '@frontend/services/user.service';
         [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-users"
+        i18n-plusIcon
         [isCellEditableOverride]="isCellEditableBind"
       ></pc-datagrid>
     </div>
@@ -15277,7 +15768,9 @@ import { WorkflowsService } from '../services/workflows-service';
     <div class="flex flex-col gap-6">
       <pc-datagrid
         title="Automated Workflows"
+        i18n-title
         description="Create automated drip email campaigns triggered by volunteer events, tag changes, form submissions, list signups, or manual enrollment."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"
@@ -15286,6 +15779,7 @@ import { WorkflowsService } from '../services/workflows-service';
         [addRoute]="'add'"
         [allowFilter]="false"
         plusIcon="plus"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,
@@ -16308,7 +16802,7 @@ const REFRESHTOKEN = 'ppl-crm-refresh-token';
 ## File: apps/frontend/src/app/services/api/trpc-types.ts
 
 ```typescript
-import { inferRouterInputs, inferRouterOutputs } from '@trpc/server';
+import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server';
 import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
 
 export type RouterInputs = inferRouterInputs<TRPCRouter>;
@@ -16496,7 +16990,7 @@ export class GlobalErrorHandler implements ErrorHandler {
     }
 
     this.errors.handle(error);
-    // eslint-disable-next-line no-console
+
     console.error(error);
   }
 }
@@ -16505,7 +16999,8 @@ export class GlobalErrorHandler implements ErrorHandler {
 ## File: apps/frontend/src/app/services/jsend.interceptor.ts
 
 ```typescript
-import { HttpContextToken, HttpErrorResponse, HttpInterceptorFn, HttpResponse } from '@angular/common/http';
+import type { HttpInterceptorFn } from '@angular/common/http';
+import { HttpContextToken, HttpErrorResponse, HttpResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { jsend, JSendFailError, JSendServerError } from '../../../../../libs/common/src';
 import { catchError, map } from 'rxjs/operators';
@@ -17664,7 +18159,11 @@ export class DataGridDataService {
 ```typescript
 import { computed, signal } from '@angular/core';
 import type { ColumnDef as ColDef } from '../grid-defaults';
-import { QueryBuilderGroupNode, QueryBuilderNode, QueryBuilderRuleNode } from '../../../../../../../../libs/common/src';
+import type {
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  QueryBuilderRuleNode,
+} from '../../../../../../../../libs/common/src';
 
 export class GridAdvancedFilterService {
   // ── Signals ───────────────────────────────────────────────────────────────
@@ -18033,7 +18532,7 @@ export class GridStoreService {
 ```typescript
 import { computed, signal } from '@angular/core';
 
-import { TagOptionsService } from './tag-options.service';
+import type { TagOptionsService } from './tag-options.service';
 
 export class GridTagFilterService {
   // ── Tag filter signals ────────────────────────────────────────────────────
@@ -18414,6 +18913,61 @@ export class TagOptionsService {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/services/utils.service.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+
+@Injectable({ providedIn: 'root' })
+export class DataGridUtilsService {
+  bucketByRoute(nodes: any[]): Map<string, any[]> {
+    const map = new Map<string, any[]>();
+    for (const n of nodes) {
+      const routeArr = (n as { route?: unknown[] }).route ?? [];
+      const key = JSON.stringify(routeArr);
+      const list = map.get(key) ?? [];
+      if (n.data) list.push(n.data);
+      map.set(key, list);
+    }
+    return map;
+  }
+
+  createPayload<T>(row: Partial<T>, key: keyof T): Partial<T> {
+    return row[key] !== undefined ? ({ [key]: row[key] } as Partial<T>) : {};
+  }
+
+  tagsToString(tags: string[]): string {
+    if (!tags || !Array.isArray(tags)) return '';
+    return tags
+      .filter((t) => typeof t === 'string' && t.trim().length > 0)
+      .map((t) => {
+        const trimmed = t.trim();
+        return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+      })
+      .join(', ');
+  }
+
+  tagArrayEquals(tagsA: string[], tagsB: string[]): number {
+    return (tagsA ?? []).toString().localeCompare((tagsB ?? []).toString());
+  }
+
+  normalizeTagSelection(value: unknown): string[] {
+    const input = Array.isArray(value) ? value : value == null ? [] : [value];
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const entry of input) {
+      if (entry == null) continue;
+      const tag = typeof entry === 'string' ? entry.trim() : String(entry).trim();
+      if (!tag) continue;
+      if (seen.has(tag)) continue;
+      seen.add(tag);
+      result.push(tag);
+    }
+    return result;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/state/grid-context.service.ts
 
 ```typescript
@@ -18733,7 +19287,8 @@ export class DataGridRowComponent {
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.tokens.ts
 
 ```typescript
-import { InjectionToken, Provider } from '@angular/core';
+import type { Provider } from '@angular/core';
+import { InjectionToken } from '@angular/core';
 import type { BaseDialogOptions } from '@frontend/services/shared-dialog.service';
 import type { QueueExportInputType } from '../../../../../../../libs/common/src';
 
@@ -18987,29 +19542,172 @@ export interface HeaderRef {
 }
 ```
 
-## File: apps/frontend/src/app/shared/pipes/pc-date.pipe.ts
+## File: apps/frontend/src/app/shared/components/query-builder/query-builder.html
 
-```typescript
-import { inject, Pipe, PipeTransform } from '@angular/core';
-
-import { DateFormatService } from '../services/date-format.service';
-
-/**
- * Formats a date using the tenant's configured Appearance → Date Format setting.
- * Impure so it reflects setting changes (via the settings snapshot signal) without a reload.
- */
-@Pipe({
-  name: 'pcDate',
-  standalone: true,
-  pure: false,
-})
-export class PcDatePipe implements PipeTransform {
-  private readonly dates = inject(DateFormatService);
-
-  public transform(value: string | number | Date | null | undefined, pattern?: string): string {
-    return this.dates.format(value, pattern);
+```html
+<div class="flex flex-col gap-3">
+  <!-- Summary Bar -->
+  @if (showSummary()) {
+  <div
+    class="text-xs text-base-content/70 flex items-center justify-between gap-3 p-3 bg-base-200/40 rounded-xl border border-base-200"
+  >
+    <div class="min-w-0">
+      <span class="font-medium mr-1">Summary:</span>
+      <span class="font-mono break-all text-primary">{{ summarizeGroup(group()) }}</span>
+    </div>
+    @if (summaryMatches() !== null || summaryCounting() || summaryError()) {
+    <div class="whitespace-nowrap font-medium shrink-0">
+      @if (summaryError()) {
+      <span class="text-warning">⚠️ {{ summaryError() }}</span>
+      } @else if (summaryCounting()) {
+      <span class="loading loading-spinner loading-xs vertical-middle mr-1"></span>
+      <span>Counting...</span>
+      } @else {
+      <span class="text-success">Matches: {{ summaryMatches() }}</span>
+      }
+    </div>
+    }
+  </div>
   }
-}
+
+  <!-- Group Header / Conjunction Toggle & Controls -->
+  <div class="flex items-center justify-between gap-3 bg-base-200/30 p-2 rounded-lg border border-base-200/50">
+    <div class="flex items-center gap-2">
+      <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Conjunction:</span>
+      <div class="join border border-base-300">
+        <button
+          type="button"
+          class="btn btn-xs join-item font-medium px-3"
+          [class.btn-primary]="group().conjunction === 'AND'"
+          [class.btn-ghost]="group().conjunction !== 'AND'"
+          (click)="setConjunction('AND')"
+        >
+          AND (All)
+        </button>
+        <button
+          type="button"
+          class="btn btn-xs join-item font-medium px-3"
+          [class.btn-primary]="group().conjunction === 'OR'"
+          [class.btn-ghost]="group().conjunction !== 'OR'"
+          (click)="setConjunction('OR')"
+        >
+          OR (Any)
+        </button>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-1.5">
+      <button type="button" class="btn btn-outline btn-xs px-2.5" (click)="addRule()">➕ Rule</button>
+      <button type="button" class="btn btn-outline btn-xs px-2.5" (click)="addGroup()">➕ Group</button>
+    </div>
+  </div>
+
+  <!-- Rules and Nested Groups List -->
+  <div class="flex flex-col gap-3.5 pl-1">
+    @for (item of group().rules; track item.id; let i = $index) {
+    <!-- Rule Item -->
+    @if (isRule(item)) {
+    <div
+      class="flex flex-wrap items-center gap-2 p-2 bg-base-200/10 hover:bg-base-200/20 rounded-lg border border-base-200/30 transition-colors"
+    >
+      <!-- Field Selector -->
+      <select
+        class="select select-bordered select-sm w-36 md:w-44 text-xs font-medium"
+        [value]="item.field"
+        (change)="setField(i, $any($event.target).value)"
+      >
+        @for (field of fields(); track field.name) {
+        <option [value]="field.name" [selected]="item.field === field.name">{{ field.label }}</option>
+        }
+      </select>
+
+      <!-- Operator Selector -->
+      @let fieldDef = getFieldDef(item.field);
+      <select
+        class="select select-bordered select-sm w-28 md:w-36 text-xs"
+        [value]="item.op"
+        (change)="setOp(i, $any($event.target).value)"
+      >
+        @for (op of fieldDef?.operators; track op.value) {
+        <option [value]="op.value" [selected]="item.op === op.value">{{ op.label }}</option>
+        }
+      </select>
+
+      <!-- Value Input -->
+      @if (showValueInput(item)) {
+      <div class="flex-1 min-w-[150px] flex items-center gap-2">
+        @if (fieldDef?.inputType === 'autocomplete') {
+        <div class="w-full max-w-xs">
+          <pc-autocomplete
+            [filterSvc]="tagSvc()!"
+            placeholder="Type a tag..."
+            (valueChange)="setRuleValue(i, $event)"
+          />
+        </div>
+        @if (item.value) {
+        <span class="badge badge-neutral text-xs px-2 py-1 select-none"
+          >{{ item.value.charAt(0).toUpperCase() + item.value.slice(1) }}</span
+        >
+        } } @else if (fieldDef?.inputType === 'select') {
+        <select
+          class="select select-bordered select-sm w-full max-w-xs text-xs"
+          [value]="item.value"
+          (change)="setRuleValue(i, $any($event.target).value)"
+        >
+          <option value="" disabled [selected]="!item.value">Select option...</option>
+          @for (choice of fieldDef?.choices; track choice.value) {
+          <option [value]="choice.value" [selected]="item.value === choice.value">{{ choice.label }}</option>
+          }
+        </select>
+        } @else {
+        <input
+          type="text"
+          class="input input-bordered input-sm w-full bg-base-100 text-xs"
+          placeholder="Enter value..."
+          [value]="item.value || ''"
+          (input)="setRuleValue(i, $any($event.target).value)"
+        />
+        }
+      </div>
+      }
+
+      <!-- Remove Button -->
+      <button
+        type="button"
+        class="btn btn-ghost btn-circle btn-xs text-error hover:bg-error/10 shrink-0"
+        title="Remove condition"
+        (click)="removeItem(i)"
+      >
+        ❌
+      </button>
+    </div>
+    }
+
+    <!-- Nested Group Item -->
+    @if (isGroup(item)) {
+    <div
+      class="ml-4 pl-4 border-l-2 border-primary/30 flex flex-col gap-2 relative bg-base-200/5 p-3 rounded-r-xl border border-y-base-200/20 border-r-base-200/20"
+    >
+      <pc-query-builder
+        [group]="asGroup(item)"
+        [fields]="fields()"
+        [tagSvc]="tagSvc()"
+        [showSummary]="false"
+        (changed)="emitChange()"
+      ></pc-query-builder>
+      <div class="flex justify-end pt-1">
+        <button
+          type="button"
+          class="btn btn-ghost btn-xs text-error hover:bg-error/10 font-semibold flex items-center gap-1"
+          (click)="removeItem(i)"
+        >
+          🗑️ Remove Group
+        </button>
+      </div>
+    </div>
+    } }
+  </div>
+</div>
 ```
 
 ## File: apps/frontend/src/app/shared/pipes/resolve-avatar.pipe.ts
@@ -19031,57 +19729,11 @@ export class ResolveAvatarPipe implements PipeTransform {
 }
 ```
 
-## File: apps/frontend/src/app/shared/services/date-format.service.ts
-
-```typescript
-import { computed, inject, Service } from '@angular/core';
-import { formatDate } from '@angular/common';
-
-import { SettingsService } from '../../experiences/settings/services/settings-service';
-
-const DEFAULT_DATE_FORMAT = 'MMMM d, yyyy';
-
-/**
- * Resolves the tenant-wide default date format (Appearance → Date Format) and formats date values
- * with it. Backed by the settings snapshot signal so changes propagate without a reload.
- */
-@Service()
-export class DateFormatService {
-  private readonly settings = inject(SettingsService);
-
-  /** The configured date format pattern, falling back to the project default. */
-  public readonly pattern = computed<string>(() => {
-    const raw = this.settings.snapshotSignal()['appearance.date_format'];
-    return typeof raw === 'string' && raw.trim() ? raw : DEFAULT_DATE_FORMAT;
-  });
-
-  /**
-   * Formats a date value with the tenant's configured pattern. Returns an empty string for nullish or
-   * unparseable input so callers can render their own placeholder.
-   */
-  public format(value: string | number | Date | null | undefined, pattern?: string): string {
-    if (value === null || value === undefined || value === '') return '';
-    const date = value instanceof Date ? value : new Date(value);
-    if (isNaN(date.getTime())) return String(value);
-    try {
-      return formatDate(date, pattern ?? this.pattern(), 'en-US');
-    } catch {
-      return String(value);
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/app.config.ts
 
 ```typescript
-import {
-  ApplicationConfig,
-  ErrorHandler,
-  inject,
-  provideAppInitializer,
-  provideZonelessChangeDetection,
-} from '@angular/core';
+import type { ApplicationConfig } from '@angular/core';
+import { ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
 import { provideTanStackQuery, QueryClient } from '@tanstack/angular-query-experimental';
 import { ENVIRONMENT } from './environment-token';
 import { RouteReuseStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
@@ -19943,6 +20595,119 @@ export default defineConfig({
     "types": ["node", "@playwright/test"]
   },
   "include": ["src/**/*.ts", "playwright.config.ts"]
+}
+```
+
+## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.html
+
+```html
+<pc-auth-layout>
+  @if (isLoading()) {
+  <div class="flex flex-col items-center justify-center py-6 space-y-4">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-sm font-medium text-neutral-100">Confirming your subscription…</p>
+  </div>
+  } @else { @switch (status()) { @case ('success') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
+      <pc-icon [size]="6" name="check-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Subscription Confirmed!</h2>
+      <p class="text-sm text-neutral-300">
+        Thank you for confirming. You will now receive our newsletters. You can close this window.
+      </p>
+    </div>
+  </div>
+  } @case ('error') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error/10 text-error">
+      <pc-icon [size]="6" name="exclamation-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Confirmation Failed</h2>
+      <p class="text-sm text-neutral-300">{{ errorMessage() || 'The confirmation link expired or is invalid.' }}</p>
+    </div>
+  </div>
+  } } }
+
+  <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
+    <span class="text-neutral-400">
+      Copyright © 2026
+      <a href="" class="link link-hover">CampaignRaven</a>
+    </span>
+  </div>
+</pc-auth-layout>
+```
+
+## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.ts
+
+```typescript
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { ConfirmSubscriptionService } from './confirm-subscription-service';
+
+@Component({
+  selector: 'pc-confirm-subscription',
+  imports: [AuthLayoutComponent, Icon],
+  templateUrl: './confirm-subscription-page.html',
+})
+export class ConfirmSubscriptionPage implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly confirmSvc = inject(ConfirmSubscriptionService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+
+  protected readonly status = signal<'idle' | 'success' | 'error'>('idle');
+  protected readonly errorMessage = signal<string>('');
+
+  public async ngOnInit() {
+    const token = this.route.snapshot.queryParamMap.get('token');
+
+    if (!token) {
+      this.status.set('error');
+      this.errorMessage.set('Invalid or missing confirmation token.');
+      return;
+    }
+
+    const end = this._loading.begin();
+    this.status.set('idle');
+
+    try {
+      const result = await this.confirmSvc.confirmSubscription(token);
+      if (result && result.success) {
+        this.status.set('success');
+      } else {
+        this.status.set('error');
+        this.errorMessage.set('Confirmation failed. The link may be invalid or expired.');
+      }
+    } catch (err: any) {
+      this.status.set('error');
+      this.errorMessage.set(err.message || 'An unexpected error occurred during confirmation.');
+    } finally {
+      end();
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+
+import { TRPCService } from '../../services/api/trpc-service';
+
+@Service()
+export class ConfirmSubscriptionService extends TRPCService<unknown> {
+  public async confirmSubscription(token: string) {
+    return this.api.webForms.confirmSubscription.mutate({ token });
+  }
 }
 ```
 
@@ -21026,6 +21791,92 @@ export class ActivityFeed implements OnInit {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.ts
+
+```typescript
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
+import { RouterLink, RouterLinkActive } from '@angular/router';
+import { CurrencyPipe } from '@angular/common';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { DonationsService } from '../../../services/api/donations-service';
+
+@Component({
+  selector: 'pc-donations-grid',
+  imports: [RouterLink, RouterLinkActive, Icon, SpinOnClickDirective, CurrencyPipe],
+  templateUrl: './donations-grid.html',
+})
+export class DonationsGridComponent implements OnInit {
+  private readonly donationsSvc = inject(DonationsService);
+  private readonly alertSvc = inject(AlertService);
+
+  protected readonly donations = signal<any[]>([]);
+  protected readonly _loading = createLoadingGate();
+
+  // Summary statistics computed signals
+  protected readonly totalDonated = computed(() => {
+    return (
+      this.donations()
+        .filter((d) => d.status === 'succeeded')
+        .reduce((sum, d) => sum + Number(d.amount || 0), 0) / 100
+    );
+  });
+
+  protected readonly totalTaxCredits = computed(() => {
+    return (
+      this.donations()
+        .filter((d) => d.status === 'succeeded')
+        .reduce((sum, d) => sum + Number(d.tax_credit_amount || 0), 0) / 100
+    );
+  });
+
+  protected readonly successCount = computed(() => {
+    return this.donations().filter((d) => d.status === 'succeeded').length;
+  });
+
+  ngOnInit() {
+    void this.load();
+  }
+
+  protected refresh() {
+    void this.load();
+  }
+
+  protected formatCurrency(amountCents: number | null | undefined): string {
+    if (amountCents === null || amountCents === undefined) return '$0.00';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amountCents / 100);
+  }
+
+  protected formatDate(dateStr: string): string {
+    try {
+      return new Date(dateStr).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return '';
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    try {
+      const data = await this.donationsSvc.listDonations();
+      this.donations.set(data || []);
+    } catch (err) {
+      this.alertSvc.showError('Failed to load donations. Please try again.');
+    } finally {
+      end();
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.html
 
 ```html
@@ -21836,7 +22687,7 @@ import { EmailsStore } from '../../services/store/emailstore';
   selector: 'pc-email-assign',
   imports: [Icon],
   template: `<div class="flex items-center gap-2 mt-1">
-    <span class="text-xs text-base-content/70">Owner:</span>
+    <span i18n class="text-xs text-base-content/70">Owner:</span>
     <div class="dropdown">
       <div tabindex="0" class="badge badge-xs text-xs badge-info badge-outline cursor-pointer">
         <span>{{ getUserName(assignedTo()) }}</span>
@@ -21850,7 +22701,7 @@ import { EmailsStore } from '../../services/store/emailstore';
           </li>
         }
         @if (assignedTo()) {
-          <li><button type="button" (click)="assign(null); closeDropdown()">Unassign</button></li>
+          <li><button i18n type="button" (click)="assign(null); closeDropdown()">Unassign</button></li>
         }
       </ul>
     </div>
@@ -24795,100 +25646,6 @@ export class StandardFormsService extends FormsService {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/households/services/households-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  UpdateHouseholdsType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Service()
-export class HouseholdsService extends AbstractAPIService<'households', never> {
-  protected override readonly endpointName = 'households';
-
-  public add(household: UpdateHouseholdsType) {
-    return this.api.households.add.mutate(household);
-  }
-
-  public override addMany(rows: never[]): Promise<unknown> {
-    return Promise.resolve(rows);
-  }
-
-  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
-    return this.api.households.attachTag.mutate({ id: id, tag_name, type });
-  }
-
-  public count(): Promise<number> {
-    return this.api.households.count.query();
-  }
-
-  public detachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
-    return this.api.households.detachTag.mutate({ id: id, tag_name, type });
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.getAllWithPeopleCount(options);
-  }
-
-  // We don't support archives
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public getById(id: string) {
-    return this.api.households.getById.query(id);
-  }
-
-  public async getTags(id: string, type?: 'tag' | 'issue') {
-    const tags = await this.api.households.getTags.query({ id, type });
-    return tags.map((tag: { name: string }) => tag.name);
-  }
-
-  public getPeopleCount(id: string) {
-    return this.api.households.getPeopleCount.query(id);
-  }
-
-  public update(id: string, data: UpdateHouseholdsType) {
-    return this.api.households.update.mutate({ id: id, data });
-  }
-
-  private async getAllWithPeopleCount(options?: getAllOptionsType) {
-    return this.api.households.getAllWithPeopleCount.query(options, {
-      signal: this.ac.signal,
-    });
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.households.exportCsv.mutate(input);
-  }
-
-  public getPotentialDuplicates(options?: {
-    page?: number;
-    pageSize?: number;
-  }): Promise<{ groups: any[]; total: number }> {
-    return this.api.households.getPotentialDuplicates.query(options);
-  }
-
-  public mergeHouseholds(targetId: string, sourceId: string): Promise<any> {
-    return this.api.households.mergeHouseholds.mutate({ target_id: targetId, source_id: sourceId });
-  }
-
-  public getLastFingerprintRecomputation(): Promise<{ lastRunAt: string | null }> {
-    return this.api.households.getLastFingerprintRecomputation.query();
-  }
-
-  public recomputeAddressFingerprints(): Promise<void> {
-    return this.api.households.recomputeAddressFingerprints.mutate();
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/households/ui/household-form.html
 
 ```html
@@ -26775,11 +27532,11 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
   selector: 'pc-add-connection-drawer',
   imports: [SideDrawer, Icon, FormsModule],
   template: `
-    <pc-side-drawer [isOpen]="isOpen()" title="Add Connection" size="sm" (close)="onClose()">
+    <pc-side-drawer [isOpen]="isOpen()" title="Add Connection" i18n-title size="sm" i18n-size (close)="onClose()">
       <div class="flex flex-col gap-4">
         <!-- Person search -->
         <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-semibold text-base-content/80">Search Contact</label>
+          <label i18n class="text-sm font-semibold text-base-content/80">Search Contact</label>
           @if (selectedPerson()) {
             <div class="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-xl border border-primary/30">
               <div
@@ -26800,6 +27557,7 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
                 type="text"
                 class="input input-bordered w-full pr-10 text-sm"
                 placeholder="Type a name or email..."
+                i18n-placeholder
                 [ngModel]="searchStr()"
                 (ngModelChange)="onSearchChange($event)"
               />
@@ -26833,14 +27591,14 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
               </div>
             }
             @if (isSearching() && searchStr().length > 0) {
-              <span class="text-xs text-base-content/40 italic">Searching...</span>
+              <span i18n class="text-xs text-base-content/40 italic">Searching...</span>
             }
           }
         </div>
 
         <!-- Relation type -->
         <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-semibold text-base-content/80">Relationship Type</label>
+          <label i18n class="text-sm font-semibold text-base-content/80">Relationship Type</label>
           <select
             class="select select-bordered w-full text-sm"
             [ngModel]="relationType()"
@@ -26855,11 +27613,12 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
         <!-- Custom label (shown when type = 'custom') -->
         @if (relationType() === 'custom') {
           <div class="flex flex-col gap-1.5">
-            <label class="text-sm font-semibold text-base-content/80">Custom Label</label>
+            <label i18n class="text-sm font-semibold text-base-content/80">Custom Label</label>
             <input
               type="text"
               class="input input-bordered w-full text-sm"
               placeholder="e.g. Major donor contact, Advisor..."
+              i18n-placeholder
               maxlength="100"
               [ngModel]="customLabel()"
               (ngModelChange)="customLabel.set($event)"
@@ -26870,8 +27629,8 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
         <!-- Mutual toggle -->
         <div class="flex items-center justify-between">
           <div class="flex flex-col gap-0.5">
-            <span class="text-sm font-semibold text-base-content/80">Mutual Connection</span>
-            <span class="text-xs text-base-content/50">Shows on both profiles with ↔ indicator</span>
+            <span i18n class="text-sm font-semibold text-base-content/80">Mutual Connection</span>
+            <span i18n class="text-xs text-base-content/50">Shows on both profiles with ↔ indicator</span>
           </div>
           <input
             type="checkbox"
@@ -26884,12 +27643,13 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
         <!-- Notes -->
         <div class="flex flex-col gap-1.5">
           <label class="text-sm font-semibold text-base-content/80"
-            >Notes <span class="text-base-content/40 font-normal">(optional)</span></label
+            >Notes <span i18n class="text-base-content/40 font-normal">(optional)</span></label
           >
           <textarea
             class="textarea textarea-bordered w-full text-sm resize-none"
             rows="3"
             placeholder="Add context about this connection..."
+            i18n-placeholder
             maxlength="1000"
             [ngModel]="notes()"
             (ngModelChange)="notes.set($event)"
@@ -26899,8 +27659,10 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
 
       <!-- Footer -->
       <div pc-drawer-footer class="p-4 border-t border-base-300 flex gap-2">
-        <button type="button" class="btn btn-ghost flex-1" (click)="onClose()" [disabled]="isSaving()">Cancel</button>
-        <button type="button" class="btn btn-primary flex-1" [disabled]="!canSave()" (click)="onSave()">
+        <button i18n type="button" class="btn btn-ghost flex-1" (click)="onClose()" [disabled]="isSaving()">
+          Cancel
+        </button>
+        <button i18n type="button" class="btn btn-primary flex-1" [disabled]="!canSave()" (click)="onSave()">
           @if (isSaving()) {
             <span class="loading loading-spinner loading-sm"></span>
           }
@@ -27100,6 +27862,7 @@ const BADGE_CLASSES: Record<string, string> = {
         class="btn btn-ghost btn-xs btn-circle text-error/50 hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
         (click)="remove.emit(connection().id)"
         data-tip="Remove connection"
+        i18n-data-tip
       >
         <pc-icon name="x-mark" [size]="3"></pc-icon>
       </button>
@@ -27161,7 +27924,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
     <div class="flex flex-col gap-4">
       <!-- Header -->
       <div class="flex items-center justify-between">
-        <h4 class="font-semibold text-base-content/80">
+        <h4 i18n class="font-semibold text-base-content/80">
           Connections
           @if (connections().length > 0) {
             <span class="badge badge-sm badge-neutral ml-2">{{ connections().length }}</span>
@@ -27180,7 +27943,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
           <div class="skeleton h-16 w-full rounded-xl"></div>
         </div>
       } @else if (connections().length === 0) {
-        <div class="text-center py-10 text-base-content/40 italic text-sm">
+        <div i18n class="text-center py-10 text-base-content/40 italic text-sm">
           No connections recorded. Add one to start mapping this contact's network.
         </div>
       } @else {
@@ -27527,6 +28290,530 @@ export class PersonConnections implements OnInit {
     </div>
   </pc-side-drawer>
 </div>
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
+
+```html
+<!-- Template for persons grid -->
+<div class="flex flex-col gap-6">
+  <pc-datagrid
+    #grid
+    [showToolbar]="!inline()"
+    [title]="getTitle()"
+    [description]="getDescription()"
+    [listId]="listId()"
+    [colDefs]="col"
+    [disableDelete]="false"
+    [disableImport]="false"
+    [disableMerge]="false"
+    [confirmDeleteOverride]="onConfirmDeleteBind"
+    addRoute="/people/add"
+    viewRoute="/people"
+    [disableView]="false"
+    [narrowTypeOptions]="narrowTypeOptions"
+    (importCSV)="openImportDialog()"
+    [plusIcon]="getPlusIcon()"
+  ></pc-datagrid>
+</div>
+
+<dialog id="confirmAddressEdit" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold">Address Edit</h3>
+    <p class="py-2 font-light">
+      Addresses can only be edited in the Households Component. Would you like me to take you there?
+    </p>
+
+    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
+      <button class="btn btn-primary" (click)="routeToHouseholds()">
+        <pc-icon name="arrow-right-start-on-rectangle" />
+        Yes
+      </button>
+      <button class="btn">
+        <pc-icon name="x-circle" />
+        Cancel
+      </button>
+    </form>
+  </div>
+</dialog>
+
+<!-- Reusable CSV Importer with Persons-specific extras (tags) -->
+<pc-csv-importer
+  [open]="importerOpen()"
+  [title]="'Import People from CSV'"
+  [mappableFields]="mappableFields"
+  [autoMapHeader]="autoMapHeader"
+  [summary]="importSummary()"
+  (submit)="onImportSubmit($event)"
+  (close)="importerOpen.set(false); importSummary.set(null)"
+  (closeSummary)="importSummary.set(null)"
+>
+  <div pc-import-extras class="grid gap-2">
+    <label class="font-semibold">3) Add tags to all imported rows (optional)</label>
+    <input class="input input-bordered" placeholder="Comma separated e.g. donor, volunteer" [(ngModel)]="tagsInput" />
+  </div>
+</pc-csv-importer>
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
+
+```typescript
+import { Component, inject, signal, input, viewChild, OnInit } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+
+import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
+import {
+  provideDataGridConfig,
+  DATA_GRID_CONFIG,
+  DEFAULT_DATA_GRID_CONFIG,
+} from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+interface ParamsType {
+  value: string[];
+}
+
+@Component({
+  selector: 'pc-persons-grid',
+  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
+  templateUrl: './persons-grid.html',
+  providers: [
+    { provide: AbstractAPIService, useExisting: PersonsService },
+    provideDataGridConfig({ messages: { exportEntity: 'persons', exportFileName: 'persons-export.csv' } }),
+  ],
+})
+export class PersonsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  private readonly personsService = inject(PersonsService);
+
+  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  public inline = input<boolean>(false);
+
+  private addressChangeModalId: string | null = null;
+  private importProgressTimer: any;
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+
+  protected readonly mappableFields = [
+    'first_name',
+    'middle_names',
+    'last_name',
+    'email',
+    'email2',
+    'mobile',
+    'home_phone',
+    'street_num',
+    'street1',
+    'street2',
+    'apt',
+    'city',
+    'state',
+    'zip',
+    'country',
+    'notes',
+  ];
+
+  protected col: ColDef[] = [
+    { field: 'first_name', headerName: 'First Name', editable: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true },
+    { field: 'email', headerName: 'Email', editable: true },
+    { field: 'mobile', headerName: 'Mobile', editable: true },
+    { field: 'company_name', headerName: 'Company', editable: false },
+    {
+      field: 'home_phone',
+      headerName: 'Home phone',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'tags',
+      hide: true,
+      headerName: 'Tags',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
+      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
+      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
+      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
+      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+    },
+    {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      onCellClicked: this.onAddressCellClicked.bind(this),
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (locationParts.length) parts.push(locationParts.join(', ').trim());
+        return parts.join(', ').trim() || 'No household assigned';
+      },
+    },
+    {
+      field: 'street_num',
+      headerName: 'Street Number',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'apt',
+      headerName: 'Apt',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street2',
+      headerName: 'Street 2',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'state',
+      headerName: 'State/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'zip',
+      headerName: 'Zip/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'country',
+      headerName: 'Country',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+
+  // Generic CSV importer integration
+  protected importerOpen = signal(false);
+  protected importSummary = signal<CsvImportSummary | null>(null);
+
+  public listId = input<string | null>(null);
+
+  protected readonly narrowTypeOptions = [
+    { label: 'All', value: null, tags: [] },
+    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
+    { label: 'Donors', value: 'donor', tags: ['donor'] },
+  ];
+
+  protected tagsInput = '';
+
+  public async ngOnInit() {
+    await this.loadTagOptions();
+    await this.loadIssueOptions();
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected getPlusIcon(): PcIconNameType {
+    return 'user-plus';
+  }
+
+  // paging/preview managed by CsvImportComponent
+
+  protected confirmOpenEditOnDoubleClick(event: any) {
+    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
+    this.confirmAddressChange();
+  }
+
+  protected onAddressCellClicked(event: any) {
+    const householdId = event?.data?.household_id ?? event?.household_id;
+    if (householdId) {
+      this.router.navigate(['households', householdId]);
+    }
+  }
+
+  protected getTitle() {
+    return 'People';
+  }
+
+  protected getDescription() {
+    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
+  }
+
+  // --- Import CSV Flow ---
+  protected openImportDialog() {
+    // Clear any prior summary to avoid stale dialogs
+    this.importSummary.set(null);
+    this.tagsInput = '';
+    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
+    this.importerOpen.set(true);
+  }
+
+  protected routeToHouseholds() {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.close();
+
+    if (this.addressChangeModalId !== null) {
+      this.router.navigate(['households', this.addressChangeModalId]);
+    }
+  }
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+    const inputTags = this.tagsInput
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => !!t);
+    const tags = inputTags;
+
+    try {
+      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        tag: res?.tag,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.grid()?.refresh();
+    } catch (e: any) {
+      const msg = e?.message || e?.data?.message || 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
+  }
+
+  public autoMapHeader(h: string): string {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      firstname: 'first_name',
+      fname: 'first_name',
+      middlename: 'middle_names',
+      lastname: 'last_name',
+      lname: 'last_name',
+      name: 'first_name',
+      email: 'email',
+      emailaddress: 'email',
+      email1address: 'email',
+      email2: 'email2',
+      email2address: 'email2',
+      mobile: 'mobile',
+      mobilephone: 'mobile',
+      cellphone: 'mobile',
+      primaryphone: 'mobile',
+      businessphone: 'mobile',
+      homephone: 'home_phone',
+      streetnum: 'street_num',
+      streetnumber: 'street_num',
+      homestreet: 'street1',
+      homestreet1: 'street1',
+      homestreet2: 'street2',
+      homestreet3: 'street2',
+      homeaddress: 'street1',
+      homeaddresspobox: 'street2',
+      homecity: 'city',
+      homestate: 'state',
+      homepostalcode: 'zip',
+      homecountry: 'country',
+      businessstreet: 'street1',
+      businessstreet1: 'street1',
+      businessstreet2: 'street2',
+      businessstreet3: 'street2',
+      businessaddress: 'street1',
+      businessaddresspobox: 'street2',
+      businesscity: 'city',
+      businessstate: 'state',
+      businesspostalcode: 'zip',
+      businesscountry: 'country',
+      address1: 'street1',
+      address2: 'street2',
+      street1: 'street1',
+      street2: 'street2',
+      apt: 'apt',
+      apartment: 'apt',
+      city: 'city',
+      state: 'state',
+      province: 'state',
+      zip: 'zip',
+      postal: 'zip',
+      country: 'country',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  }
+
+  private confirmAddressChange(): void {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.showModal();
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    const ids = selected.map((r: any) => r.id);
+
+    // Show standard delete confirmation
+    const selectedCount = selected.length;
+    const dynamicMessage = selectedCount
+      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
+      : this.config.messages.deleteConfirmMessage;
+
+    const ok = await this.dialogs.confirm({
+      title: this.config.messages.deleteConfirmTitle,
+      message: dynamicMessage,
+      variant: this.config.messages.deleteConfirmVariant,
+      icon: this.config.messages.deleteConfirmIcon,
+      confirmText: this.config.messages.deleteConfirmText,
+      cancelText: this.config.messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return true; // Handled
+
+    const end = this._loading.begin();
+    try {
+      // Call deleteMany without force, skipping global error toast
+      await this.personsService.deleteMany(ids, undefined, true);
+      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+    } catch (err: any) {
+      // Check if it's the captain error message
+      const errMsg = err?.message || err?.data?.message || '';
+      if (errMsg.includes('team captains')) {
+        // Ask the user if they want to proceed despite being a team captain
+        const forceOk = await this.dialogs.confirm({
+          title: 'Team Captain Warning',
+          message: errMsg,
+          variant: 'warning',
+          confirmText: 'Yes, delete anyway',
+          cancelText: 'Cancel',
+        });
+        if (forceOk) {
+          try {
+            await this.personsService.deleteMany(ids, true, true);
+            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+          } catch (forceErr: any) {
+            const forceErrMsg = forceErr?.message || forceErr?.data?.message || 'Delete failed';
+            this.alertSvc.showError(forceErrMsg);
+          }
+        }
+      } else {
+        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
+      }
+    } finally {
+      end();
+      this.grid()?.clearAllSelection();
+      await this.grid()?.refresh();
+    }
+    return true;
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/profile/profile-page.ts
@@ -27933,489 +29220,585 @@ export class ProfilePage implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/domains/domains-settings.html
+## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.html
 
 ```html
-<div class="space-y-6">
-  <!-- Add Domain Card -->
-  <div class="card border border-base-200 bg-base-50/50 p-6 rounded-xl">
-    <h3 class="text-lg font-semibold border-b border-base-200 pb-3 mb-4">Add Sender Domain</h3>
-    <form (submit)="addDomain(); $event.preventDefault();" class="flex flex-col sm:flex-row gap-3">
-      <div class="flex-1">
-        <label for="new-domain-input" class="sr-only">Domain Name</label>
-        <input
-          id="new-domain-input"
-          type="text"
-          class="input input-bordered focus:input-primary w-full bg-base-100"
-          placeholder="e.g. newsletter.myorganization.org"
-          [(ngModel)]="newDomain"
-          name="newDomain"
-          [disabled]="addingDomain()"
-        />
+<div class="space-y-8">
+  <!-- Stripe Connection Section -->
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <div class="border-b border-base-200 pb-3 flex items-center justify-between">
+      <h3 class="text-lg font-semibold flex items-center gap-2">
+        <pc-icon name="credit-card" class="text-primary" [size]="5"></pc-icon>
+        Stripe Integration
+      </h3>
+      <span
+        class="badge badge-sm font-medium"
+        [class.badge-success]="stripeSecretKey().trim()"
+        [class.badge-neutral]="!stripeSecretKey().trim()"
+      >
+        {{ stripeSecretKey().trim() ? 'Connected' : 'Not Configured' }}
+      </span>
+    </div>
+
+    <!-- Security Banner -->
+    <div
+      class="alert alert-warning text-xs rounded-xl p-3 border-warning/30 bg-warning/5 text-warning-content shadow-sm flex items-start gap-3"
+    >
+      <pc-icon name="shield-exclamation" [size]="5" class="shrink-0 mt-0.5 text-warning"></pc-icon>
+      <div>
+        <strong class="font-semibold">Security Best Practice: Use Stripe Restricted API Keys (RAK)</strong>
+        <p class="mt-0.5 text-base-content/70">
+          For maximum security, do not provide your account's master Secret Key. Instead, go to your Stripe Dashboard
+          and create a <strong class="font-medium">Restricted API Key (RAK)</strong> with the following permissions:
+        </p>
+        <ul class="list-disc list-inside mt-1 space-y-0.5 font-medium text-base-content/85">
+          <li><code class="text-[10px] bg-base-300 px-1 rounded">Checkout Sessions</code>: Write</li>
+          <li><code class="text-[10px] bg-base-300 px-1 rounded">Payment Intents</code>: Read</li>
+          <li><code class="text-[10px] bg-base-300 px-1 rounded">Webhooks</code>: Write</li>
+        </ul>
       </div>
-      <button type="submit" class="btn btn-primary min-w-[130px]" [disabled]="addingDomain() || !newDomain().trim()">
-        @if (addingDomain()) {
-        <span class="loading loading-spinner loading-xs mr-2"></span>
-        } Add Domain
+    </div>
+
+    <div class="grid gap-6 md:grid-cols-2 pt-2">
+      <!-- Stripe Secret Key -->
+      <div class="flex flex-col gap-1.5">
+        <label for="stripe_secret_key" class="text-sm font-semibold text-base-content/90"> Stripe Secret Key </label>
+        <input
+          id="stripe_secret_key"
+          type="password"
+          placeholder="sk_live_..."
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
+          [value]="stripeSecretKey()"
+          (input)="stripeSecretKey.set($any($event.target).value)"
+        />
+        <p class="text-[11px] text-base-content/50">
+          Used to securely authenticate payments with Stripe. Starts with <code class="font-mono">sk_live_</code> or
+          <code class="font-mono">sk_test_</code>.
+        </p>
+      </div>
+
+      <!-- Stripe Webhook Secret -->
+      <div class="flex flex-col gap-1.5">
+        <label for="stripe_webhook_secret" class="text-sm font-semibold text-base-content/90">
+          Stripe Webhook Signing Secret
+        </label>
+        <input
+          id="stripe_webhook_secret"
+          type="password"
+          placeholder="whsec_..."
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
+          [value]="stripeWebhookSecret()"
+          (input)="stripeWebhookSecret.set($any($event.target).value)"
+        />
+        <p class="text-[11px] text-base-content/50">
+          Enables signature verification of incoming Stripe webhook notifications. Starts with
+          <code class="font-mono">whsec_</code>.
+        </p>
+      </div>
+    </div>
+
+    <!-- Webhook Instructions Info Card -->
+    <div
+      class="card border border-base-200 bg-base-100 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-4 shadow-sm"
+    >
+      <div class="space-y-1">
+        <h4 class="text-sm font-bold text-base-content/90 flex items-center gap-1.5">
+          <pc-icon name="information-circle" class="text-info" [size]="4"></pc-icon>
+          Webhook Endpoint URL
+        </h4>
+        <p class="text-xs text-base-content/65 max-w-xl">
+          Enter this endpoint URL in your Stripe Developer Dashboard webhooks configuration to receive donation
+          completion notifications:
+        </p>
+        <div
+          class="mt-2 text-xs font-mono bg-base-200/50 p-2 rounded border border-base-300 break-all select-all inline-block"
+        >
+          {{ webhookUrl() }}
+        </div>
+      </div>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline btn-primary shrink-0 self-end sm:self-center"
+        (click)="copyWebhookUrl()"
+      >
+        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+        Copy URL
       </button>
-    </form>
-    <p class="text-[13px] text-base-content/50 mt-2">
-      Verify your domain ownership by adding DNS records to your registrar. Once verified, you can send newsletters from
-      addresses under this domain.
-    </p>
+    </div>
   </div>
 
-  <!-- Domains List -->
-  <div class="space-y-4">
-    <h3 class="text-lg font-semibold border-b border-base-200 pb-2">Configured Domains</h3>
+  <!-- Donation Limit & Residency Restrictions Section -->
+  <div class="grid gap-6 md:grid-cols-2">
+    <!-- Donation Periods card -->
+    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6 flex flex-col">
+      <div class="border-b border-base-200 pb-3 flex items-center justify-between">
+        <h3 class="text-lg font-semibold flex items-center gap-2">
+          <pc-icon name="calendar" class="text-primary" [size]="5"></pc-icon>
+          Donation Limit Periods
+        </h3>
+        <button
+          type="button"
+          class="btn btn-xs btn-primary"
+          (click)="showAddPeriod.set(true)"
+          [hidden]="showAddPeriod()"
+        >
+          <pc-icon name="plus" [size]="3"></pc-icon>
+          Add Period
+        </button>
+      </div>
+      <p class="text-xs text-base-content/60">
+        Define campaign periods with custom date ranges and maximum limits instead of a flat calendar year. The active
+        period covering today is used for all eligibility checks. If no period is defined, the fallback annual limit
+        below applies.
+      </p>
 
-    @if (domainsList().length === 0) {
-    <div
-      class="flex flex-col items-center justify-center py-12 text-base-content/40 bg-base-50/30 rounded-xl border border-dashed border-base-200"
-    >
-      <pc-icon name="globe-americas" class="opacity-30 mb-3" [size]="40"></pc-icon>
-      <p class="font-medium text-sm">No custom domains configured yet.</p>
-      <p class="text-xs text-base-content/50 mt-1">Add a domain above to start verifying.</p>
-    </div>
-    } @else {
-    <div class="space-y-3">
-      @for (item of domainsList(); track item.domain) {
-      <div class="border border-base-200 rounded-xl overflow-hidden bg-base-100 shadow-sm transition-all duration-200">
-        <!-- Domain Entry Row -->
-        <div class="flex items-center justify-between p-4 flex-wrap gap-3 bg-base-50/30 border-b border-base-200/50">
-          <div class="flex items-center gap-3">
-            <pc-icon name="globe-americas" class="text-base-content/60" [size]="20"></pc-icon>
-            <span class="font-semibold text-base-content/95">{{ item.domain }}</span>
-            @if (item.status === 'verified') {
-            <span class="badge badge-success text-success-content gap-1 font-semibold py-2">
-              <pc-icon name="check-circle" [size]="14"></pc-icon> Verified
-            </span>
-            } @else {
-            <span class="badge badge-warning text-warning-content gap-1 font-semibold py-2">
-              <span class="loading loading-spinner loading-xs scale-75"></span> Pending Verification
-            </span>
-            }
+      <!-- Existing periods list -->
+      <div class="space-y-2">
+        @for (period of donationPeriods(); track period.id) {
+        <div class="flex items-start justify-between gap-3 p-3 rounded-lg border border-base-200 bg-base-100 text-xs">
+          <div class="space-y-0.5 flex-1 min-w-0">
+            <div class="font-bold text-base-content truncate">{{ period.name }}</div>
+            <div class="text-base-content/60">
+              {{ formatDate(period.start_date) }} – {{ period.end_date ? formatDate(period.end_date) : 'No end date' }}
+            </div>
+            <div class="flex items-center gap-2 mt-1">
+              <span class="font-semibold text-primary">${{ (period.limit_amount / 100).toLocaleString() }} limit</span>
+              @if (isPeriodActive(period)) {
+              <span class="badge badge-xs badge-success font-semibold">Active now</span>
+              } @else if (period.is_active) {
+              <span class="badge badge-xs badge-neutral font-semibold">Enabled</span>
+              } @else {
+              <span class="badge badge-xs badge-ghost font-semibold">Disabled</span>
+              }
+            </div>
           </div>
-          <div class="flex items-center gap-2">
-            <button type="button" class="btn btn-sm btn-ghost hover:bg-base-200" (click)="toggleExpand(item.domain)">
-              {{ expandedDomain() === item.domain ? 'Hide DNS Setup' : 'Show DNS Setup' }}
-            </button>
-            <button
-              type="button"
-              class="btn btn-sm btn-circle btn-ghost text-error hover:bg-error/10"
-              (click)="deleteDomain(item.domain)"
-              title="Remove domain"
-            >
-              <pc-icon name="trash" [size]="8"></pc-icon>
+          <div class="flex items-center gap-1 shrink-0">
+            <input
+              type="checkbox"
+              class="toggle toggle-xs toggle-success"
+              [checked]="period.is_active"
+              (change)="togglePeriodActive(period)"
+              title="Enable/disable period"
+            />
+            <button type="button" class="btn btn-xs btn-ghost text-error" (click)="deletePeriod(period)">
+              <pc-icon name="trash" [size]="3"></pc-icon>
             </button>
           </div>
         </div>
-
-        <!-- DNS Records Details (Expanded) -->
-        @if (expandedDomain() === item.domain) {
-        <div class="p-5 bg-base-100 border-t border-base-100 space-y-5 animate-slide-down">
-          <div class="space-y-1">
-            <h4 class="text-sm font-bold text-base-content/90">DNS Verification Setup</h4>
-            <p class="text-xs text-base-content/60">
-              Please add the following CNAME and TXT records to your DNS provider (e.g. Cloudflare, GoDaddy, Namecheap)
-              to verify domain sending authorization, link branding, and DMARC policy validation.
-            </p>
-          </div>
-
-          <div class="space-y-4">
-            <!-- SPF Record -->
-            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
-                  SPF (Domain Sending Auth)
-                  <span [class]="item.spf ? 'text-success' : 'text-warning'">
-                    <pc-icon [name]="item.spf ? 'check-circle' : 'exclamation-circle'"></pc-icon>
-                  </span>
-                </span>
-                <span
-                  class="badge badge-sm font-semibold"
-                  [class.badge-success]="item.spf"
-                  [class.badge-ghost]="!item.spf"
-                >
-                  {{ item.spf ? 'Verified' : 'Pending' }}
-                </span>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                <div>
-                  <strong class="text-base-content/60">Type:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">CNAME</span>
-                </div>
-                <div>
-                  <strong class="text-base-content/60">Host:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono"
-                    >{{ item.domainAuthDns?.mail_cname?.host || 'em.' + item.domain }}</span
-                  >
-                </div>
-                <div class="md:col-span-3">
-                  <strong class="text-base-content/60">Value / Points To:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
-                    >{{ item.domainAuthDns?.mail_cname?.data || 'u12345.wl.sendgrid.net' }}</span
-                  >
-                </div>
-              </div>
-            </div>
-
-            <!-- DKIM CNAME 1 -->
-            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
-                  DKIM Signature Record 1
-                  <span [class]="item.dkim ? 'text-success' : 'text-warning'">
-                    <pc-icon [name]="item.dkim ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
-                  </span>
-                </span>
-                <span
-                  class="badge badge-sm font-semibold"
-                  [class.badge-success]="item.dkim"
-                  [class.badge-ghost]="!item.dkim"
-                >
-                  {{ item.dkim ? 'Verified' : 'Pending' }}
-                </span>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                <div>
-                  <strong class="text-base-content/60">Type:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">CNAME</span>
-                </div>
-                <div>
-                  <strong class="text-base-content/60">Host:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono"
-                    >{{ item.domainAuthDns?.dkim1?.host || 's1._domainkey.' + item.domain }}</span
-                  >
-                </div>
-                <div class="md:col-span-3">
-                  <strong class="text-base-content/60">Value / Points To:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
-                    >{{ item.domainAuthDns?.dkim1?.data || 's1.domainkey.u12345.wl.sendgrid.net' }}</span
-                  >
-                </div>
-              </div>
-            </div>
-
-            <!-- DKIM CNAME 2 -->
-            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
-                  DKIM Signature Record 2
-                  <span [class]="item.dkim ? 'text-success' : 'text-warning'">
-                    <pc-icon [name]="item.dkim ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
-                  </span>
-                </span>
-                <span
-                  class="badge badge-sm font-semibold"
-                  [class.badge-success]="item.dkim"
-                  [class.badge-ghost]="!item.dkim"
-                >
-                  {{ item.dkim ? 'Verified' : 'Pending' }}
-                </span>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                <div>
-                  <strong class="text-base-content/60">Type:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">CNAME</span>
-                </div>
-                <div>
-                  <strong class="text-base-content/60">Host:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono"
-                    >{{ item.domainAuthDns?.dkim2?.host || 's2._domainkey.' + item.domain }}</span
-                  >
-                </div>
-                <div class="md:col-span-3">
-                  <strong class="text-base-content/60">Value / Points To:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
-                    >{{ item.domainAuthDns?.dkim2?.data || 's2.domainkey.u12345.wl.sendgrid.net' }}</span
-                  >
-                </div>
-              </div>
-            </div>
-
-            <!-- Link Branding CNAME -->
-            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
-                  Link Branding (URL Whitelabel)
-                  <span [class]="item.linkBranded ? 'text-success' : 'text-warning'">
-                    <pc-icon [name]="item.linkBranded ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
-                  </span>
-                </span>
-                <span
-                  class="badge badge-sm font-semibold"
-                  [class.badge-success]="item.linkBranded"
-                  [class.badge-ghost]="!item.linkBranded"
-                >
-                  {{ item.linkBranded ? 'Verified' : 'Pending' }}
-                </span>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                <div>
-                  <strong class="text-base-content/60">Type:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">CNAME</span>
-                </div>
-                <div>
-                  <strong class="text-base-content/60">Host:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono"
-                    >{{ item.linkBrandingDns?.domain?.host || 'email.' + item.domain }}</span
-                  >
-                </div>
-                <div class="md:col-span-3">
-                  <strong class="text-base-content/60">Value / Points To:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
-                    >{{ item.linkBrandingDns?.domain?.data || 'sendgrid.net' }}</span
-                  >
-                </div>
-              </div>
-            </div>
-
-            <!-- DMARC Record -->
-            <div class="border border-base-200/80 rounded-lg p-3 bg-base-50/20 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-base-content/75 flex items-center gap-1.5">
-                  DMARC Policy (Anti-Spoofing)
-                  <span [class]="item.dmarc ? 'text-success' : 'text-warning'">
-                    <pc-icon [name]="item.dmarc ? 'check-circle' : 'exclamation-circle'" [size]="8"></pc-icon>
-                  </span>
-                </span>
-                <span
-                  class="badge badge-sm font-semibold"
-                  [class.badge-success]="item.dmarc"
-                  [class.badge-ghost]="!item.dmarc"
-                >
-                  {{ item.dmarc ? 'Verified' : 'Pending' }}
-                </span>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-                <div>
-                  <strong class="text-base-content/60">Type:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">TXT</span>
-                </div>
-                <div>
-                  <strong class="text-base-content/60">Host:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono">_dmarc.{{ item.domain }}</span>
-                </div>
-                <div class="md:col-span-3">
-                  <strong class="text-base-content/60">Value / Points To:</strong>
-                  <span class="bg-base-200 px-1.5 py-0.5 rounded font-mono break-all"
-                    >v=DMARC1; p=none; rua=mailto:dmarc@{{ item.domain }}</span
-                  >
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex justify-end pt-2">
-            <button
-              type="button"
-              class="btn btn-primary"
-              (click)="verifyDomain(item.domain)"
-              [disabled]="verifyingDomain() !== null || isDomainVerifyCooldown(item.domain)"
-            >
-              @if (verifyingDomain() === item.domain) {
-              <span class="loading loading-spinner loading-xs mr-2"></span>
-              Checking records... } @else if (domainCooldownSeconds()[item.domain]) { Wait
-              <span class="countdown font-mono text-sm"
-                ><span [style.--value]="domainCooldownSeconds()[item.domain]"></span></span
-              >s } @else {
-              <pc-icon name="arrow-path" class="mr-2"></pc-icon>
-              Verify DNS Records }
-            </button>
-          </div>
+        } @empty {
+        <div class="text-xs text-base-content/50 italic py-2 text-center">
+          No periods defined. Using fallback annual limit.
         </div>
         }
       </div>
+
+      <!-- Add period form -->
+      @if (showAddPeriod()) {
+      <div class="space-y-3 p-4 rounded-xl border border-base-300 bg-base-200/20 mt-1">
+        <h4 class="text-sm font-bold text-base-content/90">New Donation Period</h4>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold">Period Name</label>
+          <input
+            type="text"
+            class="input input-sm input-bordered bg-base-200/30"
+            placeholder="e.g. 2024 Municipal Campaign"
+            [value]="newPeriodName()"
+            (input)="newPeriodName.set($any($event.target).value)"
+          />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold">Start Date</label>
+            <input
+              type="date"
+              class="input input-sm input-bordered bg-base-200/30"
+              [value]="newPeriodStartDate()"
+              (input)="newPeriodStartDate.set($any($event.target).value)"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold">End Date <span class="text-base-content/40">(optional)</span></label>
+            <input
+              type="date"
+              class="input input-sm input-bordered bg-base-200/30"
+              [value]="newPeriodEndDate()"
+              (input)="newPeriodEndDate.set($any($event.target).value)"
+            />
+          </div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold">Limit per Donor ($)</label>
+          <div class="relative max-w-xs">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-bold">$</span>
+            <input
+              type="number"
+              min="1"
+              class="input input-sm input-bordered bg-base-200/30 pl-6 w-full"
+              [ngModel]="newPeriodLimit()"
+              (ngModelChange)="newPeriodLimit.set($event)"
+            />
+          </div>
+        </div>
+        <div class="flex items-center gap-2 pt-1">
+          <button type="button" class="btn btn-sm btn-primary" (click)="addPeriod()" [disabled]="isSavingPeriod()">
+            @if (isSavingPeriod()) { <span class="loading loading-spinner loading-xs"></span> } Save Period
+          </button>
+          <button type="button" class="btn btn-sm btn-ghost" (click)="showAddPeriod.set(false)">Cancel</button>
+        </div>
+      </div>
       }
+
+      <!-- Fallback annual limit (used when no period is active) -->
+      <div class="border-t border-base-200 pt-4 mt-2">
+        <p class="text-xs text-base-content/50 mb-2 font-semibold">Fallback: Calendar Year Limit</p>
+        <p class="text-[11px] text-base-content/40 mb-2">Used when no donation period covers the current date.</p>
+        <div class="relative max-w-xs">
+          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-semibold">$</span>
+          <input
+            id="donation_limit"
+            type="number"
+            min="1"
+            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-sm font-semibold"
+            [value]="donationLimit()"
+            (input)="donationLimit.set($any($event.target).value)"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Residency restrictions card -->
+    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+      <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+        <pc-icon name="map-pin" class="text-primary" [size]="5"></pc-icon>
+        Residency Restrictions
+      </h3>
+      <p class="text-xs text-base-content/60">
+        Filter and restrict eligibility based on where the donor resides. Useful for regional municipal, provincial, or
+        state elections.
+      </p>
+
+      <div class="space-y-4">
+        <!-- Toggle Restriction -->
+        <label class="flex items-center gap-3 cursor-pointer py-1">
+          <input
+            id="restrict_residency"
+            type="checkbox"
+            class="toggle toggle-primary toggle-md"
+            [checked]="restrictResidency()"
+            (change)="restrictResidency.set($any($event.target).checked)"
+          />
+          <span class="text-sm font-semibold text-base-content/90"> Enforce residency restrictions </span>
+        </label>
+
+        @if (restrictResidency()) {
+        <div class="space-y-4 pt-2 animate-fade-in relative">
+          <!-- Autocomplete Allowed Countries Picker -->
+          <div class="flex flex-col gap-1.5 relative">
+            <label class="text-xs font-semibold text-base-content/85"> Allowed Countries </label>
+            <div class="flex flex-wrap gap-1.5 p-2 bg-base-200/30 rounded-lg border border-base-200">
+              @for (cCode of selectedCountries(); track cCode) {
+              <span class="badge badge-sm badge-primary gap-1.5 py-2 px-2.5 font-medium">
+                {{ getCountryName(cCode) }}
+                <button
+                  type="button"
+                  class="text-[10px] hover:text-base-content font-bold"
+                  (click)="removeCountry(cCode)"
+                >
+                  ×
+                </button>
+              </span>
+              }
+              <input
+                type="text"
+                placeholder="Type to search country..."
+                class="bg-transparent border-none outline-none text-xs flex-1 min-w-[120px]"
+                [value]="countrySearch()"
+                (input)="countrySearch.set($any($event.target).value); showCountryDropdown.set(true)"
+                (focus)="showCountryDropdown.set(true)"
+                (blur)="showCountryDropdown.set(false)"
+              />
+            </div>
+
+            @if (showCountryDropdown() && availableCountriesToSelect().length) {
+            <!-- Use mousedown to prevent input blur before selecting -->
+            <ul
+              class="absolute z-50 left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 text-xs"
+            >
+              @for (c of availableCountriesToSelect(); track c.code) {
+              <li>
+                <button
+                  type="button"
+                  class="w-full text-left px-3 py-2 hover:bg-base-200/50 font-medium"
+                  (mousedown)="selectCountry(c); $event.preventDefault()"
+                >
+                  {{ c.name }} ({{ c.code }})
+                </button>
+              </li>
+              }
+            </ul>
+            }
+          </div>
+          <!-- Allowed Province/State Checkboxes for Selected Countries -->
+          @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() || isFranceSelected() || isIndiaSelected())
+          {
+          <div class="flex flex-col gap-3 p-4 bg-base-100 border border-base-200 rounded-xl max-h-64 overflow-y-auto">
+            <label class="text-xs font-bold text-base-content/85 uppercase tracking-wide">
+              Allowed Provinces & States
+            </label>
+
+            @if (isCanadaSelected()) {
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">Canada Provinces</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (p of canadaProvinces; track p.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(p.code)"
+                    (change)="toggleRegion(p.code)"
+                  />
+                  <span>{{ p.name }} ({{ p.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isUsaSelected()) { @if (isCanadaSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">United States States</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of usStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isGermanySelected()) { @if (isCanadaSelected() || isUsaSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">Germany States</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of germanyStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isFranceSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">France Regions</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (r of franceRegions; track r.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(r.code)"
+                    (change)="toggleRegion(r.code)"
+                  />
+                  <span>{{ r.name }} ({{ r.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isIndiaSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() ||
+            isFranceSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">India States & UTs</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of indiaStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            }
+          </div>
+          }
+        </div>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Tax Credit Configuration -->
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+      <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
+      Tax Credit Tiers
+    </h3>
+    <p class="text-xs text-base-content/60">
+      Define progressive tax credit brackets. Tax credits are computed automatically based on cumulative donations
+      inside a calendar year.
+    </p>
+
+    <!-- Table of existing tiers -->
+    <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl mt-3 shadow-sm">
+      <table class="table w-full text-xs">
+        <thead>
+          <tr class="border-b border-base-200 bg-base-50">
+            <th class="font-bold text-base-content/70">Bracket Tier</th>
+            <th class="font-bold text-base-content/70">Up to Limit</th>
+            <th class="font-bold text-base-content/70">Credit Percentage</th>
+            <th class="font-bold text-base-content/70 text-right w-24">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (tier of taxCreditTiers(); track $index) {
+          <tr class="hover:bg-base-200/20 border-b border-base-200">
+            <td class="font-bold text-base-content">Tier {{ $index + 1 }}</td>
+            <td class="font-semibold text-base-content/80">${{ tier.limit.toLocaleString() }}</td>
+            <td>
+              <span class="badge badge-success gap-1 font-semibold py-2 px-2.5"> {{ tier.rate * 100 }}% </span>
+            </td>
+            <td class="text-right">
+              <button
+                type="button"
+                class="btn btn-xs btn-ghost text-error font-medium hover:bg-error/10"
+                (click)="removeTier($index)"
+              >
+                Delete
+              </button>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="4" class="text-center py-6 text-base-content/50 italic">
+              No tax credit tiers defined yet. Add a tier below to set up credit calculations.
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Progressive bracket summary -->
+    @if (taxCreditTiers().length) {
+    <div class="mt-4 p-4 rounded-xl border border-base-200 bg-base-200/20 text-xs">
+      <h4 class="font-bold text-base-content/85 flex items-center gap-1.5 mb-2">
+        <pc-icon name="information-circle" class="text-primary" [size]="4"></pc-icon>
+        Tax Credit Bracket Summary (Plain Language)
+      </h4>
+      <ul class="list-disc list-inside space-y-1 text-base-content/75 font-semibold">
+        @for (line of taxCreditSummary(); track $index) {
+        <li>{{ line }}</li>
+        }
+      </ul>
     </div>
     }
+
+    <!-- Add new tier form -->
+    <div
+      class="card border border-base-200 bg-base-100 p-4 rounded-xl flex flex-wrap sm:flex-nowrap items-end gap-4 mt-3 shadow-sm"
+    >
+      <!-- Tier Limit -->
+      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
+        <label for="new_limit" class="text-xs font-semibold text-base-content/95"> Bracket Upper Limit ($) </label>
+        <div class="relative">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">$</span>
+          <input
+            id="new_limit"
+            type="number"
+            min="1"
+            placeholder="500"
+            class="input input-bordered focus:input-primary w-full pl-6 bg-base-200/20 text-xs font-semibold"
+            [ngModel]="newLimit()"
+            (ngModelChange)="newLimit.set($event)"
+          />
+        </div>
+      </div>
+
+      <!-- Tier Rate -->
+      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
+        <label for="new_rate" class="text-xs font-semibold text-base-content/95"> Credit Percentage (%) </label>
+        <div class="relative">
+          <input
+            id="new_rate"
+            type="number"
+            min="0"
+            max="100"
+            placeholder="75"
+            class="input input-bordered focus:input-primary w-full pr-7 bg-base-200/20 text-xs font-semibold"
+            [ngModel]="newRate()"
+            (ngModelChange)="newRate.set($event)"
+          />
+          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">%</span>
+        </div>
+      </div>
+
+      <!-- Add button -->
+      <button
+        type="button"
+        class="btn btn-sm btn-primary w-full sm:w-auto mt-2 sm:mt-0 font-semibold"
+        (click)="addTier()"
+      >
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        Add Tier
+      </button>
+    </div>
+  </div>
+
+  <!-- Action buttons footer -->
+  <div class="border-t border-base-200 pt-6 mt-8 flex items-center justify-between">
+    <div>
+      @if (isSaving()) {
+      <span class="text-sm font-medium text-base-content/60 flex items-center">
+        <span class="loading loading-spinner loading-xs mr-2"></span>
+        Saving donations configuration…
+      </span>
+      }
+    </div>
+
+    <div class="flex items-center gap-3">
+      <button
+        type="button"
+        class="btn btn-ghost hover:bg-base-200 font-semibold text-sm"
+        (click)="reset()"
+        [disabled]="isSaving()"
+      >
+        Reset
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary min-w-[120px] font-semibold text-sm"
+        (click)="save()"
+        [disabled]="isSaving()"
+      >
+        @if (isSaving()) {
+        <span class="loading loading-spinner loading-xs mr-2"></span>
+        } Save Changes
+      </button>
+    </div>
   </div>
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/settings/domains/domains-settings.ts
-
-```typescript
-import { Component, signal, computed, inject, OnInit, linkedSignal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { SettingsService } from '../services/settings-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-
-export interface DNSVerificationRecord {
-  host: string;
-  type: string;
-  data: string;
-  valid: boolean;
-}
-
-export interface VerifiedDomain {
-  domain: string;
-  status: 'verified' | 'pending';
-  spf: boolean;
-  dkim: boolean;
-  dmarc: boolean;
-  domainAuthId?: number;
-  linkBrandingId?: number;
-  domainAuthDns?: {
-    mail_cname?: DNSVerificationRecord;
-    dkim1?: DNSVerificationRecord;
-    dkim2?: DNSVerificationRecord;
-  };
-  linkBrandingDns?: {
-    domain?: DNSVerificationRecord;
-  };
-  linkBranded?: boolean;
-}
-
-@Component({
-  selector: 'pc-domains-settings',
-  imports: [FormsModule, Icon],
-  templateUrl: './domains-settings.html',
-})
-export class DomainSettingsComponent implements OnInit {
-  private readonly settingsSvc = inject(SettingsService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly newDomain = signal('');
-  protected readonly addingDomain = signal(false);
-  protected readonly verifyingDomain = signal<string | null>(null);
-  protected readonly lastDomainVerificationTimes = signal<Record<string, number>>({});
-  protected readonly domainCooldownSeconds = signal<Record<string, number>>({});
-  protected readonly expandedDomain = linkedSignal<VerifiedDomain[], string | null>({
-    source: () => this.domainsList(),
-    computation: (list, prev) => {
-      const prevVal = prev?.value;
-      if (prevVal && list.some((d) => d.domain === prevVal)) {
-        return prevVal;
-      }
-      return null;
-    },
-  });
-
-  protected readonly domainsList = computed<VerifiedDomain[]>(() => {
-    return this.settingsSvc.getValue<VerifiedDomain[]>('communications.verified_domains') || [];
-  });
-
-  ngOnInit() {
-    // Ensure settings are loaded
-    void this.settingsSvc.load();
-  }
-
-  protected toggleExpand(domainName: string) {
-    if (this.expandedDomain() === domainName) {
-      this.expandedDomain.set(null);
-    } else {
-      this.expandedDomain.set(domainName);
-    }
-  }
-
-  protected async addDomain() {
-    const domainVal = this.newDomain().trim().toLowerCase();
-    if (!domainVal) return;
-
-    // Basic domain validation
-    const domainRegex = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,24}$/i;
-    if (!domainRegex.test(domainVal)) {
-      this.alerts.showError('Please provide a valid domain name (e.g. example.com).');
-      return;
-    }
-
-    const currentList = this.domainsList();
-    if (currentList.some((d) => d.domain === domainVal)) {
-      this.alerts.showError('This domain is already added.');
-      return;
-    }
-
-    this.addingDomain.set(true);
-
-    try {
-      await this.settingsSvc.addVerifiedDomain(domainVal);
-      this.newDomain.set('');
-      this.expandedDomain.set(domainVal); // Auto-expand to show DNS records
-      this.alerts.showSuccess(`Domain ${domainVal} added successfully. Please configure DNS records.`);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Failed to add domain.';
-      this.alerts.showError(errMsg);
-    } finally {
-      this.addingDomain.set(false);
-    }
-  }
-
-  protected isDomainVerifyCooldown(domainName: string): boolean {
-    const lastTime = this.lastDomainVerificationTimes()[domainName];
-    if (!lastTime) return false;
-    return Date.now() - lastTime < 60000;
-  }
-
-  private startDomainCooldown(domainName: string) {
-    this.domainCooldownSeconds.update((prev) => ({ ...prev, [domainName]: 60 }));
-    const interval = setInterval(() => {
-      const current = this.domainCooldownSeconds()[domainName] || 0;
-      if (current <= 1) {
-        clearInterval(interval);
-        this.domainCooldownSeconds.update((prev) => {
-          const next = { ...prev };
-          delete next[domainName];
-          return next;
-        });
-      } else {
-        this.domainCooldownSeconds.update((prev) => ({ ...prev, [domainName]: current - 1 }));
-      }
-    }, 1000);
-  }
-
-  protected async verifyDomain(domainName: string) {
-    if (this.isDomainVerifyCooldown(domainName)) {
-      this.alerts.showError('Please wait at least one minute before verifying this domain again.');
-      return;
-    }
-
-    this.verifyingDomain.set(domainName);
-
-    try {
-      const updatedList = (await this.settingsSvc.verifyVerifiedDomain(domainName)) as VerifiedDomain[];
-      this.lastDomainVerificationTimes.update((prev) => ({
-        ...prev,
-        [domainName]: Date.now(),
-      }));
-      this.startDomainCooldown(domainName);
-      const updatedDomain = updatedList.find((d: VerifiedDomain) => d.domain === domainName);
-
-      if (updatedDomain && updatedDomain.status === 'verified') {
-        this.alerts.showSuccess(`Domain ${domainName} has been successfully verified!`);
-      } else {
-        this.alerts.showWarn(`DNS check completed for ${domainName}. Some records are still pending verification.`);
-      }
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Failed to verify domain.';
-      this.alerts.showError(errMsg);
-    } finally {
-      this.verifyingDomain.set(null);
-    }
-  }
-
-  protected async deleteDomain(domainName: string) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Remove Domain',
-      message: `Are you sure you want to remove the domain ${domainName}?`,
-      variant: 'danger',
-      confirmText: 'Remove',
-    });
-    if (!confirmed) return;
-
-    try {
-      await this.settingsSvc.deleteVerifiedDomain(domainName);
-      this.alerts.showSuccess(`Domain ${domainName} removed.`);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Failed to remove domain.';
-      this.alerts.showError(errMsg);
-    }
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/security/passkey-settings.html
@@ -28638,119 +30021,10 @@ export class PasskeySettingsComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/services/settings-service.ts
-
-```typescript
-import { signal, Service } from '@angular/core';
-
-import { SettingsEntryType } from '../../../../../../../libs/common/src';
-
-import { TRPCService } from '../../../services/api/trpc-service';
-
-export type TenantSettingsSnapshot = Record<string, unknown>;
-
-@Service()
-export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
-  public readonly snapshotSignal = signal<TenantSettingsSnapshot>({});
-  private readonly isPendingSignal = signal<boolean>(false);
-
-  public async load(force = false) {
-    if (!force && Object.keys(this.snapshotSignal()).length) return this.snapshotSignal();
-
-    this.isPendingSignal.set(true);
-    try {
-      const data = (await this.api.settings.getSnapshot.query()) ?? {};
-      this.snapshotSignal.set(data);
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public getValue<T = unknown>(key: string, fallback: T): T;
-  public getValue<T = unknown>(key: string): T | undefined;
-  public getValue<T = unknown>(key: string, fallback?: T) {
-    const value = this.snapshotSignal()[key];
-    return (value === undefined ? fallback : (value as T)) ?? fallback;
-  }
-
-  public async upsert(entries: SettingsEntryType[]) {
-    if (!entries.length) return this.snapshotSignal();
-
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.upsert.mutate({ entries });
-      this.snapshotSignal.set(data ?? {});
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async requestEmailVerification(email: string) {
-    return this.api.settings.requestEmailVerification.mutate({ email });
-  }
-
-  public async verifySenderEmail(token: string) {
-    return this.api.settings.verifySenderEmail.mutate({ token });
-  }
-
-  public async addVerifiedDomain(domain: string) {
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.addVerifiedDomain.mutate({ domain });
-      this.snapshotSignal.update((snap) => ({
-        ...snap,
-        'communications.verified_domains': data,
-      }));
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async verifyVerifiedDomain(domain: string) {
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.verifyVerifiedDomain.mutate({ domain });
-      this.snapshotSignal.update((snap) => ({
-        ...snap,
-        'communications.verified_domains': data,
-      }));
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public async deleteVerifiedDomain(domain: string) {
-    this.isPendingSignal.set(true);
-    try {
-      const data = await this.api.settings.deleteVerifiedDomain.mutate({ domain });
-      this.snapshotSignal.update((snap) => ({
-        ...snap,
-        'communications.verified_domains': data,
-      }));
-      return data;
-    } finally {
-      this.isPendingSignal.set(false);
-    }
-  }
-
-  public snapshot(): TenantSettingsSnapshot {
-    return this.snapshotSignal();
-  }
-
-  public pending(): boolean {
-    return this.isPendingSignal();
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/settings/settings.config.ts
 
 ```typescript
-import { PcIconNameType } from '@icons/icons.index';
+import type { PcIconNameType } from '@icons/icons.index';
 
 export type SettingsFieldType =
   | 'text'
@@ -29785,13 +31059,13 @@ function randomHexColor(): string {
   template: `<div class="flex min-h-full flex-col bg-base-100">
     <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
       <div class="flex flex-col gap-2">
-        <label class="label text-base font-light">
+        <label i18n class="label text-base font-light">
           Enter a unique issue name (and optionally, give it a description)
         </label>
-        <pc-input placeholder="Issue Name" [formField]="form.name"></pc-input>
-        <pc-input placeholder="Optional description" [formField]="form.description"></pc-input>
+        <pc-input placeholder="Issue Name" i18n-placeholder [formField]="form.name"></pc-input>
+        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
         <div class="flex items-center gap-2">
-          <label class="label-text font-light text-sm">Colour</label>
+          <label i18n class="label-text font-light text-sm">Colour</label>
           <input
             class="input input-bordered input-sm w-24"
             type="color"
@@ -29892,16 +31166,16 @@ function randomHexColor(): string {
   template: `<div class="flex min-h-full flex-col bg-base-100">
     <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
       <div class="flex flex-col gap-2">
-        <label class="label text-base font-light">
+        <label i18n class="label text-base font-light">
           Enter a unique tag name (and optionally, give it a description)
         </label>
-        <pc-input placeholder="Tag Name" [formField]="form.name"></pc-input>
-        <pc-input placeholder="Optional description" [formField]="form.description"></pc-input>
+        <pc-input placeholder="Tag Name" i18n-placeholder [formField]="form.name"></pc-input>
+        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
         <div class="flex items-center gap-2">
-          <label class="label-text font-light text-sm">Colour</label>
+          <label i18n class="label-text font-light text-sm">Colour</label>
           <input class="input input-bordered input-sm w-24" type="color" [formField]="form.color" />
           @if (form.color().invalid() && form.color().touched()) {
-            <span class="text-error text-xs">Use a value like #3366ff</span>
+            <span i18n class="text-error text-xs">Use a value like #3366ff</span>
           }
         </div>
         <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
@@ -29973,6 +31247,250 @@ export class AddTag {
         return null;
       },
     });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/tags/ui/tags-grid.ts
+
+```typescript
+import { Component } from '@angular/core';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import type { getAllOptionsType } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+class TagsOnlyService extends TagsService {
+  public override getAll(options?: getAllOptionsType) {
+    return this.getAllWithCounts({ ...(options ?? {}), type: 'tag' } as getAllOptionsType);
+  }
+}
+
+@Component({
+  selector: 'pc-tags-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Tags"
+        i18n-title
+        description="Manage custom categorization tags used across people, households."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [allowFilter]="false"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="add-label"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    TagsOnlyService,
+    { provide: AbstractAPIService, useExisting: TagsOnlyService },
+    provideDataGridConfig({ messages: { exportEntity: 'tags', exportFileName: 'tags-export.csv' } }),
+  ],
+})
+export class TagsGridComponent {
+  protected col = [
+    {
+      field: 'name',
+      headerName: 'Tag Name',
+      editable: true,
+      valueFormatter: (p: any) => (p.value ? p.value.charAt(0).toUpperCase() + p.value.slice(1) : ''),
+    },
+    { field: 'description', headerName: 'Description', editable: true },
+    {
+      field: 'color',
+      headerName: 'Colour',
+      editable: true,
+      cellDataType: 'color',
+      cellRenderer: (p: any) => this.renderColorCell(p.value ?? p.data?.color ?? null),
+    },
+    { field: 'deletable', headerName: 'Deletable', type: 'boolean', editable: false },
+    { field: 'use_count_people', headerName: 'People' },
+    { field: 'use_count_households', headerName: 'Households' },
+  ];
+
+  constructor() {}
+
+  protected renderColorCell(raw: unknown): string {
+    const v = typeof raw === 'string' ? raw.trim() : '';
+    if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) {
+      return '<span class="text-xs text-neutral">None</span>';
+    }
+    const color = v.toLowerCase();
+
+    return `
+    <span class="inline-block h-4 w-8 rounded border shadow-sm"
+          style="background-color:${color}; border-color:${color}"
+          title="${color}"></span>
+  `;
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/tags/ui/tags.ts
+
+```typescript
+import { Component, OnInit, inject, input, output, signal } from '@angular/core';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { TagPaletteService } from './tag-palette.service';
+
+interface TagView {
+  name: string;
+  color: string | null;
+}
+
+@Component({
+  selector: 'pc-tags',
+  imports: [TagItem, AutoComplete],
+  template: `@if (!readonly()) {
+      <pc-autocomplete
+        (valueChange)="add($event)"
+        [placeholder]="placeholder()"
+        [filterSvc]="enableAutoComplete() ? this : null"
+      ></pc-autocomplete>
+    }
+    @let tagViews = displayTags();
+    @if (tagViews.length) {
+      <div class="my-1"></div>
+      <div class="contents" [class.mt-2]="!readonly()">
+        @if (!readonly()) {
+          <span class="font-light text-gray-400 mr-1 text-sm">{{ type() === 'issue' ? 'Issues:' : 'Tags:' }}</span>
+        }
+        @for (tag of tagViews; track tag.name) {
+          <pc-tagitem
+            class="mr-1 mb-1"
+            [name]="tag.name"
+            [color]="tag.color"
+            [canDelete]="canDelete()"
+            [compact]="compact()"
+            (click)="clicked(tag.name)"
+            (close)="closed(tag.name)"
+          ></pc-tagitem>
+        }
+        @if (limit() !== undefined && !expanded() && tags().length > limit()!) {
+          @let remainingCount = tags().length - limit()!;
+          <span
+            class="badge badge-neutral badge-sm cursor-pointer mb-1 align-middle hover:bg-neutral-focus"
+            (click)="expanded.set(true); $event.stopPropagation()"
+          >
+            +{{ remainingCount }}
+          </span>
+        }
+      </div>
+    } `,
+})
+export class Tags implements OnInit {
+  protected displayedTags: string[] = [];
+  protected expanded = signal(false);
+  private readonly paletteSvc = inject(TagPaletteService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+
+  public readonly tagAdded = output<string>();
+
+  public readonly tagClicked = output<string>();
+
+  public readonly tagRemoved = output<string>();
+
+  public readonly tagsChange = output<string[]>();
+
+  public animateRemoval = input<boolean>(true);
+
+  public canDelete = input<boolean>(true);
+
+  public enableAutoComplete = input<boolean>(true);
+
+  public placeholder = input<string>('Enter tags, separated by comma');
+
+  public readonly = input<boolean>(false);
+  public readonly type = input<'tag' | 'issue'>('tag');
+  public compact = input<boolean>(false);
+  public tagSvc = inject(TagsService);
+  public tags = input<string[]>([]);
+  public limit = input<number | undefined>(undefined);
+
+  protected displayTags(): TagView[] {
+    const raw = this.tags() ?? [];
+    const limitVal = this.limit();
+    const isExpanded = this.expanded();
+    const palette = this.paletteSvc.palette();
+    const seen = new Set<string>();
+    const out: TagView[] = [];
+    for (const entry of raw) {
+      if (typeof entry !== 'string') continue;
+      const name = entry.trim();
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      const lower = name.toLowerCase();
+      const color = palette[name] ?? palette[lower] ?? this.paletteSvc.colorFor(name);
+      out.push({ name, color: color ?? null });
+    }
+    return limitVal !== undefined && !isExpanded ? out.slice(0, limitVal) : out;
+  }
+
+  public async filter(key: string) {
+    if (!key || key.length === 0) {
+      return [];
+    }
+    const names = (await this.tagSvc.findByName(key, this.type())) as { name: string }[];
+    return names.map((m) => m.name);
+  }
+
+  public ngOnInit() {
+    for (const name of this.tags()) {
+      this.add(name);
+    }
+  }
+
+  protected add(tagName: string) {
+    if (!tagName || typeof tagName !== 'string') return;
+
+    if (tagName.indexOf(',') >= 0) {
+      tagName = tagName.replace(',', '').trim();
+    }
+
+    tagName = tagName.toLowerCase().trim();
+
+    if (tagName.length === 0) return;
+
+    const index = this.tags().findIndex((tag) => (tag || '').toLowerCase().trim() === tagName);
+    if (index === -1) {
+      this.tags().unshift(tagName);
+      this.tagAdded.emit(tagName);
+      // Invalidate the options cache so the grid's inline dropdown reflects this new value
+      this.tagOptionsSvc.invalidate(this.type());
+    } else {
+      // Bring tag that maches to the front.
+      const [tag] = this.tags().splice(index, 1) as [string]; // remove it
+      this.tags().unshift(tag); // move to front
+    }
+    this.tagsChange.emit(this.tags());
+  }
+
+  protected clicked(tag: string) {
+    this.tagClicked.emit(tag);
+  }
+
+  protected closed(tag: string) {
+    this.remove(tag);
+  }
+
+  protected remove(tagName: string) {
+    const target = (tagName || '').toLowerCase().trim();
+    const index = this.tags().findIndex((tag) => (tag || '').toLowerCase().trim() === target);
+    if (index > -1) {
+      const removed = this.tags().splice(index, 1)[0]!;
+      this.tagsChange.emit(this.tags());
+      this.tagRemoved.emit(removed);
+    }
   }
 }
 ```
@@ -30341,7 +31859,9 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
       <pc-datagrid
         #grid
         title="Tasks"
+        i18n-title
         description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"
@@ -30349,7 +31869,9 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
         [showArchiveIcon]="true"
         (importCSV)="openImportDialog()"
         plusIcon="add-task"
+        i18n-plusIcon
         addRoute="add"
+        i18n-addRoute
       ></pc-datagrid>
     </div>
 
@@ -31021,6 +32543,126 @@ export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuth
 
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return Promise.reject(new Error('User export is not available'));
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-add.ts
+
+```typescript
+import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { form, required, email } from '@angular/forms/signals';
+import { ActivatedRoute, Router } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+
+import { UserAdminService } from '../services/useradmin-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SettingsService } from '../../settings/services/settings-service';
+
+@Component({
+  selector: 'pc-user-add',
+  imports: [PcInput, PcSelect, PcDetailHeader],
+  templateUrl: './user-add.html',
+})
+export class UserAddComponent implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly settings = inject(SettingsService);
+
+  protected readonly error = signal<string | null>(null);
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
+
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: 'user',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+  });
+
+  protected readonly submitting = signal(false);
+
+  public async ngOnInit(): Promise<void> {
+    const state = window.history.state;
+    if (state && state.cloneData) {
+      const data = state.cloneData;
+      this.payload.set({
+        email: data.email || '',
+        first_name: data.first_name || '',
+        last_name: data.last_name || '',
+        role: data.role || '',
+      });
+      return;
+    }
+
+    // Prefill the role with the tenant's configured default invite role (best-effort).
+    try {
+      await this.settings.load();
+      const defaultRole = this.settings.getValue<string>('access.default_role');
+      if (defaultRole) {
+        this.payload.update((p) => ({ ...p, role: defaultRole }));
+      }
+    } catch {
+      // Ignore — fall back to the built-in default role.
+    }
+  }
+
+  protected cancel() {
+    void this.router.navigate(['../'], { relativeTo: this.route });
+  }
+
+  protected async submit(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      return;
+    }
+
+    this.submitting.set(true);
+    this.error.set(null);
+    try {
+      const payload = this.toPayload();
+      await this.users.add(payload);
+      this.users.triggerRefresh();
+      this.alerts.showSuccess('Invitation sent');
+      this.form().reset();
+      if (typeof done === 'function') {
+        done();
+      } else {
+        await this.router.navigate(['../'], { relativeTo: this.route });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to invite user';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.submitting.set(false);
+    }
+  }
+
+  private toPayload() {
+    const raw = this.payload();
+    return {
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: raw.last_name?.trim() ? raw.last_name.trim() : null,
+      role: raw.role?.trim() ? raw.role.trim() : null,
+    };
   }
 }
 ```
@@ -32030,7 +33672,7 @@ import { SidebarService } from '../sidebar/sidebar-service';
   template: `
     <div class="breadcrumbs mt-auto pl-2 text-sm font-light text-gray-500">
       <ul>
-        <li>home</li>
+        <li i18n>home</li>
         @for (crumb of crumbs; track crumb) {
           <li>
             <span class="cursor-pointer" (click)="navigate(crumb)">{{ crumb }}</span>
@@ -32401,6 +34043,124 @@ export class ConnectionsService extends TRPCService<'person_connections'> {
 
   public remove(id: string) {
     return this.api.connections.remove.mutate(id);
+  }
+}
+```
+
+## File: apps/frontend/src/app/services/api/donations-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import { TRPCService } from './trpc-service';
+
+@Service()
+export class DonationsService extends TRPCService<'donations'> {
+  // ── One-time donations ──────────────────────────────────────────────────────
+
+  public listDonations() {
+    return this.api.donations.listDonations.query();
+  }
+
+  public getHistory(personId: string) {
+    return this.api.donations.getPersonDonationHistory.query(personId);
+  }
+
+  public getStats(personId: string) {
+    return this.api.donations.getDonationStats.query(personId);
+  }
+
+  public checkEligibility(payload: {
+    personId: string;
+    amountCents: number;
+    address: { country?: string; state?: string };
+    isRecurring?: boolean;
+    remainingMonths?: number;
+  }) {
+    return this.api.donations.checkEligibility.query(payload);
+  }
+
+  public createCheckout(payload: {
+    personId: string;
+    amountCents: number;
+    address: { country?: string; state?: string };
+  }) {
+    return this.api.donations.createCheckout.mutate(payload);
+  }
+
+  public confirmDonation(sessionId: string) {
+    return this.api.donations.confirmDonation.mutate({ sessionId });
+  }
+
+  public confirmMockDonation(payload: {
+    personId: string;
+    amountCents: number;
+    sessionId: string;
+    province: string;
+    country: string;
+  }) {
+    return this.api.donations.confirmMockDonation.mutate(payload);
+  }
+
+  // ── Recurring pledges ───────────────────────────────────────────────────────
+
+  public createRecurringCheckout(payload: {
+    personId: string;
+    monthlyAmountCents: number;
+    address: { country?: string; state?: string };
+  }) {
+    return this.api.donations.createRecurringCheckout.mutate(payload);
+  }
+
+  public confirmMockPledge(payload: {
+    personId: string;
+    monthlyAmountCents: number;
+    mockSubId: string;
+    province: string;
+    country: string;
+  }) {
+    return this.api.donations.confirmMockPledge.mutate(payload);
+  }
+
+  public listPledges() {
+    return this.api.donations.listPledges.query();
+  }
+
+  public getPersonPledges(personId: string) {
+    return this.api.donations.getPersonPledges.query(personId);
+  }
+
+  public cancelPledge(pledgeId: string) {
+    return this.api.donations.cancelPledge.mutate({ pledgeId });
+  }
+
+  // ── Donation periods ────────────────────────────────────────────────────────
+
+  public getDonationPeriods() {
+    return this.api.donations.getDonationPeriods.query();
+  }
+
+  public createDonationPeriod(payload: {
+    name: string;
+    start_date: string;
+    end_date?: string | null;
+    limit_amount: number;
+  }) {
+    return this.api.donations.createDonationPeriod.mutate(payload);
+  }
+
+  public updateDonationPeriod(payload: {
+    id: string;
+    name?: string;
+    start_date?: string;
+    end_date?: string | null;
+    limit_amount?: number;
+    is_active?: boolean;
+  }) {
+    return this.api.donations.updateDonationPeriod.mutate(payload);
+  }
+
+  public deleteDonationPeriod(id: string) {
+    return this.api.donations.deleteDonationPeriod.mutate({ id });
   }
 }
 ```
@@ -33210,61 +34970,6 @@ export class DataGridFiltersService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/services/utils.service.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-
-@Injectable({ providedIn: 'root' })
-export class DataGridUtilsService {
-  bucketByRoute(nodes: any[]): Map<string, any[]> {
-    const map = new Map<string, any[]>();
-    for (const n of nodes) {
-      const routeArr = (n as { route?: unknown[] }).route ?? [];
-      const key = JSON.stringify(routeArr);
-      const list = map.get(key) ?? [];
-      if (n.data) list.push(n.data);
-      map.set(key, list);
-    }
-    return map;
-  }
-
-  createPayload<T>(row: Partial<T>, key: keyof T): Partial<T> {
-    return row[key] !== undefined ? ({ [key]: row[key] } as Partial<T>) : {};
-  }
-
-  tagsToString(tags: string[]): string {
-    if (!tags || !Array.isArray(tags)) return '';
-    return tags
-      .filter((t) => typeof t === 'string' && t.trim().length > 0)
-      .map((t) => {
-        const trimmed = t.trim();
-        return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-      })
-      .join(', ');
-  }
-
-  tagArrayEquals(tagsA: string[], tagsB: string[]): number {
-    return (tagsA ?? []).toString().localeCompare((tagsB ?? []).toString());
-  }
-
-  normalizeTagSelection(value: unknown): string[] {
-    const input = Array.isArray(value) ? value : value == null ? [] : [value];
-    const seen = new Set<string>();
-    const result: string[] = [];
-    for (const entry of input) {
-      if (entry == null) continue;
-      const tag = typeof entry === 'string' ? entry.trim() : String(entry).trim();
-      if (!tag) continue;
-      if (seen.has(tag)) continue;
-      seen.add(tag);
-      result.push(tag);
-    }
-    return result;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-dropdown.ts
 
 ```typescript
@@ -33289,6 +34994,7 @@ import { Component, input, output } from '@angular/core';
         <span>{{ title() }}</span>
         @if (active()) {
           <button
+            i18n
             class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
             (click)="clear.emit()"
           >
@@ -33346,6 +35052,7 @@ import { Icon } from '@icons/icon';
         <div class="flex items-center gap-1">
           @if (active() && clearable()) {
             <button
+              i18n
               class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
               (click)="clear.emit(); $event.stopPropagation()"
             >
@@ -33399,14 +35106,14 @@ import { Component, input, model, output } from '@angular/core';
         (input)="searchQuery.set($any($event.target).value)"
       />
       <div class="flex gap-2 text-[11px] text-primary px-1">
-        <button class="hover:underline cursor-pointer font-medium" (click)="selectAll.emit()">Select all</button>
+        <button i18n class="hover:underline cursor-pointer font-medium" (click)="selectAll.emit()">Select all</button>
         <span class="text-base-300">|</span>
-        <button class="hover:underline cursor-pointer font-medium" (click)="clearVisible.emit()">Clear</button>
+        <button i18n class="hover:underline cursor-pointer font-medium" (click)="clearVisible.emit()">Clear</button>
       </div>
       <div class="border-t border-base-200 my-0.5"></div>
       <div class="overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar" [style.max-height.rem]="maxHeight()">
         @if (options().length === 0) {
-          <div class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
+          <div i18n class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
         } @else {
           @for (opt of options(); track opt) {
             <label
@@ -33454,7 +35161,7 @@ export interface SingleSelectOption {
   template: `
     <div class="overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar" [style.max-height.rem]="maxHeight()">
       @if (options().length === 0) {
-        <div class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
+        <div i18n class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
       } @else {
         @for (opt of options(); track opt.value) {
           <label
@@ -33671,174 +35378,6 @@ export class UndoManager {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/query-builder/query-builder.html
-
-```html
-<div class="flex flex-col gap-3">
-  <!-- Summary Bar -->
-  @if (showSummary()) {
-  <div
-    class="text-xs text-base-content/70 flex items-center justify-between gap-3 p-3 bg-base-200/40 rounded-xl border border-base-200"
-  >
-    <div class="min-w-0">
-      <span class="font-medium mr-1">Summary:</span>
-      <span class="font-mono break-all text-primary">{{ summarizeGroup(group()) }}</span>
-    </div>
-    @if (summaryMatches() !== null || summaryCounting() || summaryError()) {
-    <div class="whitespace-nowrap font-medium shrink-0">
-      @if (summaryError()) {
-      <span class="text-warning">⚠️ {{ summaryError() }}</span>
-      } @else if (summaryCounting()) {
-      <span class="loading loading-spinner loading-xs vertical-middle mr-1"></span>
-      <span>Counting...</span>
-      } @else {
-      <span class="text-success">Matches: {{ summaryMatches() }}</span>
-      }
-    </div>
-    }
-  </div>
-  }
-
-  <!-- Group Header / Conjunction Toggle & Controls -->
-  <div class="flex items-center justify-between gap-3 bg-base-200/30 p-2 rounded-lg border border-base-200/50">
-    <div class="flex items-center gap-2">
-      <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Conjunction:</span>
-      <div class="join border border-base-300">
-        <button
-          type="button"
-          class="btn btn-xs join-item font-medium px-3"
-          [class.btn-primary]="group().conjunction === 'AND'"
-          [class.btn-ghost]="group().conjunction !== 'AND'"
-          (click)="setConjunction('AND')"
-        >
-          AND (All)
-        </button>
-        <button
-          type="button"
-          class="btn btn-xs join-item font-medium px-3"
-          [class.btn-primary]="group().conjunction === 'OR'"
-          [class.btn-ghost]="group().conjunction !== 'OR'"
-          (click)="setConjunction('OR')"
-        >
-          OR (Any)
-        </button>
-      </div>
-    </div>
-
-    <div class="flex items-center gap-1.5">
-      <button type="button" class="btn btn-outline btn-xs px-2.5" (click)="addRule()">➕ Rule</button>
-      <button type="button" class="btn btn-outline btn-xs px-2.5" (click)="addGroup()">➕ Group</button>
-    </div>
-  </div>
-
-  <!-- Rules and Nested Groups List -->
-  <div class="flex flex-col gap-3.5 pl-1">
-    @for (item of group().rules; track item.id; let i = $index) {
-    <!-- Rule Item -->
-    @if (isRule(item)) {
-    <div
-      class="flex flex-wrap items-center gap-2 p-2 bg-base-200/10 hover:bg-base-200/20 rounded-lg border border-base-200/30 transition-colors"
-    >
-      <!-- Field Selector -->
-      <select
-        class="select select-bordered select-sm w-36 md:w-44 text-xs font-medium"
-        [value]="item.field"
-        (change)="setField(i, $any($event.target).value)"
-      >
-        @for (field of fields(); track field.name) {
-        <option [value]="field.name" [selected]="item.field === field.name">{{ field.label }}</option>
-        }
-      </select>
-
-      <!-- Operator Selector -->
-      @let fieldDef = getFieldDef(item.field);
-      <select
-        class="select select-bordered select-sm w-28 md:w-36 text-xs"
-        [value]="item.op"
-        (change)="setOp(i, $any($event.target).value)"
-      >
-        @for (op of fieldDef?.operators; track op.value) {
-        <option [value]="op.value" [selected]="item.op === op.value">{{ op.label }}</option>
-        }
-      </select>
-
-      <!-- Value Input -->
-      @if (showValueInput(item)) {
-      <div class="flex-1 min-w-[150px] flex items-center gap-2">
-        @if (fieldDef?.inputType === 'autocomplete') {
-        <div class="w-full max-w-xs">
-          <pc-autocomplete
-            [filterSvc]="tagSvc()!"
-            placeholder="Type a tag..."
-            (valueChange)="setRuleValue(i, $event)"
-          />
-        </div>
-        @if (item.value) {
-        <span class="badge badge-neutral text-xs px-2 py-1 select-none"
-          >{{ item.value.charAt(0).toUpperCase() + item.value.slice(1) }}</span
-        >
-        } } @else if (fieldDef?.inputType === 'select') {
-        <select
-          class="select select-bordered select-sm w-full max-w-xs text-xs"
-          [value]="item.value"
-          (change)="setRuleValue(i, $any($event.target).value)"
-        >
-          <option value="" disabled [selected]="!item.value">Select option...</option>
-          @for (choice of fieldDef?.choices; track choice.value) {
-          <option [value]="choice.value" [selected]="item.value === choice.value">{{ choice.label }}</option>
-          }
-        </select>
-        } @else {
-        <input
-          type="text"
-          class="input input-bordered input-sm w-full bg-base-100 text-xs"
-          placeholder="Enter value..."
-          [value]="item.value || ''"
-          (input)="setRuleValue(i, $any($event.target).value)"
-        />
-        }
-      </div>
-      }
-
-      <!-- Remove Button -->
-      <button
-        type="button"
-        class="btn btn-ghost btn-circle btn-xs text-error hover:bg-error/10 shrink-0"
-        title="Remove condition"
-        (click)="removeItem(i)"
-      >
-        ❌
-      </button>
-    </div>
-    }
-
-    <!-- Nested Group Item -->
-    @if (isGroup(item)) {
-    <div
-      class="ml-4 pl-4 border-l-2 border-primary/30 flex flex-col gap-2 relative bg-base-200/5 p-3 rounded-r-xl border border-y-base-200/20 border-r-base-200/20"
-    >
-      <pc-query-builder
-        [group]="asGroup(item)"
-        [fields]="fields()"
-        [tagSvc]="tagSvc()"
-        [showSummary]="false"
-        (changed)="emitChange()"
-      ></pc-query-builder>
-      <div class="flex justify-end pt-1">
-        <button
-          type="button"
-          class="btn btn-ghost btn-xs text-error hover:bg-error/10 font-semibold flex items-center gap-1"
-          (click)="removeItem(i)"
-        >
-          🗑️ Remove Group
-        </button>
-      </div>
-    </div>
-    } }
-  </div>
-</div>
-```
-
 ## File: apps/frontend/src/app/shared/components/query-builder/query-builder.ts
 
 ```typescript
@@ -33990,6 +35529,72 @@ export class QueryBuilderComponent {
 }
 ```
 
+## File: apps/frontend/src/app/shared/pipes/pc-date.pipe.ts
+
+```typescript
+import { inject, Pipe, PipeTransform } from '@angular/core';
+
+import { DateFormatService } from '../services/date-format.service';
+
+/**
+ * Formats a date using the tenant's configured Appearance → Date Format setting.
+ * Impure so it reflects setting changes (via the settings snapshot signal) without a reload.
+ */
+@Pipe({
+  name: 'pcDate',
+  standalone: true,
+  pure: false,
+})
+export class PcDatePipe implements PipeTransform {
+  private readonly dates = inject(DateFormatService);
+
+  public transform(value: string | number | Date | null | undefined, pattern?: string): string {
+    return this.dates.format(value, pattern);
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/services/date-format.service.ts
+
+```typescript
+import { computed, inject, Service } from '@angular/core';
+import { formatDate } from '@angular/common';
+
+import { SettingsService } from '../../experiences/settings/services/settings-service';
+
+const DEFAULT_DATE_FORMAT = 'MMMM d, yyyy';
+
+/**
+ * Resolves the tenant-wide default date format (Appearance → Date Format) and formats date values
+ * with it. Backed by the settings snapshot signal so changes propagate without a reload.
+ */
+@Service()
+export class DateFormatService {
+  private readonly settings = inject(SettingsService);
+
+  /** The configured date format pattern, falling back to the project default. */
+  public readonly pattern = computed<string>(() => {
+    const raw = this.settings.snapshotSignal()['appearance.date_format'];
+    return typeof raw === 'string' && raw.trim() ? raw : DEFAULT_DATE_FORMAT;
+  });
+
+  /**
+   * Formats a date value with the tenant's configured pattern. Returns an empty string for nullish or
+   * unparseable input so callers can render their own placeholder.
+   */
+  public format(value: string | number | Date | null | undefined, pattern?: string): string {
+    if (value === null || value === undefined || value === '') return '';
+    const date = value instanceof Date ? value : new Date(value);
+    if (isNaN(date.getTime())) return String(value);
+    try {
+      return formatDate(date, pattern ?? this.pattern(), 'en-US');
+    } catch {
+      return String(value);
+    }
+  }
+}
+```
+
 ## File: apps/frontend/eslint.config.cjs
 
 ```javascript
@@ -34029,14 +35634,7 @@ module.exports = [
       files: ['**/*.html'],
       rules: {
         '@angular-eslint/template/no-negated-async': 'error',
-        '@angular-eslint/template/i18n': [
-          'warn',
-          {
-            checkId: true,
-            checkText: true,
-            ignoreAttributes: ['routerLink', 'formControlName', 'ngModel'],
-          },
-        ],
+        '@angular-eslint/template/i18n': 'off',
       },
     })),
 ];
@@ -34440,92 +36038,6 @@ export class CompanyForm implements OnInit {
           this.alertSvc.showError(message);
         })
         .finally(() => end());
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.ts
-
-```typescript
-import { Component, inject, signal, computed, OnInit } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
-import { CurrencyPipe } from '@angular/common';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import { DonationsService } from '../../../services/api/donations-service';
-
-@Component({
-  selector: 'pc-donations-grid',
-  imports: [RouterLink, RouterLinkActive, Icon, SpinOnClickDirective, CurrencyPipe],
-  templateUrl: './donations-grid.html',
-})
-export class DonationsGridComponent implements OnInit {
-  private readonly donationsSvc = inject(DonationsService);
-  private readonly alertSvc = inject(AlertService);
-
-  protected readonly donations = signal<any[]>([]);
-  protected readonly _loading = createLoadingGate();
-
-  // Summary statistics computed signals
-  protected readonly totalDonated = computed(() => {
-    return (
-      this.donations()
-        .filter((d) => d.status === 'succeeded')
-        .reduce((sum, d) => sum + Number(d.amount || 0), 0) / 100
-    );
-  });
-
-  protected readonly totalTaxCredits = computed(() => {
-    return (
-      this.donations()
-        .filter((d) => d.status === 'succeeded')
-        .reduce((sum, d) => sum + Number(d.tax_credit_amount || 0), 0) / 100
-    );
-  });
-
-  protected readonly successCount = computed(() => {
-    return this.donations().filter((d) => d.status === 'succeeded').length;
-  });
-
-  ngOnInit() {
-    void this.load();
-  }
-
-  protected refresh() {
-    void this.load();
-  }
-
-  protected formatCurrency(amountCents: number | null | undefined): string {
-    if (amountCents === null || amountCents === undefined) return '$0.00';
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amountCents / 100);
-  }
-
-  protected formatDate(dateStr: string): string {
-    try {
-      return new Date(dateStr).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return '';
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    try {
-      const data = await this.donationsSvc.listDonations();
-      this.donations.set(data || []);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load donations. Please try again.');
-    } finally {
-      end();
     }
   }
 }
@@ -36522,14 +38034,18 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
     <div class="flex flex-col gap-6">
       <pc-datagrid
         title="Forms"
+        i18n-title
         description="Manage public and internal web forms, configure fields, and view submission statistics."
+        i18n-description
         [colDefs]="col"
         [showDescription]="true"
         [disableDelete]="false"
         [allowFilter]="false"
         [disableView]="false"
         addRoute="add"
+        i18n-addRoute
         plusIcon="add-form"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,
@@ -37857,526 +39373,1087 @@ export class ListForm implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
+## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
 
 ```html
-<!-- Template for persons grid -->
-<div class="flex flex-col gap-6">
-  <pc-datagrid
-    #grid
-    [showToolbar]="!inline()"
-    [title]="getTitle()"
-    [description]="getDescription()"
-    [listId]="listId()"
-    [colDefs]="col"
-    [disableDelete]="false"
-    [disableImport]="false"
-    [disableMerge]="false"
-    [confirmDeleteOverride]="onConfirmDeleteBind"
-    addRoute="/people/add"
-    viewRoute="/people"
-    [disableView]="false"
-    [narrowTypeOptions]="narrowTypeOptions"
-    (importCSV)="openImportDialog()"
-    [plusIcon]="getPlusIcon()"
-  ></pc-datagrid>
-</div>
-
-<dialog id="confirmAddressEdit" class="modal">
-  <div class="modal-box">
-    <h3 class="text-lg font-bold">Address Edit</h3>
-    <p class="py-2 font-light">
-      Addresses can only be edited in the Households Component. Would you like me to take you there?
-    </p>
-
-    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
-      <button class="btn btn-primary" (click)="routeToHouseholds()">
-        <pc-icon name="arrow-right-start-on-rectangle" />
-        Yes
-      </button>
-      <button class="btn">
-        <pc-icon name="x-circle" />
-        Cancel
-      </button>
-    </form>
-  </div>
-</dialog>
-
-<!-- Reusable CSV Importer with Persons-specific extras (tags) -->
-<pc-csv-importer
-  [open]="importerOpen()"
-  [title]="'Import People from CSV'"
-  [mappableFields]="mappableFields"
-  [autoMapHeader]="autoMapHeader"
-  [summary]="importSummary()"
-  (submit)="onImportSubmit($event)"
-  (close)="importerOpen.set(false); importSummary.set(null)"
-  (closeSummary)="importSummary.set(null)"
+<pc-detail-layout
+  [title]="'Person Profile'"
+  [icon]="'user-circle'"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!person()"
+  [showDelete]="true"
+  [deleteText]="'Delete Person'"
+  [btn1Text]="'Edit Person'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editPerson()"
+  (delete)="deletePerson()"
 >
-  <div pc-import-extras class="grid gap-2">
-    <label class="font-semibold">3) Add tags to all imported rows (optional)</label>
-    <input class="input input-bordered" placeholder="Comma separated e.g. donor, volunteer" [(ngModel)]="tagsInput" />
+  @if (person()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Contact Card & Bio -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Contact Card -->
+      <pc-profile-card [avatarText]="initials()">
+        <!-- Name & Company -->
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ fullName() }}</h2>
+        @if (person().company_name) {
+        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">
+          <pc-icon name="briefcase" [size]="4"></pc-icon>
+          {{ person().company_name }}
+        </div>
+        } @else {
+        <span class="text-sm text-base-content/50 italic mb-4">No company assigned</span>
+        }
+
+        <!-- Social Media Buttons -->
+        <div class="flex justify-center gap-3 w-full border-y border-base-200 py-4 mb-6">
+          @for (link of socialLinks(); track link.name) {
+          <a
+            [attr.href]="link.url || null"
+            [attr.target]="link.url ? '_blank' : null"
+            [attr.data-tip]="link.url ? link.name + ' profile' : link.name + ' URL not set'"
+            class="btn btn-circle btn-sm tooltip"
+            [class]="link.url 
+        ? 'shadow-md hover:scale-110 transition-transform text-white border-none ' + link.color 
+        : 'bg-base-200 text-base-content/30 border-base-300 cursor-not-allowed'"
+          >
+            <pc-icon [name]="link.icon" [size]="4"></pc-icon>
+          </a>
+          }
+        </div>
+
+        <!-- Contact & Address Details List -->
+        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
+          <pc-detail-item
+            label="Primary Email"
+            [value]="person().email"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Secondary Email"
+            [value]="person().email2"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Mobile Phone"
+            [value]="person().mobile"
+            icon="phone"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Home Phone"
+            [value]="person().home_phone"
+            icon="home"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item label="Address" [value]="addressString()" icon="map-pin"></pc-detail-item>
+        </div>
+
+        <!-- Notes Section -->
+        @if (person().notes) {
+        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
+          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1"
+            >Internal Notes</span
+          >
+          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
+            {{ person().notes }}
+          </p>
+        </div>
+        }
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="person().created_at"
+          [createdBy]="getUserName(person().createdby_id)"
+          [updatedAt]="person().updated_at"
+          [updatedBy]="getUserName(person().updatedby_id)"
+        ></pc-system-metadata>
+      </pc-profile-card>
+
+      <!-- Segmentation Card -->
+      <pc-card title="Segmentation">
+        <div class="flex flex-col gap-3">
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
+            @if (tags().length > 0) {
+            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
+            }
+          </div>
+
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
+            @if (issues().length > 0) {
+            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
+            }
+          </div>
+        </div>
+      </pc-card>
+
+      <!-- Sentiment Score Card (frosted glass coming soon overlay) -->
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden relative">
+        <div class="p-6 flex flex-col items-center gap-3">
+          <h3 class="text-sm font-bold uppercase tracking-wider text-base-content/70 self-start">Sentiment Score</h3>
+
+          <!-- Placeholder Graphic -->
+          <div
+            class="flex items-center justify-center w-28 h-28 rounded-full border-4 border-dashed border-base-300 relative my-2"
+          >
+            <span class="text-4xl text-base-content/20">😐</span>
+            <span class="text-xs text-base-content/30 mt-1 absolute bottom-4 font-mono">Neutral</span>
+          </div>
+          <div class="text-xs text-base-content/40 text-center font-light leading-relaxed">
+            Aggregates communication email history and tags to automatically gauge contact affinity.
+          </div>
+        </div>
+
+        <!-- Premium Overlay for "Coming Soon" -->
+        <div
+          class="absolute inset-0 bg-base-100/80 backdrop-blur-md flex flex-col justify-center items-center p-4 text-center select-none"
+        >
+          <div class="p-3 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white rounded-2xl shadow-lg mb-2">
+            <pc-icon name="chart-pie" [size]="8"></pc-icon>
+          </div>
+          <h4 class="font-bold text-lg text-base-content">Affinity Analytics</h4>
+          <span class="badge badge-primary badge-sm font-semibold tracking-wider my-1">COMING SOON</span>
+          <p class="text-xs text-base-content/60 max-w-[200px] mt-1 font-light leading-snug">
+            AI-driven sentiment analysis of email conversations is currently in beta.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Stats & Multi-Tab Activity Feed -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Dashboard Stats Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Stats: Emails Sent -->
+        <pc-stat-card
+          [title]="'Emails Sent'"
+          [value]="activityData().emails.length"
+          [description]="'Total emails sent'"
+          [icon]="'paper-airplane'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Emails Opened -->
+        <pc-stat-card
+          [title]="'Opened'"
+          [value]="openedNewslettersCount()"
+          [description]="'Opens & clicks'"
+          [icon]="'eye'"
+          [valueColorClass]="'text-emerald-500'"
+          [iconColorClass]="'text-emerald-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Active Lists -->
+        <pc-stat-card
+          [title]="'Active Lists'"
+          [value]="0"
+          [description]="'List subscriptions'"
+          [icon]="'queue-list'"
+          [valueColorClass]="'text-amber-500'"
+          [iconColorClass]="'text-amber-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Volunteer Shifts -->
+        <pc-stat-card
+          [title]="'Volunteered'"
+          [value]="volunteerStats()?.shifts_count || 0"
+          [description]="'Shifts completed'"
+          [icon]="'volunteer'"
+          [valueColorClass]="'text-purple-500'"
+          [iconColorClass]="'text-purple-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Volunteer Hours -->
+        <pc-stat-card
+          [title]="'Total Hours'"
+          [value]="volunteerStats()?.total_hours || 0.0"
+          [description]="'Hours logged'"
+          [icon]="'clock'"
+          [valueColorClass]="'text-pink-500'"
+          [iconColorClass]="'text-pink-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Donations -->
+        <pc-stat-card
+          [title]="'Donations'"
+          [value]="donationStats() ? '$' + donationStats()!.cumulativeAmount.toLocaleString() : '$0'"
+          [description]="'Financial support'"
+          [icon]="'currency-dollar'"
+          [valueColorClass]="'text-emerald-500'"
+          [iconColorClass]="'text-emerald-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Connections -->
+        <pc-stat-card
+          [title]="'Connections'"
+          [value]="connectionCount()"
+          [description]="'Network connections'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-violet-500'"
+          [iconColorClass]="'text-violet-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Activities, Interactions & History Tabs -->
+      <!-- Activities, Interactions & History Tabs -->
+      <pc-tabs [tabs]="personTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+            <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="emails" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (activityData().emails.length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">No direct email correspondence recorded</div>
+            } @else {
+            <div class="flex flex-col gap-3">
+              @for (mail of activityData().emails; track mail.id) {
+              <a
+                [routerLink]="['/inbox']"
+                [queryParams]="{ email: mail.id }"
+                class="p-4 rounded-xl border border-base-200 hover:border-indigo-300 bg-base-50/20 hover:bg-base-100 transition-all flex flex-col gap-2 no-underline text-current group cursor-pointer hover:shadow-sm"
+              >
+                <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
+                  <span class="font-mono text-base-content/60">
+                    From: <strong class="text-base-content">{{ mail.from_email }}</strong> &rarr; To:
+                    <strong>{{ mail.to_email }}</strong>
+                  </span>
+                  <span class="text-base-content/40">{{ mail.created_at | date:'medium' }}</span>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                  <h4 class="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">
+                    {{ mail.subject || '(No Subject)' }}
+                  </h4>
+                  <pc-icon
+                    name="arrow-top-right-on-square"
+                    [size]="4"
+                    class="text-base-content/30 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+                  ></pc-icon>
+                </div>
+                @if (mail.preview) {
+                <p
+                  class="text-xs text-base-content/60 line-clamp-2 leading-relaxed bg-base-200/20 p-2.5 rounded-lg border border-base-200/50"
+                >
+                  {{ mail.preview }}
+                </p>
+                }
+                <div class="flex justify-end mt-1">
+                  <pc-status-badge [type]="getMailStatusType(mail.status)">
+                    {{ mail.status || 'received' }}
+                  </pc-status-badge>
+                </div>
+              </a>
+              }
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (activityData().newsletters.length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">No newsletter logs found</div>
+            } @else {
+            <div class="flex flex-col gap-2">
+              @for (ev of activityData().newsletters; track ev.id) {
+              <div
+                class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
+              >
+                <div class="flex items-center gap-3 overflow-hidden">
+                  <!-- Icon mappings for event types -->
+                  <div
+                    class="p-2 rounded-lg flex-shrink-0"
+                    [class.bg-info/10]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                    [class.text-info]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                    [class.bg-success/10]="ev.event_type === 'open'"
+                    [class.text-success]="ev.event_type === 'open'"
+                    [class.bg-warning/10]="ev.event_type === 'click'"
+                    [class.text-warning]="ev.event_type === 'click'"
+                    [class.bg-error/10]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                    [class.text-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                  >
+                    @if (ev.event_type === 'open') {
+                    <pc-icon name="eye" [size]="4"></pc-icon>
+                    } @else if (ev.event_type === 'click') {
+                    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+                    } @else if (ev.event_type === 'delivered') {
+                    <pc-icon name="check-circle" [size]="4"></pc-icon>
+                    } @else {
+                    <pc-icon name="information-circle" [size]="4"></pc-icon>
+                    }
+                  </div>
+                  <div class="flex flex-col overflow-hidden">
+                    <span class="font-medium text-base-content truncate"
+                      >{{ ev.newsletter_subject || ev.newsletter_name }}</span
+                    >
+                    @if (ev.url) {
+                    <span class="text-[10px] text-primary truncate hover:underline cursor-pointer"
+                      >Clicked URL: {{ ev.url }}</span
+                    >
+                    }
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-3 flex-shrink-0">
+                  <pc-status-badge [type]="getEmailEventType(ev.event_type)" class="tracking-wider text-[9px]">
+                    {{ ev.event_type }}
+                  </pc-status-badge>
+                  <span class="text-base-content/40 text-[10px]">{{ ev.timestamp | date:'short' }}</span>
+                </div>
+              </div>
+              }
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="volunteer" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (volunteerHistory().length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">No shift records found for this person</div>
+            } @else {
+            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
+              <table class="table table-sm w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th>Event Name</th>
+                    <th>Date & Time</th>
+                    <th>Status</th>
+                    <th>Hours</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (shift of volunteerHistory(); track shift.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td class="font-semibold">{{ shift.event_name }}</td>
+                    <td>{{ shift.start_time | date:'medium' }}</td>
+                    <td>
+                      <pc-status-badge [type]="getShiftStatusType(shift.status)"> {{ shift.status }} </pc-status-badge>
+                    </td>
+                    <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
+                    <td class="font-light">{{ shift.notes || '--' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="donations" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <!-- Summary card for limits progress -->
+            @if (donationStats()) {
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"
+            >
+              <div class="flex-1 w-full space-y-1">
+                <div class="flex justify-between text-xs font-bold text-base-content/75">
+                  <span>Annual Limit Progress</span>
+                  <span
+                    >${{ donationStats()!.cumulativeAmount.toLocaleString() }} / ${{
+                    donationStats()!.limitAmount.toLocaleString() }}</span
+                  >
+                </div>
+                <progress
+                  class="progress progress-success w-full h-2.5 bg-base-300"
+                  [value]="donationStats()!.cumulativeAmount"
+                  [max]="donationStats()!.limitAmount"
+                ></progress>
+                <p class="text-[10px] text-base-content/50">
+                  Remaining allowable donation this calendar year:
+                  <strong>${{ donationStats()!.remainingAmount.toLocaleString() }}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-primary shrink-0 w-full md:w-auto font-semibold flex items-center justify-center gap-1.5"
+                (click)="openCollectDonation()"
+                [disabled]="donationStats()!.remainingAmount <= 0"
+              >
+                <pc-icon name="plus" [size]="4"></pc-icon>
+                Collect Donation
+              </button>
+            </div>
+            } @if (donationHistory().length === 0) {
+            <div
+              class="text-center py-10 text-base-content/40 italic bg-base-100 rounded-xl border border-dashed border-base-200"
+            >
+              No donations recorded yet for this person.
+            </div>
+            } @else {
+            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl shadow-sm">
+              <table class="table w-full text-xs">
+                <thead>
+                  <tr class="bg-base-50 border-b border-base-200">
+                    <th class="font-bold text-base-content/70">Date</th>
+                    <th class="font-bold text-base-content/70">Amount</th>
+                    <th class="font-bold text-base-content/70">Tax Credit</th>
+                    <th class="font-bold text-base-content/70">Residency Info</th>
+                    <th class="font-bold text-base-content/70">Status</th>
+                    <th class="font-bold text-base-content/70">Transaction ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (donation of donationHistory(); track donation.id) {
+                  <tr class="hover:bg-base-200/20 border-b border-base-200">
+                    <td class="font-medium text-base-content/75">{{ donation.created_at | date:'mediumDate' }}</td>
+                    <td class="font-bold text-base-content">${{ (donation.amount / 100).toFixed(2) }}</td>
+                    <td>
+                      <span class="badge badge-success gap-1 font-semibold py-2 px-2.5">
+                        ${{ ((donation.tax_credit_amount || 0) / 100).toFixed(2) }}
+                      </span>
+                    </td>
+                    <td class="text-base-content/65">
+                      {{ donation.residency_province || '--' }} {{ donation.residency_country || '' }}
+                    </td>
+                    <td>
+                      <pc-status-badge
+                        [type]="donation.status === 'succeeded' ? 'success' : donation.status === 'pending' ? 'warning' : 'error'"
+                      >
+                        {{ donation.status }}
+                      </pc-status-badge>
+                    </td>
+                    <td class="font-mono text-[10px] text-base-content/50">
+                      {{ donation.stripe_session_id || 'Manual' }}
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="events" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (eventHistory().length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">
+              No event registrations found for this person.
+            </div>
+            } @else {
+            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
+              <table class="table table-sm w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th>Event</th>
+                    <th>Date</th>
+                    <th>Ticket</th>
+                    <th>Status</th>
+                    <th>Checked In</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (reg of eventHistory(); track reg.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td>
+                      <a [routerLink]="['/events/pages', reg.event_id]" class="link link-primary font-bold">
+                        {{ reg.event_name }}
+                      </a>
+                    </td>
+                    <td>{{ reg.start_time | date:'mediumDate' }}</td>
+                    <td class="font-light">{{ reg.ticket_type_name || '—' }}</td>
+                    <td>
+                      <pc-status-badge [type]="getEventStatusType(reg.status)">{{ reg.status }}</pc-status-badge>
+                    </td>
+                    <td class="font-mono">{{ reg.checked_in_at ? (reg.checked_in_at | date:'shortTime') : '—' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="connections" [activeTab]="activeTab()">
+          <pc-person-connections [personId]="id()" (countChange)="connectionCount.set($event)"></pc-person-connections>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="household" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (householdId() && !isPlaceholderHousehold()) { @defer {
+            <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
+            } @placeholder {
+            <div class="skeleton w-full h-32"></div>
+            } } @else {
+            <div class="text-center py-10 text-base-content/40 italic">Contact does not belong to a household</div>
+            }
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
   </div>
-</pc-csv-importer>
+  }
+  <!-- Collect Donation Modal -->
+  @if (showDonationModal()) {
+  <div class="modal modal-open z-50">
+    <div class="modal-box rounded-2xl border border-base-200 max-w-md p-6 bg-base-100 shadow-2xl">
+      <div class="flex justify-between items-center border-b border-base-200 pb-3 mb-4">
+        <h3 class="text-lg font-bold flex items-center gap-2">
+          <pc-icon name="currency-dollar" class="text-primary" [size]="5"></pc-icon>
+          Collect Donation
+        </h3>
+        <button type="button" class="btn btn-sm btn-circle btn-ghost" (click)="closeDonationModal()">✕</button>
+      </div>
+
+      <div class="space-y-4">
+        <p class="text-xs text-base-content/60">
+          Enter the donation amount in dollars. Residency validation and limit verification will be performed
+          automatically before redirecting to the payment gateway.
+        </p>
+
+        <!-- Donor Residency Profile -->
+        <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
+          <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
+            >Donor Residency Profile</span
+          >
+          <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
+            <pc-icon name="map-pin" [size]="4"></pc-icon>
+            {{ addressString() }}
+          </div>
+        </div>
+
+        <!-- Donation Amount input -->
+        <div class="flex flex-col gap-1.5">
+          <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
+          <div class="relative">
+            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
+            <input
+              id="donation_input"
+              type="number"
+              min="1"
+              placeholder="250"
+              class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
+              [(ngModel)]="donationAmount"
+            />
+          </div>
+        </div>
+
+        <!-- Error alert -->
+        @if (eligibilityError()) {
+        <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
+          <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
+          <span>{{ eligibilityError() }}</span>
+        </div>
+        }
+      </div>
+
+      <div class="modal-action border-t border-base-200 pt-4 mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          class="btn btn-ghost text-sm font-semibold"
+          (click)="closeDonationModal()"
+          [disabled]="isCheckingEligibility()"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary min-w-[140px] text-sm font-semibold"
+          (click)="submitDonation()"
+          [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
+        >
+          @if (isCheckingEligibility()) {
+          <span class="loading loading-spinner loading-xs mr-1.5"></span>
+          Verifying... } @else { Verify & Proceed }
+        </button>
+      </div>
+    </div>
+    <div class="modal-backdrop bg-black/40 backdrop-blur-sm" (click)="closeDonationModal()"></div>
+  </div>
+  }
+</pc-detail-layout>
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
+## File: apps/frontend/src/app/experiences/persons/ui/person-view.ts
 
 ```typescript
-import { Component, inject, signal, input, viewChild, OnInit } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, resource, signal, untracked, OnInit } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
-import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-
-import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { DATA_TYPE, PersonsService } from '../services/persons-service';
-import {
-  provideDataGridConfig,
-  DATA_GRID_CONFIG,
-  DEFAULT_DATA_GRID_CONFIG,
-} from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { type AddressType, type Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { PeopleInHousehold } from './people-in-household';
+import { UserService } from '../../../services/user.service';
+import { HouseholdsService } from '../../households/services/households-service';
+import { PersonsService } from '../services/persons-service';
+import { VolunteerService } from '../../../services/api/volunteer-service';
+import { DonationsService } from '../../../services/api/donations-service';
+import { EventsService } from '../../../services/api/events-service';
+import { ConnectionsService } from '../../../services/api/connections-service';
+import { PersonConnections } from './person-connections';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Tags } from '@experiences/tags/ui/tags';
+import { PcIconNameType } from '@icons/icons.index';
 
-interface ParamsType {
-  value: string[];
+interface SocialLinkDef {
+  name: string;
+  url: string | null | undefined;
+  icon: PcIconNameType;
+  color: string;
 }
 
 @Component({
-  selector: 'pc-persons-grid',
-  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
-  templateUrl: './persons-grid.html',
-  providers: [
-    { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({ messages: { exportEntity: 'persons', exportFileName: 'persons-export.csv' } }),
+  selector: 'pc-person-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    FormsModule,
+    PeopleInHousehold,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    PcCard,
+    Tabs,
+    TabPanel,
+    StatusBadge,
+    StatCard,
+    ProfileCard,
+    DetailItem,
+    SystemMetadata,
+    Tags,
+    PersonConnections,
   ],
+  templateUrl: './person-view.html',
 })
-export class PersonsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
+export class PersonView implements OnInit {
+  readonly id = input.required<string>();
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly userService = inject(UserService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  protected readonly donationsSvc = inject(DonationsService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  private readonly personsService = inject(PersonsService);
+  private readonly volunteerSvc = inject(VolunteerService);
+  private readonly eventsSvc = inject(EventsService);
+  private readonly connectionsSvc = inject(ConnectionsService);
 
-  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
 
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+  protected readonly person = signal<any | null>(null);
 
-  public inline = input<boolean>(false);
+  private readonly usersResource = resource({
+    loader: () => this.userService.getUsers(),
+  });
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
 
-  private addressChangeModalId: string | null = null;
-  private importProgressTimer: any;
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
+  // Analytics & Lists
+  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
+  protected readonly volunteerHistory = signal<any[]>([]);
+  protected readonly donationStats = signal<{
+    cumulativeAmount: number;
+    limitAmount: number;
+    remainingAmount: number;
+  } | null>(null);
+  protected readonly donationHistory = signal<any[]>([]);
+  protected readonly eventHistory = signal<any[]>([]);
+  protected readonly eventStats = signal<{ events_count: number } | null>(null);
+  protected readonly connectionCount = signal(0);
+  protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
+  protected readonly openedNewslettersCount = computed(() => {
+    return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
+      .length;
+  });
+  protected readonly tags = signal<string[]>([]);
+  protected readonly issues = signal<string[]>([]);
 
-  protected readonly mappableFields = [
-    'first_name',
-    'middle_names',
-    'last_name',
-    'email',
-    'email2',
-    'mobile',
-    'home_phone',
-    'street_num',
-    'street1',
-    'street2',
-    'apt',
-    'city',
-    'state',
-    'zip',
-    'country',
-    'notes',
-  ];
+  // Donation Dialog State
+  protected readonly isCheckingEligibility = signal(false);
+  protected readonly donationAmount = signal<number | null>(null);
+  protected readonly showDonationModal = signal(false);
+  protected readonly eligibilityError = signal<string | null>(null);
 
-  protected col: ColDef[] = [
-    { field: 'first_name', headerName: 'First Name', editable: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true },
-    { field: 'email', headerName: 'Email', editable: true },
-    { field: 'mobile', headerName: 'Mobile', editable: true },
-    { field: 'company_name', headerName: 'Company', editable: false },
-    {
-      field: 'home_phone',
-      headerName: 'Home phone',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+  // Address
+  protected readonly householdId = computed(() => this.person()?.household_id ?? null);
+  protected readonly householdResource = resource({
+    params: () => this.householdId(),
+    loader: async ({ params: householdId }) => {
+      if (!householdId) return null;
+      try {
+        return await this.householdsSvc.getById(householdId);
+      } catch {
+        return null;
+      }
     },
-    {
-      field: 'tags',
-      hide: true,
-      headerName: 'Tags',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'tag',
+  });
+
+  protected readonly addressString = computed(() => {
+    const hh = this.householdResource.value() as Households | null | undefined;
+    if (!hh || hh.is_placeholder) return 'No Address Assigned';
+    return this.getFormattedAddress(hh);
+  });
+  protected readonly isPlaceholderHousehold = computed(() => {
+    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
+  });
+
+  // Contact initials and full name computation
+  protected readonly initials = computed(() => {
+    const first = this.person()?.first_name || '';
+    const last = this.person()?.last_name || '';
+    if (!first && !last) return '?';
+    return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
+  });
+
+  protected readonly fullName = computed(() => {
+    const p = this.person();
+    if (!p) return '';
+    return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
+  });
+
+  // Social icons
+  public socialLinks = computed<SocialLinkDef[]>(() => {
+    const p = this.person();
+    return [
+      {
+        name: 'LinkedIn',
+        url: p.linkedin,
+        icon: 'linkedin',
+        color: 'bg-[#0a66c2]', // LinkedIn Blue
       },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'issue',
+      {
+        name: 'X',
+        url: p.twitter,
+        icon: 'x',
+        color: 'bg-black', // X Black
       },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
-    },
-    {
-      field: 'address',
-      headerName: 'Address',
-      editable: false,
-      onCellClicked: this.onAddressCellClicked.bind(this),
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-      isCellInteractive: (row: any) => !row.household_is_placeholder,
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        return parts.join(', ').trim() || 'No household assigned';
+      {
+        name: 'Facebook',
+        url: p.facebook,
+        icon: 'facebook',
+        color: 'bg-[#1877f2]', // Facebook Blue
       },
-    },
-    {
-      field: 'street_num',
-      headerName: 'Street Number',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'apt',
-      headerName: 'Apt',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street2',
-      headerName: 'Street 2',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'city',
-      headerName: 'City',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'state',
-      headerName: 'State/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'zip',
-      headerName: 'Zip/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'country',
-      headerName: 'Country',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
+      {
+        name: 'Instagram',
+        url: p.instagram,
+        icon: 'instagram',
+        color: 'bg-[#e1306c]', // Instagram Pink/Red
+      },
+    ];
+  });
 
-  // Generic CSV importer integration
-  protected importerOpen = signal(false);
-  protected importSummary = signal<CsvImportSummary | null>(null);
+  // Active tab state
+  protected activeTab = signal<string>('activity');
 
-  public listId = input<string | null>(null);
+  protected readonly personTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'emails', label: 'Conversations', icon: 'envelope', badge: this.activityData()?.emails?.length },
+    { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
+    { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
+    { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
+    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length },
+    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
+    { id: 'household', label: 'Household', icon: 'home' },
+  ]);
 
-  protected readonly narrowTypeOptions = [
-    { label: 'All', value: null, tags: [] },
-    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
-    { label: 'Donors', value: 'donor', tags: ['donor'] },
-  ];
-
-  protected tagsInput = '';
-
-  public async ngOnInit() {
-    await this.loadTagOptions();
-    await this.loadIssueOptions();
+  protected getMailStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'sent' || s === 'delivered') return 'success';
+    if (s === 'opened') return 'info';
+    if (s === 'read') return 'neutral';
+    return 'ghost';
   }
 
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
+  protected getEmailEventType(eventType: string | null | undefined): any {
+    const et = String(eventType || '').toLowerCase();
+    if (et === 'open') return 'success';
+    if (et === 'click') return 'warning';
+    if (et === 'delivered' || et === 'processed') return 'info';
+    if (['bounce', 'dropped', 'spamreport', 'unsubscribe'].includes(et)) return 'error';
+    return 'ghost';
   }
 
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
+  protected getShiftStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'attended') return 'success';
+    if (s === 'signed_up') return 'warning';
+    if (s === 'no_show') return 'error';
+    return 'ghost';
   }
 
-  protected getPlusIcon(): PcIconNameType {
-    return 'user-plus';
+  protected getEventStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'attended') return 'success';
+    if (s === 'registered') return 'warning';
+    if (s === 'no_show') return 'error';
+    if (s === 'cancelled') return 'neutral';
+    return 'ghost';
   }
 
-  // paging/preview managed by CsvImportComponent
-
-  protected confirmOpenEditOnDoubleClick(event: any) {
-    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
-    this.confirmAddressChange();
-  }
-
-  protected onAddressCellClicked(event: any) {
-    const householdId = event?.data?.household_id ?? event?.household_id;
-    if (householdId) {
-      this.router.navigate(['households', householdId]);
-    }
-  }
-
-  protected getTitle() {
-    return 'People';
-  }
-
-  protected getDescription() {
-    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
-  }
-
-  // --- Import CSV Flow ---
-  protected openImportDialog() {
-    // Clear any prior summary to avoid stale dialogs
-    this.importSummary.set(null);
-    this.tagsInput = '';
-    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
-    this.importerOpen.set(true);
-  }
-
-  protected routeToHouseholds() {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.close();
-
-    if (this.addressChangeModalId !== null) {
-      this.router.navigate(['households', this.addressChangeModalId]);
-    }
-  }
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-    const inputTags = this.tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => !!t);
-    const tags = inputTags;
-
-    try {
-      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        tag: res?.tag,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e: any) {
-      const msg = e?.message || e?.data?.message || 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  public autoMapHeader(h: string): string {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      firstname: 'first_name',
-      fname: 'first_name',
-      middlename: 'middle_names',
-      lastname: 'last_name',
-      lname: 'last_name',
-      name: 'first_name',
-      email: 'email',
-      emailaddress: 'email',
-      email1address: 'email',
-      email2: 'email2',
-      email2address: 'email2',
-      mobile: 'mobile',
-      mobilephone: 'mobile',
-      cellphone: 'mobile',
-      primaryphone: 'mobile',
-      businessphone: 'mobile',
-      homephone: 'home_phone',
-      streetnum: 'street_num',
-      streetnumber: 'street_num',
-      homestreet: 'street1',
-      homestreet1: 'street1',
-      homestreet2: 'street2',
-      homestreet3: 'street2',
-      homeaddress: 'street1',
-      homeaddresspobox: 'street2',
-      homecity: 'city',
-      homestate: 'state',
-      homepostalcode: 'zip',
-      homecountry: 'country',
-      businessstreet: 'street1',
-      businessstreet1: 'street1',
-      businessstreet2: 'street2',
-      businessstreet3: 'street2',
-      businessaddress: 'street1',
-      businessaddresspobox: 'street2',
-      businesscity: 'city',
-      businessstate: 'state',
-      businesspostalcode: 'zip',
-      businesscountry: 'country',
-      address1: 'street1',
-      address2: 'street2',
-      street1: 'street1',
-      street2: 'street2',
-      apt: 'apt',
-      apartment: 'apt',
-      city: 'city',
-      state: 'state',
-      province: 'state',
-      zip: 'zip',
-      postal: 'zip',
-      country: 'country',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
-  }
-
-  private confirmAddressChange(): void {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.showModal();
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    const ids = selected.map((r: any) => r.id);
-
-    // Show standard delete confirmation
-    const selectedCount = selected.length;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : this.config.messages.deleteConfirmMessage;
-
-    const ok = await this.dialogs.confirm({
-      title: this.config.messages.deleteConfirmTitle,
-      message: dynamicMessage,
-      variant: this.config.messages.deleteConfirmVariant,
-      icon: this.config.messages.deleteConfirmIcon,
-      confirmText: this.config.messages.deleteConfirmText,
-      cancelText: this.config.messages.deleteCancelText,
-      allowBackdropClose: false,
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => this.loadAllData(currentId));
     });
-    if (!ok) return true; // Handled
+  }
 
+  public ngOnInit() {
+    // Standard Angular Init
+  }
+
+  protected async loadAllData(id: string) {
     const end = this._loading.begin();
     try {
-      // Call deleteMany without force, skipping global error toast
-      await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-    } catch (err: any) {
-      // Check if it's the captain error message
-      const errMsg = err?.message || err?.data?.message || '';
-      if (errMsg.includes('team captains')) {
-        // Ask the user if they want to proceed despite being a team captain
-        const forceOk = await this.dialogs.confirm({
-          title: 'Team Captain Warning',
-          message: errMsg,
-          variant: 'warning',
-          confirmText: 'Yes, delete anyway',
-          cancelText: 'Cancel',
-        });
-        if (forceOk) {
-          try {
-            await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-          } catch (forceErr: any) {
-            const forceErrMsg = forceErr?.message || forceErr?.data?.message || 'Delete failed';
-            this.alertSvc.showError(forceErrMsg);
-          }
-        }
-      } else {
-        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
+      // 1. Load person details
+      const personData = await this.personsSvc.getById(id);
+      this.person.set(personData);
+
+      // 2. Load tags and issues
+      const tagList = await this.personsSvc.getTags(id, 'tag');
+      this.tags.set(tagList);
+      const issueList = await this.personsSvc.getTags(id, 'issue');
+      this.issues.set(issueList);
+
+      // 3. Load volunteer stats and history
+      try {
+        const stats = await this.volunteerSvc.getVolunteerStats(id);
+        this.volunteerStats.set(stats);
+        const history = await this.volunteerSvc.getHistoryForPerson(id);
+        this.volunteerHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load volunteer details', err);
       }
+
+      // 4. Load donations stats and history
+      try {
+        const stats = await this.donationsSvc.getStats(id);
+        this.donationStats.set(stats);
+        const history = await this.donationsSvc.getHistory(id);
+        this.donationHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load donations history', err);
+      }
+
+      // 5. Load event history
+      try {
+        const stats = await this.eventsSvc.getStatsForPerson(id);
+        this.eventStats.set(stats);
+        const history = await this.eventsSvc.getHistoryForPerson(id);
+        this.eventHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load event history', err);
+      }
+
+      // 6. Load connection count (tab badge — full list loads lazily inside the tab)
+      try {
+        const count = await this.connectionsSvc.countForPerson(id);
+        this.connectionCount.set(count);
+      } catch (err) {
+        console.error('Failed to load connection count', err);
+      }
+
+      // Check query params for Stripe Checkout success redirects
+      const params = this.route.snapshot.queryParams;
+      if (params['checkout_success'] === 'true' && params['session_id']) {
+        try {
+          await this.donationsSvc.confirmDonation(params['session_id']);
+          this.alertSvc.showSuccess('Donation processed successfully! Thank you for your support.');
+          // Reload donation stats/history after confirmation
+          const stats = await this.donationsSvc.getStats(id);
+          this.donationStats.set(stats);
+          const history = await this.donationsSvc.getHistory(id);
+          this.donationHistory.set(history || []);
+          this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        } catch (err) {
+          console.error('Failed to confirm stripe checkout session:', err);
+          this.alertSvc.showError('Finalizing payment verification...');
+        }
+      } else if (params['mock_donation_success'] === 'true' && params['session_id']) {
+        try {
+          const amt = Number(params['amount'] || 0);
+          await this.donationsSvc.confirmMockDonation({
+            personId: id,
+            amountCents: amt * 100,
+            sessionId: params['session_id'],
+            province: params['province'] || '',
+            country: params['country'] || '',
+          });
+          this.alertSvc.showSuccess('[MOCK] Donation recorded successfully!');
+          const stats = await this.donationsSvc.getStats(id);
+          this.donationStats.set(stats);
+          const history = await this.donationsSvc.getHistory(id);
+          this.donationHistory.set(history || []);
+          this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        } catch (err) {
+          console.error('Failed to record mock donation:', err);
+        }
+      }
+
+      // 5. Load interactions (emails + newsletters)
+      try {
+        const activity = await this.personsSvc.getActivity(id);
+        this.activityData.set(activity || { emails: [], newsletters: [] });
+      } catch (err) {
+        console.error('Failed to load activity log', err);
+      }
+    } catch (err) {
+      this.alertSvc.showError('Failed to load person details: ' + String(err));
     } finally {
       end();
-      this.grid()?.clearAllSelection();
-      await this.grid()?.refresh();
+      this.initialized.set(true);
     }
-    return true;
+  }
+
+  protected openCollectDonation() {
+    this.donationAmount.set(null);
+    this.eligibilityError.set(null);
+    this.showDonationModal.set(true);
+  }
+
+  protected closeDonationModal() {
+    this.showDonationModal.set(false);
+  }
+
+  protected async submitDonation() {
+    const amt = this.donationAmount();
+    if (amt === null || amt <= 0) {
+      this.alertSvc.showError('Please specify a valid donation amount.');
+      return;
+    }
+
+    this.isCheckingEligibility.set(true);
+    this.eligibilityError.set(null);
+
+    const hh = this.householdResource.value() as Households | null | undefined;
+    const address = {
+      country: hh?.country || 'CA',
+      state: hh?.state || 'ON',
+    };
+
+    try {
+      const eligibility = await this.donationsSvc.checkEligibility({
+        personId: this.id(),
+        amountCents: amt * 100,
+        address,
+      });
+
+      if (!eligibility.eligible) {
+        this.eligibilityError.set(eligibility.reason || 'Donor is ineligible to donate.');
+        this.isCheckingEligibility.set(false);
+        return;
+      }
+
+      this.closeDonationModal();
+      this.alertSvc.showSuccess('Redirecting to Stripe Checkout...');
+
+      // Redirect
+      const session = await this.donationsSvc.createCheckout({
+        personId: this.id(),
+        amountCents: amt * 100,
+        address,
+      });
+
+      if (session && session.url) {
+        window.location.href = session.url;
+      } else {
+        this.alertSvc.showError('Failed to initialize payment gateway.');
+      }
+    } catch (err: any) {
+      this.alertSvc.showError(err.message || 'Verification check failed.');
+    } finally {
+      this.isCheckingEligibility.set(false);
+    }
+  }
+
+  protected editPerson() {
+    this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deletePerson() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Person',
+      message: 'Are you sure you want to delete this person? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.personsSvc.delete(this.id());
+      this.personsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Person deleted');
+      await this.router.navigate(['/people']);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete person';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
+  }
+
+  protected navigateToHousehold() {
+    const household_id = this.householdId();
+    if (household_id) {
+      this.router.navigate(['households', household_id]);
+    }
+  }
+
+  private getFormattedAddress(address: AddressType): string {
+    const parts: string[] = [];
+    const streetParts = [
+      address.apt ? `Apt ${address.apt}` : null,
+      address.street_num,
+      address.street1,
+      address.street2,
+    ].filter(Boolean);
+
+    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
+
+    if (streetParts.length) parts.push(streetParts.join(' ').trim());
+    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+
+    const formatted = parts.join(', ').trim();
+    return formatted || 'No Address Assigned';
   }
 }
 ```
@@ -38665,6 +40742,538 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
     } finally {
       this.actionPending.set(false);
     }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.ts
+
+```typescript
+import { Component, OnInit, signal, computed, inject } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { SettingsService } from '../services/settings-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { TokenService } from '../../../services/api/token-service';
+import { environment } from '../../../../environments/environment';
+import { DonationsService } from '../../../services/api/donations-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+export interface TaxCreditTier {
+  limit: number;
+  rate: number;
+}
+
+export interface DonationPeriod {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string | null;
+  limit_amount: number;
+  is_active: boolean;
+}
+
+@Component({
+  selector: 'pc-donations-settings',
+  imports: [FormsModule, Icon],
+  templateUrl: './donations-settings.html',
+})
+export class DonationsSettingsComponent implements OnInit {
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly tokenSvc = inject(TokenService);
+  private readonly donationsSvc = inject(DonationsService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly stripeSecretKey = signal('');
+  protected readonly stripeWebhookSecret = signal('');
+  protected readonly donationLimit = signal(1000);
+  protected readonly restrictResidency = signal(false);
+  protected readonly taxCreditTiers = signal<TaxCreditTier[]>([]);
+  protected readonly webhookToken = signal('');
+
+  // Donation periods
+  protected readonly donationPeriods = signal<DonationPeriod[]>([]);
+  protected readonly showAddPeriod = signal(false);
+  protected readonly newPeriodName = signal('');
+  protected readonly newPeriodStartDate = signal('');
+  protected readonly newPeriodEndDate = signal('');
+  protected readonly newPeriodLimit = signal<number>(1000);
+  protected readonly isSavingPeriod = signal(false);
+
+  // New multi-country autocomplete & states checkboxes
+  protected readonly selectedCountries = signal<string[]>([]);
+  protected readonly selectedRegions = signal<string[]>([]);
+
+  protected readonly countrySearch = signal('');
+  protected readonly showCountryDropdown = signal(false);
+
+  protected readonly allCountries = [
+    { code: 'CA', name: 'Canada' },
+    { code: 'US', name: 'United States' },
+    { code: 'GB', name: 'United Kingdom' },
+    { code: 'AU', name: 'Australia' },
+    { code: 'NZ', name: 'New Zealand' },
+    { code: 'FR', name: 'France' },
+    { code: 'DE', name: 'Germany' },
+    { code: 'IN', name: 'India' },
+    { code: 'IT', name: 'Italy' },
+    { code: 'ES', name: 'Spain' },
+    { code: 'NL', name: 'Netherlands' },
+  ];
+
+  protected readonly canadaProvinces = [
+    { code: 'ON', name: 'Ontario' },
+    { code: 'QC', name: 'Quebec' },
+    { code: 'BC', name: 'British Columbia' },
+    { code: 'AB', name: 'Alberta' },
+    { code: 'MB', name: 'Manitoba' },
+    { code: 'SK', name: 'Saskatchewan' },
+    { code: 'NS', name: 'Nova Scotia' },
+    { code: 'NB', name: 'New Brunswick' },
+    { code: 'NL', name: 'Newfoundland and Labrador' },
+    { code: 'PE', name: 'Prince Edward Island' },
+    { code: 'NT', name: 'Northwest Territories' },
+    { code: 'YT', name: 'Yukon' },
+    { code: 'NU', name: 'Nunavut' },
+  ];
+
+  protected readonly usStates = [
+    { code: 'AL', name: 'Alabama' },
+    { code: 'AK', name: 'Alaska' },
+    { code: 'AZ', name: 'Arizona' },
+    { code: 'AR', name: 'Arkansas' },
+    { code: 'CA', name: 'California' },
+    { code: 'CO', name: 'Colorado' },
+    { code: 'CT', name: 'Connecticut' },
+    { code: 'DE', name: 'Delaware' },
+    { code: 'FL', name: 'Florida' },
+    { code: 'GA', name: 'Georgia' },
+    { code: 'HI', name: 'Hawaii' },
+    { code: 'ID', name: 'Idaho' },
+    { code: 'IL', name: 'Illinois' },
+    { code: 'IN', name: 'Indiana' },
+    { code: 'IA', name: 'Iowa' },
+    { code: 'KS', name: 'Kansas' },
+    { code: 'KY', name: 'Kentucky' },
+    { code: 'LA', name: 'Louisiana' },
+    { code: 'ME', name: 'Maine' },
+    { code: 'MD', name: 'Maryland' },
+    { code: 'MA', name: 'Massachusetts' },
+    { code: 'MI', name: 'Michigan' },
+    { code: 'MN', name: 'Minnesota' },
+    { code: 'MS', name: 'Mississippi' },
+    { code: 'MO', name: 'Missouri' },
+    { code: 'MT', name: 'Montana' },
+    { code: 'NE', name: 'Nebraska' },
+    { code: 'NV', name: 'Nevada' },
+    { code: 'NH', name: 'New Hampshire' },
+    { code: 'NJ', name: 'New Jersey' },
+    { code: 'NM', name: 'New Mexico' },
+    { code: 'NY', name: 'New York' },
+    { code: 'NC', name: 'North Carolina' },
+    { code: 'ND', name: 'North Dakota' },
+    { code: 'OH', name: 'Ohio' },
+    { code: 'OK', name: 'Oklahoma' },
+    { code: 'OR', name: 'Oregon' },
+    { code: 'PA', name: 'Pennsylvania' },
+    { code: 'RI', name: 'Rhode Island' },
+    { code: 'SC', name: 'South Carolina' },
+    { code: 'SD', name: 'South Dakota' },
+    { code: 'TN', name: 'Tennessee' },
+    { code: 'TX', name: 'Texas' },
+    { code: 'UT', name: 'Utah' },
+    { code: 'VT', name: 'Vermont' },
+    { code: 'VA', name: 'Virginia' },
+    { code: 'WA', name: 'Washington' },
+    { code: 'WV', name: 'West Virginia' },
+    { code: 'WI', name: 'Wisconsin' },
+    { code: 'WY', name: 'Wyoming' },
+  ];
+
+  protected readonly germanyStates = [
+    { code: 'DE-BW', name: 'Baden-Württemberg' },
+    { code: 'DE-BY', name: 'Bavaria' },
+    { code: 'DE-BE', name: 'Berlin' },
+    { code: 'DE-BB', name: 'Brandenburg' },
+    { code: 'DE-HB', name: 'Bremen' },
+    { code: 'DE-HH', name: 'Hamburg' },
+    { code: 'DE-HE', name: 'Hesse' },
+    { code: 'DE-MV', name: 'Mecklenburg-Vorpommern' },
+    { code: 'DE-NI', name: 'Lower Saxony' },
+    { code: 'DE-NW', name: 'North Rhine-Westphalia' },
+    { code: 'DE-RP', name: 'Rhineland-Palatinate' },
+    { code: 'DE-SL', name: 'Saarland' },
+    { code: 'DE-SN', name: 'Saxony' },
+    { code: 'DE-ST', name: 'Saxony-Anhalt' },
+    { code: 'DE-SH', name: 'Schleswig-Holstein' },
+    { code: 'DE-TH', name: 'Thuringia' },
+  ];
+
+  protected readonly franceRegions = [
+    { code: 'FR-ARA', name: 'Auvergne-Rhône-Alpes' },
+    { code: 'FR-BFC', name: 'Bourgogne-Franche-Comté' },
+    { code: 'FR-BRE', name: 'Brittany' },
+    { code: 'FR-CVL', name: 'Centre-Val de Loire' },
+    { code: 'FR-COR', name: 'Corsica' },
+    { code: 'FR-GES', name: 'Grand Est' },
+    { code: 'FR-HDF', name: 'Hauts-de-France' },
+    { code: 'FR-IDF', name: 'Île-de-France' },
+    { code: 'FR-NOR', name: 'Normandy' },
+    { code: 'FR-NAQ', name: 'Nouvelle-Aquitaine' },
+    { code: 'FR-OCC', name: 'Occitania' },
+    { code: 'FR-PDL', name: 'Pays de la Loire' },
+    { code: 'FR-PAC', name: "Provence-Alpes-Côte d'Azur" },
+  ];
+
+  protected readonly indiaStates = [
+    { code: 'IN-AP', name: 'Andhra Pradesh' },
+    { code: 'IN-AR', name: 'Arunachal Pradesh' },
+    { code: 'IN-AS', name: 'Assam' },
+    { code: 'IN-BR', name: 'Bihar' },
+    { code: 'IN-CG', name: 'Chhattisgarh' },
+    { code: 'IN-GA', name: 'Goa' },
+    { code: 'IN-GJ', name: 'Gujarat' },
+    { code: 'IN-HR', name: 'Haryana' },
+    { code: 'IN-HP', name: 'Himachal Pradesh' },
+    { code: 'IN-JH', name: 'Jharkhand' },
+    { code: 'IN-KA', name: 'Karnataka' },
+    { code: 'IN-KL', name: 'Kerala' },
+    { code: 'IN-MP', name: 'Madhya Pradesh' },
+    { code: 'IN-MH', name: 'Maharashtra' },
+    { code: 'IN-MN', name: 'Manipur' },
+    { code: 'IN-ML', name: 'Meghalaya' },
+    { code: 'IN-MZ', name: 'Mizoram' },
+    { code: 'IN-NL', name: 'Nagaland' },
+    { code: 'IN-OD', name: 'Odisha' },
+    { code: 'IN-PB', name: 'Punjab' },
+    { code: 'IN-RJ', name: 'Rajasthan' },
+    { code: 'IN-SK', name: 'Sikkim' },
+    { code: 'IN-TN', name: 'Tamil Nadu' },
+    { code: 'IN-TG', name: 'Telangana' },
+    { code: 'IN-TR', name: 'Tripura' },
+    { code: 'IN-UP', name: 'Uttar Pradesh' },
+    { code: 'IN-UT', name: 'Uttarakhand' },
+    { code: 'IN-WB', name: 'West Bengal' },
+    { code: 'IN-DL', name: 'Delhi (UT)' },
+    { code: 'IN-JK', name: 'Jammu and Kashmir (UT)' },
+    { code: 'IN-LA', name: 'Ladakh (UT)' },
+    { code: 'IN-PY', name: 'Puducherry (UT)' },
+  ];
+
+  // Tiers editing inputs
+  protected readonly newLimit = signal<number | null>(null);
+  protected readonly newRate = signal<number | null>(null);
+
+  protected readonly isSaving = signal(false);
+
+  protected readonly tenantId = computed(() => {
+    const token = this.tokenSvc.getAuthToken();
+    if (!token) return '';
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]!));
+        return String(payload.tenant_id || '');
+      }
+    } catch (e) {
+      console.error('Failed to parse auth token payload', e);
+    }
+    return '';
+  });
+
+  protected readonly webhookUrl = computed(() => {
+    const token = this.webhookToken();
+    if (!token) return 'Loading Webhook URL...';
+    const base = environment.apiUrl.replace(/\/$/, '');
+    return `${base}/api/donations/webhook?token=${token}`;
+  });
+
+  protected readonly availableCountriesToSelect = computed(() => {
+    const search = this.countrySearch().toLowerCase().trim();
+    const selected = new Set(this.selectedCountries());
+    return this.allCountries.filter(
+      (c) => !selected.has(c.code) && (c.name.toLowerCase().includes(search) || c.code.toLowerCase().includes(search)),
+    );
+  });
+
+  protected readonly isCanadaSelected = computed(() => this.selectedCountries().includes('CA'));
+  protected readonly isUsaSelected = computed(() => this.selectedCountries().includes('US'));
+  protected readonly isGermanySelected = computed(() => this.selectedCountries().includes('DE'));
+  protected readonly isFranceSelected = computed(() => this.selectedCountries().includes('FR'));
+  protected readonly isIndiaSelected = computed(() => this.selectedCountries().includes('IN'));
+
+  // Plain-language calculation summary
+  protected readonly taxCreditSummary = computed(() => {
+    const sorted = [...this.taxCreditTiers()].sort((a, b) => a.limit - b.limit);
+    if (sorted.length === 0) {
+      return ['No tax credit tiers defined. Donations will not receive any tax credit.'];
+    }
+
+    const lines: string[] = [];
+    let previousLimit = 0;
+
+    for (let i = 0; i < sorted.length; i++) {
+      const tier = sorted[i]!;
+      const ratePct = Math.round(tier.rate * 100);
+
+      if (i === 0) {
+        lines.push(`${ratePct}% credit on the first $${tier.limit} donated.`);
+      } else {
+        const range = `$${previousLimit + 1} to $${tier.limit}`;
+        lines.push(`${ratePct}% credit on the next $${tier.limit - previousLimit} donated (amounts from ${range}).`);
+      }
+      previousLimit = tier.limit;
+    }
+
+    lines.push(`0% credit on any amounts exceeding $${previousLimit}.`);
+    return lines;
+  });
+
+  async ngOnInit() {
+    await this.settingsSvc.load();
+    this.loadValues();
+    await this.loadPeriods();
+  }
+
+  private async loadPeriods() {
+    try {
+      const periods = await this.donationsSvc.getDonationPeriods();
+      this.donationPeriods.set(periods as any);
+    } catch {
+      // non-fatal — periods table may not exist yet if migration hasn't run
+    }
+  }
+
+  protected async addPeriod() {
+    const name = this.newPeriodName().trim();
+    const start = this.newPeriodStartDate().trim();
+    const limit = Number(this.newPeriodLimit());
+
+    if (!name) {
+      this.alerts.showError('Period name is required');
+      return;
+    }
+    if (!start) {
+      this.alerts.showError('Start date is required');
+      return;
+    }
+    if (!limit || limit <= 0) {
+      this.alerts.showError('Limit amount must be greater than 0');
+      return;
+    }
+
+    const endDate = this.newPeriodEndDate().trim() || null;
+    if (endDate && endDate <= start) {
+      this.alerts.showError('End date must be after start date');
+      return;
+    }
+
+    this.isSavingPeriod.set(true);
+    try {
+      await this.donationsSvc.createDonationPeriod({
+        name,
+        start_date: start,
+        end_date: endDate,
+        limit_amount: limit * 100,
+      });
+      this.alerts.showSuccess(`Donation period "${name}" created`);
+      this.newPeriodName.set('');
+      this.newPeriodStartDate.set('');
+      this.newPeriodEndDate.set('');
+      this.newPeriodLimit.set(1000);
+      this.showAddPeriod.set(false);
+      await this.loadPeriods();
+    } catch (err: any) {
+      this.alerts.showError(err.message || 'Failed to create donation period');
+    } finally {
+      this.isSavingPeriod.set(false);
+    }
+  }
+
+  protected async togglePeriodActive(period: DonationPeriod) {
+    try {
+      await this.donationsSvc.updateDonationPeriod({ id: period.id, is_active: !period.is_active });
+      await this.loadPeriods();
+    } catch (err: any) {
+      this.alerts.showError(err.message || 'Failed to update period');
+    }
+  }
+
+  protected async deletePeriod(period: DonationPeriod) {
+    const confirmed = await this.dialogs.confirm({
+      title: `Delete period "${period.name}"?`,
+      message: 'This cannot be undone. Existing donations collected during this period will not be affected.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      await this.donationsSvc.deleteDonationPeriod(period.id);
+      this.alerts.showSuccess('Period deleted');
+      await this.loadPeriods();
+    } catch (err: any) {
+      this.alerts.showError(err.message || 'Failed to delete period');
+    }
+  }
+
+  protected formatDate(dateStr: string | null): string {
+    if (!dateStr) return 'No end date';
+    return new Date(dateStr).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  protected isPeriodActive(period: DonationPeriod): boolean {
+    const today = new Date().toISOString().slice(0, 10);
+    return period.is_active && period.start_date <= today && (!period.end_date || period.end_date >= today);
+  }
+
+  private loadValues() {
+    this.stripeSecretKey.set(this.settingsSvc.getValue<string>('donations.stripe_secret_key', ''));
+    this.stripeWebhookSecret.set(this.settingsSvc.getValue<string>('donations.stripe_webhook_secret', ''));
+    this.donationLimit.set(this.settingsSvc.getValue<number>('donations.limit', 1000));
+    this.restrictResidency.set(this.settingsSvc.getValue<boolean>('donations.restrict_residency', false));
+
+    // Load countries
+    const countriesStr = this.settingsSvc.getValue<string>('donations.allowed_countries', 'CA');
+    const parsedCountries = countriesStr
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    this.selectedCountries.set(parsedCountries);
+
+    // Load regions (provinces / states)
+    const regionsStr = this.settingsSvc.getValue<string>('donations.allowed_regions', 'ON');
+    const parsedRegions = regionsStr
+      .split(',')
+      .map((r) => r.trim())
+      .filter(Boolean);
+    this.selectedRegions.set(parsedRegions);
+
+    // Load tax tiers
+    const tiersRaw = this.settingsSvc.getValue<any>('donations.tax_credit_tiers', []);
+    let parsedTiers: TaxCreditTier[] = [];
+    if (typeof tiersRaw === 'string') {
+      try {
+        parsedTiers = JSON.parse(tiersRaw);
+      } catch {
+        parsedTiers = [];
+      }
+    } else if (Array.isArray(tiersRaw)) {
+      parsedTiers = tiersRaw;
+    }
+    this.taxCreditTiers.set(parsedTiers.sort((a, b) => a.limit - b.limit));
+
+    // Load or generate webhook token
+    let token = this.settingsSvc.getValue<string>('donations.webhook_token', '');
+    if (!token) {
+      token = 'wt_' + Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    }
+    this.webhookToken.set(token);
+  }
+
+  protected selectCountry(country: { code: string; name: string }) {
+    this.selectedCountries.update((list) => [...list, country.code]);
+    this.countrySearch.set('');
+    this.showCountryDropdown.set(false);
+  }
+
+  protected removeCountry(code: string) {
+    this.selectedCountries.update((list) => list.filter((c) => c !== code));
+    // Clean up regions for removed countries
+    if (code === 'CA') {
+      const provinceCodes = new Set(this.canadaProvinces.map((p) => p.code));
+      this.selectedRegions.update((list) => list.filter((r) => !provinceCodes.has(r)));
+    } else if (code === 'US') {
+      const stateCodes = new Set(this.usStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    } else if (code === 'DE') {
+      const stateCodes = new Set(this.germanyStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    } else if (code === 'FR') {
+      const regionCodes = new Set(this.franceRegions.map((r) => r.code));
+      this.selectedRegions.update((list) => list.filter((r) => !regionCodes.has(r)));
+    } else if (code === 'IN') {
+      const stateCodes = new Set(this.indiaStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    }
+  }
+
+  protected toggleRegion(code: string) {
+    this.selectedRegions.update((list) => (list.includes(code) ? list.filter((r) => r !== code) : [...list, code]));
+  }
+
+  protected getCountryName(code: string): string {
+    const found = this.allCountries.find((c) => c.code === code);
+    return found ? found.name : code;
+  }
+
+  protected addTier() {
+    const limit = this.newLimit();
+    const rateInput = this.newRate();
+
+    if (limit === null || limit <= 0) {
+      this.alerts.showError('Limit must be greater than 0');
+      return;
+    }
+    if (rateInput === null || rateInput < 0 || rateInput > 100) {
+      this.alerts.showError('Rate must be between 0% and 100%');
+      return;
+    }
+
+    const rate = rateInput / 100;
+
+    const current = this.taxCreditTiers();
+    if (current.some((t) => t.limit === limit)) {
+      this.alerts.showError('A tier with this limit already exists');
+      return;
+    }
+
+    const updated = [...current, { limit, rate }].sort((a, b) => a.limit - b.limit);
+    this.taxCreditTiers.set(updated);
+
+    this.newLimit.set(null);
+    this.newRate.set(null);
+  }
+
+  protected removeTier(index: number) {
+    const updated = this.taxCreditTiers().filter((_, i) => i !== index);
+    this.taxCreditTiers.set(updated);
+  }
+
+  protected reset() {
+    this.loadValues();
+    this.alerts.showSuccess('Settings reset to saved values');
+  }
+
+  protected async save() {
+    this.isSaving.set(true);
+    try {
+      const entries = [
+        { key: 'donations.stripe_secret_key', value: this.stripeSecretKey() },
+        { key: 'donations.stripe_webhook_secret', value: this.stripeWebhookSecret() },
+        { key: 'donations.limit', value: Number(this.donationLimit()) },
+        { key: 'donations.restrict_residency', value: this.restrictResidency() },
+        { key: 'donations.allowed_countries', value: this.selectedCountries().join(',') },
+        { key: 'donations.allowed_regions', value: this.selectedRegions().join(',') },
+        { key: 'donations.tax_credit_tiers', value: JSON.stringify(this.taxCreditTiers()) },
+        { key: 'donations.webhook_token', value: this.webhookToken() },
+      ];
+
+      await this.settingsSvc.upsert(entries);
+      this.alerts.showSuccess('Donations configuration saved successfully');
+    } catch (err: any) {
+      this.alerts.showError(err.message || 'Failed to save donations configuration');
+    } finally {
+      this.isSaving.set(false);
+    }
+  }
+
+  protected copyWebhookUrl() {
+    navigator.clipboard
+      .writeText(this.webhookUrl())
+      .then(() => this.alerts.showSuccess('Webhook URL copied!'))
+      .catch(() => this.alerts.showError('Failed to copy webhook URL'));
   }
 }
 ```
@@ -39744,7 +42353,9 @@ import { ShiftsService } from '../services/shifts-service';
     <div class="flex flex-col gap-6">
       <pc-datagrid
         title="Shifts"
+        i18n-title
         description="Manage volunteer shifts, schedule events, and track attendance records."
+        i18n-description
         [showDescription]="true"
         [colDefs]="col"
         [disableDelete]="false"
@@ -39754,9 +42365,12 @@ import { ShiftsService } from '../services/shifts-service';
         [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-schedule"
+        i18n-plusIcon
         [showArchiveIcon]="true"
         archiveIcon="archive-box-arrow-down"
+        i18n-archiveIcon
         archiveTip="See archived events"
+        i18n-archiveTip
       ></pc-datagrid>
     </div>
   `,
@@ -39804,246 +42418,6 @@ export class ShiftsGridComponent {
     const date = value instanceof Date ? value : new Date(value as string);
     if (Number.isNaN(date.getTime())) return '';
     return this.dateFormatter.format(date);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/tags-grid.ts
-
-```typescript
-import { Component } from '@angular/core';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import type { getAllOptionsType } from '../../../../../../../libs/common/src';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-
-class TagsOnlyService extends TagsService {
-  public override getAll(options?: getAllOptionsType) {
-    return this.getAllWithCounts({ ...(options ?? {}), type: 'tag' } as getAllOptionsType);
-  }
-}
-
-@Component({
-  selector: 'pc-tags-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Tags"
-        description="Manage custom categorization tags used across people, households."
-        [colDefs]="col"
-        [disableDelete]="false"
-        [allowFilter]="false"
-        addRoute="add"
-        plusIcon="add-label"
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    TagsOnlyService,
-    { provide: AbstractAPIService, useExisting: TagsOnlyService },
-    provideDataGridConfig({ messages: { exportEntity: 'tags', exportFileName: 'tags-export.csv' } }),
-  ],
-})
-export class TagsGridComponent {
-  protected col = [
-    {
-      field: 'name',
-      headerName: 'Tag Name',
-      editable: true,
-      valueFormatter: (p: any) => (p.value ? p.value.charAt(0).toUpperCase() + p.value.slice(1) : ''),
-    },
-    { field: 'description', headerName: 'Description', editable: true },
-    {
-      field: 'color',
-      headerName: 'Colour',
-      editable: true,
-      cellDataType: 'color',
-      cellRenderer: (p: any) => this.renderColorCell(p.value ?? p.data?.color ?? null),
-    },
-    { field: 'deletable', headerName: 'Deletable', type: 'boolean', editable: false },
-    { field: 'use_count_people', headerName: 'People' },
-    { field: 'use_count_households', headerName: 'Households' },
-  ];
-
-  constructor() {}
-
-  protected renderColorCell(raw: unknown): string {
-    const v = typeof raw === 'string' ? raw.trim() : '';
-    if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) {
-      return '<span class="text-xs text-neutral">None</span>';
-    }
-    const color = v.toLowerCase();
-
-    return `
-    <span class="inline-block h-4 w-8 rounded border shadow-sm"
-          style="background-color:${color}; border-color:${color}"
-          title="${color}"></span>
-  `;
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/tags.ts
-
-```typescript
-import { Component, OnInit, inject, input, output, signal } from '@angular/core';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { AutoComplete } from '@uxcommon/components/autocomplete/autocomplete';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-
-import { TagItem } from '@uxcommon/components/tags/tagitem';
-import { TagPaletteService } from './tag-palette.service';
-
-interface TagView {
-  name: string;
-  color: string | null;
-}
-
-@Component({
-  selector: 'pc-tags',
-  imports: [TagItem, AutoComplete],
-  template: `@if (!readonly()) {
-      <pc-autocomplete
-        (valueChange)="add($event)"
-        [placeholder]="placeholder()"
-        [filterSvc]="enableAutoComplete() ? this : null"
-      ></pc-autocomplete>
-    }
-    @let tagViews = displayTags();
-    @if (tagViews.length) {
-      <div class="my-1"></div>
-      <div class="contents" [class.mt-2]="!readonly()">
-        @if (!readonly()) {
-          <span class="font-light text-gray-400 mr-1 text-sm">{{ type() === 'issue' ? 'Issues:' : 'Tags:' }}</span>
-        }
-        @for (tag of tagViews; track tag.name) {
-          <pc-tagitem
-            class="mr-1 mb-1"
-            [name]="tag.name"
-            [color]="tag.color"
-            [canDelete]="canDelete()"
-            [compact]="compact()"
-            (click)="clicked(tag.name)"
-            (close)="closed(tag.name)"
-          ></pc-tagitem>
-        }
-        @if (limit() !== undefined && !expanded() && tags().length > limit()!) {
-          @let remainingCount = tags().length - limit()!;
-          <span
-            class="badge badge-neutral badge-sm cursor-pointer mb-1 align-middle hover:bg-neutral-focus"
-            (click)="expanded.set(true); $event.stopPropagation()"
-          >
-            +{{ remainingCount }}
-          </span>
-        }
-      </div>
-    } `,
-})
-export class Tags implements OnInit {
-  protected displayedTags: string[] = [];
-  protected expanded = signal(false);
-  private readonly paletteSvc = inject(TagPaletteService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-
-  public readonly tagAdded = output<string>();
-
-  public readonly tagClicked = output<string>();
-
-  public readonly tagRemoved = output<string>();
-
-  public readonly tagsChange = output<string[]>();
-
-  public animateRemoval = input<boolean>(true);
-
-  public canDelete = input<boolean>(true);
-
-  public enableAutoComplete = input<boolean>(true);
-
-  public placeholder = input<string>('Enter tags, separated by comma');
-
-  public readonly = input<boolean>(false);
-  public readonly type = input<'tag' | 'issue'>('tag');
-  public compact = input<boolean>(false);
-  public tagSvc = inject(TagsService);
-  public tags = input<string[]>([]);
-  public limit = input<number | undefined>(undefined);
-
-  protected displayTags(): TagView[] {
-    const raw = this.tags() ?? [];
-    const limitVal = this.limit();
-    const isExpanded = this.expanded();
-    const palette = this.paletteSvc.palette();
-    const seen = new Set<string>();
-    const out: TagView[] = [];
-    for (const entry of raw) {
-      if (typeof entry !== 'string') continue;
-      const name = entry.trim();
-      if (!name || seen.has(name)) continue;
-      seen.add(name);
-      const lower = name.toLowerCase();
-      const color = palette[name] ?? palette[lower] ?? this.paletteSvc.colorFor(name);
-      out.push({ name, color: color ?? null });
-    }
-    return limitVal !== undefined && !isExpanded ? out.slice(0, limitVal) : out;
-  }
-
-  public async filter(key: string) {
-    if (!key || key.length === 0) {
-      return [];
-    }
-    const names = (await this.tagSvc.findByName(key, this.type())) as { name: string }[];
-    return names.map((m) => m.name);
-  }
-
-  public ngOnInit() {
-    for (const name of this.tags()) {
-      this.add(name);
-    }
-  }
-
-  protected add(tagName: string) {
-    if (!tagName || typeof tagName !== 'string') return;
-
-    if (tagName.indexOf(',') >= 0) {
-      tagName = tagName.replace(',', '').trim();
-    }
-
-    tagName = tagName.toLowerCase().trim();
-
-    if (tagName.length === 0) return;
-
-    const index = this.tags().findIndex((tag) => (tag || '').toLowerCase().trim() === tagName);
-    if (index === -1) {
-      this.tags().unshift(tagName);
-      this.tagAdded.emit(tagName);
-      // Invalidate the options cache so the grid's inline dropdown reflects this new value
-      this.tagOptionsSvc.invalidate(this.type());
-    } else {
-      // Bring tag that maches to the front.
-      const [tag] = this.tags().splice(index, 1) as [string]; // remove it
-      this.tags().unshift(tag); // move to front
-    }
-    this.tagsChange.emit(this.tags());
-  }
-
-  protected clicked(tag: string) {
-    this.tagClicked.emit(tag);
-  }
-
-  protected closed(tag: string) {
-    this.remove(tag);
-  }
-
-  protected remove(tagName: string) {
-    const target = (tagName || '').toLowerCase().trim();
-    const index = this.tags().findIndex((tag) => (tag || '').toLowerCase().trim() === target);
-    if (index > -1) {
-      const removed = this.tags().splice(index, 1)[0]!;
-      this.tagsChange.emit(this.tags());
-      this.tagRemoved.emit(removed);
-    }
   }
 }
 ```
@@ -41378,76 +43752,6 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
 }
 ```
 
-## File: apps/frontend/src/app/app.routes.ts
-
-```typescript
-import type { Routes } from '@angular/router';
-
-import { authGuard } from './auth/auth-guard';
-import { loginGuard } from './auth/login/login-guard';
-
-export const appRoutes = [
-  // Default redirect to summary inside the dashboard shell
-  { path: '', redirectTo: 'summary', pathMatch: 'full' },
-
-  // Auth pages
-  {
-    path: 'signin',
-    canActivate: [loginGuard],
-    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
-  },
-  {
-    path: 'signup',
-    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
-  },
-  {
-    path: 'resetpassword',
-    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
-  },
-  {
-    path: 'newpassword',
-    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
-  },
-  {
-    path: 'verify-sender-email',
-    loadComponent: () =>
-      import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
-  },
-  {
-    path: 'confirm-subscription',
-    loadComponent: () =>
-      import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
-  },
-  {
-    path: 'verify-email',
-    loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
-  },
-  {
-    path: 'cancel-deletion',
-    loadComponent: () => import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
-  },
-  {
-    path: 'resume-account',
-    loadComponent: () => import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
-  },
-
-  // Main dashboard shell + children (protected)
-  {
-    path: '',
-    canActivate: [authGuard],
-    // optionally also: canActivateChild: [authGuard],
-    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
-    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
-  },
-
-  // Fallback
-  {
-    path: '**',
-    loadComponent: () => import('@uxcommon/components/not-found/not-found').then((m) => m.NotFound),
-  },
-] as const satisfies Routes;
-```
-
 ## File: apps/frontend/project.json
 
 ```json
@@ -41592,6 +43896,144 @@ export const authGuard: CanActivateFn = () => {
 
   return true;
 };
+```
+
+## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
+
+```html
+<div class="p-6 max-w-7xl mx-auto">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon name="currency-dollar" class="text-primary" [size]="7"></pc-icon>
+        Donations
+      </h1>
+      <p class="text-sm text-base-content/60 mt-1">
+        Track campaign contributions, donor residency checks, and issued tax credits.
+      </p>
+    </div>
+    <div class="flex gap-2 items-center">
+      <button
+        id="donations-refresh-btn"
+        class="btn btn-outline btn-sm gap-2"
+        title="Refresh donations log"
+        pcSpinOnClick
+        [disabled]="_loading.visible()"
+        (click)="refresh()"
+      >
+        <pc-icon name="arrow-path" [size]="4"></pc-icon>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div role="tablist" class="tabs tabs-box mb-6 w-fit">
+    <a
+      routerLink="/donations"
+      routerLinkActive="tab-active"
+      [routerLinkActiveOptions]="{exact:true}"
+      role="tab"
+      class="tab font-semibold gap-1.5"
+    >
+      <pc-icon name="currency-dollar" [size]="4"></pc-icon>
+      One-time
+    </a>
+    <a routerLink="/donations/pledges" routerLinkActive="tab-active" role="tab" class="tab font-semibold gap-1.5">
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Monthly Pledges
+    </a>
+  </div>
+
+  @if (_loading.visible()) {
+  <progress class="progress w-full text-primary mb-6"></progress>
+  }
+
+  <!-- Stats Grid -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+    <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          Total Funds Collected
+        </div>
+        <div class="stat-value text-xl font-extrabold text-success sm:text-2xl mt-1">
+          {{ totalDonated() | currency:'USD':'symbol':'1.2-2' }}
+        </div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">Succeeded donations to date</div>
+      </div>
+    </div>
+
+    <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
+      <div class="stat p-4">
+        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          Total Transactions
+        </div>
+        <div class="stat-value text-xl font-extrabold text-info sm:text-2xl mt-1">{{ successCount() }}</div>
+        <div class="stat-desc text-[10px] text-base-content/40 mt-1">Successful checkout counts</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Grid / Table View -->
+  <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
+    <table class="table w-full">
+      <thead>
+        <tr class="bg-base-200/50">
+          <th>Donor</th>
+          <th>Amount</th>
+          <th>Tax Credit</th>
+          <th>Status</th>
+          <th>Residency</th>
+          <th class="text-right">Donated Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (d of donations(); track d.id) {
+        <tr class="hover:bg-base-200/30 transition-all duration-200">
+          <td>
+            <div class="flex flex-col">
+              <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline text-sm">
+                {{ d.person_first_name }} {{ d.person_last_name }}
+              </a>
+              <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
+            </div>
+          </td>
+          <td class="font-bold text-base-content text-sm">{{ formatCurrency(d.amount) }}</td>
+          <td class="text-sm text-base-content/85">{{ formatCurrency(d.tax_credit_amount) }}</td>
+          <td>
+            @if (d.status === 'succeeded') {
+            <span class="badge badge-success text-xs font-semibold px-2.5 py-1">Succeeded</span>
+            } @else if (d.status === 'failed') {
+            <span class="badge badge-error text-xs font-semibold px-2.5 py-1">Failed</span>
+            } @else if (d.status === 'pending') {
+            <span class="badge badge-warning text-xs font-semibold px-2.5 py-1">Pending</span>
+            } @else {
+            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">{{ d.status || 'unknown' }}</span>
+            }
+          </td>
+          <td>
+            <span class="text-xs font-mono uppercase bg-base-200 px-2 py-0.5 rounded font-bold">
+              {{ d.country }} @if (d.state) { - {{ d.state }} }
+            </span>
+          </td>
+          <td class="text-right text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
+        </tr>
+        } @empty {
+        <tr>
+          <td colspan="5" class="text-center py-16 text-base-content/50">
+            <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
+            <h3 class="font-semibold text-base-content/70">No donations found</h3>
+            <p class="text-xs text-base-content/50 mt-1">
+              Configure your Stripe integration and set up a donation form to get started.
+            </p>
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.ts
@@ -42279,6 +44721,297 @@ export class EmailList {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
+
+```typescript
+import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { FormsService } from '../services/forms-service';
+import { ListsService } from '../../lists/services/lists-service';
+import { UserService } from '../../../services/user.service';
+import { type IAuthUser } from '../../../../../../../libs/common/src';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { environment } from '../../../../environments/environment';
+
+@Component({
+  selector: 'pc-form-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    PcCard,
+    Tabs,
+    TabPanel,
+    StatCard,
+    ProfileCard,
+    DetailRow,
+  ],
+  templateUrl: './form-view.html',
+})
+export class FormViewComponent {
+  private readonly alertSvc = inject(AlertService);
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  readonly id = input.required<string>();
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly formRecord = signal<any | null>(null);
+  protected readonly submissionsCount = signal(0);
+  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
+  protected readonly users = signal<IAuthUser[]>([]);
+  private readonly router = inject(Router);
+  private usersById = new Map<string, IAuthUser>();
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly formTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'targetActions', label: 'Target Lists & Actions', icon: 'queue-list' },
+    { id: 'fieldsPreview', label: 'Fields & Layout', icon: 'information-circle' },
+  ]);
+
+  protected readonly selectedFields = computed(() => {
+    const record = this.formRecord();
+    if (!record) return [];
+    if (record.fields) {
+      return Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
+    }
+    return ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+  });
+
+  protected readonly fieldsCount = computed(() => {
+    const fields = this.selectedFields();
+    // Email is always required and present
+    const standardFieldsCount = fields.filter((f: string) => f !== 'email').length;
+    return standardFieldsCount + 1;
+  });
+
+  protected readonly targetListsNames = computed(() => {
+    const record = this.formRecord();
+    if (!record || !record.target_lists) return [];
+    const listIds: string[] = Array.isArray(record.target_lists)
+      ? record.target_lists
+      : JSON.parse(record.target_lists || '[]');
+
+    return listIds.map((id) => this.availableLists().find((l) => l.id === id)?.name).filter(Boolean) as string[];
+  });
+
+  protected readonly embedSnippet = computed(() => {
+    const record = this.formRecord();
+    if (!record || !this.id()) return '';
+    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
+    const fields = this.selectedFields();
+    const isDonation = record.form_type === 'donation';
+    const isRecurring = record.form_type === 'recurring_donation';
+    const isAnyDonation = isDonation || isRecurring;
+
+    const addressFields = isAnyDonation
+      ? `
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
+    <input type="text" name="street1" placeholder="123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
+      <input type="text" name="city" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal *</label>
+      <input type="text" name="zip" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+  </div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
+      <input type="text" name="state" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country *</label>
+      <input type="text" name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+  </div>`
+      : '';
+
+    const amountField = isDonation
+      ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($) *</label>
+    <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : isRecurring
+        ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
+    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
+  </div>`
+        : '';
+
+    const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
+
+    return `<!-- PeopleCRM Embeddable Form -->
+<form action="${apiOrigin}/api/forms/submit/${this.id()}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
+${
+  fields.includes('first_name') || isAnyDonation
+    ? `  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isAnyDonation ? ' *' : ''}</label>
+    <input type="text" name="first_name" placeholder="First Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+    : ''
+}${
+      fields.includes('last_name') || isAnyDonation
+        ? `\n  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isAnyDonation ? ' *' : ''}</label>
+    <input type="text" name="last_name" placeholder="Last Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+        : ''
+    }
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
+    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>${
+    !isAnyDonation && fields.includes('mobile')
+      ? `\n  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
+    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    !isAnyDonation && fields.includes('notes')
+      ? `\n  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
+    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
+  </div>`
+      : ''
+  }${addressFields}${amountField}
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
+</form>`;
+  });
+
+  protected readonly formUrl = computed(() => {
+    if (!this.id()) return '';
+    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${this.id()}`;
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => this.loadAllData(currentId));
+    });
+
+    // Load users
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load Form details
+      const record = await this.formsSvc.getById(id);
+      this.formRecord.set(record);
+
+      // 2. Load available Lists to resolve list names
+      const result = await this.listsSvc.getAll({ limit: 100 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows.map((row: any) => ({
+          id: String(row.id),
+          name: String(row.name),
+        })),
+      );
+
+      // 3. Load submissions count
+      const subCount = await this.formsSvc.getSubmissionsCount(id);
+      this.submissionsCount.set(subCount);
+    } catch (err) {
+      this.alertSvc.showError('Failed to load form details: ' + String(err));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editForm() {
+    this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteForm() {
+    if (!this.id()) return;
+    const backRoute: string = this.route.snapshot.data['backRoute'] ?? '/forms';
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Web Form',
+      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.formsSvc.delete(this.id());
+      this.formsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Web form deleted');
+      await this.router.navigate([backRoute]);
+    } catch (err: any) {
+      const message = err?.message || err?.data?.message || 'Unable to delete web form';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copySnippet(): void {
+    const code = this.embedSnippet();
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(
+      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected getCreatedAt(): Date | null {
+    const date = this.formRecord()?.created_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUpdatedAt(): Date | null {
+    const date = this.formRecord()?.updated_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-grid.ts
 
 ```typescript
@@ -42296,14 +45029,18 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
     <div class="flex flex-col gap-6">
       <pc-datagrid
         title="Donation Pages"
+        i18n-title
         description="Manage embeddable donation and recurring pledge pages that connect to Stripe."
+        i18n-description
         [showDescription]="true"
         [colDefs]="col"
         [disableDelete]="false"
         [allowFilter]="false"
         [disableView]="false"
         addRoute="add"
+        i18n-addRoute
         plusIcon="add-fundraising"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,
@@ -42939,1091 +45676,6 @@ export class PersonForm implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
-
-```html
-<pc-detail-layout
-  [title]="'Person Profile'"
-  [icon]="'user-circle'"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!person()"
-  [showDelete]="true"
-  [deleteText]="'Delete Person'"
-  [btn1Text]="'Edit Person'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editPerson()"
-  (delete)="deletePerson()"
->
-  @if (person()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Contact Card & Bio -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Contact Card -->
-      <pc-profile-card [avatarText]="initials()">
-        <!-- Name & Company -->
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ fullName() }}</h2>
-        @if (person().company_name) {
-        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">
-          <pc-icon name="briefcase" [size]="4"></pc-icon>
-          {{ person().company_name }}
-        </div>
-        } @else {
-        <span class="text-sm text-base-content/50 italic mb-4">No company assigned</span>
-        }
-
-        <!-- Social Media Buttons -->
-        <div class="flex justify-center gap-3 w-full border-y border-base-200 py-4 mb-6">
-          @for (link of socialLinks(); track link.name) {
-          <a
-            [attr.href]="link.url || null"
-            [attr.target]="link.url ? '_blank' : null"
-            [attr.data-tip]="link.url ? link.name + ' profile' : link.name + ' URL not set'"
-            class="btn btn-circle btn-sm tooltip"
-            [class]="link.url 
-        ? 'shadow-md hover:scale-110 transition-transform text-white border-none ' + link.color 
-        : 'bg-base-200 text-base-content/30 border-base-300 cursor-not-allowed'"
-          >
-            <pc-icon [name]="link.icon" [size]="4"></pc-icon>
-          </a>
-          }
-        </div>
-
-        <!-- Contact & Address Details List -->
-        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
-          <pc-detail-item
-            label="Primary Email"
-            [value]="person().email"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Secondary Email"
-            [value]="person().email2"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Mobile Phone"
-            [value]="person().mobile"
-            icon="phone"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Home Phone"
-            [value]="person().home_phone"
-            icon="home"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item label="Address" [value]="addressString()" icon="map-pin"></pc-detail-item>
-        </div>
-
-        <!-- Notes Section -->
-        @if (person().notes) {
-        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1"
-            >Internal Notes</span
-          >
-          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-            {{ person().notes }}
-          </p>
-        </div>
-        }
-
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="person().created_at"
-          [createdBy]="getUserName(person().createdby_id)"
-          [updatedAt]="person().updated_at"
-          [updatedBy]="getUserName(person().updatedby_id)"
-        ></pc-system-metadata>
-      </pc-profile-card>
-
-      <!-- Segmentation Card -->
-      <pc-card title="Segmentation">
-        <div class="flex flex-col gap-3">
-          <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
-            @if (tags().length > 0) {
-            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
-            }
-          </div>
-
-          <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
-            @if (issues().length > 0) {
-            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
-            }
-          </div>
-        </div>
-      </pc-card>
-
-      <!-- Sentiment Score Card (frosted glass coming soon overlay) -->
-      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden relative">
-        <div class="p-6 flex flex-col items-center gap-3">
-          <h3 class="text-sm font-bold uppercase tracking-wider text-base-content/70 self-start">Sentiment Score</h3>
-
-          <!-- Placeholder Graphic -->
-          <div
-            class="flex items-center justify-center w-28 h-28 rounded-full border-4 border-dashed border-base-300 relative my-2"
-          >
-            <span class="text-4xl text-base-content/20">😐</span>
-            <span class="text-xs text-base-content/30 mt-1 absolute bottom-4 font-mono">Neutral</span>
-          </div>
-          <div class="text-xs text-base-content/40 text-center font-light leading-relaxed">
-            Aggregates communication email history and tags to automatically gauge contact affinity.
-          </div>
-        </div>
-
-        <!-- Premium Overlay for "Coming Soon" -->
-        <div
-          class="absolute inset-0 bg-base-100/80 backdrop-blur-md flex flex-col justify-center items-center p-4 text-center select-none"
-        >
-          <div class="p-3 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white rounded-2xl shadow-lg mb-2">
-            <pc-icon name="chart-pie" [size]="8"></pc-icon>
-          </div>
-          <h4 class="font-bold text-lg text-base-content">Affinity Analytics</h4>
-          <span class="badge badge-primary badge-sm font-semibold tracking-wider my-1">COMING SOON</span>
-          <p class="text-xs text-base-content/60 max-w-[200px] mt-1 font-light leading-snug">
-            AI-driven sentiment analysis of email conversations is currently in beta.
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Right Column: Stats & Multi-Tab Activity Feed -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Dashboard Stats Grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <!-- Stats: Emails Sent -->
-        <pc-stat-card
-          [title]="'Emails Sent'"
-          [value]="activityData().emails.length"
-          [description]="'Total emails sent'"
-          [icon]="'paper-airplane'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Emails Opened -->
-        <pc-stat-card
-          [title]="'Opened'"
-          [value]="openedNewslettersCount()"
-          [description]="'Opens & clicks'"
-          [icon]="'eye'"
-          [valueColorClass]="'text-emerald-500'"
-          [iconColorClass]="'text-emerald-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Active Lists -->
-        <pc-stat-card
-          [title]="'Active Lists'"
-          [value]="0"
-          [description]="'List subscriptions'"
-          [icon]="'queue-list'"
-          [valueColorClass]="'text-amber-500'"
-          [iconColorClass]="'text-amber-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Volunteer Shifts -->
-        <pc-stat-card
-          [title]="'Volunteered'"
-          [value]="volunteerStats()?.shifts_count || 0"
-          [description]="'Shifts completed'"
-          [icon]="'volunteer'"
-          [valueColorClass]="'text-purple-500'"
-          [iconColorClass]="'text-purple-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Volunteer Hours -->
-        <pc-stat-card
-          [title]="'Total Hours'"
-          [value]="volunteerStats()?.total_hours || 0.0"
-          [description]="'Hours logged'"
-          [icon]="'clock'"
-          [valueColorClass]="'text-pink-500'"
-          [iconColorClass]="'text-pink-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Donations -->
-        <pc-stat-card
-          [title]="'Donations'"
-          [value]="donationStats() ? '$' + donationStats()!.cumulativeAmount.toLocaleString() : '$0'"
-          [description]="'Financial support'"
-          [icon]="'currency-dollar'"
-          [valueColorClass]="'text-emerald-500'"
-          [iconColorClass]="'text-emerald-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Connections -->
-        <pc-stat-card
-          [title]="'Connections'"
-          [value]="connectionCount()"
-          [description]="'Network connections'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-violet-500'"
-          [iconColorClass]="'text-violet-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Activities, Interactions & History Tabs -->
-      <!-- Activities, Interactions & History Tabs -->
-      <pc-tabs [tabs]="personTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
-            <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="emails" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (activityData().emails.length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No direct email correspondence recorded</div>
-            } @else {
-            <div class="flex flex-col gap-3">
-              @for (mail of activityData().emails; track mail.id) {
-              <a
-                [routerLink]="['/inbox']"
-                [queryParams]="{ email: mail.id }"
-                class="p-4 rounded-xl border border-base-200 hover:border-indigo-300 bg-base-50/20 hover:bg-base-100 transition-all flex flex-col gap-2 no-underline text-current group cursor-pointer hover:shadow-sm"
-              >
-                <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
-                  <span class="font-mono text-base-content/60">
-                    From: <strong class="text-base-content">{{ mail.from_email }}</strong> &rarr; To:
-                    <strong>{{ mail.to_email }}</strong>
-                  </span>
-                  <span class="text-base-content/40">{{ mail.created_at | date:'medium' }}</span>
-                </div>
-                <div class="flex items-center justify-between gap-2">
-                  <h4 class="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">
-                    {{ mail.subject || '(No Subject)' }}
-                  </h4>
-                  <pc-icon
-                    name="arrow-top-right-on-square"
-                    [size]="4"
-                    class="text-base-content/30 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
-                  ></pc-icon>
-                </div>
-                @if (mail.preview) {
-                <p
-                  class="text-xs text-base-content/60 line-clamp-2 leading-relaxed bg-base-200/20 p-2.5 rounded-lg border border-base-200/50"
-                >
-                  {{ mail.preview }}
-                </p>
-                }
-                <div class="flex justify-end mt-1">
-                  <pc-status-badge [type]="getMailStatusType(mail.status)">
-                    {{ mail.status || 'received' }}
-                  </pc-status-badge>
-                </div>
-              </a>
-              }
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (activityData().newsletters.length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No newsletter logs found</div>
-            } @else {
-            <div class="flex flex-col gap-2">
-              @for (ev of activityData().newsletters; track ev.id) {
-              <div
-                class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
-              >
-                <div class="flex items-center gap-3 overflow-hidden">
-                  <!-- Icon mappings for event types -->
-                  <div
-                    class="p-2 rounded-lg flex-shrink-0"
-                    [class.bg-info/10]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
-                    [class.text-info]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
-                    [class.bg-success/10]="ev.event_type === 'open'"
-                    [class.text-success]="ev.event_type === 'open'"
-                    [class.bg-warning/10]="ev.event_type === 'click'"
-                    [class.text-warning]="ev.event_type === 'click'"
-                    [class.bg-error/10]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
-                    [class.text-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
-                  >
-                    @if (ev.event_type === 'open') {
-                    <pc-icon name="eye" [size]="4"></pc-icon>
-                    } @else if (ev.event_type === 'click') {
-                    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-                    } @else if (ev.event_type === 'delivered') {
-                    <pc-icon name="check-circle" [size]="4"></pc-icon>
-                    } @else {
-                    <pc-icon name="information-circle" [size]="4"></pc-icon>
-                    }
-                  </div>
-                  <div class="flex flex-col overflow-hidden">
-                    <span class="font-medium text-base-content truncate"
-                      >{{ ev.newsletter_subject || ev.newsletter_name }}</span
-                    >
-                    @if (ev.url) {
-                    <span class="text-[10px] text-primary truncate hover:underline cursor-pointer"
-                      >Clicked URL: {{ ev.url }}</span
-                    >
-                    }
-                  </div>
-                </div>
-
-                <div class="flex items-center gap-3 flex-shrink-0">
-                  <pc-status-badge [type]="getEmailEventType(ev.event_type)" class="tracking-wider text-[9px]">
-                    {{ ev.event_type }}
-                  </pc-status-badge>
-                  <span class="text-base-content/40 text-[10px]">{{ ev.timestamp | date:'short' }}</span>
-                </div>
-              </div>
-              }
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="volunteer" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (volunteerHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No shift records found for this person</div>
-            } @else {
-            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table table-sm w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200">
-                    <th>Event Name</th>
-                    <th>Date & Time</th>
-                    <th>Status</th>
-                    <th>Hours</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (shift of volunteerHistory(); track shift.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td class="font-semibold">{{ shift.event_name }}</td>
-                    <td>{{ shift.start_time | date:'medium' }}</td>
-                    <td>
-                      <pc-status-badge [type]="getShiftStatusType(shift.status)"> {{ shift.status }} </pc-status-badge>
-                    </td>
-                    <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
-                    <td class="font-light">{{ shift.notes || '--' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="donations" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <!-- Summary card for limits progress -->
-            @if (donationStats()) {
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"
-            >
-              <div class="flex-1 w-full space-y-1">
-                <div class="flex justify-between text-xs font-bold text-base-content/75">
-                  <span>Annual Limit Progress</span>
-                  <span
-                    >${{ donationStats()!.cumulativeAmount.toLocaleString() }} / ${{
-                    donationStats()!.limitAmount.toLocaleString() }}</span
-                  >
-                </div>
-                <progress
-                  class="progress progress-success w-full h-2.5 bg-base-300"
-                  [value]="donationStats()!.cumulativeAmount"
-                  [max]="donationStats()!.limitAmount"
-                ></progress>
-                <p class="text-[10px] text-base-content/50">
-                  Remaining allowable donation this calendar year:
-                  <strong>${{ donationStats()!.remainingAmount.toLocaleString() }}</strong>
-                </p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-primary shrink-0 w-full md:w-auto font-semibold flex items-center justify-center gap-1.5"
-                (click)="openCollectDonation()"
-                [disabled]="donationStats()!.remainingAmount <= 0"
-              >
-                <pc-icon name="plus" [size]="4"></pc-icon>
-                Collect Donation
-              </button>
-            </div>
-            } @if (donationHistory().length === 0) {
-            <div
-              class="text-center py-10 text-base-content/40 italic bg-base-100 rounded-xl border border-dashed border-base-200"
-            >
-              No donations recorded yet for this person.
-            </div>
-            } @else {
-            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl shadow-sm">
-              <table class="table w-full text-xs">
-                <thead>
-                  <tr class="bg-base-50 border-b border-base-200">
-                    <th class="font-bold text-base-content/70">Date</th>
-                    <th class="font-bold text-base-content/70">Amount</th>
-                    <th class="font-bold text-base-content/70">Tax Credit</th>
-                    <th class="font-bold text-base-content/70">Residency Info</th>
-                    <th class="font-bold text-base-content/70">Status</th>
-                    <th class="font-bold text-base-content/70">Transaction ID</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (donation of donationHistory(); track donation.id) {
-                  <tr class="hover:bg-base-200/20 border-b border-base-200">
-                    <td class="font-medium text-base-content/75">{{ donation.created_at | date:'mediumDate' }}</td>
-                    <td class="font-bold text-base-content">${{ (donation.amount / 100).toFixed(2) }}</td>
-                    <td>
-                      <span class="badge badge-success gap-1 font-semibold py-2 px-2.5">
-                        ${{ ((donation.tax_credit_amount || 0) / 100).toFixed(2) }}
-                      </span>
-                    </td>
-                    <td class="text-base-content/65">
-                      {{ donation.residency_province || '--' }} {{ donation.residency_country || '' }}
-                    </td>
-                    <td>
-                      <pc-status-badge
-                        [type]="donation.status === 'succeeded' ? 'success' : donation.status === 'pending' ? 'warning' : 'error'"
-                      >
-                        {{ donation.status }}
-                      </pc-status-badge>
-                    </td>
-                    <td class="font-mono text-[10px] text-base-content/50">
-                      {{ donation.stripe_session_id || 'Manual' }}
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="events" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (eventHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">
-              No event registrations found for this person.
-            </div>
-            } @else {
-            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table table-sm w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200">
-                    <th>Event</th>
-                    <th>Date</th>
-                    <th>Ticket</th>
-                    <th>Status</th>
-                    <th>Checked In</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (reg of eventHistory(); track reg.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td>
-                      <a [routerLink]="['/events/pages', reg.event_id]" class="link link-primary font-bold">
-                        {{ reg.event_name }}
-                      </a>
-                    </td>
-                    <td>{{ reg.start_time | date:'mediumDate' }}</td>
-                    <td class="font-light">{{ reg.ticket_type_name || '—' }}</td>
-                    <td>
-                      <pc-status-badge [type]="getEventStatusType(reg.status)">{{ reg.status }}</pc-status-badge>
-                    </td>
-                    <td class="font-mono">{{ reg.checked_in_at ? (reg.checked_in_at | date:'shortTime') : '—' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="connections" [activeTab]="activeTab()">
-          <pc-person-connections [personId]="id()" (countChange)="connectionCount.set($event)"></pc-person-connections>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="household" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (householdId() && !isPlaceholderHousehold()) { @defer {
-            <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
-            } @placeholder {
-            <div class="skeleton w-full h-32"></div>
-            } } @else {
-            <div class="text-center py-10 text-base-content/40 italic">Contact does not belong to a household</div>
-            }
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-  <!-- Collect Donation Modal -->
-  @if (showDonationModal()) {
-  <div class="modal modal-open z-50">
-    <div class="modal-box rounded-2xl border border-base-200 max-w-md p-6 bg-base-100 shadow-2xl">
-      <div class="flex justify-between items-center border-b border-base-200 pb-3 mb-4">
-        <h3 class="text-lg font-bold flex items-center gap-2">
-          <pc-icon name="currency-dollar" class="text-primary" [size]="5"></pc-icon>
-          Collect Donation
-        </h3>
-        <button type="button" class="btn btn-sm btn-circle btn-ghost" (click)="closeDonationModal()">✕</button>
-      </div>
-
-      <div class="space-y-4">
-        <p class="text-xs text-base-content/60">
-          Enter the donation amount in dollars. Residency validation and limit verification will be performed
-          automatically before redirecting to the payment gateway.
-        </p>
-
-        <!-- Donor Residency Profile -->
-        <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
-          <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
-            >Donor Residency Profile</span
-          >
-          <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
-            <pc-icon name="map-pin" [size]="4"></pc-icon>
-            {{ addressString() }}
-          </div>
-        </div>
-
-        <!-- Donation Amount input -->
-        <div class="flex flex-col gap-1.5">
-          <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
-          <div class="relative">
-            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
-            <input
-              id="donation_input"
-              type="number"
-              min="1"
-              placeholder="250"
-              class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
-              [(ngModel)]="donationAmount"
-            />
-          </div>
-        </div>
-
-        <!-- Error alert -->
-        @if (eligibilityError()) {
-        <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
-          <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
-          <span>{{ eligibilityError() }}</span>
-        </div>
-        }
-      </div>
-
-      <div class="modal-action border-t border-base-200 pt-4 mt-6 flex justify-end gap-3">
-        <button
-          type="button"
-          class="btn btn-ghost text-sm font-semibold"
-          (click)="closeDonationModal()"
-          [disabled]="isCheckingEligibility()"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary min-w-[140px] text-sm font-semibold"
-          (click)="submitDonation()"
-          [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
-        >
-          @if (isCheckingEligibility()) {
-          <span class="loading loading-spinner loading-xs mr-1.5"></span>
-          Verifying... } @else { Verify & Proceed }
-        </button>
-      </div>
-    </div>
-    <div class="modal-backdrop bg-black/40 backdrop-blur-sm" (click)="closeDonationModal()"></div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-view.ts
-
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked, OnInit } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { FormsModule } from '@angular/forms';
-import { type AddressType, type Households } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { PeopleInHousehold } from './people-in-household';
-import { UserService } from '../../../services/user.service';
-import { HouseholdsService } from '../../households/services/households-service';
-import { PersonsService } from '../services/persons-service';
-import { VolunteerService } from '../../../services/api/volunteer-service';
-import { DonationsService } from '../../../services/api/donations-service';
-import { EventsService } from '../../../services/api/events-service';
-import { ConnectionsService } from '../../../services/api/connections-service';
-import { PersonConnections } from './person-connections';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Tags } from '@experiences/tags/ui/tags';
-import { PcIconNameType } from '@icons/icons.index';
-
-interface SocialLinkDef {
-  name: string;
-  url: string | null | undefined;
-  icon: PcIconNameType;
-  color: string;
-}
-
-@Component({
-  selector: 'pc-person-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    FormsModule,
-    PeopleInHousehold,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    PcCard,
-    Tabs,
-    TabPanel,
-    StatusBadge,
-    StatCard,
-    ProfileCard,
-    DetailItem,
-    SystemMetadata,
-    Tags,
-    PersonConnections,
-  ],
-  templateUrl: './person-view.html',
-})
-export class PersonView implements OnInit {
-  readonly id = input.required<string>();
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly userService = inject(UserService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly personsSvc = inject(PersonsService);
-  protected readonly donationsSvc = inject(DonationsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly volunteerSvc = inject(VolunteerService);
-  private readonly eventsSvc = inject(EventsService);
-  private readonly connectionsSvc = inject(ConnectionsService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-
-  protected readonly person = signal<any | null>(null);
-
-  private readonly usersResource = resource({
-    loader: () => this.userService.getUsers(),
-  });
-  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
-
-  // Analytics & Lists
-  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
-  protected readonly volunteerHistory = signal<any[]>([]);
-  protected readonly donationStats = signal<{
-    cumulativeAmount: number;
-    limitAmount: number;
-    remainingAmount: number;
-  } | null>(null);
-  protected readonly donationHistory = signal<any[]>([]);
-  protected readonly eventHistory = signal<any[]>([]);
-  protected readonly eventStats = signal<{ events_count: number } | null>(null);
-  protected readonly connectionCount = signal(0);
-  protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
-  protected readonly openedNewslettersCount = computed(() => {
-    return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
-      .length;
-  });
-  protected readonly tags = signal<string[]>([]);
-  protected readonly issues = signal<string[]>([]);
-
-  // Donation Dialog State
-  protected readonly isCheckingEligibility = signal(false);
-  protected readonly donationAmount = signal<number | null>(null);
-  protected readonly showDonationModal = signal(false);
-  protected readonly eligibilityError = signal<string | null>(null);
-
-  // Address
-  protected readonly householdId = computed(() => this.person()?.household_id ?? null);
-  protected readonly householdResource = resource({
-    params: () => this.householdId(),
-    loader: async ({ params: householdId }) => {
-      if (!householdId) return null;
-      try {
-        return await this.householdsSvc.getById(householdId);
-      } catch {
-        return null;
-      }
-    },
-  });
-
-  protected readonly addressString = computed(() => {
-    const hh = this.householdResource.value() as Households | null | undefined;
-    if (!hh || hh.is_placeholder) return 'No Address Assigned';
-    return this.getFormattedAddress(hh);
-  });
-  protected readonly isPlaceholderHousehold = computed(() => {
-    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
-  });
-
-  // Contact initials and full name computation
-  protected readonly initials = computed(() => {
-    const first = this.person()?.first_name || '';
-    const last = this.person()?.last_name || '';
-    if (!first && !last) return '?';
-    return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
-  });
-
-  protected readonly fullName = computed(() => {
-    const p = this.person();
-    if (!p) return '';
-    return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
-  });
-
-  // Social icons
-  public socialLinks = computed<SocialLinkDef[]>(() => {
-    const p = this.person();
-    return [
-      {
-        name: 'LinkedIn',
-        url: p.linkedin,
-        icon: 'linkedin',
-        color: 'bg-[#0a66c2]', // LinkedIn Blue
-      },
-      {
-        name: 'X',
-        url: p.twitter,
-        icon: 'x',
-        color: 'bg-black', // X Black
-      },
-      {
-        name: 'Facebook',
-        url: p.facebook,
-        icon: 'facebook',
-        color: 'bg-[#1877f2]', // Facebook Blue
-      },
-      {
-        name: 'Instagram',
-        url: p.instagram,
-        icon: 'instagram',
-        color: 'bg-[#e1306c]', // Instagram Pink/Red
-      },
-    ];
-  });
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly personTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'emails', label: 'Conversations', icon: 'envelope', badge: this.activityData()?.emails?.length },
-    { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
-    { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
-    { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
-    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length },
-    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
-    { id: 'household', label: 'Household', icon: 'home' },
-  ]);
-
-  protected getMailStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'sent' || s === 'delivered') return 'success';
-    if (s === 'opened') return 'info';
-    if (s === 'read') return 'neutral';
-    return 'ghost';
-  }
-
-  protected getEmailEventType(eventType: string | null | undefined): any {
-    const et = String(eventType || '').toLowerCase();
-    if (et === 'open') return 'success';
-    if (et === 'click') return 'warning';
-    if (et === 'delivered' || et === 'processed') return 'info';
-    if (['bounce', 'dropped', 'spamreport', 'unsubscribe'].includes(et)) return 'error';
-    return 'ghost';
-  }
-
-  protected getShiftStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'attended') return 'success';
-    if (s === 'signed_up') return 'warning';
-    if (s === 'no_show') return 'error';
-    return 'ghost';
-  }
-
-  protected getEventStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'attended') return 'success';
-    if (s === 'registered') return 'warning';
-    if (s === 'no_show') return 'error';
-    if (s === 'cancelled') return 'neutral';
-    return 'ghost';
-  }
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      untracked(() => this.loadAllData(currentId));
-    });
-  }
-
-  public ngOnInit() {
-    // Standard Angular Init
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load person details
-      const personData = await this.personsSvc.getById(id);
-      this.person.set(personData);
-
-      // 2. Load tags and issues
-      const tagList = await this.personsSvc.getTags(id, 'tag');
-      this.tags.set(tagList);
-      const issueList = await this.personsSvc.getTags(id, 'issue');
-      this.issues.set(issueList);
-
-      // 3. Load volunteer stats and history
-      try {
-        const stats = await this.volunteerSvc.getVolunteerStats(id);
-        this.volunteerStats.set(stats);
-        const history = await this.volunteerSvc.getHistoryForPerson(id);
-        this.volunteerHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load volunteer details', err);
-      }
-
-      // 4. Load donations stats and history
-      try {
-        const stats = await this.donationsSvc.getStats(id);
-        this.donationStats.set(stats);
-        const history = await this.donationsSvc.getHistory(id);
-        this.donationHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load donations history', err);
-      }
-
-      // 5. Load event history
-      try {
-        const stats = await this.eventsSvc.getStatsForPerson(id);
-        this.eventStats.set(stats);
-        const history = await this.eventsSvc.getHistoryForPerson(id);
-        this.eventHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load event history', err);
-      }
-
-      // 6. Load connection count (tab badge — full list loads lazily inside the tab)
-      try {
-        const count = await this.connectionsSvc.countForPerson(id);
-        this.connectionCount.set(count);
-      } catch (err) {
-        console.error('Failed to load connection count', err);
-      }
-
-      // Check query params for Stripe Checkout success redirects
-      const params = this.route.snapshot.queryParams;
-      if (params['checkout_success'] === 'true' && params['session_id']) {
-        try {
-          await this.donationsSvc.confirmDonation(params['session_id']);
-          this.alertSvc.showSuccess('Donation processed successfully! Thank you for your support.');
-          // Reload donation stats/history after confirmation
-          const stats = await this.donationsSvc.getStats(id);
-          this.donationStats.set(stats);
-          const history = await this.donationsSvc.getHistory(id);
-          this.donationHistory.set(history || []);
-          this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
-        } catch (err) {
-          console.error('Failed to confirm stripe checkout session:', err);
-          this.alertSvc.showError('Finalizing payment verification...');
-        }
-      } else if (params['mock_donation_success'] === 'true' && params['session_id']) {
-        try {
-          const amt = Number(params['amount'] || 0);
-          await this.donationsSvc.confirmMockDonation({
-            personId: id,
-            amountCents: amt * 100,
-            sessionId: params['session_id'],
-            province: params['province'] || '',
-            country: params['country'] || '',
-          });
-          this.alertSvc.showSuccess('[MOCK] Donation recorded successfully!');
-          const stats = await this.donationsSvc.getStats(id);
-          this.donationStats.set(stats);
-          const history = await this.donationsSvc.getHistory(id);
-          this.donationHistory.set(history || []);
-          this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
-        } catch (err) {
-          console.error('Failed to record mock donation:', err);
-        }
-      }
-
-      // 5. Load interactions (emails + newsletters)
-      try {
-        const activity = await this.personsSvc.getActivity(id);
-        this.activityData.set(activity || { emails: [], newsletters: [] });
-      } catch (err) {
-        console.error('Failed to load activity log', err);
-      }
-    } catch (err) {
-      this.alertSvc.showError('Failed to load person details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected openCollectDonation() {
-    this.donationAmount.set(null);
-    this.eligibilityError.set(null);
-    this.showDonationModal.set(true);
-  }
-
-  protected closeDonationModal() {
-    this.showDonationModal.set(false);
-  }
-
-  protected async submitDonation() {
-    const amt = this.donationAmount();
-    if (amt === null || amt <= 0) {
-      this.alertSvc.showError('Please specify a valid donation amount.');
-      return;
-    }
-
-    this.isCheckingEligibility.set(true);
-    this.eligibilityError.set(null);
-
-    const hh = this.householdResource.value() as Households | null | undefined;
-    const address = {
-      country: hh?.country || 'CA',
-      state: hh?.state || 'ON',
-    };
-
-    try {
-      const eligibility = await this.donationsSvc.checkEligibility({
-        personId: this.id(),
-        amountCents: amt * 100,
-        address,
-      });
-
-      if (!eligibility.eligible) {
-        this.eligibilityError.set(eligibility.reason || 'Donor is ineligible to donate.');
-        this.isCheckingEligibility.set(false);
-        return;
-      }
-
-      this.closeDonationModal();
-      this.alertSvc.showSuccess('Redirecting to Stripe Checkout...');
-
-      // Redirect
-      const session = await this.donationsSvc.createCheckout({
-        personId: this.id(),
-        amountCents: amt * 100,
-        address,
-      });
-
-      if (session && session.url) {
-        window.location.href = session.url;
-      } else {
-        this.alertSvc.showError('Failed to initialize payment gateway.');
-      }
-    } catch (err: any) {
-      this.alertSvc.showError(err.message || 'Verification check failed.');
-    } finally {
-      this.isCheckingEligibility.set(false);
-    }
-  }
-
-  protected editPerson() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deletePerson() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Person',
-      message: 'Are you sure you want to delete this person? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.personsSvc.delete(this.id());
-      this.personsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Person deleted');
-      await this.router.navigate(['/people']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete person';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById().get(String(id))?.first_name ?? '?';
-  }
-
-  protected navigateToHousehold() {
-    const household_id = this.householdId();
-    if (household_id) {
-      this.router.navigate(['households', household_id]);
-    }
-  }
-
-  private getFormattedAddress(address: AddressType): string {
-    const parts: string[] = [];
-    const streetParts = [
-      address.apt ? `Apt ${address.apt}` : null,
-      address.street_num,
-      address.street1,
-      address.street2,
-    ].filter(Boolean);
-
-    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
-
-    if (streetParts.length) parts.push(streetParts.join(' ').trim());
-    if (locationParts.length) parts.push(locationParts.join(', ').trim());
-
-    const formatted = parts.join(', ').trim();
-    return formatted || 'No Address Assigned';
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/settings/ms-sync/ms-sync-settings.ts
 
 ```typescript
@@ -44192,2785 +45844,6 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
       clearInterval(this.pollingTimer);
       this.pollingTimer = null;
     }
-  }
-}
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar.html
-
-```html
-<ng-template #navLink let-nav>
-  <a
-    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="hover:font-bold hover:text-primary flex flex-auto items-center pb-1 pl-2 tracking-widest hover:rounded-lg !cursor-pointer"
-    (click)="this.closeMobile()"
-    [routerLink]="nav.route"
-    routerLinkActive="font-bold"
-    [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
-    [class.font-bold]="pendingRoute() === nav.route"
-  >
-    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span class="indicator pl-2 group-hover:md:visible text-sm" [class.invisible]="isEffectivelyNarrow()">
-      {{ nav.name }} @if (nav.indicator) {
-      <span class="indicator-item status status-primary"></span>
-      }
-    </span>
-  </a>
-</ng-template>
-
-<div
-  (mouseenter)="onSidebarHover(true)"
-  (mouseleave)="onSidebarHover(false)"
-  class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-44 transition-all duration-50"
-  [class.hidden]="!this.isMobileOpen()"
-  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
-  [class.w-18]="isEffectivelyNarrow() && !this.isMobileOpen()"
->
-  <div
-    [class.hidden]="isEffectivelyNarrow()"
-    class="mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
-  >
-    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
-  </div>
-
-  <div
-    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
-    class="avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
-  >
-    <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
-  </div>
-
-  @for (item of items(); track item.name) {
-  <div class="flex-none pl-2" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
-    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
-    <div
-      class="text-base-400 font-medium flex items-center justify-between pl-2 capitalize text-xs hover:cursor-pointer"
-      (click)="toggleCollapse(item.name)"
-    >
-      <span [class.text-[10px]]="isEffectivelyNarrow() && !hoveringSidebar()">
-        @if (isEffectivelyNarrow() && !hoveringSidebar()) { {{ item.short_name || item.name }} } @else { {{ item.name }}
-        }
-      </span>
-      @if (item.children?.length) {
-      <pc-swap
-        class="rotate-90 invisible mr-2"
-        [class.visible]="!isEffectivelyNarrow() || hoveringSidebar()"
-        swapOnIcon="chevron-double-left"
-        swapOffIcon="chevron-double-right"
-        animation="rotate"
-        [size]="4"
-        [checked]="isCollapsed(item.name)"
-        (click)="toggleCollapse(item.name)"
-        aria-label="Toggle section"
-        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
-      ></pc-swap>
-      }
-    </div>
-
-    @if (item.children && !isCollapsed(item.name)) {
-    <div class="flex flex-col space-y-1">
-      @for (child of item.children; track child.name) {
-      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
-      }
-    </div>
-    } } @else {
-    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
-    }
-  </div>
-  }
-
-  <div class="hidden flex-auto grow flex-col sm:flex">
-    <span class="min-h-full grow"></span>
-    <pc-swap
-      class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
-      swapOffIcon="chevron-double-right"
-      swapOnIcon="chevron-double-left"
-      [checked]="isDrawerFull()"
-      animation="rotate"
-      (click)="toggleDrawer()"
-      aria-label="Toggle drawer"
-      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
-    ></pc-swap>
-  </div>
-</div>
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
-
-```typescript
-import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { NgTemplateOutlet } from '@angular/common';
-import {
-  NavigationCancel,
-  NavigationError,
-  NavigationStart,
-  Router,
-  RouterLink,
-  RouterLinkActive,
-} from '@angular/router';
-import { filter, map } from 'rxjs';
-import { Icon } from '@icons/icon';
-import { Swap } from '@uxcommon/components/swap/swap';
-
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { ISidebarItem } from './sidebar-items';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-
-@Component({
-  selector: 'pc-sidebar',
-  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
-  templateUrl: './sidebar.html',
-  styles: [
-    `
-      .tooltip:before {
-        z-index: 100 !important;
-      }
-    `,
-  ],
-})
-export class Sidebar {
-  private readonly sidebarSvc = inject(SidebarService);
-  private readonly auth = inject(AuthService);
-  private readonly router = inject(Router);
-  private readonly destroyRef = inject(DestroyRef);
-
-  protected hoveringSidebar = signal(false);
-
-  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
-  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
-  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
-
-  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
-  protected readonly isEffectivelyNarrow = computed(
-    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
-  );
-
-  protected readonly pendingRoute = toSignal(
-    this.router.events.pipe(
-      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
-      map((e) => (e instanceof NavigationStart ? e.url : null)),
-    ),
-    { initialValue: null },
-  );
-
-  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
-
-  protected readonly items = computed(() => {
-    const role = this.auth.getUser()?.role;
-    const allItems = this.sidebarSvc.getItems()();
-    if (role === 'user') {
-      return allItems.map((item) => {
-        if (item.children) {
-          return {
-            ...item,
-            children: item.children.filter((child) => !child.adminOnly),
-          };
-        }
-        return item;
-      });
-    }
-    return allItems;
-  });
-
-  constructor() {
-    if (this._mql) {
-      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
-      this._mql.addEventListener('change', handler);
-      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
-    }
-
-    effect(() => {
-      const flatItems = this.flattenItems(this.items());
-      for (const item of flatItems) {
-        const key = this.getItemKey(item);
-        const visible = !item.hidden && !item.hiddenByFavourite;
-        const existing = this.visibilitySignals.get(key);
-        if (existing) {
-          existing.set(visible);
-        } else {
-          this.visibilitySignals.set(key, signal(visible));
-        }
-      }
-    });
-  }
-
-  protected closeMobile() {
-    this.sidebarSvc.closeMobile();
-  }
-
-  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
-    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
-  }
-
-  private getItemKey(item: ISidebarItem): string {
-    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
-    return prefix + item.name + (item.route ?? '');
-  }
-
-  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
-    const key = this.getItemKey(item);
-    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
-  }
-
-  protected isCollapsed(name: string): boolean {
-    return this.sidebarSvc.isCollapsed(name);
-  }
-
-  protected isDrawerFull() {
-    return this.sidebarSvc.isFull();
-  }
-
-  protected isDrawerHalf() {
-    return this.sidebarSvc.isHalf();
-  }
-
-  protected isMobileOpen() {
-    return this.sidebarSvc.isMobileOpen();
-  }
-
-  protected onSidebarHover(state: boolean) {
-    this.hoveringSidebar.set(state);
-  }
-
-  protected toggleCollapse(name: string) {
-    this.sidebarSvc.toggleCollapsed(name);
-  }
-
-  protected toggleDrawer() {
-    return this.sidebarSvc.toggleDrawer();
-  }
-}
-```
-
-## File: apps/frontend/src/app/services/api/donations-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import { TRPCService } from './trpc-service';
-
-@Service()
-export class DonationsService extends TRPCService<'donations'> {
-  // ── One-time donations ──────────────────────────────────────────────────────
-
-  public listDonations() {
-    return this.api.donations.listDonations.query();
-  }
-
-  public getHistory(personId: string) {
-    return this.api.donations.getPersonDonationHistory.query(personId);
-  }
-
-  public getStats(personId: string) {
-    return this.api.donations.getDonationStats.query(personId);
-  }
-
-  public checkEligibility(payload: {
-    personId: string;
-    amountCents: number;
-    address: { country?: string; state?: string };
-    isRecurring?: boolean;
-    remainingMonths?: number;
-  }) {
-    return this.api.donations.checkEligibility.query(payload);
-  }
-
-  public createCheckout(payload: {
-    personId: string;
-    amountCents: number;
-    address: { country?: string; state?: string };
-  }) {
-    return this.api.donations.createCheckout.mutate(payload);
-  }
-
-  public confirmDonation(sessionId: string) {
-    return this.api.donations.confirmDonation.mutate({ sessionId });
-  }
-
-  public confirmMockDonation(payload: {
-    personId: string;
-    amountCents: number;
-    sessionId: string;
-    province: string;
-    country: string;
-  }) {
-    return this.api.donations.confirmMockDonation.mutate(payload);
-  }
-
-  // ── Recurring pledges ───────────────────────────────────────────────────────
-
-  public createRecurringCheckout(payload: {
-    personId: string;
-    monthlyAmountCents: number;
-    address: { country?: string; state?: string };
-  }) {
-    return this.api.donations.createRecurringCheckout.mutate(payload);
-  }
-
-  public confirmMockPledge(payload: {
-    personId: string;
-    monthlyAmountCents: number;
-    mockSubId: string;
-    province: string;
-    country: string;
-  }) {
-    return this.api.donations.confirmMockPledge.mutate(payload);
-  }
-
-  public listPledges() {
-    return this.api.donations.listPledges.query();
-  }
-
-  public getPersonPledges(personId: string) {
-    return this.api.donations.getPersonPledges.query(personId);
-  }
-
-  public cancelPledge(pledgeId: string) {
-    return this.api.donations.cancelPledge.mutate({ pledgeId });
-  }
-
-  // ── Donation periods ────────────────────────────────────────────────────────
-
-  public getDonationPeriods() {
-    return this.api.donations.getDonationPeriods.query();
-  }
-
-  public createDonationPeriod(payload: {
-    name: string;
-    start_date: string;
-    end_date?: string | null;
-    limit_amount: number;
-  }) {
-    return this.api.donations.createDonationPeriod.mutate(payload);
-  }
-
-  public updateDonationPeriod(payload: {
-    id: string;
-    name?: string;
-    start_date?: string;
-    end_date?: string | null;
-    limit_amount?: number;
-    is_active?: boolean;
-  }) {
-    return this.api.donations.updateDonationPeriod.mutate(payload);
-  }
-
-  public deleteDonationPeriod(id: string) {
-    return this.api.donations.deleteDonationPeriod.mutate({ id });
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-
-/**
- * Column visibility dropdown shared by the mobile and desktop toolbars.
- * Rendered as the projected content of a `pc-grid-tool-btn` dropdown, so it
- * uses `display: contents` to stay a direct child of the DaisyUI `<details>`.
- *
- * The grid is passed in as an input rather than injected: as projected
- * content it does not reliably resolve the same `DataGrid` instance.
- *
- * `getColDefsForToolbar()` returns a plain (non-signal) array that is filled
- * in after init, so as an isolated component this would render once and stay
- * empty. `cols` reads the reactive `getColVisibilityMap()` (the colVisibility
- * signal) to recompute once the columns are populated.
- */
-@Component({
-  selector: 'pc-dg-columns-dropdown',
-  template: `
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
-      <li class="px-2 py-1 flex gap-2">
-        <button class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
-        <button class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
-        <button class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
-      </li>
-      @for (col of cols(); track col.field) {
-        @if (col.field) {
-          <li>
-            <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs"
-                [checked]="grid().getColVisibilityMap()[col.field!] !== false"
-                (change)="grid().toggleColPublic(col.field!, $any($event.target).checked)"
-              />
-              <span class="label-text">{{ col.headerName || col.field }}</span>
-            </label>
-          </li>
-        }
-      }
-    </ul>
-  `,
-  styles: [
-    `
-      :host {
-        display: contents;
-      }
-    `,
-  ],
-})
-export class DataGridColumnsDropdownComponent {
-  public readonly grid = input.required<any>();
-
-  protected readonly cols = computed<any[]>(() => {
-    // Establish a reactive dependency on the colVisibility signal so the list
-    // recomputes once the (non-signal) column defs are populated after init.
-    this.grid().getColVisibilityMap();
-    return this.grid().getColDefsForToolbar();
-  });
-}
-```
-
-## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
-
-```html
-<div class="p-6 max-w-7xl mx-auto">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="currency-dollar" class="text-primary" [size]="7"></pc-icon>
-        Donations
-      </h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        Track campaign contributions, donor residency checks, and issued tax credits.
-      </p>
-    </div>
-    <div class="flex gap-2 items-center">
-      <button
-        id="donations-refresh-btn"
-        class="btn btn-outline btn-sm gap-2"
-        title="Refresh donations log"
-        pcSpinOnClick
-        [disabled]="_loading.visible()"
-        (click)="refresh()"
-      >
-        <pc-icon name="arrow-path" [size]="4"></pc-icon>
-        Refresh
-      </button>
-    </div>
-  </div>
-
-  <!-- Tabs -->
-  <div role="tablist" class="tabs tabs-box mb-6 w-fit">
-    <a
-      routerLink="/donations"
-      routerLinkActive="tab-active"
-      [routerLinkActiveOptions]="{exact:true}"
-      role="tab"
-      class="tab font-semibold gap-1.5"
-    >
-      <pc-icon name="currency-dollar" [size]="4"></pc-icon>
-      One-time
-    </a>
-    <a routerLink="/donations/pledges" routerLinkActive="tab-active" role="tab" class="tab font-semibold gap-1.5">
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Monthly Pledges
-    </a>
-  </div>
-
-  @if (_loading.visible()) {
-  <progress class="progress w-full text-primary mb-6"></progress>
-  }
-
-  <!-- Stats Grid -->
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-    <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          Total Funds Collected
-        </div>
-        <div class="stat-value text-xl font-extrabold text-success sm:text-2xl mt-1">
-          {{ totalDonated() | currency:'USD':'symbol':'1.2-2' }}
-        </div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">Succeeded donations to date</div>
-      </div>
-    </div>
-
-    <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
-      <div class="stat p-4">
-        <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-          Total Transactions
-        </div>
-        <div class="stat-value text-xl font-extrabold text-info sm:text-2xl mt-1">{{ successCount() }}</div>
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">Successful checkout counts</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Grid / Table View -->
-  <div class="overflow-x-auto border border-base-300 rounded-xl bg-base-100 shadow-xl">
-    <table class="table w-full">
-      <thead>
-        <tr class="bg-base-200/50">
-          <th>Donor</th>
-          <th>Amount</th>
-          <th>Tax Credit</th>
-          <th>Status</th>
-          <th>Residency</th>
-          <th class="text-right">Donated Date</th>
-        </tr>
-      </thead>
-      <tbody>
-        @for (d of donations(); track d.id) {
-        <tr class="hover:bg-base-200/30 transition-all duration-200">
-          <td>
-            <div class="flex flex-col">
-              <a [routerLink]="['/people', d.person_id]" class="font-semibold text-primary hover:underline text-sm">
-                {{ d.person_first_name }} {{ d.person_last_name }}
-              </a>
-              <span class="text-xs text-base-content/50">{{ d.person_email }}</span>
-            </div>
-          </td>
-          <td class="font-bold text-base-content text-sm">{{ formatCurrency(d.amount) }}</td>
-          <td class="text-sm text-base-content/85">{{ formatCurrency(d.tax_credit_amount) }}</td>
-          <td>
-            @if (d.status === 'succeeded') {
-            <span class="badge badge-success text-xs font-semibold px-2.5 py-1">Succeeded</span>
-            } @else if (d.status === 'failed') {
-            <span class="badge badge-error text-xs font-semibold px-2.5 py-1">Failed</span>
-            } @else if (d.status === 'pending') {
-            <span class="badge badge-warning text-xs font-semibold px-2.5 py-1">Pending</span>
-            } @else {
-            <span class="badge badge-ghost text-xs font-semibold px-2.5 py-1">{{ d.status || 'unknown' }}</span>
-            }
-          </td>
-          <td>
-            <span class="text-xs font-mono uppercase bg-base-200 px-2 py-0.5 rounded font-bold">
-              {{ d.country }} @if (d.state) { - {{ d.state }} }
-            </span>
-          </td>
-          <td class="text-right text-xs text-base-content/75 tabular-nums">{{ formatDate(d.created_at) }}</td>
-        </tr>
-        } @empty {
-        <tr>
-          <td colspan="5" class="text-center py-16 text-base-content/50">
-            <pc-icon name="currency-dollar" class="text-base-content/30 mb-2 mx-auto" [size]="12"></pc-icon>
-            <h3 class="font-semibold text-base-content/70">No donations found</h3>
-            <p class="text-xs text-base-content/50 mt-1">
-              Configure your Stripe integration and set up a donation form to get started.
-            </p>
-          </td>
-        </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/events/ui/events-grid.ts
-
-```typescript
-import { Component } from '@angular/core';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { EventsFrontendService } from '../services/events-frontend-service';
-
-@Component({
-  selector: 'pc-events-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Event Pages"
-        description="Manage public event pages with RSVP and ticketing for fundraisers, town halls, and meet-and-greets."
-        [showDescription]="true"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="true"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="add-ticket"
-        [showArchiveIcon]="true"
-        archiveIcon="archive-box-arrow-down"
-        archiveTip="See past events"
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: EventsFrontendService },
-    provideDataGridConfig({ messages: { exportFileName: 'events-export.csv' } }),
-  ],
-})
-export class EventsGridComponent {
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
-  protected col = [
-    { field: 'name', headerName: 'Event Name', editable: true },
-    { field: 'location_address', headerName: 'Location', editable: true },
-    {
-      field: 'start_time',
-      headerName: 'Start Time',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.start_time),
-      editable: false,
-    },
-    {
-      field: 'end_time',
-      headerName: 'End Time',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.end_time),
-      editable: false,
-    },
-    {
-      field: 'is_published',
-      headerName: 'Published',
-      valueFormatter: (p: any) => (p.value ? 'Yes' : 'Draft'),
-      editable: false,
-    },
-    {
-      field: 'registrations_count',
-      headerName: 'Registrations',
-      editable: false,
-    },
-    {
-      field: 'capacity',
-      headerName: 'Capacity',
-      editable: false,
-      valueFormatter: (p: any) => p.value ?? 'Unlimited',
-    },
-  ];
-
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
-
-```typescript
-import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { FormsService } from '../services/forms-service';
-import { ListsService } from '../../lists/services/lists-service';
-import { UserService } from '../../../services/user.service';
-import { type IAuthUser } from '../../../../../../../libs/common/src';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { environment } from '../../../../environments/environment';
-
-@Component({
-  selector: 'pc-form-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    PcCard,
-    Tabs,
-    TabPanel,
-    StatCard,
-    ProfileCard,
-    DetailRow,
-  ],
-  templateUrl: './form-view.html',
-})
-export class FormViewComponent {
-  private readonly alertSvc = inject(AlertService);
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  readonly id = input.required<string>();
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly formRecord = signal<any | null>(null);
-  protected readonly submissionsCount = signal(0);
-  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private readonly router = inject(Router);
-  private usersById = new Map<string, IAuthUser>();
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly formTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'targetActions', label: 'Target Lists & Actions', icon: 'queue-list' },
-    { id: 'fieldsPreview', label: 'Fields & Layout', icon: 'information-circle' },
-  ]);
-
-  protected readonly selectedFields = computed(() => {
-    const record = this.formRecord();
-    if (!record) return [];
-    if (record.fields) {
-      return Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
-    }
-    return ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-  });
-
-  protected readonly fieldsCount = computed(() => {
-    const fields = this.selectedFields();
-    // Email is always required and present
-    const standardFieldsCount = fields.filter((f: string) => f !== 'email').length;
-    return standardFieldsCount + 1;
-  });
-
-  protected readonly targetListsNames = computed(() => {
-    const record = this.formRecord();
-    if (!record || !record.target_lists) return [];
-    const listIds: string[] = Array.isArray(record.target_lists)
-      ? record.target_lists
-      : JSON.parse(record.target_lists || '[]');
-
-    return listIds.map((id) => this.availableLists().find((l) => l.id === id)?.name).filter(Boolean) as string[];
-  });
-
-  protected readonly embedSnippet = computed(() => {
-    const record = this.formRecord();
-    if (!record || !this.id()) return '';
-    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
-    const fields = this.selectedFields();
-    const isDonation = record.form_type === 'donation';
-    const isRecurring = record.form_type === 'recurring_donation';
-    const isAnyDonation = isDonation || isRecurring;
-
-    const addressFields = isAnyDonation
-      ? `
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
-    <input type="text" name="street1" placeholder="123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
-      <input type="text" name="city" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal *</label>
-      <input type="text" name="zip" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-  </div>
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
-      <input type="text" name="state" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country *</label>
-      <input type="text" name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-  </div>`
-      : '';
-
-    const amountField = isDonation
-      ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($) *</label>
-    <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : isRecurring
-        ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
-    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
-  </div>`
-        : '';
-
-    const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
-
-    return `<!-- PeopleCRM Embeddable Form -->
-<form action="${apiOrigin}/api/forms/submit/${this.id()}" method="POST" style="max-width: 400px; font-family: sans-serif;">
-  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
-${
-  fields.includes('first_name') || isAnyDonation
-    ? `  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isAnyDonation ? ' *' : ''}</label>
-    <input type="text" name="first_name" placeholder="First Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-    : ''
-}${
-      fields.includes('last_name') || isAnyDonation
-        ? `\n  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isAnyDonation ? ' *' : ''}</label>
-    <input type="text" name="last_name" placeholder="Last Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-        : ''
-    }
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
-    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>${
-    !isAnyDonation && fields.includes('mobile')
-      ? `\n  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
-    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : ''
-  }${
-    !isAnyDonation && fields.includes('notes')
-      ? `\n  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
-    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
-  </div>`
-      : ''
-  }${addressFields}${amountField}
-  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
-</form>`;
-  });
-
-  protected readonly formUrl = computed(() => {
-    if (!this.id()) return '';
-    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${this.id()}`;
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      untracked(() => this.loadAllData(currentId));
-    });
-
-    // Load users
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load Form details
-      const record = await this.formsSvc.getById(id);
-      this.formRecord.set(record);
-
-      // 2. Load available Lists to resolve list names
-      const result = await this.listsSvc.getAll({ limit: 100 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows.map((row: any) => ({
-          id: String(row.id),
-          name: String(row.name),
-        })),
-      );
-
-      // 3. Load submissions count
-      const subCount = await this.formsSvc.getSubmissionsCount(id);
-      this.submissionsCount.set(subCount);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load form details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editForm() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteForm() {
-    if (!this.id()) return;
-    const backRoute: string = this.route.snapshot.data['backRoute'] ?? '/forms';
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Web Form',
-      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.formsSvc.delete(this.id());
-      this.formsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Web form deleted');
-      await this.router.navigate([backRoute]);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete web form';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copySnippet(): void {
-    const code = this.embedSnippet();
-    if (!code) return;
-    navigator.clipboard.writeText(code).then(
-      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
-
-  protected getCreatedAt(): Date | null {
-    const date = this.formRecord()?.created_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUpdatedAt(): Date | null {
-    const date = this.formRecord()?.updated_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.html
-
-```html
-<div class="space-y-8">
-  <!-- Stripe Connection Section -->
-  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-    <div class="border-b border-base-200 pb-3 flex items-center justify-between">
-      <h3 class="text-lg font-semibold flex items-center gap-2">
-        <pc-icon name="credit-card" class="text-primary" [size]="5"></pc-icon>
-        Stripe Integration
-      </h3>
-      <span
-        class="badge badge-sm font-medium"
-        [class.badge-success]="stripeSecretKey().trim()"
-        [class.badge-neutral]="!stripeSecretKey().trim()"
-      >
-        {{ stripeSecretKey().trim() ? 'Connected' : 'Not Configured' }}
-      </span>
-    </div>
-
-    <!-- Security Banner -->
-    <div
-      class="alert alert-warning text-xs rounded-xl p-3 border-warning/30 bg-warning/5 text-warning-content shadow-sm flex items-start gap-3"
-    >
-      <pc-icon name="shield-exclamation" [size]="5" class="shrink-0 mt-0.5 text-warning"></pc-icon>
-      <div>
-        <strong class="font-semibold">Security Best Practice: Use Stripe Restricted API Keys (RAK)</strong>
-        <p class="mt-0.5 text-base-content/70">
-          For maximum security, do not provide your account's master Secret Key. Instead, go to your Stripe Dashboard
-          and create a <strong class="font-medium">Restricted API Key (RAK)</strong> with the following permissions:
-        </p>
-        <ul class="list-disc list-inside mt-1 space-y-0.5 font-medium text-base-content/85">
-          <li><code class="text-[10px] bg-base-300 px-1 rounded">Checkout Sessions</code>: Write</li>
-          <li><code class="text-[10px] bg-base-300 px-1 rounded">Payment Intents</code>: Read</li>
-          <li><code class="text-[10px] bg-base-300 px-1 rounded">Webhooks</code>: Write</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="grid gap-6 md:grid-cols-2 pt-2">
-      <!-- Stripe Secret Key -->
-      <div class="flex flex-col gap-1.5">
-        <label for="stripe_secret_key" class="text-sm font-semibold text-base-content/90"> Stripe Secret Key </label>
-        <input
-          id="stripe_secret_key"
-          type="password"
-          placeholder="sk_live_..."
-          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
-          [value]="stripeSecretKey()"
-          (input)="stripeSecretKey.set($any($event.target).value)"
-        />
-        <p class="text-[11px] text-base-content/50">
-          Used to securely authenticate payments with Stripe. Starts with <code class="font-mono">sk_live_</code> or
-          <code class="font-mono">sk_test_</code>.
-        </p>
-      </div>
-
-      <!-- Stripe Webhook Secret -->
-      <div class="flex flex-col gap-1.5">
-        <label for="stripe_webhook_secret" class="text-sm font-semibold text-base-content/90">
-          Stripe Webhook Signing Secret
-        </label>
-        <input
-          id="stripe_webhook_secret"
-          type="password"
-          placeholder="whsec_..."
-          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
-          [value]="stripeWebhookSecret()"
-          (input)="stripeWebhookSecret.set($any($event.target).value)"
-        />
-        <p class="text-[11px] text-base-content/50">
-          Enables signature verification of incoming Stripe webhook notifications. Starts with
-          <code class="font-mono">whsec_</code>.
-        </p>
-      </div>
-    </div>
-
-    <!-- Webhook Instructions Info Card -->
-    <div
-      class="card border border-base-200 bg-base-100 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-4 shadow-sm"
-    >
-      <div class="space-y-1">
-        <h4 class="text-sm font-bold text-base-content/90 flex items-center gap-1.5">
-          <pc-icon name="information-circle" class="text-info" [size]="4"></pc-icon>
-          Webhook Endpoint URL
-        </h4>
-        <p class="text-xs text-base-content/65 max-w-xl">
-          Enter this endpoint URL in your Stripe Developer Dashboard webhooks configuration to receive donation
-          completion notifications:
-        </p>
-        <div
-          class="mt-2 text-xs font-mono bg-base-200/50 p-2 rounded border border-base-300 break-all select-all inline-block"
-        >
-          {{ webhookUrl() }}
-        </div>
-      </div>
-      <button
-        type="button"
-        class="btn btn-sm btn-outline btn-primary shrink-0 self-end sm:self-center"
-        (click)="copyWebhookUrl()"
-      >
-        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-        Copy URL
-      </button>
-    </div>
-  </div>
-
-  <!-- Donation Limit & Residency Restrictions Section -->
-  <div class="grid gap-6 md:grid-cols-2">
-    <!-- Donation Periods card -->
-    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6 flex flex-col">
-      <div class="border-b border-base-200 pb-3 flex items-center justify-between">
-        <h3 class="text-lg font-semibold flex items-center gap-2">
-          <pc-icon name="calendar" class="text-primary" [size]="5"></pc-icon>
-          Donation Limit Periods
-        </h3>
-        <button
-          type="button"
-          class="btn btn-xs btn-primary"
-          (click)="showAddPeriod.set(true)"
-          [hidden]="showAddPeriod()"
-        >
-          <pc-icon name="plus" [size]="3"></pc-icon>
-          Add Period
-        </button>
-      </div>
-      <p class="text-xs text-base-content/60">
-        Define campaign periods with custom date ranges and maximum limits instead of a flat calendar year. The active
-        period covering today is used for all eligibility checks. If no period is defined, the fallback annual limit
-        below applies.
-      </p>
-
-      <!-- Existing periods list -->
-      <div class="space-y-2">
-        @for (period of donationPeriods(); track period.id) {
-        <div class="flex items-start justify-between gap-3 p-3 rounded-lg border border-base-200 bg-base-100 text-xs">
-          <div class="space-y-0.5 flex-1 min-w-0">
-            <div class="font-bold text-base-content truncate">{{ period.name }}</div>
-            <div class="text-base-content/60">
-              {{ formatDate(period.start_date) }} – {{ period.end_date ? formatDate(period.end_date) : 'No end date' }}
-            </div>
-            <div class="flex items-center gap-2 mt-1">
-              <span class="font-semibold text-primary">${{ (period.limit_amount / 100).toLocaleString() }} limit</span>
-              @if (isPeriodActive(period)) {
-              <span class="badge badge-xs badge-success font-semibold">Active now</span>
-              } @else if (period.is_active) {
-              <span class="badge badge-xs badge-neutral font-semibold">Enabled</span>
-              } @else {
-              <span class="badge badge-xs badge-ghost font-semibold">Disabled</span>
-              }
-            </div>
-          </div>
-          <div class="flex items-center gap-1 shrink-0">
-            <input
-              type="checkbox"
-              class="toggle toggle-xs toggle-success"
-              [checked]="period.is_active"
-              (change)="togglePeriodActive(period)"
-              title="Enable/disable period"
-            />
-            <button type="button" class="btn btn-xs btn-ghost text-error" (click)="deletePeriod(period)">
-              <pc-icon name="trash" [size]="3"></pc-icon>
-            </button>
-          </div>
-        </div>
-        } @empty {
-        <div class="text-xs text-base-content/50 italic py-2 text-center">
-          No periods defined. Using fallback annual limit.
-        </div>
-        }
-      </div>
-
-      <!-- Add period form -->
-      @if (showAddPeriod()) {
-      <div class="space-y-3 p-4 rounded-xl border border-base-300 bg-base-200/20 mt-1">
-        <h4 class="text-sm font-bold text-base-content/90">New Donation Period</h4>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold">Period Name</label>
-          <input
-            type="text"
-            class="input input-sm input-bordered bg-base-200/30"
-            placeholder="e.g. 2024 Municipal Campaign"
-            [value]="newPeriodName()"
-            (input)="newPeriodName.set($any($event.target).value)"
-          />
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold">Start Date</label>
-            <input
-              type="date"
-              class="input input-sm input-bordered bg-base-200/30"
-              [value]="newPeriodStartDate()"
-              (input)="newPeriodStartDate.set($any($event.target).value)"
-            />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold">End Date <span class="text-base-content/40">(optional)</span></label>
-            <input
-              type="date"
-              class="input input-sm input-bordered bg-base-200/30"
-              [value]="newPeriodEndDate()"
-              (input)="newPeriodEndDate.set($any($event.target).value)"
-            />
-          </div>
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold">Limit per Donor ($)</label>
-          <div class="relative max-w-xs">
-            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-bold">$</span>
-            <input
-              type="number"
-              min="1"
-              class="input input-sm input-bordered bg-base-200/30 pl-6 w-full"
-              [ngModel]="newPeriodLimit()"
-              (ngModelChange)="newPeriodLimit.set($event)"
-            />
-          </div>
-        </div>
-        <div class="flex items-center gap-2 pt-1">
-          <button type="button" class="btn btn-sm btn-primary" (click)="addPeriod()" [disabled]="isSavingPeriod()">
-            @if (isSavingPeriod()) { <span class="loading loading-spinner loading-xs"></span> } Save Period
-          </button>
-          <button type="button" class="btn btn-sm btn-ghost" (click)="showAddPeriod.set(false)">Cancel</button>
-        </div>
-      </div>
-      }
-
-      <!-- Fallback annual limit (used when no period is active) -->
-      <div class="border-t border-base-200 pt-4 mt-2">
-        <p class="text-xs text-base-content/50 mb-2 font-semibold">Fallback: Calendar Year Limit</p>
-        <p class="text-[11px] text-base-content/40 mb-2">Used when no donation period covers the current date.</p>
-        <div class="relative max-w-xs">
-          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-semibold">$</span>
-          <input
-            id="donation_limit"
-            type="number"
-            min="1"
-            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-sm font-semibold"
-            [value]="donationLimit()"
-            (input)="donationLimit.set($any($event.target).value)"
-          />
-        </div>
-      </div>
-    </div>
-
-    <!-- Residency restrictions card -->
-    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-      <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-        <pc-icon name="map-pin" class="text-primary" [size]="5"></pc-icon>
-        Residency Restrictions
-      </h3>
-      <p class="text-xs text-base-content/60">
-        Filter and restrict eligibility based on where the donor resides. Useful for regional municipal, provincial, or
-        state elections.
-      </p>
-
-      <div class="space-y-4">
-        <!-- Toggle Restriction -->
-        <label class="flex items-center gap-3 cursor-pointer py-1">
-          <input
-            id="restrict_residency"
-            type="checkbox"
-            class="toggle toggle-primary toggle-md"
-            [checked]="restrictResidency()"
-            (change)="restrictResidency.set($any($event.target).checked)"
-          />
-          <span class="text-sm font-semibold text-base-content/90"> Enforce residency restrictions </span>
-        </label>
-
-        @if (restrictResidency()) {
-        <div class="space-y-4 pt-2 animate-fade-in relative">
-          <!-- Autocomplete Allowed Countries Picker -->
-          <div class="flex flex-col gap-1.5 relative">
-            <label class="text-xs font-semibold text-base-content/85"> Allowed Countries </label>
-            <div class="flex flex-wrap gap-1.5 p-2 bg-base-200/30 rounded-lg border border-base-200">
-              @for (cCode of selectedCountries(); track cCode) {
-              <span class="badge badge-sm badge-primary gap-1.5 py-2 px-2.5 font-medium">
-                {{ getCountryName(cCode) }}
-                <button
-                  type="button"
-                  class="text-[10px] hover:text-base-content font-bold"
-                  (click)="removeCountry(cCode)"
-                >
-                  ×
-                </button>
-              </span>
-              }
-              <input
-                type="text"
-                placeholder="Type to search country..."
-                class="bg-transparent border-none outline-none text-xs flex-1 min-w-[120px]"
-                [value]="countrySearch()"
-                (input)="countrySearch.set($any($event.target).value); showCountryDropdown.set(true)"
-                (focus)="showCountryDropdown.set(true)"
-                (blur)="showCountryDropdown.set(false)"
-              />
-            </div>
-
-            @if (showCountryDropdown() && availableCountriesToSelect().length) {
-            <!-- Use mousedown to prevent input blur before selecting -->
-            <ul
-              class="absolute z-50 left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 text-xs"
-            >
-              @for (c of availableCountriesToSelect(); track c.code) {
-              <li>
-                <button
-                  type="button"
-                  class="w-full text-left px-3 py-2 hover:bg-base-200/50 font-medium"
-                  (mousedown)="selectCountry(c); $event.preventDefault()"
-                >
-                  {{ c.name }} ({{ c.code }})
-                </button>
-              </li>
-              }
-            </ul>
-            }
-          </div>
-          <!-- Allowed Province/State Checkboxes for Selected Countries -->
-          @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() || isFranceSelected() || isIndiaSelected())
-          {
-          <div class="flex flex-col gap-3 p-4 bg-base-100 border border-base-200 rounded-xl max-h-64 overflow-y-auto">
-            <label class="text-xs font-bold text-base-content/85 uppercase tracking-wide">
-              Allowed Provinces & States
-            </label>
-
-            @if (isCanadaSelected()) {
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">Canada Provinces</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (p of canadaProvinces; track p.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(p.code)"
-                    (change)="toggleRegion(p.code)"
-                  />
-                  <span>{{ p.name }} ({{ p.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isUsaSelected()) { @if (isCanadaSelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">United States States</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (s of usStates; track s.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(s.code)"
-                    (change)="toggleRegion(s.code)"
-                  />
-                  <span>{{ s.name }} ({{ s.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isGermanySelected()) { @if (isCanadaSelected() || isUsaSelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">Germany States</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (s of germanyStates; track s.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(s.code)"
-                    (change)="toggleRegion(s.code)"
-                  />
-                  <span>{{ s.name }} ({{ s.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isFranceSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">France Regions</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (r of franceRegions; track r.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(r.code)"
-                    (change)="toggleRegion(r.code)"
-                  />
-                  <span>{{ r.name }} ({{ r.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isIndiaSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() ||
-            isFranceSelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">India States & UTs</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (s of indiaStates; track s.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(s.code)"
-                    (change)="toggleRegion(s.code)"
-                  />
-                  <span>{{ s.name }} ({{ s.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            }
-          </div>
-          }
-        </div>
-        }
-      </div>
-    </div>
-  </div>
-
-  <!-- Tax Credit Configuration -->
-  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-    <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-      <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
-      Tax Credit Tiers
-    </h3>
-    <p class="text-xs text-base-content/60">
-      Define progressive tax credit brackets. Tax credits are computed automatically based on cumulative donations
-      inside a calendar year.
-    </p>
-
-    <!-- Table of existing tiers -->
-    <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl mt-3 shadow-sm">
-      <table class="table w-full text-xs">
-        <thead>
-          <tr class="border-b border-base-200 bg-base-50">
-            <th class="font-bold text-base-content/70">Bracket Tier</th>
-            <th class="font-bold text-base-content/70">Up to Limit</th>
-            <th class="font-bold text-base-content/70">Credit Percentage</th>
-            <th class="font-bold text-base-content/70 text-right w-24">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (tier of taxCreditTiers(); track $index) {
-          <tr class="hover:bg-base-200/20 border-b border-base-200">
-            <td class="font-bold text-base-content">Tier {{ $index + 1 }}</td>
-            <td class="font-semibold text-base-content/80">${{ tier.limit.toLocaleString() }}</td>
-            <td>
-              <span class="badge badge-success gap-1 font-semibold py-2 px-2.5"> {{ tier.rate * 100 }}% </span>
-            </td>
-            <td class="text-right">
-              <button
-                type="button"
-                class="btn btn-xs btn-ghost text-error font-medium hover:bg-error/10"
-                (click)="removeTier($index)"
-              >
-                Delete
-              </button>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="4" class="text-center py-6 text-base-content/50 italic">
-              No tax credit tiers defined yet. Add a tier below to set up credit calculations.
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Progressive bracket summary -->
-    @if (taxCreditTiers().length) {
-    <div class="mt-4 p-4 rounded-xl border border-base-200 bg-base-200/20 text-xs">
-      <h4 class="font-bold text-base-content/85 flex items-center gap-1.5 mb-2">
-        <pc-icon name="information-circle" class="text-primary" [size]="4"></pc-icon>
-        Tax Credit Bracket Summary (Plain Language)
-      </h4>
-      <ul class="list-disc list-inside space-y-1 text-base-content/75 font-semibold">
-        @for (line of taxCreditSummary(); track $index) {
-        <li>{{ line }}</li>
-        }
-      </ul>
-    </div>
-    }
-
-    <!-- Add new tier form -->
-    <div
-      class="card border border-base-200 bg-base-100 p-4 rounded-xl flex flex-wrap sm:flex-nowrap items-end gap-4 mt-3 shadow-sm"
-    >
-      <!-- Tier Limit -->
-      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
-        <label for="new_limit" class="text-xs font-semibold text-base-content/95"> Bracket Upper Limit ($) </label>
-        <div class="relative">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">$</span>
-          <input
-            id="new_limit"
-            type="number"
-            min="1"
-            placeholder="500"
-            class="input input-bordered focus:input-primary w-full pl-6 bg-base-200/20 text-xs font-semibold"
-            [ngModel]="newLimit()"
-            (ngModelChange)="newLimit.set($event)"
-          />
-        </div>
-      </div>
-
-      <!-- Tier Rate -->
-      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
-        <label for="new_rate" class="text-xs font-semibold text-base-content/95"> Credit Percentage (%) </label>
-        <div class="relative">
-          <input
-            id="new_rate"
-            type="number"
-            min="0"
-            max="100"
-            placeholder="75"
-            class="input input-bordered focus:input-primary w-full pr-7 bg-base-200/20 text-xs font-semibold"
-            [ngModel]="newRate()"
-            (ngModelChange)="newRate.set($event)"
-          />
-          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">%</span>
-        </div>
-      </div>
-
-      <!-- Add button -->
-      <button
-        type="button"
-        class="btn btn-sm btn-primary w-full sm:w-auto mt-2 sm:mt-0 font-semibold"
-        (click)="addTier()"
-      >
-        <pc-icon name="plus" [size]="4"></pc-icon>
-        Add Tier
-      </button>
-    </div>
-  </div>
-
-  <!-- Action buttons footer -->
-  <div class="border-t border-base-200 pt-6 mt-8 flex items-center justify-between">
-    <div>
-      @if (isSaving()) {
-      <span class="text-sm font-medium text-base-content/60 flex items-center">
-        <span class="loading loading-spinner loading-xs mr-2"></span>
-        Saving donations configuration…
-      </span>
-      }
-    </div>
-
-    <div class="flex items-center gap-3">
-      <button
-        type="button"
-        class="btn btn-ghost hover:bg-base-200 font-semibold text-sm"
-        (click)="reset()"
-        [disabled]="isSaving()"
-      >
-        Reset
-      </button>
-      <button
-        type="button"
-        class="btn btn-primary min-w-[120px] font-semibold text-sm"
-        (click)="save()"
-        [disabled]="isSaving()"
-      >
-        @if (isSaving()) {
-        <span class="loading loading-spinner loading-xs mr-2"></span>
-        } Save Changes
-      </button>
-    </div>
-  </div>
-</div>
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
-
-```typescript
-import { Component, computed, inject } from '@angular/core';
-import { DataGrid } from '../datagrid';
-import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
-import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
-import { DataGridFilterSectionComponent } from './datagrid-filter-section';
-import { GridActionComponent } from '../tool-button';
-import { Icon } from '@icons/icon';
-import { MultiselectFilterComponent } from './multiselect-filter';
-import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
-
-@Component({
-  selector: 'pc-dg-toolbar',
-  imports: [
-    GridActionComponent,
-    Icon,
-    MultiselectFilterComponent,
-    SingleselectFilterComponent,
-    DataGridColumnsDropdownComponent,
-    DataGridFilterDropdownComponent,
-    DataGridFilterSectionComponent,
-  ],
-  templateUrl: 'datagrid-toolbar.html',
-})
-export class DataGridToolbarComponent {
-  public readonly grid: any = inject(DataGrid);
-
-  readonly narrowTypeOptions = computed<SingleSelectOption[]>(() => this.grid.narrowTypeOptions());
-  readonly listOptions = computed<SingleSelectOption[]>(() =>
-    this.grid.availableLists().map((l: any) => ({ value: l.id, label: l.name })),
-  );
-
-  public onAdd() {
-    this.grid.doAdd();
-  }
-
-  public onClone() {
-    this.grid.doClone();
-  }
-
-  public onMergeSelected() {
-    this.grid.doConfirmMerge();
-  }
-
-  public onDeleteSelected() {
-    this.grid.doConfirmDelete();
-  }
-
-  public onExportCsv() {
-    this.grid.doConfirmExport();
-  }
-
-  public onImportCsv() {
-    this.grid.doImportCSV();
-  }
-
-  public onRedo() {
-    this.grid.redo();
-  }
-
-  public onRefresh() {
-    this.grid.doRefresh();
-  }
-
-  public onToggleArchive() {
-    this.grid.toggleArchiveModePublic();
-  }
-
-  public onToggleFilters() {
-    this.grid.filter();
-  }
-
-  public onUndo() {
-    this.grid.undo();
-  }
-
-  public onResetAllWidths() {
-    this.grid.resetAllWidthsPublic();
-  }
-
-  public onHideAllCols() {
-    this.grid.hideAllColsPublic();
-  }
-
-  public onShowAllCols() {
-    this.grid.showAllColsPublic();
-  }
-
-  public onToggleCol(colId: string, visible: boolean) {
-    this.grid.toggleColPublic(colId, visible);
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
-
-```html
-@if (displayTitle()) {
-<pc-grid-header
-  [title]="displayTitle()!"
-  [open]="showDescription()"
-  [description]="description() || ''"
-></pc-grid-header>
-}
-
-<div class="flex h-full w-full flex-col">
-  @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
-  <progress class="progress h-1"></progress>
-  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
-      >All {{ displayedCount() }} rows on this page are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="selectAllMatching()"
-      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
-      >Select all {{ totalCountAll() }} rows</a
-    >
-  </div>
-  } @if (allSelected()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
-      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="clearAllSelection()"
-      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
-      >Clear selection</a
-    >
-  </div>
-  }
-  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
-    <table #gridTable class="table w-full">
-      <thead>
-        <tr>
-          @if (enableSelection()) {
-          <th
-            class="border-r border-base-300 pl-2 selection-col"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <input
-              type="checkbox"
-              class="checkbox checkbox-sm"
-              [checked]="!allSelected() && tableAllPageSelected()"
-              [indeterminate]="!allSelected() && tableSomePageSelected()"
-              (change)="onHeaderCheckbox($any($event.target).checked)"
-            />
-          </th>
-          } @for (h of leafHeaders(); track h.id) {
-          <th
-            role="columnheader"
-            class="cursor-grab border-r border-base-300 pl-2 relative"
-            [attr.data-col-id]="h.column?.id"
-            [attr.aria-sort]="ariaSortHeader(h)"
-            [draggable]="true"
-            (dragstart)="onHeaderDragStart(h, $event)"
-            (dragover)="onHeaderDragOver(h, $event)"
-            (drop)="onHeaderDrop(h, $event)"
-            [style.width.px]="columnWidthPx(h.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
-          >
-            <div class="flex items-center gap-2" data-header-content>
-              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
-                {{ h.column?.columnDef?.header || h.column?.id }}
-              </span>
-              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
-              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
-                <label
-                  tabindex="0"
-                  class="btn btn-xs"
-                  [class.btn-ghost]="!isColFiltered(h.column.id)"
-                  [class.btn-primary]="isColFiltered(h.column.id)"
-                  title="Column options"
-                  i18n-title="@@datagrid.columns.optionsTitle"
-                >
-                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
-                </label>
-                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
-                  @let col = getColDefById(h.column.id);
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
-                      track opt) {
-                      <li>
-                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
-                          <input
-                            type="checkbox"
-                            class="checkbox checkbox-xs"
-                            [checked]="isOptionChecked(h.column.id, opt)"
-                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
-                          />
-                          <span class="label-text">{{ opt }}</span>
-                        </label>
-                      </li>
-                      }
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      } @else {
-                      <li class="px-2 py-1">
-                        <input
-                          class="input input-bordered input-xs w-full"
-                          type="text"
-                          placeholder="Filter value"
-                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
-                          [value]="getFilterValue(h.column.id)"
-                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
-                        />
-                      </li>
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      }
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
-                      <li>
-                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
-                          >Sort asc</a
-                        >
-                      </li>
-                      <li>
-                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
-                          >Sort desc</a
-                        >
-                      </li>
-                      <li>
-                        <a
-                          (click)="clearSort(h)"
-                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
-                          >Clear sort</a
-                        >
-                      </li>
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
-                        >Column</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      <li>
-                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
-                          >Hide</a
-                        >
-                      </li>
-                      <li class="dropdown dropdown-right">
-                        <label tabindex="0" class="flex w-full items-center justify-between"
-                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
-                            >Columns</span
-                          ><span>▸</span></label
-                        >
-                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                          @for (cid of hiddenColumns(); track cid) {
-                          <li>
-                            <a (click)="showColumnById(cid)"
-                              ><ng-container
-                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
-                                >Show</ng-container
-                              >
-                              {{ columnLabelFor(cid) }}</a
-                            >
-                          </li>
-                          } @if (!hiddenColumns().length) {
-                          <li
-                            class="opacity-60 px-2 py-1"
-                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
-                          >
-                            None hidden
-                          </li>
-                          }
-                        </ul>
-                      </li>
-                    </ul>
-                  </li>
-                </ul>
-              </div>
-              <span
-                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
-                title="Resize column"
-                i18n-title="@@datagrid.columns.resizeTitle"
-                [pcHeaderResize]="headerResizeConfig(h)"
-              ></span>
-            </div>
-          </th>
-          }
-        </tr>
-      </thead>
-      <tbody class="bg-base-100">
-        @if (hasActiveFilters() && !visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
-                >No results match your filters</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
-                >Try clearing or adjusting your filters</span
-              >
-            </div>
-          </td>
-        </tr>
-        } @else if (!visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
-                >Nothing here yet</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
-                >Add your first record using the + button above</span
-              >
-            </div>
-          </td>
-        </tr>
-        } @for (r of visibleTableRows(); let i = $index; track r.id) {
-        <tr
-          class="group hover:bg-base-300"
-          [class.cursor-pointer]="rowNavigatesToDetail()"
-          (mouseover)="onCellMouseOver(r.original)"
-          [attr.data-row-id]="toId(r.original)"
-          [class.bg-base-200]="(i % 2) === 1"
-        >
-          @if (enableSelection()) {
-          <td
-            class="sticky left-0 z-20 border-r border-base-300 pl-2"
-            [style.background]="rowBgForIndex(i)"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <div class="flex items-center gap-2">
-              @if (rowCanSelect()(r.original)) {
-              <input
-                type="checkbox"
-                class="checkbox checkbox-sm"
-                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
-                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
-              />
-              } @let rowId = toId(r.original); @if (!disableView() && rowId) {
-              <span
-                title="Open detail"
-                i18n-title="@@datagrid.rows.openDetailTitle"
-                aria-label="Open detail"
-                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
-                (click)="openEdit(rowId); $event.stopPropagation();"
-              >
-                <pc-icon
-                  name="arrow-top-right-on-square"
-                  class="hover:text-primary cursor-pointer text-neutral invisible group-hover:visible pb-1"
-                ></pc-icon>
-              </span>
-              }
-            </div>
-          </td>
-          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
-          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
-          === col.field;
-          <td
-            [pcEditable]="editableCfg(r.original, col)"
-            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
-            tabindex="0"
-            (keydown)="onCellKeydown($event)"
-            (click)="handleCellClick(r.original, col)"
-            (dblclick)="handleCellDblClick(r.original, col)"
-            [class.sticky]="pinState(cell) !== false"
-            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
-            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
-            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
-            [style.zIndex]="pinState(cell) !== false ? 10 : null"
-            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
-            [class.overflow-visible]="isTagColumn(col) && isEditing"
-            class="min-w-0 px-2 border-r border-base-300 relative"
-            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
-            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
-            [attr.data-col-id]="cell.column.id"
-            [style.width.px]="columnWidthPx(cell.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
-          >
-            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
-            (isTagColumn(col)) {
-            <!-- Tag column: checkbox multi-select panel -->
-            <div
-              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
-              (click)="$event.stopPropagation()"
-            >
-              <!-- Search box — pinned, never scrolls -->
-              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
-                <input
-                  type="text"
-                  class="input input-bordered input-xs w-full"
-                  placeholder="Search tags…"
-                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
-                  [ngModel]="tagSearch()"
-                  (ngModelChange)="tagSearch.set($event)"
-                  autofocus
-                />
-              </div>
-              <!-- Scrollable tag list -->
-              <div class="flex-1 overflow-y-auto py-1">
-                @for (tag of filteredTagChoices(col); track tag) {
-                <label
-                  tabindex="-1"
-                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
-                >
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="isTagChecked(tag)"
-                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
-                  />
-                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
-                </label>
-                } @if (!filteredTagChoices(col).length) {
-                <div class="text-xs text-base-content/50 px-3 py-2 italic">
-                  @if (tagSearch()) {
-                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
-                    >No tags match "{{ tagSearch() }}"</ng-container
-                  >
-                  } @else {
-                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
-                    >No tags available</ng-container
-                  >
-                  }
-                </div>
-                }
-              </div>
-              <!-- Done button — pinned, never scrolls -->
-              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
-                <button
-                  class="btn btn-primary btn-xs"
-                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
-                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-            } @else if (editorCfg) { @if (editorCfg.multiple) {
-            <select
-              class="select select-bordered w-full"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              multiple
-              [attr.size]="editorCfg.size ?? null"
-              [style.height]="multiSelectHeight(editorCfg)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value">{{ opt.label }}</option>
-              }
-            </select>
-            } @else {
-            <select
-              class="select select-bordered w-full select-xs"
-              [ngModel]="editingValue()"
-              (ngModelChange)="onSelectChange(r.original, col, $event)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value">{{ opt.label }}</option>
-              }
-            </select>
-            } } @else if (textCfg.textarea) {
-            <textarea
-              class="textarea textarea-bordered textarea-sm w-full"
-              [rows]="textCfg.rows"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              autofocus
-            ></textarea>
-            } @else {
-            <input
-              [type]="inputTypeFor(col)"
-              class="input input-bordered input-xs w-full"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              autofocus
-            />
-            } } @else if (hasCellRenderer(col)) {
-            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
-            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
-            (isTagColumn(col) && tagList.length) {
-            <pc-tags
-              [tags]="tagList"
-              [type]="col.cellRendererParams?.tagType || 'tag'"
-              [readonly]="true"
-              [canDelete]="false"
-              [compact]="true"
-              [limit]="2"
-              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
-            ></pc-tags>
-            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
-            === null || formattedVal === undefined || formattedVal === '') {
-            <span class="text-base-content/30">—</span>
-            } @else { {{ formattedVal }} } } @else { @if (col.field === 'address') {
-            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
-              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
-            </div>
-            } @else {
-            <span class="flex items-center gap-1 w-full">
-              @if (rawValue === null || rawValue === undefined || rawValue === '') {
-              <span class="flex-1 truncate text-base-content/30">—</span>
-              } @else {
-              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
-              }
-            </span>
-            } } }
-          </td>
-          } }
-        </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
-    <div class="flex items-center gap-2 whitespace-nowrap">
-      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
-        >Page Size:</span
-      >
-      <select
-        class="select select-bordered select-xs"
-        [ngModel]="pageSize()"
-        (ngModelChange)="onPageSizeChange($event)"
-      >
-        @if (![25,50,100].includes(pageSize())) {
-        <option [value]="pageSize()">{{ pageSize() }}</option>
-        } @for (opt of pageSizeChoices(); track opt) {
-        <option [value]="opt">{{ opt }}</option>
-        }
-      </select>
-    </div>
-    <div
-      class="whitespace-nowrap"
-      i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
-    >
-      <span class="font-normal">{{ displayStartIndex() }}</span> to
-      <span class="font-normal">{{ displayEndIndex() }}</span> of
-      <span class="font-normal">{{ totalCountAll() }}</span>
-    </div>
-    <div class="join whitespace-nowrap">
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="First"
-        i18n-title="@@datagrid.pagination.firstTitle"
-        [disabled]="!canPrev()"
-        (click)="firstPage()"
-      >
-        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="Prev"
-        i18n-title="@@datagrid.pagination.prevTitle"
-        [disabled]="!canPrev()"
-        (click)="prevPage()"
-      >
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn font-light btn-sm join-item btn-ghost pointer-events-none whitespace-nowrap"
-        i18n="Datagrid|Current page number out of total pages@@datagrid.pagination.currentPage"
-      >
-        Page <span class="font-normal">{{ pageIndex() + 1 }}</span> of
-        <span class="font-normal">{{ totalPages() }}</span>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="Next"
-        i18n-title="@@datagrid.pagination.nextTitle"
-        [disabled]="!canNext()"
-        (click)="nextPage()"
-      >
-        <pc-icon name="chevron-right" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="Last"
-        i18n-title="@@datagrid.pagination.lastTitle"
-        [disabled]="!canNext()"
-        (click)="lastPage()"
-      >
-        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
-      </button>
-    </div>
-  </div>
-  @if (isLoading()) {
-  <pc-icon name="loading" class="absolute inset-0 grid place-items-center animate-pulse" [size]="24"></pc-icon>
-  }
-</div>
-
-<!-- Right-side Filter Panel -->
-@if (showFilterPanel()) {
-<pc-dg-filter-panel
-  [panelFields]="panelFields()"
-  [panelFilters]="panelFilters()"
-  [labelFor]="labelForFn"
-  [optionsFor]="optionsForFn"
-  [hasActiveFilters]="hasActiveFilters()"
-  (close)="closePanel()"
-  (apply)="applyPanelFilters()"
-  (clear)="clearPanelFilters()"
-  (changeOp)="onPanelOpChange($event.field, $event.op)"
-  (changeValue)="onPanelValueChange($event.field, $event.value)"
-  (openAdvanced)="switchToAdvancedFilter()"
-/>
-}
-
-<!-- Advanced Filter Builder Modal -->
-@if (showAdvancedFilterBuilder()) {
-<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
-  <div
-    class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]"
-  >
-    <div class="flex justify-between items-center pb-4 border-b border-base-200">
-      <div>
-        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
-          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
-          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
-            >Advanced Filter Builder</ng-container
-          >
-        </h3>
-        <p
-          class="text-xs text-neutral-400 mt-1"
-          i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
-        >
-          Build complex matching rules with custom operators and conjunction logic.
-        </p>
-      </div>
-      <button
-        class="btn btn-ghost btn-circle btn-sm"
-        (click)="showAdvancedFilterBuilder.set(false)"
-        aria-label="Close modal"
-        i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel"
-      >
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <!-- Scrollable Body containing the rules -->
-    <div class="flex-1 overflow-y-auto py-6">
-      <pc-query-builder
-        [group]="advFilterRoot()"
-        [fields]="advancedFilterFields()"
-        [tagSvc]="tagsSvc ?? undefined"
-        [showSummary]="true"
-        (changed)="onAdvancedFilterChanged()"
-      ></pc-query-builder>
-    </div>
-
-    <!-- Modal Footer Actions -->
-    <div class="flex justify-between items-center pt-4 border-t border-base-200">
-      <button
-        class="btn btn-outline btn-error btn-sm"
-        (click)="clearAdvancedFilter()"
-        i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
-      >
-        Clear Filters
-      </button>
-      <div class="flex gap-2">
-        <button
-          class="btn btn-ghost btn-sm"
-          (click)="showAdvancedFilterBuilder.set(false)"
-          i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
-        >
-          Cancel
-        </button>
-        <button
-          class="btn btn-primary btn-sm px-6"
-          (click)="applyAdvancedFilter()"
-          i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
-        >
-          Apply
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-}
-```
-
-## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.ts
-
-```typescript
-import { Component, OnInit, signal, computed, inject } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { SettingsService } from '../services/settings-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { TokenService } from '../../../services/api/token-service';
-import { environment } from '../../../../environments/environment';
-import { DonationsService } from '../../../services/api/donations-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-
-export interface TaxCreditTier {
-  limit: number;
-  rate: number;
-}
-
-export interface DonationPeriod {
-  id: string;
-  name: string;
-  start_date: string;
-  end_date: string | null;
-  limit_amount: number;
-  is_active: boolean;
-}
-
-@Component({
-  selector: 'pc-donations-settings',
-  imports: [FormsModule, Icon],
-  templateUrl: './donations-settings.html',
-})
-export class DonationsSettingsComponent implements OnInit {
-  private readonly settingsSvc = inject(SettingsService);
-  private readonly alerts = inject(AlertService);
-  private readonly tokenSvc = inject(TokenService);
-  private readonly donationsSvc = inject(DonationsService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly stripeSecretKey = signal('');
-  protected readonly stripeWebhookSecret = signal('');
-  protected readonly donationLimit = signal(1000);
-  protected readonly restrictResidency = signal(false);
-  protected readonly taxCreditTiers = signal<TaxCreditTier[]>([]);
-  protected readonly webhookToken = signal('');
-
-  // Donation periods
-  protected readonly donationPeriods = signal<DonationPeriod[]>([]);
-  protected readonly showAddPeriod = signal(false);
-  protected readonly newPeriodName = signal('');
-  protected readonly newPeriodStartDate = signal('');
-  protected readonly newPeriodEndDate = signal('');
-  protected readonly newPeriodLimit = signal<number>(1000);
-  protected readonly isSavingPeriod = signal(false);
-
-  // New multi-country autocomplete & states checkboxes
-  protected readonly selectedCountries = signal<string[]>([]);
-  protected readonly selectedRegions = signal<string[]>([]);
-
-  protected readonly countrySearch = signal('');
-  protected readonly showCountryDropdown = signal(false);
-
-  protected readonly allCountries = [
-    { code: 'CA', name: 'Canada' },
-    { code: 'US', name: 'United States' },
-    { code: 'GB', name: 'United Kingdom' },
-    { code: 'AU', name: 'Australia' },
-    { code: 'NZ', name: 'New Zealand' },
-    { code: 'FR', name: 'France' },
-    { code: 'DE', name: 'Germany' },
-    { code: 'IN', name: 'India' },
-    { code: 'IT', name: 'Italy' },
-    { code: 'ES', name: 'Spain' },
-    { code: 'NL', name: 'Netherlands' },
-  ];
-
-  protected readonly canadaProvinces = [
-    { code: 'ON', name: 'Ontario' },
-    { code: 'QC', name: 'Quebec' },
-    { code: 'BC', name: 'British Columbia' },
-    { code: 'AB', name: 'Alberta' },
-    { code: 'MB', name: 'Manitoba' },
-    { code: 'SK', name: 'Saskatchewan' },
-    { code: 'NS', name: 'Nova Scotia' },
-    { code: 'NB', name: 'New Brunswick' },
-    { code: 'NL', name: 'Newfoundland and Labrador' },
-    { code: 'PE', name: 'Prince Edward Island' },
-    { code: 'NT', name: 'Northwest Territories' },
-    { code: 'YT', name: 'Yukon' },
-    { code: 'NU', name: 'Nunavut' },
-  ];
-
-  protected readonly usStates = [
-    { code: 'AL', name: 'Alabama' },
-    { code: 'AK', name: 'Alaska' },
-    { code: 'AZ', name: 'Arizona' },
-    { code: 'AR', name: 'Arkansas' },
-    { code: 'CA', name: 'California' },
-    { code: 'CO', name: 'Colorado' },
-    { code: 'CT', name: 'Connecticut' },
-    { code: 'DE', name: 'Delaware' },
-    { code: 'FL', name: 'Florida' },
-    { code: 'GA', name: 'Georgia' },
-    { code: 'HI', name: 'Hawaii' },
-    { code: 'ID', name: 'Idaho' },
-    { code: 'IL', name: 'Illinois' },
-    { code: 'IN', name: 'Indiana' },
-    { code: 'IA', name: 'Iowa' },
-    { code: 'KS', name: 'Kansas' },
-    { code: 'KY', name: 'Kentucky' },
-    { code: 'LA', name: 'Louisiana' },
-    { code: 'ME', name: 'Maine' },
-    { code: 'MD', name: 'Maryland' },
-    { code: 'MA', name: 'Massachusetts' },
-    { code: 'MI', name: 'Michigan' },
-    { code: 'MN', name: 'Minnesota' },
-    { code: 'MS', name: 'Mississippi' },
-    { code: 'MO', name: 'Missouri' },
-    { code: 'MT', name: 'Montana' },
-    { code: 'NE', name: 'Nebraska' },
-    { code: 'NV', name: 'Nevada' },
-    { code: 'NH', name: 'New Hampshire' },
-    { code: 'NJ', name: 'New Jersey' },
-    { code: 'NM', name: 'New Mexico' },
-    { code: 'NY', name: 'New York' },
-    { code: 'NC', name: 'North Carolina' },
-    { code: 'ND', name: 'North Dakota' },
-    { code: 'OH', name: 'Ohio' },
-    { code: 'OK', name: 'Oklahoma' },
-    { code: 'OR', name: 'Oregon' },
-    { code: 'PA', name: 'Pennsylvania' },
-    { code: 'RI', name: 'Rhode Island' },
-    { code: 'SC', name: 'South Carolina' },
-    { code: 'SD', name: 'South Dakota' },
-    { code: 'TN', name: 'Tennessee' },
-    { code: 'TX', name: 'Texas' },
-    { code: 'UT', name: 'Utah' },
-    { code: 'VT', name: 'Vermont' },
-    { code: 'VA', name: 'Virginia' },
-    { code: 'WA', name: 'Washington' },
-    { code: 'WV', name: 'West Virginia' },
-    { code: 'WI', name: 'Wisconsin' },
-    { code: 'WY', name: 'Wyoming' },
-  ];
-
-  protected readonly germanyStates = [
-    { code: 'DE-BW', name: 'Baden-Württemberg' },
-    { code: 'DE-BY', name: 'Bavaria' },
-    { code: 'DE-BE', name: 'Berlin' },
-    { code: 'DE-BB', name: 'Brandenburg' },
-    { code: 'DE-HB', name: 'Bremen' },
-    { code: 'DE-HH', name: 'Hamburg' },
-    { code: 'DE-HE', name: 'Hesse' },
-    { code: 'DE-MV', name: 'Mecklenburg-Vorpommern' },
-    { code: 'DE-NI', name: 'Lower Saxony' },
-    { code: 'DE-NW', name: 'North Rhine-Westphalia' },
-    { code: 'DE-RP', name: 'Rhineland-Palatinate' },
-    { code: 'DE-SL', name: 'Saarland' },
-    { code: 'DE-SN', name: 'Saxony' },
-    { code: 'DE-ST', name: 'Saxony-Anhalt' },
-    { code: 'DE-SH', name: 'Schleswig-Holstein' },
-    { code: 'DE-TH', name: 'Thuringia' },
-  ];
-
-  protected readonly franceRegions = [
-    { code: 'FR-ARA', name: 'Auvergne-Rhône-Alpes' },
-    { code: 'FR-BFC', name: 'Bourgogne-Franche-Comté' },
-    { code: 'FR-BRE', name: 'Brittany' },
-    { code: 'FR-CVL', name: 'Centre-Val de Loire' },
-    { code: 'FR-COR', name: 'Corsica' },
-    { code: 'FR-GES', name: 'Grand Est' },
-    { code: 'FR-HDF', name: 'Hauts-de-France' },
-    { code: 'FR-IDF', name: 'Île-de-France' },
-    { code: 'FR-NOR', name: 'Normandy' },
-    { code: 'FR-NAQ', name: 'Nouvelle-Aquitaine' },
-    { code: 'FR-OCC', name: 'Occitania' },
-    { code: 'FR-PDL', name: 'Pays de la Loire' },
-    { code: 'FR-PAC', name: "Provence-Alpes-Côte d'Azur" },
-  ];
-
-  protected readonly indiaStates = [
-    { code: 'IN-AP', name: 'Andhra Pradesh' },
-    { code: 'IN-AR', name: 'Arunachal Pradesh' },
-    { code: 'IN-AS', name: 'Assam' },
-    { code: 'IN-BR', name: 'Bihar' },
-    { code: 'IN-CG', name: 'Chhattisgarh' },
-    { code: 'IN-GA', name: 'Goa' },
-    { code: 'IN-GJ', name: 'Gujarat' },
-    { code: 'IN-HR', name: 'Haryana' },
-    { code: 'IN-HP', name: 'Himachal Pradesh' },
-    { code: 'IN-JH', name: 'Jharkhand' },
-    { code: 'IN-KA', name: 'Karnataka' },
-    { code: 'IN-KL', name: 'Kerala' },
-    { code: 'IN-MP', name: 'Madhya Pradesh' },
-    { code: 'IN-MH', name: 'Maharashtra' },
-    { code: 'IN-MN', name: 'Manipur' },
-    { code: 'IN-ML', name: 'Meghalaya' },
-    { code: 'IN-MZ', name: 'Mizoram' },
-    { code: 'IN-NL', name: 'Nagaland' },
-    { code: 'IN-OD', name: 'Odisha' },
-    { code: 'IN-PB', name: 'Punjab' },
-    { code: 'IN-RJ', name: 'Rajasthan' },
-    { code: 'IN-SK', name: 'Sikkim' },
-    { code: 'IN-TN', name: 'Tamil Nadu' },
-    { code: 'IN-TG', name: 'Telangana' },
-    { code: 'IN-TR', name: 'Tripura' },
-    { code: 'IN-UP', name: 'Uttar Pradesh' },
-    { code: 'IN-UT', name: 'Uttarakhand' },
-    { code: 'IN-WB', name: 'West Bengal' },
-    { code: 'IN-DL', name: 'Delhi (UT)' },
-    { code: 'IN-JK', name: 'Jammu and Kashmir (UT)' },
-    { code: 'IN-LA', name: 'Ladakh (UT)' },
-    { code: 'IN-PY', name: 'Puducherry (UT)' },
-  ];
-
-  // Tiers editing inputs
-  protected readonly newLimit = signal<number | null>(null);
-  protected readonly newRate = signal<number | null>(null);
-
-  protected readonly isSaving = signal(false);
-
-  protected readonly tenantId = computed(() => {
-    const token = this.tokenSvc.getAuthToken();
-    if (!token) return '';
-    try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(atob(parts[1]!));
-        return String(payload.tenant_id || '');
-      }
-    } catch (e) {
-      console.error('Failed to parse auth token payload', e);
-    }
-    return '';
-  });
-
-  protected readonly webhookUrl = computed(() => {
-    const token = this.webhookToken();
-    if (!token) return 'Loading Webhook URL...';
-    const base = environment.apiUrl.replace(/\/$/, '');
-    return `${base}/api/donations/webhook?token=${token}`;
-  });
-
-  protected readonly availableCountriesToSelect = computed(() => {
-    const search = this.countrySearch().toLowerCase().trim();
-    const selected = new Set(this.selectedCountries());
-    return this.allCountries.filter(
-      (c) => !selected.has(c.code) && (c.name.toLowerCase().includes(search) || c.code.toLowerCase().includes(search)),
-    );
-  });
-
-  protected readonly isCanadaSelected = computed(() => this.selectedCountries().includes('CA'));
-  protected readonly isUsaSelected = computed(() => this.selectedCountries().includes('US'));
-  protected readonly isGermanySelected = computed(() => this.selectedCountries().includes('DE'));
-  protected readonly isFranceSelected = computed(() => this.selectedCountries().includes('FR'));
-  protected readonly isIndiaSelected = computed(() => this.selectedCountries().includes('IN'));
-
-  // Plain-language calculation summary
-  protected readonly taxCreditSummary = computed(() => {
-    const sorted = [...this.taxCreditTiers()].sort((a, b) => a.limit - b.limit);
-    if (sorted.length === 0) {
-      return ['No tax credit tiers defined. Donations will not receive any tax credit.'];
-    }
-
-    const lines: string[] = [];
-    let previousLimit = 0;
-
-    for (let i = 0; i < sorted.length; i++) {
-      const tier = sorted[i]!;
-      const ratePct = Math.round(tier.rate * 100);
-
-      if (i === 0) {
-        lines.push(`${ratePct}% credit on the first $${tier.limit} donated.`);
-      } else {
-        const range = `$${previousLimit + 1} to $${tier.limit}`;
-        lines.push(`${ratePct}% credit on the next $${tier.limit - previousLimit} donated (amounts from ${range}).`);
-      }
-      previousLimit = tier.limit;
-    }
-
-    lines.push(`0% credit on any amounts exceeding $${previousLimit}.`);
-    return lines;
-  });
-
-  async ngOnInit() {
-    await this.settingsSvc.load();
-    this.loadValues();
-    await this.loadPeriods();
-  }
-
-  private async loadPeriods() {
-    try {
-      const periods = await this.donationsSvc.getDonationPeriods();
-      this.donationPeriods.set(periods as any);
-    } catch {
-      // non-fatal — periods table may not exist yet if migration hasn't run
-    }
-  }
-
-  protected async addPeriod() {
-    const name = this.newPeriodName().trim();
-    const start = this.newPeriodStartDate().trim();
-    const limit = Number(this.newPeriodLimit());
-
-    if (!name) {
-      this.alerts.showError('Period name is required');
-      return;
-    }
-    if (!start) {
-      this.alerts.showError('Start date is required');
-      return;
-    }
-    if (!limit || limit <= 0) {
-      this.alerts.showError('Limit amount must be greater than 0');
-      return;
-    }
-
-    const endDate = this.newPeriodEndDate().trim() || null;
-    if (endDate && endDate <= start) {
-      this.alerts.showError('End date must be after start date');
-      return;
-    }
-
-    this.isSavingPeriod.set(true);
-    try {
-      await this.donationsSvc.createDonationPeriod({
-        name,
-        start_date: start,
-        end_date: endDate,
-        limit_amount: limit * 100,
-      });
-      this.alerts.showSuccess(`Donation period "${name}" created`);
-      this.newPeriodName.set('');
-      this.newPeriodStartDate.set('');
-      this.newPeriodEndDate.set('');
-      this.newPeriodLimit.set(1000);
-      this.showAddPeriod.set(false);
-      await this.loadPeriods();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to create donation period');
-    } finally {
-      this.isSavingPeriod.set(false);
-    }
-  }
-
-  protected async togglePeriodActive(period: DonationPeriod) {
-    try {
-      await this.donationsSvc.updateDonationPeriod({ id: period.id, is_active: !period.is_active });
-      await this.loadPeriods();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to update period');
-    }
-  }
-
-  protected async deletePeriod(period: DonationPeriod) {
-    const confirmed = await this.dialogs.confirm({
-      title: `Delete period "${period.name}"?`,
-      message: 'This cannot be undone. Existing donations collected during this period will not be affected.',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-    try {
-      await this.donationsSvc.deleteDonationPeriod(period.id);
-      this.alerts.showSuccess('Period deleted');
-      await this.loadPeriods();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to delete period');
-    }
-  }
-
-  protected formatDate(dateStr: string | null): string {
-    if (!dateStr) return 'No end date';
-    return new Date(dateStr).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
-  }
-
-  protected isPeriodActive(period: DonationPeriod): boolean {
-    const today = new Date().toISOString().slice(0, 10);
-    return period.is_active && period.start_date <= today && (!period.end_date || period.end_date >= today);
-  }
-
-  private loadValues() {
-    this.stripeSecretKey.set(this.settingsSvc.getValue<string>('donations.stripe_secret_key', ''));
-    this.stripeWebhookSecret.set(this.settingsSvc.getValue<string>('donations.stripe_webhook_secret', ''));
-    this.donationLimit.set(this.settingsSvc.getValue<number>('donations.limit', 1000));
-    this.restrictResidency.set(this.settingsSvc.getValue<boolean>('donations.restrict_residency', false));
-
-    // Load countries
-    const countriesStr = this.settingsSvc.getValue<string>('donations.allowed_countries', 'CA');
-    const parsedCountries = countriesStr
-      .split(',')
-      .map((c) => c.trim())
-      .filter(Boolean);
-    this.selectedCountries.set(parsedCountries);
-
-    // Load regions (provinces / states)
-    const regionsStr = this.settingsSvc.getValue<string>('donations.allowed_regions', 'ON');
-    const parsedRegions = regionsStr
-      .split(',')
-      .map((r) => r.trim())
-      .filter(Boolean);
-    this.selectedRegions.set(parsedRegions);
-
-    // Load tax tiers
-    const tiersRaw = this.settingsSvc.getValue<any>('donations.tax_credit_tiers', []);
-    let parsedTiers: TaxCreditTier[] = [];
-    if (typeof tiersRaw === 'string') {
-      try {
-        parsedTiers = JSON.parse(tiersRaw);
-      } catch {
-        parsedTiers = [];
-      }
-    } else if (Array.isArray(tiersRaw)) {
-      parsedTiers = tiersRaw;
-    }
-    this.taxCreditTiers.set(parsedTiers.sort((a, b) => a.limit - b.limit));
-
-    // Load or generate webhook token
-    let token = this.settingsSvc.getValue<string>('donations.webhook_token', '');
-    if (!token) {
-      token = 'wt_' + Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    }
-    this.webhookToken.set(token);
-  }
-
-  protected selectCountry(country: { code: string; name: string }) {
-    this.selectedCountries.update((list) => [...list, country.code]);
-    this.countrySearch.set('');
-    this.showCountryDropdown.set(false);
-  }
-
-  protected removeCountry(code: string) {
-    this.selectedCountries.update((list) => list.filter((c) => c !== code));
-    // Clean up regions for removed countries
-    if (code === 'CA') {
-      const provinceCodes = new Set(this.canadaProvinces.map((p) => p.code));
-      this.selectedRegions.update((list) => list.filter((r) => !provinceCodes.has(r)));
-    } else if (code === 'US') {
-      const stateCodes = new Set(this.usStates.map((s) => s.code));
-      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
-    } else if (code === 'DE') {
-      const stateCodes = new Set(this.germanyStates.map((s) => s.code));
-      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
-    } else if (code === 'FR') {
-      const regionCodes = new Set(this.franceRegions.map((r) => r.code));
-      this.selectedRegions.update((list) => list.filter((r) => !regionCodes.has(r)));
-    } else if (code === 'IN') {
-      const stateCodes = new Set(this.indiaStates.map((s) => s.code));
-      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
-    }
-  }
-
-  protected toggleRegion(code: string) {
-    this.selectedRegions.update((list) => (list.includes(code) ? list.filter((r) => r !== code) : [...list, code]));
-  }
-
-  protected getCountryName(code: string): string {
-    const found = this.allCountries.find((c) => c.code === code);
-    return found ? found.name : code;
-  }
-
-  protected addTier() {
-    const limit = this.newLimit();
-    const rateInput = this.newRate();
-
-    if (limit === null || limit <= 0) {
-      this.alerts.showError('Limit must be greater than 0');
-      return;
-    }
-    if (rateInput === null || rateInput < 0 || rateInput > 100) {
-      this.alerts.showError('Rate must be between 0% and 100%');
-      return;
-    }
-
-    const rate = rateInput / 100;
-
-    const current = this.taxCreditTiers();
-    if (current.some((t) => t.limit === limit)) {
-      this.alerts.showError('A tier with this limit already exists');
-      return;
-    }
-
-    const updated = [...current, { limit, rate }].sort((a, b) => a.limit - b.limit);
-    this.taxCreditTiers.set(updated);
-
-    this.newLimit.set(null);
-    this.newRate.set(null);
-  }
-
-  protected removeTier(index: number) {
-    const updated = this.taxCreditTiers().filter((_, i) => i !== index);
-    this.taxCreditTiers.set(updated);
-  }
-
-  protected reset() {
-    this.loadValues();
-    this.alerts.showSuccess('Settings reset to saved values');
-  }
-
-  protected async save() {
-    this.isSaving.set(true);
-    try {
-      const entries = [
-        { key: 'donations.stripe_secret_key', value: this.stripeSecretKey() },
-        { key: 'donations.stripe_webhook_secret', value: this.stripeWebhookSecret() },
-        { key: 'donations.limit', value: Number(this.donationLimit()) },
-        { key: 'donations.restrict_residency', value: this.restrictResidency() },
-        { key: 'donations.allowed_countries', value: this.selectedCountries().join(',') },
-        { key: 'donations.allowed_regions', value: this.selectedRegions().join(',') },
-        { key: 'donations.tax_credit_tiers', value: JSON.stringify(this.taxCreditTiers()) },
-        { key: 'donations.webhook_token', value: this.webhookToken() },
-      ];
-
-      await this.settingsSvc.upsert(entries);
-      this.alerts.showSuccess('Donations configuration saved successfully');
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to save donations configuration');
-    } finally {
-      this.isSaving.set(false);
-    }
-  }
-
-  protected copyWebhookUrl() {
-    navigator.clipboard
-      .writeText(this.webhookUrl())
-      .then(() => this.alerts.showSuccess('Webhook URL copied!'))
-      .catch(() => this.alerts.showError('Failed to copy webhook URL'));
   }
 }
 ```
@@ -48154,6 +47027,1432 @@ export class SettingsPage implements OnInit {
     }, 1000);
   }
 }
+```
+
+## File: apps/frontend/src/app/layout/sidebar/sidebar.html
+
+```html
+<ng-template #navLink let-nav>
+  <a
+    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
+    class="hover:font-bold hover:text-primary flex flex-auto items-center pb-1 pl-2 tracking-widest hover:rounded-lg !cursor-pointer"
+    (click)="this.closeMobile()"
+    [routerLink]="nav.route"
+    routerLinkActive="font-bold"
+    [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
+    [class.font-bold]="pendingRoute() === nav.route"
+  >
+    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
+    <span class="indicator pl-2 group-hover:md:visible text-sm" [class.invisible]="isEffectivelyNarrow()">
+      {{ nav.name }} @if (nav.indicator) {
+      <span class="indicator-item status status-primary"></span>
+      }
+    </span>
+  </a>
+</ng-template>
+
+<div
+  (mouseenter)="onSidebarHover(true)"
+  (mouseleave)="onSidebarHover(false)"
+  class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-44 transition-all duration-50"
+  [class.hidden]="!this.isMobileOpen()"
+  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
+  [class.w-18]="isEffectivelyNarrow() && !this.isMobileOpen()"
+>
+  <div
+    [class.hidden]="isEffectivelyNarrow()"
+    class="mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
+  >
+    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
+  </div>
+
+  <div
+    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
+    class="avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
+  >
+    <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
+  </div>
+
+  @for (item of items(); track item.name) {
+  <div class="flex-none pl-2" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
+    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
+    <div
+      class="text-base-400 font-medium flex items-center justify-between pl-2 capitalize text-xs hover:cursor-pointer"
+      (click)="toggleCollapse(item.name)"
+    >
+      <span [class.text-[10px]]="isEffectivelyNarrow() && !hoveringSidebar()">
+        @if (isEffectivelyNarrow() && !hoveringSidebar()) { {{ item.short_name || item.name }} } @else { {{ item.name }}
+        }
+      </span>
+      @if (item.children?.length) {
+      <pc-swap
+        class="rotate-90 invisible mr-2"
+        [class.visible]="!isEffectivelyNarrow() || hoveringSidebar()"
+        swapOnIcon="chevron-double-left"
+        swapOffIcon="chevron-double-right"
+        animation="rotate"
+        [size]="4"
+        [checked]="isCollapsed(item.name)"
+        (click)="toggleCollapse(item.name)"
+        aria-label="Toggle section"
+        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
+      ></pc-swap>
+      }
+    </div>
+
+    @if (item.children && !isCollapsed(item.name)) {
+    <div class="flex flex-col space-y-1">
+      @for (child of item.children; track child.name) {
+      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
+      }
+    </div>
+    } } @else {
+    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
+    }
+  </div>
+  }
+
+  <div class="hidden flex-auto grow flex-col sm:flex">
+    <span class="min-h-full grow"></span>
+    <pc-swap
+      class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
+      swapOffIcon="chevron-double-right"
+      swapOnIcon="chevron-double-left"
+      [checked]="isDrawerFull()"
+      animation="rotate"
+      (click)="toggleDrawer()"
+      aria-label="Toggle drawer"
+      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
+    ></pc-swap>
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
+
+```typescript
+import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NgTemplateOutlet } from '@angular/common';
+import {
+  NavigationCancel,
+  NavigationError,
+  NavigationStart,
+  Router,
+  RouterLink,
+  RouterLinkActive,
+} from '@angular/router';
+import { filter, map } from 'rxjs';
+import { Icon } from '@icons/icon';
+import { Swap } from '@uxcommon/components/swap/swap';
+
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { ISidebarItem } from './sidebar-items';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+
+@Component({
+  selector: 'pc-sidebar',
+  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
+  templateUrl: './sidebar.html',
+  styles: [
+    `
+      .tooltip:before {
+        z-index: 100 !important;
+      }
+    `,
+  ],
+})
+export class Sidebar {
+  private readonly sidebarSvc = inject(SidebarService);
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+
+  protected hoveringSidebar = signal(false);
+
+  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
+  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
+  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
+
+  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
+  protected readonly isEffectivelyNarrow = computed(
+    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
+  );
+
+  protected readonly pendingRoute = toSignal(
+    this.router.events.pipe(
+      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
+      map((e) => (e instanceof NavigationStart ? e.url : null)),
+    ),
+    { initialValue: null },
+  );
+
+  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
+
+  protected readonly items = computed(() => {
+    const role = this.auth.getUser()?.role;
+    const allItems = this.sidebarSvc.getItems()();
+    if (role === 'user') {
+      return allItems.map((item) => {
+        if (item.children) {
+          return {
+            ...item,
+            children: item.children.filter((child) => !child.adminOnly),
+          };
+        }
+        return item;
+      });
+    }
+    return allItems;
+  });
+
+  constructor() {
+    if (this._mql) {
+      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
+      this._mql.addEventListener('change', handler);
+      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
+    }
+
+    effect(() => {
+      const flatItems = this.flattenItems(this.items());
+      for (const item of flatItems) {
+        const key = this.getItemKey(item);
+        const visible = !item.hidden && !item.hiddenByFavourite;
+        const existing = this.visibilitySignals.get(key);
+        if (existing) {
+          existing.set(visible);
+        } else {
+          this.visibilitySignals.set(key, signal(visible));
+        }
+      }
+    });
+  }
+
+  protected closeMobile() {
+    this.sidebarSvc.closeMobile();
+  }
+
+  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
+    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
+  }
+
+  private getItemKey(item: ISidebarItem): string {
+    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
+    return prefix + item.name + (item.route ?? '');
+  }
+
+  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
+    const key = this.getItemKey(item);
+    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
+  }
+
+  protected isCollapsed(name: string): boolean {
+    return this.sidebarSvc.isCollapsed(name);
+  }
+
+  protected isDrawerFull() {
+    return this.sidebarSvc.isFull();
+  }
+
+  protected isDrawerHalf() {
+    return this.sidebarSvc.isHalf();
+  }
+
+  protected isMobileOpen() {
+    return this.sidebarSvc.isMobileOpen();
+  }
+
+  protected onSidebarHover(state: boolean) {
+    this.hoveringSidebar.set(state);
+  }
+
+  protected toggleCollapse(name: string) {
+    this.sidebarSvc.toggleCollapsed(name);
+  }
+
+  protected toggleDrawer() {
+    return this.sidebarSvc.toggleDrawer();
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
+
+```typescript
+import { Component, computed, input } from '@angular/core';
+
+/**
+ * Column visibility dropdown shared by the mobile and desktop toolbars.
+ * Rendered as the projected content of a `pc-grid-tool-btn` dropdown, so it
+ * uses `display: contents` to stay a direct child of the DaisyUI `<details>`.
+ *
+ * The grid is passed in as an input rather than injected: as projected
+ * content it does not reliably resolve the same `DataGrid` instance.
+ *
+ * `getColDefsForToolbar()` returns a plain (non-signal) array that is filled
+ * in after init, so as an isolated component this would render once and stay
+ * empty. `cols` reads the reactive `getColVisibilityMap()` (the colVisibility
+ * signal) to recompute once the columns are populated.
+ */
+@Component({
+  selector: 'pc-dg-columns-dropdown',
+  template: `
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
+      <li class="px-2 py-1 flex gap-2">
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
+      </li>
+      @for (col of cols(); track col.field) {
+        @if (col.field) {
+          <li>
+            <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs"
+                [checked]="grid().getColVisibilityMap()[col.field!] !== false"
+                (change)="grid().toggleColPublic(col.field!, $any($event.target).checked)"
+              />
+              <span class="label-text">{{ col.headerName || col.field }}</span>
+            </label>
+          </li>
+        }
+      }
+    </ul>
+  `,
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+    `,
+  ],
+})
+export class DataGridColumnsDropdownComponent {
+  public readonly grid = input.required<any>();
+
+  protected readonly cols = computed<any[]>(() => {
+    // Establish a reactive dependency on the colVisibility signal so the list
+    // recomputes once the (non-signal) column defs are populated after init.
+    this.grid().getColVisibilityMap();
+    return this.grid().getColDefsForToolbar();
+  });
+}
+```
+
+## File: apps/frontend/src/app/app.routes.ts
+
+```typescript
+import type { Routes } from '@angular/router';
+
+import { authGuard } from './auth/auth-guard';
+import { loginGuard } from './auth/login/login-guard';
+
+export const appRoutes = [
+  // Default redirect to summary inside the dashboard shell
+  { path: '', redirectTo: 'summary', pathMatch: 'full' },
+
+  // Auth pages
+  {
+    path: 'signin',
+    canActivate: [loginGuard],
+    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
+  },
+  {
+    path: 'signup',
+    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
+  },
+  {
+    path: 'resetpassword',
+    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
+  },
+  {
+    path: 'newpassword',
+    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
+  },
+  {
+    path: 'verify-sender-email',
+    loadComponent: () =>
+      import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
+  },
+  {
+    path: 'confirm-subscription',
+    loadComponent: () =>
+      import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
+  },
+  {
+    path: 'verify-email',
+    loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
+  },
+  {
+    path: 'cancel-deletion',
+    loadComponent: () => import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
+  },
+  {
+    path: 'resume-account',
+    loadComponent: () => import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
+  },
+
+  // Main dashboard shell + children (protected)
+  {
+    path: '',
+    canActivate: [authGuard],
+    // optionally also: canActivateChild: [authGuard],
+    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
+    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
+  },
+
+  // Fallback
+  {
+    path: '**',
+    loadComponent: () => import('@uxcommon/components/not-found/not-found').then((m) => m.NotFound),
+  },
+] as const satisfies Routes;
+```
+
+## File: apps/frontend/src/app/experiences/events/ui/events-grid.ts
+
+```typescript
+import { Component } from '@angular/core';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { EventsFrontendService } from '../services/events-frontend-service';
+
+@Component({
+  selector: 'pc-events-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Event Pages"
+        i18n-title
+        description="Manage public event pages with RSVP and ticketing for fundraisers, town halls, and meet-and-greets."
+        i18n-description
+        [showDescription]="true"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="true"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        plusIcon="add-ticket"
+        i18n-plusIcon
+        [showArchiveIcon]="true"
+        archiveIcon="archive-box-arrow-down"
+        i18n-archiveIcon
+        archiveTip="See past events"
+        i18n-archiveTip
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: EventsFrontendService },
+    provideDataGridConfig({ messages: { exportFileName: 'events-export.csv' } }),
+  ],
+})
+export class EventsGridComponent {
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
+  protected col = [
+    { field: 'name', headerName: 'Event Name', editable: true },
+    { field: 'location_address', headerName: 'Location', editable: true },
+    {
+      field: 'start_time',
+      headerName: 'Start Time',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.start_time),
+      editable: false,
+    },
+    {
+      field: 'end_time',
+      headerName: 'End Time',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.end_time),
+      editable: false,
+    },
+    {
+      field: 'is_published',
+      headerName: 'Published',
+      valueFormatter: (p: any) => (p.value ? 'Yes' : 'Draft'),
+      editable: false,
+    },
+    {
+      field: 'registrations_count',
+      headerName: 'Registrations',
+      editable: false,
+    },
+    {
+      field: 'capacity',
+      headerName: 'Capacity',
+      editable: false,
+      valueFormatter: (p: any) => p.value ?? 'Unlimited',
+    },
+  ];
+
+  private formatDate(value: unknown): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '';
+    return this.dateFormatter.format(date);
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
+
+```typescript
+import { Component, computed, inject } from '@angular/core';
+import { DataGrid } from '../datagrid';
+import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
+import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
+import { DataGridFilterSectionComponent } from './datagrid-filter-section';
+import { GridActionComponent } from '../tool-button';
+import { Icon } from '@icons/icon';
+import { MultiselectFilterComponent } from './multiselect-filter';
+import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
+
+@Component({
+  selector: 'pc-dg-toolbar',
+  imports: [
+    GridActionComponent,
+    Icon,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
+    DataGridColumnsDropdownComponent,
+    DataGridFilterDropdownComponent,
+    DataGridFilterSectionComponent,
+  ],
+  templateUrl: 'datagrid-toolbar.html',
+})
+export class DataGridToolbarComponent {
+  public readonly grid: any = inject(DataGrid);
+
+  readonly narrowTypeOptions = computed<SingleSelectOption[]>(() => this.grid.narrowTypeOptions());
+  readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.grid.availableLists().map((l: any) => ({ value: l.id, label: l.name })),
+  );
+
+  public onAdd() {
+    this.grid.doAdd();
+  }
+
+  public onClone() {
+    this.grid.doClone();
+  }
+
+  public onMergeSelected() {
+    this.grid.doConfirmMerge();
+  }
+
+  public onDeleteSelected() {
+    this.grid.doConfirmDelete();
+  }
+
+  public onExportCsv() {
+    this.grid.doConfirmExport();
+  }
+
+  public onImportCsv() {
+    this.grid.doImportCSV();
+  }
+
+  public onRedo() {
+    this.grid.redo();
+  }
+
+  public onRefresh() {
+    this.grid.doRefresh();
+  }
+
+  public onToggleArchive() {
+    this.grid.toggleArchiveModePublic();
+  }
+
+  public onToggleFilters() {
+    this.grid.filter();
+  }
+
+  public onUndo() {
+    this.grid.undo();
+  }
+
+  public onResetAllWidths() {
+    this.grid.resetAllWidthsPublic();
+  }
+
+  public onHideAllCols() {
+    this.grid.hideAllColsPublic();
+  }
+
+  public onShowAllCols() {
+    this.grid.showAllColsPublic();
+  }
+
+  public onToggleCol(colId: string, visible: boolean) {
+    this.grid.toggleColPublic(colId, visible);
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
+
+```html
+@if (displayTitle()) {
+<pc-grid-header
+  [title]="displayTitle()!"
+  [open]="showDescription()"
+  [description]="description() || ''"
+></pc-grid-header>
+}
+
+<div class="flex h-full w-full flex-col">
+  @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
+  <progress class="progress h-1"></progress>
+  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
+      >All {{ displayedCount() }} rows on this page are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="selectAllMatching()"
+      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
+      >Select all {{ totalCountAll() }} rows</a
+    >
+  </div>
+  } @if (allSelected()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
+      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="clearAllSelection()"
+      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
+      >Clear selection</a
+    >
+  </div>
+  }
+  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
+    <table #gridTable class="table w-full">
+      <thead>
+        <tr>
+          @if (enableSelection()) {
+          <th
+            class="border-r border-base-300 pl-2 selection-col"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              [checked]="!allSelected() && tableAllPageSelected()"
+              [indeterminate]="!allSelected() && tableSomePageSelected()"
+              (change)="onHeaderCheckbox($any($event.target).checked)"
+            />
+          </th>
+          } @for (h of leafHeaders(); track h.id) {
+          <th
+            role="columnheader"
+            class="cursor-grab border-r border-base-300 pl-2 relative"
+            [attr.data-col-id]="h.column?.id"
+            [attr.aria-sort]="ariaSortHeader(h)"
+            [draggable]="true"
+            (dragstart)="onHeaderDragStart(h, $event)"
+            (dragover)="onHeaderDragOver(h, $event)"
+            (drop)="onHeaderDrop(h, $event)"
+            [style.width.px]="columnWidthPx(h.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
+          >
+            <div class="flex items-center gap-2" data-header-content>
+              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
+                {{ h.column?.columnDef?.header || h.column?.id }}
+              </span>
+              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
+              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
+                <label
+                  tabindex="0"
+                  class="btn btn-xs"
+                  [class.btn-ghost]="!isColFiltered(h.column.id)"
+                  [class.btn-primary]="isColFiltered(h.column.id)"
+                  title="Column options"
+                  i18n-title="@@datagrid.columns.optionsTitle"
+                >
+                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
+                </label>
+                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
+                  @let col = getColDefById(h.column.id);
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
+                      track opt) {
+                      <li>
+                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
+                          <input
+                            type="checkbox"
+                            class="checkbox checkbox-xs"
+                            [checked]="isOptionChecked(h.column.id, opt)"
+                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
+                          />
+                          <span class="label-text">{{ opt }}</span>
+                        </label>
+                      </li>
+                      }
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      } @else {
+                      <li class="px-2 py-1">
+                        <input
+                          class="input input-bordered input-xs w-full"
+                          type="text"
+                          placeholder="Filter value"
+                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
+                          [value]="getFilterValue(h.column.id)"
+                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
+                        />
+                      </li>
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      }
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
+                      <li>
+                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
+                          >Sort asc</a
+                        >
+                      </li>
+                      <li>
+                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
+                          >Sort desc</a
+                        >
+                      </li>
+                      <li>
+                        <a
+                          (click)="clearSort(h)"
+                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
+                          >Clear sort</a
+                        >
+                      </li>
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
+                        >Column</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      <li>
+                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
+                          >Hide</a
+                        >
+                      </li>
+                      <li class="dropdown dropdown-right">
+                        <label tabindex="0" class="flex w-full items-center justify-between"
+                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
+                            >Columns</span
+                          ><span>▸</span></label
+                        >
+                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                          @for (cid of hiddenColumns(); track cid) {
+                          <li>
+                            <a (click)="showColumnById(cid)"
+                              ><ng-container
+                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
+                                >Show</ng-container
+                              >
+                              {{ columnLabelFor(cid) }}</a
+                            >
+                          </li>
+                          } @if (!hiddenColumns().length) {
+                          <li
+                            class="opacity-60 px-2 py-1"
+                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
+                          >
+                            None hidden
+                          </li>
+                          }
+                        </ul>
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+              </div>
+              <span
+                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                title="Resize column"
+                i18n-title="@@datagrid.columns.resizeTitle"
+                [pcHeaderResize]="headerResizeConfig(h)"
+              ></span>
+            </div>
+          </th>
+          }
+        </tr>
+      </thead>
+      <tbody class="bg-base-100">
+        @if (hasActiveFilters() && !visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
+                >No results match your filters</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
+                >Try clearing or adjusting your filters</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @else if (!visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
+                >Nothing here yet</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
+                >Add your first record using the + button above</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @for (r of visibleTableRows(); let i = $index; track r.id) {
+        <tr
+          class="group hover:bg-base-300"
+          [class.cursor-pointer]="rowNavigatesToDetail()"
+          (mouseover)="onCellMouseOver(r.original)"
+          [attr.data-row-id]="toId(r.original)"
+          [class.bg-base-200]="(i % 2) === 1"
+        >
+          @if (enableSelection()) {
+          <td
+            class="sticky left-0 z-20 border-r border-base-300 pl-2"
+            [style.background]="rowBgForIndex(i)"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <div class="flex items-center gap-2">
+              @if (rowCanSelect()(r.original)) {
+              <input
+                type="checkbox"
+                class="checkbox checkbox-sm"
+                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
+                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
+              />
+              } @let rowId = toId(r.original); @if (!disableView() && rowId) {
+              <span
+                title="Open detail"
+                i18n-title="@@datagrid.rows.openDetailTitle"
+                aria-label="Open detail"
+                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
+                (click)="openEdit(rowId); $event.stopPropagation();"
+              >
+                <pc-icon
+                  name="arrow-top-right-on-square"
+                  class="hover:text-primary cursor-pointer text-neutral invisible group-hover:visible pb-1"
+                ></pc-icon>
+              </span>
+              }
+            </div>
+          </td>
+          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
+          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
+          === col.field;
+          <td
+            [pcEditable]="editableCfg(r.original, col)"
+            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
+            tabindex="0"
+            (keydown)="onCellKeydown($event)"
+            (click)="handleCellClick(r.original, col)"
+            (dblclick)="handleCellDblClick(r.original, col)"
+            [class.sticky]="pinState(cell) !== false"
+            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
+            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
+            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
+            [style.zIndex]="pinState(cell) !== false ? 10 : null"
+            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
+            [class.overflow-visible]="isTagColumn(col) && isEditing"
+            class="min-w-0 px-2 border-r border-base-300 relative"
+            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
+            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
+            [attr.data-col-id]="cell.column.id"
+            [style.width.px]="columnWidthPx(cell.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
+          >
+            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
+            (isTagColumn(col)) {
+            <!-- Tag column: checkbox multi-select panel -->
+            <div
+              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
+              (click)="$event.stopPropagation()"
+            >
+              <!-- Search box — pinned, never scrolls -->
+              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
+                <input
+                  type="text"
+                  class="input input-bordered input-xs w-full"
+                  placeholder="Search tags…"
+                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
+                  [ngModel]="tagSearch()"
+                  (ngModelChange)="tagSearch.set($event)"
+                  autofocus
+                />
+              </div>
+              <!-- Scrollable tag list -->
+              <div class="flex-1 overflow-y-auto py-1">
+                @for (tag of filteredTagChoices(col); track tag) {
+                <label
+                  tabindex="-1"
+                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="isTagChecked(tag)"
+                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
+                  />
+                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
+                </label>
+                } @if (!filteredTagChoices(col).length) {
+                <div class="text-xs text-base-content/50 px-3 py-2 italic">
+                  @if (tagSearch()) {
+                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
+                    >No tags match "{{ tagSearch() }}"</ng-container
+                  >
+                  } @else {
+                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
+                    >No tags available</ng-container
+                  >
+                  }
+                </div>
+                }
+              </div>
+              <!-- Done button — pinned, never scrolls -->
+              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
+                <button
+                  class="btn btn-primary btn-xs"
+                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
+                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+            } @else if (editorCfg) { @if (editorCfg.multiple) {
+            <select
+              class="select select-bordered w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              multiple
+              [attr.size]="editorCfg.size ?? null"
+              [style.height]="multiSelectHeight(editorCfg)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            } @else {
+            <select
+              class="select select-bordered w-full select-xs"
+              [ngModel]="editingValue()"
+              (ngModelChange)="onSelectChange(r.original, col, $event)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            } } @else if (textCfg.textarea) {
+            <textarea
+              class="textarea textarea-bordered textarea-sm w-full"
+              [rows]="textCfg.rows"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              autofocus
+            ></textarea>
+            } @else {
+            <input
+              [type]="inputTypeFor(col)"
+              class="input input-bordered input-xs w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              autofocus
+            />
+            } } @else if (hasCellRenderer(col)) {
+            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
+            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
+            (isTagColumn(col) && tagList.length) {
+            <pc-tags
+              [tags]="tagList"
+              [type]="col.cellRendererParams?.tagType || 'tag'"
+              [readonly]="true"
+              [canDelete]="false"
+              [compact]="true"
+              [limit]="2"
+              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
+            ></pc-tags>
+            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
+            === null || formattedVal === undefined || formattedVal === '') {
+            <span class="text-base-content/30">—</span>
+            } @else { {{ formattedVal }} } } @else { @if (col.field === 'address') {
+            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
+              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
+            </div>
+            } @else {
+            <span class="flex items-center gap-1 w-full">
+              @if (rawValue === null || rawValue === undefined || rawValue === '') {
+              <span class="flex-1 truncate text-base-content/30">—</span>
+              } @else {
+              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
+              }
+            </span>
+            } } }
+          </td>
+          } }
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
+    <div class="flex items-center gap-2 whitespace-nowrap">
+      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
+        >Page Size:</span
+      >
+      <select
+        class="select select-bordered select-xs"
+        [ngModel]="pageSize()"
+        (ngModelChange)="onPageSizeChange($event)"
+      >
+        @if (![25,50,100].includes(pageSize())) {
+        <option [value]="pageSize()">{{ pageSize() }}</option>
+        } @for (opt of pageSizeChoices(); track opt) {
+        <option [value]="opt">{{ opt }}</option>
+        }
+      </select>
+    </div>
+    <div
+      class="whitespace-nowrap"
+      i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
+    >
+      <span class="font-normal">{{ displayStartIndex() }}</span> to
+      <span class="font-normal">{{ displayEndIndex() }}</span> of
+      <span class="font-normal">{{ totalCountAll() }}</span>
+    </div>
+    <div class="join whitespace-nowrap">
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="First"
+        i18n-title="@@datagrid.pagination.firstTitle"
+        [disabled]="!canPrev()"
+        (click)="firstPage()"
+      >
+        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="Prev"
+        i18n-title="@@datagrid.pagination.prevTitle"
+        [disabled]="!canPrev()"
+        (click)="prevPage()"
+      >
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn font-light btn-sm join-item btn-ghost pointer-events-none whitespace-nowrap"
+        i18n="Datagrid|Current page number out of total pages@@datagrid.pagination.currentPage"
+      >
+        Page <span class="font-normal">{{ pageIndex() + 1 }}</span> of
+        <span class="font-normal">{{ totalPages() }}</span>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="Next"
+        i18n-title="@@datagrid.pagination.nextTitle"
+        [disabled]="!canNext()"
+        (click)="nextPage()"
+      >
+        <pc-icon name="chevron-right" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="Last"
+        i18n-title="@@datagrid.pagination.lastTitle"
+        [disabled]="!canNext()"
+        (click)="lastPage()"
+      >
+        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
+      </button>
+    </div>
+  </div>
+  @if (isLoading()) {
+  <pc-icon name="loading" class="absolute inset-0 grid place-items-center animate-pulse" [size]="24"></pc-icon>
+  }
+</div>
+
+<!-- Right-side Filter Panel -->
+@if (showFilterPanel()) {
+<pc-dg-filter-panel
+  [panelFields]="panelFields()"
+  [panelFilters]="panelFilters()"
+  [labelFor]="labelForFn"
+  [optionsFor]="optionsForFn"
+  [hasActiveFilters]="hasActiveFilters()"
+  (close)="closePanel()"
+  (apply)="applyPanelFilters()"
+  (clear)="clearPanelFilters()"
+  (changeOp)="onPanelOpChange($event.field, $event.op)"
+  (changeValue)="onPanelValueChange($event.field, $event.value)"
+  (openAdvanced)="switchToAdvancedFilter()"
+/>
+}
+
+<!-- Advanced Filter Builder Modal -->
+@if (showAdvancedFilterBuilder()) {
+<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
+  <div
+    class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]"
+  >
+    <div class="flex justify-between items-center pb-4 border-b border-base-200">
+      <div>
+        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
+          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
+          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
+            >Advanced Filter Builder</ng-container
+          >
+        </h3>
+        <p
+          class="text-xs text-neutral-400 mt-1"
+          i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
+        >
+          Build complex matching rules with custom operators and conjunction logic.
+        </p>
+      </div>
+      <button
+        class="btn btn-ghost btn-circle btn-sm"
+        (click)="showAdvancedFilterBuilder.set(false)"
+        aria-label="Close modal"
+        i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel"
+      >
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <!-- Scrollable Body containing the rules -->
+    <div class="flex-1 overflow-y-auto py-6">
+      <pc-query-builder
+        [group]="advFilterRoot()"
+        [fields]="advancedFilterFields()"
+        [tagSvc]="tagsSvc ?? undefined"
+        [showSummary]="true"
+        (changed)="onAdvancedFilterChanged()"
+      ></pc-query-builder>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div class="flex justify-between items-center pt-4 border-t border-base-200">
+      <button
+        class="btn btn-outline btn-error btn-sm"
+        (click)="clearAdvancedFilter()"
+        i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
+      >
+        Clear Filters
+      </button>
+      <div class="flex gap-2">
+        <button
+          class="btn btn-ghost btn-sm"
+          (click)="showAdvancedFilterBuilder.set(false)"
+          i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
+        >
+          Cancel
+        </button>
+        <button
+          class="btn btn-primary btn-sm px-6"
+          (click)="applyAdvancedFilter()"
+          i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+}
+```
+
+## File: apps/frontend/src/app/auth/signin-page/signin-page.html
+
+```html
+<pc-auth-layout>
+  @if (rateLimitSecondsLeft() > 0) {
+  <div class="alert alert-error text-sm mb-4">
+    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
+    <div>
+      <p class="font-semibold" i18n>Too many attempts</p>
+      <p class="text-xs mt-1 flex items-center gap-1">
+        <span i18n>Try again in</span>
+        <span class="countdown font-mono text-lg">
+          @if (rateLimitMins() > 0) {
+          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
+            >{{rateLimitMins()}}</span
+          >
+          m }
+          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
+            >{{rateLimitRemSecs()}}</span
+          >
+          s
+        </span>
+      </p>
+    </div>
+  </div>
+  } @switch (step()) { @case ('email') {
+  <label class="label text-neutral-100">Enter your email to sign in</label>
+  <form (submit)="continueWithEmail($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="at-symbol" />
+        <input
+          type="email"
+          placeholder="Enter your email"
+          [formField]="emailForm.email"
+          aria-label="Email"
+          autocomplete="email"
+        />
+      </label>
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { Continue }
+        </button>
+      </div>
+    </div>
+  </form>
+  <div class="pt-4 text-center">
+    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
+  </div>
+  } @case ('passkey') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-1">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
+      <p class="text-sm text-white">{{ emailData().email }}</p>
+      @if (isLoading()) {
+      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
+      }
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button
+        type="button"
+        class="btn btn-primary w-full"
+        (click)="signInWithPasskey()"
+        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
+      >
+        @if (isLoading()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Sign in with Passkey
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="usePasswordInstead()"
+        [disabled]="isLoading()"
+      >
+        Use password instead
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="goBackToEmail()"
+        [disabled]="isLoading()"
+      >
+        Back
+      </button>
+    </div>
+  </div>
+  } @case ('password') { @if (verificationPending()) {
+  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
+    <div class="flex flex-col gap-2 w-full">
+      <div class="flex items-center gap-2 font-semibold">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <span>Verification Pending</span>
+      </div>
+      <p class="text-xs text-amber-200/80">
+        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
+        inbox.
+      </p>
+      <button
+        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
+        type="button"
+        (click)="resendVerification()"
+        [disabled]="resending() || resendCooldownSeconds() > 0"
+      >
+        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
+        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
+      </button>
+    </div>
+  </div>
+  }
+
+  <div class="flex items-center gap-2 text-sm mb-3">
+    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
+    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
+    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
+      Change
+    </button>
+  </div>
+
+  <label class="label text-neutral-100">Enter your password</label>
+  <form (submit)="signIn($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="lock-closed" />
+        <input
+          type="password"
+          placeholder="Enter your password"
+          [formField]="passwordForm.password"
+          aria-label="Password"
+          autocomplete="current-password"
+        />
+      </label>
+
+      <div class="flex items-center justify-between pt-2">
+        <div class="flex items-center">
+          <input
+            id="remember_me"
+            name="remember_me"
+            type="checkbox"
+            class="checkbox checkbox-primary checkbox-sm"
+            [checked]="persistence()"
+            (change)="togglePersistence($event.target)"
+          />
+          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
+        </div>
+        <div class="text-sm">
+          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
+        </div>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { SIGN IN }
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('2fa') {
+  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
+  <form (submit)="verify2FA($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="shield-exclamation" />
+        <input
+          type="text"
+          placeholder="6-digit code"
+          [formField]="otpForm.code"
+          aria-label="Verification Code"
+          autocomplete="one-time-code"
+        />
+      </label>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { VERIFY }
+        </button>
+      </div>
+
+      <div class="text-center pt-2">
+        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
+          Back to Sign In
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('passkey-setup') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
+      <p class="text-sm text-white">
+        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
+        sign-ins.
+      </p>
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
+        @if (settingUpPasskey()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Set Up Passkey
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
+        Skip for now
+      </button>
+    </div>
+  </div>
+  } }
+
+  <div class="text-neutral-200 text-center text-xs pt-2">
+    <span>
+      Copyright © 2024
+      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
+    </span>
+  </div>
+</pc-auth-layout>
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.ts
@@ -50541,236 +50840,453 @@ type TagDiff = {
 };
 ```
 
-## File: apps/frontend/src/app/auth/signin-page/signin-page.html
+## File: apps/frontend/src/app/dashboard.routes.ts
 
-```html
-<pc-auth-layout>
-  @if (rateLimitSecondsLeft() > 0) {
-  <div class="alert alert-error text-sm mb-4">
-    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
-    <div>
-      <p class="font-semibold" i18n>Too many attempts</p>
-      <p class="text-xs mt-1 flex items-center gap-1">
-        <span i18n>Try again in</span>
-        <span class="countdown font-mono text-lg">
-          @if (rateLimitMins() > 0) {
-          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
-            >{{rateLimitMins()}}</span
-          >
-          m }
-          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
-            >{{rateLimitRemSecs()}}</span
-          >
-          s
-        </span>
-      </p>
-    </div>
-  </div>
-  } @switch (step()) { @case ('email') {
-  <label class="label text-neutral-100">Enter your email to sign in</label>
-  <form (submit)="continueWithEmail($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="at-symbol" />
-        <input
-          type="email"
-          placeholder="Enter your email"
-          [formField]="emailForm.email"
-          aria-label="Email"
-          autocomplete="email"
-        />
-      </label>
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { Continue }
-        </button>
-      </div>
-    </div>
-  </form>
-  <div class="pt-4 text-center">
-    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
-  </div>
-  } @case ('passkey') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-1">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
-      <p class="text-sm text-white">{{ emailData().email }}</p>
-      @if (isLoading()) {
-      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
-      }
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button
-        type="button"
-        class="btn btn-primary w-full"
-        (click)="signInWithPasskey()"
-        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
-      >
-        @if (isLoading()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Sign in with Passkey
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="usePasswordInstead()"
-        [disabled]="isLoading()"
-      >
-        Use password instead
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="goBackToEmail()"
-        [disabled]="isLoading()"
-      >
-        Back
-      </button>
-    </div>
-  </div>
-  } @case ('password') { @if (verificationPending()) {
-  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
-    <div class="flex flex-col gap-2 w-full">
-      <div class="flex items-center gap-2 font-semibold">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <span>Verification Pending</span>
-      </div>
-      <p class="text-xs text-amber-200/80">
-        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
-        inbox.
-      </p>
-      <button
-        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
-        type="button"
-        (click)="resendVerification()"
-        [disabled]="resending() || resendCooldownSeconds() > 0"
-      >
-        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
-        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
-      </button>
-    </div>
-  </div>
-  }
+```typescript
+import type { Routes } from '@angular/router';
+import { roleGuard } from './auth/role-guard';
 
-  <div class="flex items-center gap-2 text-sm mb-3">
-    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
-    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
-    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
-      Change
-    </button>
-  </div>
+export const dashboardRoutes: Routes = [
+  { path: '', redirectTo: 'summary', pathMatch: 'full' },
 
-  <label class="label text-neutral-100">Enter your password</label>
-  <form (submit)="signIn($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="lock-closed" />
-        <input
-          type="password"
-          placeholder="Enter your password"
-          [formField]="passwordForm.password"
-          aria-label="Password"
-          autocomplete="current-password"
-        />
-      </label>
+  {
+    path: 'summary',
+    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
+  },
 
-      <div class="flex items-center justify-between pt-2">
-        <div class="flex items-center">
-          <input
-            id="remember_me"
-            name="remember_me"
-            type="checkbox"
-            class="checkbox checkbox-primary checkbox-sm"
-            [checked]="persistence()"
-            (change)="togglePersistence($event.target)"
-          />
-          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
-        </div>
-        <div class="text-sm">
-          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
-        </div>
-      </div>
+  {
+    path: 'people',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
+        data: { shouldReuse: true, key: 'persongridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+      },
+    ],
+  },
 
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { SIGN IN }
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('2fa') {
-  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
-  <form (submit)="verify2FA($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="shield-exclamation" />
-        <input
-          type="text"
-          placeholder="6-digit code"
-          [formField]="otpForm.code"
-          aria-label="Verification Code"
-          autocomplete="one-time-code"
-        />
-      </label>
+  {
+    path: 'households',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
+        data: { shouldReuse: true, key: 'householdsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+      },
+    ],
+  },
+  {
+    path: 'duplicates',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
+      },
+      {
+        path: 'people',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
+      },
+      {
+        path: 'households',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
+      },
+      {
+        path: 'companies',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
+      },
+    ],
+  },
+  {
+    path: 'tags',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tags/ui/tags-grid').then((m) => m.TagsGridComponent),
+        data: { shouldReuse: true, key: 'tagsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
+      },
+    ],
+  },
 
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { VERIFY }
-        </button>
-      </div>
+  {
+    path: 'issues',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tags/ui/issues-grid').then((m) => m.IssuesGridComponent),
+        data: { shouldReuse: true, key: 'issuesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
+      },
+    ],
+  },
 
-      <div class="text-center pt-2">
-        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
-          Back to Sign In
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('passkey-setup') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
-      <p class="text-sm text-white">
-        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
-        sign-ins.
-      </p>
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
-        @if (settingUpPasskey()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Set Up Passkey
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
-        Skip for now
-      </button>
-    </div>
-  </div>
-  } }
+  {
+    path: 'lists',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
+        data: { shouldReuse: true, key: 'listsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'new' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'edit' },
+      },
+    ],
+  },
 
-  <div class="text-neutral-200 text-center text-xs pt-2">
-    <span>
-      Copyright © 2024
-      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
-    </span>
-  </div>
-</pc-auth-layout>
+  {
+    path: 'newsletters',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'newslettersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'workflows',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'workflowsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'events',
+    children: [
+      {
+        path: '',
+        redirectTo: 'pages',
+        pathMatch: 'full',
+      },
+      {
+        path: 'shifts',
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./experiences/shifts/ui/shifts-grid').then((m) => m.ShiftsGridComponent),
+            data: { shouldReuse: true, key: 'eventsgridroot' },
+          },
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+          },
+        ],
+      },
+      {
+        path: 'pages',
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
+            data: { shouldReuse: true, key: 'eventpagesgridroot' },
+          },
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+          },
+        ],
+      },
+    ],
+  },
+
+  {
+    path: 'donations',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
+        data: { shouldReuse: true, key: 'donationsgridroot' },
+      },
+      {
+        path: 'pledges',
+        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
+        data: { shouldReuse: true, key: 'pledgesgridroot' },
+      },
+    ],
+  },
+
+  {
+    path: 'inbox',
+    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
+  },
+  {
+    path: 'tasks',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-grid').then((m) => m.TasksGrid),
+        data: { shouldReuse: true, key: 'tasksgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
+      },
+    ],
+  },
+  {
+    path: 'board',
+    loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
+  },
+
+  {
+    path: 'teams',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
+        data: { shouldReuse: true, key: 'teamsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'new' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'edit' },
+      },
+    ],
+  },
+  {
+    path: 'users',
+    canActivate: [roleGuard],
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
+        data: { shouldReuse: true, key: 'usersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
+      },
+    ],
+  },
+  {
+    path: 'forms',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/forms/ui/forms-grid').then((m) => m.FormsGridComponent),
+        data: { shouldReuse: true, key: 'formsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
+      },
+    ],
+  },
+  {
+    path: 'donation-pages',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-grid').then((m) => m.FundraisingGridComponent),
+        data: { shouldReuse: true, key: 'donationpagesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
+        data: { backRoute: '/donation-pages' },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'settings',
+    children: [
+      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'settings' },
+      },
+    ],
+  },
+  {
+    path: 'configuration',
+    canActivate: [roleGuard],
+    children: [
+      { path: '', redirectTo: 'organization', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'configuration' },
+      },
+    ],
+  },
+  {
+    path: 'billing',
+    redirectTo: '/configuration/billing',
+    pathMatch: 'full',
+  },
+  {
+    path: 'profile',
+    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
+  },
+  {
+    path: 'imports',
+    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
+  },
+  {
+    path: 'exports',
+    loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
+  },
+  {
+    path: 'companies',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
+        data: { shouldReuse: true, key: 'companiesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+      },
+    ],
+  },
+  {
+    path: 'files',
+    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
+  },
+  {
+    path: 'activities',
+    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
@@ -51746,459 +52262,10 @@ export class AuthService extends TRPCService<'authusers'> {
 </ul>
 ```
 
-## File: apps/frontend/src/app/dashboard.routes.ts
-
-```typescript
-import type { Routes } from '@angular/router';
-import { roleGuard } from './auth/role-guard';
-
-export const dashboardRoutes: Routes = [
-  { path: '', redirectTo: 'summary', pathMatch: 'full' },
-
-  {
-    path: 'summary',
-    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
-  },
-
-  {
-    path: 'people',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
-        data: { shouldReuse: true, key: 'persongridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-      },
-    ],
-  },
-
-  {
-    path: 'households',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
-        data: { shouldReuse: true, key: 'householdsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-      },
-    ],
-  },
-  {
-    path: 'duplicates',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
-      },
-      {
-        path: 'people',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
-      },
-      {
-        path: 'households',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
-      },
-      {
-        path: 'companies',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
-      },
-    ],
-  },
-  {
-    path: 'tags',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/tags-grid').then((m) => m.TagsGridComponent),
-        data: { shouldReuse: true, key: 'tagsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
-      },
-    ],
-  },
-
-  {
-    path: 'issues',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/issues-grid').then((m) => m.IssuesGridComponent),
-        data: { shouldReuse: true, key: 'issuesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
-      },
-    ],
-  },
-
-  {
-    path: 'lists',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
-        data: { shouldReuse: true, key: 'listsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'new' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'edit' },
-      },
-    ],
-  },
-
-  {
-    path: 'newsletters',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'newslettersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'workflows',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'workflowsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'events',
-    children: [
-      {
-        path: '',
-        redirectTo: 'pages',
-        pathMatch: 'full',
-      },
-      {
-        path: 'shifts',
-        children: [
-          {
-            path: '',
-            loadComponent: () => import('./experiences/shifts/ui/shifts-grid').then((m) => m.ShiftsGridComponent),
-            data: { shouldReuse: true, key: 'eventsgridroot' },
-          },
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-          },
-        ],
-      },
-      {
-        path: 'pages',
-        children: [
-          {
-            path: '',
-            loadComponent: () => import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
-            data: { shouldReuse: true, key: 'eventpagesgridroot' },
-          },
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-          },
-        ],
-      },
-    ],
-  },
-
-  {
-    path: 'donations',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
-        data: { shouldReuse: true, key: 'donationsgridroot' },
-      },
-      {
-        path: 'pledges',
-        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
-        data: { shouldReuse: true, key: 'pledgesgridroot' },
-      },
-    ],
-  },
-
-  {
-    path: 'inbox',
-    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
-  },
-  {
-    path: 'tasks',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tasks/ui/tasks-grid').then((m) => m.TasksGrid),
-        data: { shouldReuse: true, key: 'tasksgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
-      },
-    ],
-  },
-  {
-    path: 'board',
-    loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
-  },
-
-  {
-    path: 'teams',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
-        data: { shouldReuse: true, key: 'teamsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'new' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'edit' },
-      },
-    ],
-  },
-  {
-    path: 'users',
-    canActivate: [roleGuard],
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
-        data: { shouldReuse: true, key: 'usersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
-      },
-    ],
-  },
-  {
-    path: 'forms',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/forms/ui/forms-grid').then((m) => m.FormsGridComponent),
-        data: { shouldReuse: true, key: 'formsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
-      },
-    ],
-  },
-  {
-    path: 'donation-pages',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-grid').then((m) => m.FundraisingGridComponent),
-        data: { shouldReuse: true, key: 'donationpagesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-        data: { backRoute: '/donation-pages' },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'settings',
-    children: [
-      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'settings' },
-      },
-    ],
-  },
-  {
-    path: 'configuration',
-    canActivate: [roleGuard],
-    children: [
-      { path: '', redirectTo: 'organization', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'configuration' },
-      },
-    ],
-  },
-  {
-    path: 'billing',
-    redirectTo: '/configuration/billing',
-    pathMatch: 'full',
-  },
-  {
-    path: 'profile',
-    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
-  },
-  {
-    path: 'imports',
-    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
-  },
-  {
-    path: 'exports',
-    loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
-  },
-  {
-    path: 'companies',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
-        data: { shouldReuse: true, key: 'companiesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-      },
-    ],
-  },
-  {
-    path: 'files',
-    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
-  },
-  {
-    path: 'activities',
-    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
-  },
-];
-```
-
 ## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
 
 ```typescript
-import { PcIconNameType } from '@icons/icons.index';
+import type { PcIconNameType } from '@icons/icons.index';
 
 export interface ISidebarItem {
   adminOnly?: boolean;

@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { ResetPasswordPage } from './reset-password-page';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -15,13 +16,13 @@ describe('ResetPasswordPage', () => {
 
   beforeEach(async () => {
     mockAuthSvc = {
-      sendPasswordResetEmail: vi.fn().mockResolvedValue(undefined)
+      sendPasswordResetEmail: vi.fn().mockResolvedValue(undefined),
     };
 
     mockAlertSvc = {
       showError: vi.fn(),
       showSuccess: vi.fn(),
-      alertList: vi.fn().mockReturnValue([])
+      alertList: vi.fn().mockReturnValue([]),
     };
 
     await TestBed.configureTestingModule({
@@ -30,7 +31,7 @@ describe('ResetPasswordPage', () => {
         provideRouter([]),
         { provide: AuthService, useValue: mockAuthSvc },
         { provide: AlertService, useValue: mockAlertSvc },
-      ]
+      ],
     }).compileComponents();
 
     mockRouter = TestBed.inject(Router);

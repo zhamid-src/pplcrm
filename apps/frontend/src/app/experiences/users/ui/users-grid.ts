@@ -1,10 +1,10 @@
 import { Component, inject } from '@angular/core';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { UserAdminService } from '../services/useradmin-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { UserService } from '@frontend/services/user.service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { UserAdminService } from '../services/useradmin-service';
 
 @Component({
   selector: 'pc-users-grid',
@@ -14,7 +14,9 @@ import { UserService } from '@frontend/services/user.service';
       <pc-datagrid
         #grid
         title="Users"
+        i18n-title
         description="Manage administrator and staff user accounts, assign security roles, and monitor system access."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="true"
         [disableView]="false"
@@ -23,6 +25,7 @@ import { UserService } from '@frontend/services/user.service';
         [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-users"
+        i18n-plusIcon
         [isCellEditableOverride]="isCellEditableBind"
       ></pc-datagrid>
     </div>
@@ -133,8 +136,6 @@ export class UsersGridComponent {
       valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.created_at),
     },
   ];
-
-  constructor() {}
 
   public readonly isCellEditableBind = (row: any, col: any): boolean => {
     if (!col.editable) return false;

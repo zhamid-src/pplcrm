@@ -2,7 +2,6 @@
 // Receives: { type: 'parse', text: string }
 // Posts: { type: 'result', headers: string[], rows: Array<Record<string,string>> } or { type: 'error', message }
 
-// eslint-disable-next-line no-restricted-globals
 function detectDelimiter(sample: string[]) {
   const candidates = [',', '\t', ';'];
   let best: { ch: string; score: number } = { ch: ',', score: -1 };

@@ -1,6 +1,6 @@
 import { BaseRepository } from '../../../lib/base.repo';
-import { Transaction } from 'kysely';
-import { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class NotificationsRepo extends BaseRepository<'notifications'> {
   constructor() {

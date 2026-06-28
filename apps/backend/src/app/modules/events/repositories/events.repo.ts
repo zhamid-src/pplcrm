@@ -1,6 +1,8 @@
-import { SelectQueryBuilder, Transaction, sql } from 'kysely';
-import { BaseRepository, JoinedQueryParams } from '../../../lib/base.repo';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
+import type { JoinedQueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class EventsRepo extends BaseRepository<'events'> {
   constructor() {

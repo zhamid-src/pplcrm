@@ -1,7 +1,7 @@
 import { sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
-import { HasRow } from '../../../../../../../libs/common/src/lib/emails';
+import type { HasRow } from '../../../../../../../libs/common/src/lib/emails';
 
 export class EmailAttachmentsRepo extends BaseRepository<'email_attachments'> {
   constructor() {

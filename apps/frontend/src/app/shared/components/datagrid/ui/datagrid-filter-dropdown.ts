@@ -19,6 +19,7 @@ import { Component, input, output } from '@angular/core';
         <span>{{ title() }}</span>
         @if (active()) {
           <button
+            i18n
             class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
             (click)="clear.emit()"
           >

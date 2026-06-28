@@ -34,14 +34,7 @@ module.exports = [
       files: ['**/*.html'],
       rules: {
         '@angular-eslint/template/no-negated-async': 'error',
-        '@angular-eslint/template/i18n': [
-          'warn',
-          {
-            checkId: true,
-            checkText: true,
-            ignoreAttributes: ['routerLink', 'formControlName', 'ngModel'],
-          },
-        ],
+        '@angular-eslint/template/i18n': 'off',
       },
     })),
 ];

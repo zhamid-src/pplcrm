@@ -1,4 +1,4 @@
-import { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback } from 'fastify';
 import Stripe from 'stripe';
 import { BaseRepository } from '../../../lib/base.repo';
 import { env } from '../../../../env';

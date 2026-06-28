@@ -1,5 +1,5 @@
-import { Selectable } from 'kysely';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Selectable } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { BaseRepository } from '../../../lib/base.repo';
 
 export class DonationPeriodsRepo extends BaseRepository<'donation_periods'> {

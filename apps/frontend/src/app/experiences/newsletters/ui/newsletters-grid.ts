@@ -1,9 +1,9 @@
 import { Component, viewChild } from '@angular/core';
-import { UpdateMarketingEmailType } from '../../../../../../../libs/common/src';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { UpdateMarketingEmailType } from '../../../../../../../libs/common/src';
 
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { NewslettersService } from '../services/newsletters-service';
 import { NewslettersDashboardComponent } from './newsletters-dashboard';
 
@@ -24,6 +24,7 @@ import { NewslettersDashboardComponent } from './newsletters-dashboard';
         [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-newsletter"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,
@@ -86,8 +87,6 @@ export class NewslettersGridComponent {
       valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.send_date),
     },
   ];
-
-  constructor() {}
 
   private formatCount(value: unknown): string {
     const num = Number(value);

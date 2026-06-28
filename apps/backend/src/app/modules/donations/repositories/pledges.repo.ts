@@ -1,5 +1,5 @@
-import { Selectable } from 'kysely';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Selectable } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { BaseRepository } from '../../../lib/base.repo';
 
 export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
@@ -44,7 +44,10 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
       .execute();
   }
 
-  public async getByStripeSubscriptionId(subscriptionId: string): Promise<Selectable<Models['donation_pledges']> | undefined> {
+  public async getByStripeSubscriptionId(
+    subscriptionId: string,
+  ): Promise<Selectable<Models['donation_pledges']> | undefined> {
+    // eslint-disable-next-line local/no-unscoped-db-query
     return this.db
       .selectFrom('donation_pledges')
       .selectAll()

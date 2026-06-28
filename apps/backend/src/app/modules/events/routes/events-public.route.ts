@@ -1,4 +1,4 @@
-import { FastifyPluginCallback } from 'fastify';
+import type { FastifyPluginCallback } from 'fastify';
 import formBody from '@fastify/formbody';
 import { TRPCError } from '@trpc/server';
 import { EventsController } from '../controller';
@@ -130,7 +130,11 @@ const STYLES = `
 `;
 
 function esc(str: string): string {
-  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function page(title: string, body: string): string {
@@ -151,11 +155,16 @@ function page(title: string, body: string): string {
 function getStatusFromError(err: any): number {
   if (err instanceof TRPCError) {
     switch (err.code) {
-      case 'BAD_REQUEST': return 400;
-      case 'NOT_FOUND': return 404;
-      case 'CONFLICT': return 409;
-      case 'TOO_MANY_REQUESTS': return 429;
-      default: return 500;
+      case 'BAD_REQUEST':
+        return 400;
+      case 'NOT_FOUND':
+        return 404;
+      case 'CONFLICT':
+        return 409;
+      case 'TOO_MANY_REQUESTS':
+        return 429;
+      default:
+        return 500;
     }
   }
   return err.statusCode || 500;
@@ -229,10 +238,14 @@ function buildRsvpFormFields(fields: string[], disabled: boolean): string {
     </div>`);
   } else {
     if (isEnabled('city')) {
-      html.push(`<div class="form-group"><label for="city">City${isRequired('city') ? ' *' : ''}</label><input type="text" id="city" name="city" ${isRequired('city') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`);
+      html.push(
+        `<div class="form-group"><label for="city">City${isRequired('city') ? ' *' : ''}</label><input type="text" id="city" name="city" ${isRequired('city') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
+      );
     }
     if (isEnabled('zip')) {
-      html.push(`<div class="form-group"><label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label><input type="text" id="zip" name="zip" ${isRequired('zip') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`);
+      html.push(
+        `<div class="form-group"><label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label><input type="text" id="zip" name="zip" ${isRequired('zip') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
+      );
     }
   }
 
@@ -255,10 +268,14 @@ function buildRsvpFormFields(fields: string[], disabled: boolean): string {
     </div>`);
   } else {
     if (isEnabled('state')) {
-      html.push(`<div class="form-group"><label for="state">State / Province${isRequired('state') ? ' *' : ''}</label><input type="text" id="state" name="state" ${isRequired('state') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`);
+      html.push(
+        `<div class="form-group"><label for="state">State / Province${isRequired('state') ? ' *' : ''}</label><input type="text" id="state" name="state" ${isRequired('state') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
+      );
     }
     if (isEnabled('country')) {
-      html.push(`<div class="form-group"><label for="country">Country${isRequired('country') ? ' *' : ''}</label><select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${disabled ? 'disabled' : ''}><option value="">Select…</option><option value="CA">Canada</option><option value="US">United States</option><option value="GB">United Kingdom</option><option value="AU">Australia</option></select></div>`);
+      html.push(
+        `<div class="form-group"><label for="country">Country${isRequired('country') ? ' *' : ''}</label><select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${disabled ? 'disabled' : ''}><option value="">Select…</option><option value="CA">Canada</option><option value="US">United States</option><option value="GB">United Kingdom</option><option value="AU">Australia</option></select></div>`,
+      );
     }
   }
 
@@ -278,14 +295,19 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   // Success page
   fastify.get('/rsvp-success', async (_req: any, reply) => {
     reply.type('text/html');
-    return reply.send(page('RSVP Confirmed', `
+    return reply.send(
+      page(
+        'RSVP Confirmed',
+        `
       <div class="card" style="max-width:440px;margin:40px auto;text-align:center;">
         <div style="width:72px;height:72px;background:rgba(16,185,129,.1);border:2px solid #10b981;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;">
           <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </div>
         <h1>You're Registered!</h1>
         <p class="subtitle" style="margin-top:10px;">Thank you! A confirmation email with event details has been sent to you.</p>
-      </div>`));
+      </div>`,
+      ),
+    );
   });
 
   // Event detail + RSVP form
@@ -303,18 +325,26 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 
     if (!event) {
       reply.status(404).type('text/html');
-      return reply.send(page('Event Not Found', `<div class="not-found"><h1>Event not found</h1><p class="subtitle">This event page doesn't exist or hasn't been published yet.</p></div>`));
+      return reply.send(
+        page(
+          'Event Not Found',
+          `<div class="not-found"><h1>Event not found</h1><p class="subtitle">This event page doesn't exist or hasn't been published yet.</p></div>`,
+        ),
+      );
     }
 
     let ticketTypes: any[] = [];
     try {
       ticketTypes = await ctrl.getTicketTypesByEventId(String(event.id), String(event.tenant_id));
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     // Count current registrations for capacity display
     let regCount = 0;
     try {
-      const countRow = await (ctrl as any).getRepo()
+      const countRow = await (ctrl as any)
+        .getRepo()
         .db.selectFrom('event_registrations')
         .select(({ fn }: any) => [fn.count('id').as('cnt')])
         .where('tenant_id', '=', String(event.tenant_id))
@@ -322,7 +352,9 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
         .where('status', '!=', 'cancelled')
         .executeTakeFirst();
       regCount = Number(countRow?.cnt || 0);
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     const now = new Date();
     const start = new Date(event.start_time);
@@ -337,35 +369,50 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
         ? JSON.parse(event.fields)
         : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
-    const dateStr = start.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    const dateStr = start.toLocaleDateString(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
     const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
 
     const badge = isPast
       ? `<span class="badge badge-past">Past Event</span>`
       : `<span class="badge badge-upcoming">Upcoming</span>`;
 
-    const ticketsHtml = ticketTypes.length === 0 ? '' : `
+    const ticketsHtml =
+      ticketTypes.length === 0
+        ? ''
+        : `
       <hr class="divider" />
       <h3>Tickets</h3>
       <div class="tickets">
-        ${ticketTypes.map((t) => `
+        ${ticketTypes
+          .map(
+            (t) => `
           <div class="ticket-row">
             <div>
               <div class="ticket-name">${esc(t.name)}</div>
               ${t.description ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${esc(t.description)}</div>` : ''}
             </div>
             <div class="ticket-price">${t.price_cents ? `$${(t.price_cents / 100).toFixed(2)}` : 'Free'}${t.capacity ? ` <span style="font-size:11px;font-weight:400;color:var(--text-muted);">· ${t.capacity} spots</span>` : ''}</div>
-          </div>`).join('')}
+          </div>`,
+          )
+          .join('')}
       </div>`;
 
-    const contactHtml = (event.contact_email || event.contact_phone) ? `
+    const contactHtml =
+      event.contact_email || event.contact_phone
+        ? `
       <hr class="divider" />
       <div style="font-size:13px;color:var(--text-muted);">
         <strong style="color:var(--text);">Questions?</strong>
         ${event.contact_email ? ` <a href="mailto:${esc(event.contact_email)}" style="color:var(--accent);">${esc(event.contact_email)}</a>` : ''}
         ${event.contact_email && event.contact_phone ? ' · ' : ''}
         ${event.contact_phone ? esc(event.contact_phone) : ''}
-      </div>` : '';
+      </div>`
+        : '';
 
     // Capacity alert for RSVP form panel
     let spotsAlert = '';
@@ -398,16 +445,24 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
                 <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                 <div><div class="meta-label">Date & Time</div>${dateStr}<br/><span style="font-size:13px;opacity:.7;">${timeStr}</span></div>
               </div>
-              ${event.location_address ? `
+              ${
+                event.location_address
+                  ? `
               <div class="meta-row">
                 <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
                 <div><div class="meta-label">Location</div>${esc(event.location_address)}</div>
-              </div>` : ''}
-              ${event.capacity ? `
+              </div>`
+                  : ''
+              }
+              ${
+                event.capacity
+                  ? `
               <div class="meta-row">
                 <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
                 <div><div class="meta-label">Capacity</div>${remaining !== null ? `${remaining} of ${event.capacity} spots left` : `${event.capacity} total`}</div>
-              </div>` : ''}
+              </div>`
+                  : ''
+              }
             </div>
             ${ticketsHtml}
             ${contactHtml}
@@ -432,7 +487,8 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   // Handle RSVP form POST
   fastify.post('/rsvp/:slug', async (req: any, reply) => {
     const { slug } = req.params;
-    const isJson = req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
+    const isJson =
+      req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
     const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
 
     try {
@@ -448,12 +504,17 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       if (isJson) return reply.status(status).send({ error: message });
 
       reply.status(status).type('text/html');
-      return reply.send(page('Error', `
+      return reply.send(
+        page(
+          'Error',
+          `
         <div class="card" style="max-width:440px;margin:40px auto;text-align:center;">
           <h1 style="color:var(--error);">Error</h1>
           <p class="subtitle" style="margin-top:10px;">${esc(message)}</p>
           <div style="margin-top:20px;"><a href="javascript:history.back()" style="color:var(--accent);font-size:14px;">← Go back</a></div>
-        </div>`));
+        </div>`,
+        ),
+      );
     }
   });
 

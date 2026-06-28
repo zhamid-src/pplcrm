@@ -1,6 +1,8 @@
-import { EmailStatus, SPECIAL_FOLDERS } from '../../../../../../../libs/common/src';
+import type { EmailStatus } from '../../../../../../../libs/common/src';
+import { SPECIAL_FOLDERS } from '../../../../../../../libs/common/src';
 
-import { UpdateResult, sql } from 'kysely';
+import type { UpdateResult } from 'kysely';
+import { sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
 import { EmailAttachmentsRepo } from './email-attachments.repo';

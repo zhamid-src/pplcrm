@@ -1,6 +1,6 @@
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { Transaction } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
 
 export class MapHouseholdsTagsRepo extends BaseRepository<'map_households_tags'> {
   constructor() {

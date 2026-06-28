@@ -10,7 +10,7 @@ export interface SingleSelectOption {
   template: `
     <div class="overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar" [style.max-height.rem]="maxHeight()">
       @if (options().length === 0) {
-        <div class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
+        <div i18n class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
       } @else {
         @for (opt of options(); track opt.value) {
           <label

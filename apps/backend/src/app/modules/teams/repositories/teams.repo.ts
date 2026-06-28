@@ -1,7 +1,9 @@
-import { SelectQueryBuilder, Transaction, sql } from 'kysely';
+import type { SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
 
-import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class TeamsRepo extends BaseRepository<'teams'> {
   private readonly volunteerTag = 'volunteer';
@@ -88,8 +90,8 @@ export class TeamsRepo extends BaseRepository<'teams'> {
         'lead_user.first_name',
         'lead_user.last_name',
       ])
-      .$if(Array.isArray(options.sortModel) && options.sortModel.length > 0, (builder) => {
-        return options.sortModel!.reduce((acc: any, sort: any) => {
+      .$if(Array.isArray(options.sortModel) && options.sortModel.length > 0, (builder) =>
+        options.sortModel!.reduce((acc: any, sort: any) => {
           switch (sort.colId) {
             case 'volunteer_count':
               return acc.orderBy(sql`COUNT(DISTINCT map_teams_persons.person_id)`, sort.sort);
@@ -120,8 +122,8 @@ export class TeamsRepo extends BaseRepository<'teams'> {
               return acc.orderBy(col as any, sort.sort);
             }
           }
-        }, builder as any);
-      })
+        }, builder as any),
+      )
       .offset(startRow)
       .limit(limit)
       .execute();

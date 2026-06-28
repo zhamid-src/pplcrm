@@ -1,7 +1,8 @@
-import { Transaction, sql } from 'kysely';
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Models, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class EmailTrashRepo extends BaseRepository<'email_trash'> {
   constructor() {

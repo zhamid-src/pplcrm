@@ -14,7 +14,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
     <div class="flex flex-col gap-4">
       <!-- Header -->
       <div class="flex items-center justify-between">
-        <h4 class="font-semibold text-base-content/80">
+        <h4 i18n class="font-semibold text-base-content/80">
           Connections
           @if (connections().length > 0) {
             <span class="badge badge-sm badge-neutral ml-2">{{ connections().length }}</span>
@@ -33,7 +33,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
           <div class="skeleton h-16 w-full rounded-xl"></div>
         </div>
       } @else if (connections().length === 0) {
-        <div class="text-center py-10 text-base-content/40 italic text-sm">
+        <div i18n class="text-center py-10 text-base-content/40 italic text-sm">
           No connections recorded. Add one to start mapping this contact's network.
         </div>
       } @else {

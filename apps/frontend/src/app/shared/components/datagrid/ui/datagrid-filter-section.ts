@@ -27,6 +27,7 @@ import { Icon } from '@icons/icon';
         <div class="flex items-center gap-1">
           @if (active() && clearable()) {
             <button
+              i18n
               class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
               (click)="clear.emit(); $event.stopPropagation()"
             >

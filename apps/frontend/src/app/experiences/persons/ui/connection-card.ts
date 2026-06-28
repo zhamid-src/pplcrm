@@ -66,6 +66,7 @@ const BADGE_CLASSES: Record<string, string> = {
         class="btn btn-ghost btn-xs btn-circle text-error/50 hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
         (click)="remove.emit(connection().id)"
         data-tip="Remove connection"
+        i18n-data-tip
       >
         <pc-icon name="x-mark" [size]="3"></pc-icon>
       </button>

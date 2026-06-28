@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { ListsGridComponent } from './lists-grid';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';

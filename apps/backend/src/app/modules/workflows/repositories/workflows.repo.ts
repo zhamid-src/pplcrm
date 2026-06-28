@@ -1,6 +1,8 @@
-import { ReferenceExpression, SelectQueryBuilder, Transaction, sql } from 'kysely';
-import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { ReferenceExpression, SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class WorkflowsRepo extends BaseRepository<'workflows'> {
   constructor() {

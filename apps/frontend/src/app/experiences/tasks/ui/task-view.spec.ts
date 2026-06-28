@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { TaskView } from './task-view';
 import { AuthService } from '../../../auth/auth-service';
 import { UserService } from '../../../services/user.service';

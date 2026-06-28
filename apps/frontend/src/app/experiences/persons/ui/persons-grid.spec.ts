@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { PersonsGrid } from './persons-grid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { PersonsService } from '../services/persons-service';

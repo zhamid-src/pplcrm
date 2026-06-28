@@ -1,10 +1,5 @@
-import {
-  ApplicationConfig,
-  ErrorHandler,
-  inject,
-  provideAppInitializer,
-  provideZonelessChangeDetection,
-} from '@angular/core';
+import type { ApplicationConfig } from '@angular/core';
+import { ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
 import { provideTanStackQuery, QueryClient } from '@tanstack/angular-query-experimental';
 import { ENVIRONMENT } from './environment-token';
 import { RouteReuseStrategy, provideRouter, withComponentInputBinding } from '@angular/router';

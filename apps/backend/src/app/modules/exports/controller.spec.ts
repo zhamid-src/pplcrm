@@ -4,19 +4,17 @@ import { BaseRepository } from '../../lib/base.repo';
 import { StorageService } from '../../lib/storage.service';
 import { BackgroundJobWorker } from '../../lib/jobs/worker';
 
-vi.mock('../../lib/storage.service', () => {
-  return {
-    TransactionalEmailService: class {
-      sendMail = vi.fn().mockResolvedValue(undefined);
-    },
-    StorageService: class {
-      delete = vi.fn().mockResolvedValue(undefined);
-      upload = vi.fn().mockResolvedValue(undefined);
-      uploadStream = vi.fn().mockResolvedValue(undefined);
-      download = vi.fn().mockResolvedValue(undefined);
-    },
-  };
-});
+vi.mock('../../lib/storage.service', () => ({
+  TransactionalEmailService: class {
+    sendMail = vi.fn().mockResolvedValue(undefined);
+  },
+  StorageService: class {
+    delete = vi.fn().mockResolvedValue(undefined);
+    upload = vi.fn().mockResolvedValue(undefined);
+    uploadStream = vi.fn().mockResolvedValue(undefined);
+    download = vi.fn().mockResolvedValue(undefined);
+  },
+}));
 
 describe('ExportsController & Recovery', () => {
   const controller = new ExportsController();

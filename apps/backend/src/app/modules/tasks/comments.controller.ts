@@ -1,6 +1,6 @@
 import { env } from '../../../env';
 import { BaseController } from '../../lib/base.controller';
-import { Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
 import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { TaskCommentsRepo } from './repositories/task-comments.repo';
 import { processMentions } from '../../lib/mail/mentions-util';

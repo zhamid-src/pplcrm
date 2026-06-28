@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { VerifySenderEmailPage } from './verify-sender-email-page';
 import { SettingsService } from '../../experiences/settings/services/settings-service';
 import { ActivatedRoute, provideRouter } from '@angular/router';
