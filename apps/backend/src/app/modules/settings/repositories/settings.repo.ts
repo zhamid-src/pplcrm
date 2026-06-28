@@ -21,17 +21,13 @@ export class SettingsRepo extends BaseRepository<'settings'> {
     return this.getSelect().select(['key', 'value', 'updated_at']).where('tenant_id', '=', tenant).execute();
   }
 
-  public async upsertMany(input: {
-    tenant_id: string;
-    user_id: string;
-    entries: { key: string; value: Models['settings']['value'] }[];
-  }) {
+  public async upsertMany(input: { tenant_id: string; user_id: string; entries: { key: string; value: unknown }[] }) {
     if (!input.entries.length) return [] as Models['settings'][];
 
     const rows = input.entries.map((entry) => ({
       tenant_id: input.tenant_id,
       key: entry.key,
-      value: JSON.stringify(entry.value) as any,
+      value: JSON.stringify(entry.value),
       createdby_id: input.user_id,
       updatedby_id: input.user_id,
     }));

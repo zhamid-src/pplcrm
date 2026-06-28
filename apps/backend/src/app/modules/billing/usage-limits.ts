@@ -28,11 +28,7 @@ export function getPlanLimits(planName: string | null | undefined): PlanLimits {
 }
 
 export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promise<void> {
-  const tenant = await db
-    .selectFrom('tenants')
-    .selectAll()
-    .where('id', '=', BigInt(tenantId) as any)
-    .executeTakeFirst();
+  const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', BigInt(tenantId)).executeTakeFirst();
 
   if (!tenant) {
     console.error(`[checkTenantUsage] Tenant not found: ${tenantId}`);
@@ -278,7 +274,7 @@ export async function checkAllUsageLimits(db: Kysely<any>): Promise<void> {
 export async function queueUsageLimitCheck(tenantId: string, db: any): Promise<void> {
   // Check if there is already a pending limits check job for this tenant
   const existing = await db
-    .selectFrom('background_jobs' as any)
+    .selectFrom('background_jobs')
     .select('id')
     .where('tenant_id', '=', tenantId)
     .where('status', '=', 'pending')
@@ -287,7 +283,7 @@ export async function queueUsageLimitCheck(tenantId: string, db: any): Promise<v
 
   if (!existing) {
     await db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: tenantId,
         queue: 'default',

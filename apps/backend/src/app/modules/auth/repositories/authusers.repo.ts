@@ -18,7 +18,7 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
     const options: JoinedQueryParams = (input.options as JoinedQueryParams) ?? {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(typeof options.searchStr === 'string' ? options.searchStr : undefined);
-    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
+    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as Record<string, any>;
 
     const startRow = typeof options.startRow === 'number' && options.startRow >= 0 ? options.startRow : 0;
     const endRowCandidate =
@@ -32,12 +32,12 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
         .$if(!!searchStr, (builder) => {
           const text = searchStr;
           return builder.where(
-            sql`(
+            sql<boolean>`(
               LOWER(authusers.email) LIKE ${text} OR
               LOWER(authusers.first_name) LIKE ${text} OR
               LOWER(COALESCE(authusers.last_name, '')) LIKE ${text} OR
               LOWER(COALESCE(profiles.last_name, '')) LIKE ${text}
-            )` as any,
+            )`,
           );
         })
         .$if(filterModel['verified'] !== undefined && filterModel['verified'] !== null, (builder) => {
@@ -48,13 +48,13 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
               : typeof raw?.value === 'boolean'
                 ? raw.value
                 : String(raw?.value ?? raw ?? '').toLowerCase() === 'true';
-          return builder.where('authusers.verified', '=', boolVal as any);
+          return builder.where('authusers.verified', '=', boolVal);
         })
         .$if(filterModel['role']?.value || typeof filterModel['role'] === 'string', (builder) => {
           const raw = filterModel['role']?.value ?? filterModel['role'];
           const value = String(raw ?? '').trim();
           if (!value) return builder;
-          return builder.where('authusers.role', '=', value as any);
+          return builder.where('authusers.role', '=', String(value));
         });
 
     const countRow = await applyFilters(this.getSelect(trx))
@@ -89,7 +89,7 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
             case 'first_name':
               return acc.orderBy('authusers.first_name', dir);
             case 'last_name':
-              return acc.orderBy(sql`COALESCE(authusers.last_name, profiles.last_name)` as any, dir);
+              return acc.orderBy(sql<boolean>`COALESCE(authusers.last_name, profiles.last_name)`, dir);
             case 'role':
               return acc.orderBy('authusers.role', dir);
             case 'verified':
@@ -99,7 +99,7 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
             case 'updated_at':
               return acc.orderBy('authusers.updated_at', dir);
             default:
-              return acc.orderBy(sort.colId as any, dir);
+              return acc.orderBy(sort.colId, dir);
           }
         }, qb),
       )

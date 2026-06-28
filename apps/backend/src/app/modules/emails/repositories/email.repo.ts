@@ -1,4 +1,5 @@
 import type { EmailStatus } from '../../../../../../../libs/common/src';
+import type { TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { SPECIAL_FOLDERS } from '../../../../../../../libs/common/src';
 
 import type { UpdateResult } from 'kysely';
@@ -83,7 +84,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
       .select('p_sender.first_name as sender_first_name')
       .select('p_sender.last_name as sender_last_name')
       // numeric count (coalesced to 0)
-      .select((eb) => eb.fn.coalesce(eb.ref('ea.att_count' as any), eb.val(0)).as('attachment_count'))
+      .select(sql<number>`COALESCE(ea.att_count, 0)`.as('attachment_count'))
       // boolean has_attachment via EXISTS (fast)
       .select((eb) =>
         eb
@@ -157,18 +158,18 @@ export class EmailRepo extends BaseRepository<'emails'> {
 
     // Real folders
     for (const row of regular) {
-      counts[row.folder_id as unknown as string] = Number((row as any).count ?? 0);
+      counts[row.folder_id] = Number(row.count ?? 0);
     }
 
     // Override Inbox count with the unread count
-    counts[ALL_FOLDERS.INBOX] = Number((virtual as any)?.inbox_unread ?? 0);
+    counts[ALL_FOLDERS.INBOX] = Number(virtual?.inbox_unread ?? 0);
 
     // Virtual folders (COALESCE to 0 if tenant has no emails)
-    counts[SPECIAL_FOLDERS.ALL_OPEN] = Number((virtual as any)?.all_open ?? 0);
-    counts[SPECIAL_FOLDERS.CLOSED] = Number((virtual as any)?.closed ?? 0);
-    counts[SPECIAL_FOLDERS.ASSIGNED_TO_ME] = Number((virtual as any)?.assigned ?? 0);
-    counts[SPECIAL_FOLDERS.UNASSIGNED] = Number((virtual as any)?.unassigned ?? 0);
-    counts[SPECIAL_FOLDERS.FAVOURITES] = Number((virtual as any)?.favourites ?? 0);
+    counts[SPECIAL_FOLDERS.ALL_OPEN] = Number(virtual?.all_open ?? 0);
+    counts[SPECIAL_FOLDERS.CLOSED] = Number(virtual?.closed ?? 0);
+    counts[SPECIAL_FOLDERS.ASSIGNED_TO_ME] = Number(virtual?.assigned ?? 0);
+    counts[SPECIAL_FOLDERS.UNASSIGNED] = Number(virtual?.unassigned ?? 0);
+    counts[SPECIAL_FOLDERS.FAVOURITES] = Number(virtual?.favourites ?? 0);
 
     return counts;
   }
@@ -237,9 +238,9 @@ export class EmailRepo extends BaseRepository<'emails'> {
       .executeTakeFirst();
 
     return {
-      total: Number((row as any)?.total ?? 0),
-      open: Number((row as any)?.open ?? 0),
-      closed: Number((row as any)?.closed ?? 0),
+      total: Number(row?.total ?? 0),
+      open: Number(row?.open ?? 0),
+      closed: Number(row?.closed ?? 0),
     };
   }
 
@@ -285,7 +286,7 @@ export class EmailRepo extends BaseRepository<'emails'> {
         .executeTakeFirst()) as unknown as UpdateResult;
 
       // Clean up only the provenance rows we used
-      await this.emailTrashRepo.deleteByEmailIds({ tenant_id: tenantId as any, emailIds }, trx);
+      await this.emailTrashRepo.deleteByEmailIds({ tenant_id: tenantId as TypeTenantId<'email_trash'>, emailIds }, trx);
 
       return Number(updated?.numUpdatedRows ?? 0);
     });

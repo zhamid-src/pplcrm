@@ -20,7 +20,7 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
       }
       if (!currentJson || !currentJson.google_enriched) {
         await this.getRepo()
-          .db.insertInto('background_jobs' as any)
+          .db.insertInto('background_jobs')
           .values({
             tenant_id: input.tenant_id,
             queue: 'default',
@@ -32,7 +32,7 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
             }),
             run_at: new Date(),
             max_attempts: 3,
-          } as any)
+          })
           .execute()
           .catch((err) => console.error('Failed to queue google enrichment job on getOneById:', err));
       }
@@ -151,15 +151,15 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
     }
 
     await this.importsRepo.update({
-      tenant_id: auth.tenant_id as any,
-      id: importRecordId as any,
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
       row: {
         metadata: JSON.stringify({ storage_key: storageKey }),
       } as any,
     });
 
     await this.importsRepo.db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: auth.tenant_id,
         queue: 'default',
@@ -174,7 +174,7 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
           source: 'companies',
         }),
         run_at: new Date(),
-      } as any)
+      })
       .execute();
 
     return {
@@ -235,8 +235,8 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
       }
 
       await this.importsRepo.update({
-        tenant_id: tenant_id as any,
-        id: import_id as any,
+        tenant_id: tenant_id,
+        id: import_id,
         row: {
           inserted_count: results.inserted,
           error_count: results.errors,

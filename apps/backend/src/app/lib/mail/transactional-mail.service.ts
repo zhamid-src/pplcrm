@@ -194,7 +194,7 @@ export class TransactionalEmailService {
   public async enqueueMail(options: SendMailOptions, trx?: Transaction<any> | Kysely<any>): Promise<void> {
     const dbClient = (trx || BaseRepository.dbInstance) as any;
     await dbClient
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id: options.tenant_id ? BigInt(options.tenant_id) : null,
         queue: 'default',

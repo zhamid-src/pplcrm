@@ -1,7 +1,7 @@
-import type { Transaction } from 'kysely';
+import type { Selectable, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import { BaseRepository } from '../../../lib/base.repo';
-import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class CompaniesRepo extends BaseRepository<'companies'> {
   constructor() {
@@ -23,7 +23,7 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
       )
       .select([sql<number>`count(group_key)`.as('total')])
       .executeTakeFirst();
-    return Number((countResult as any)?.total || 0);
+    return Number(countResult?.total ?? 0);
   }
 
   public async getPotentialDuplicates(
@@ -47,7 +47,7 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
       )
       .select([sql<number>`count(group_key)`.as('total')])
       .executeTakeFirst();
-    const total = Number((countResult as any)?.total || 0);
+    const total = Number(countResult?.total ?? 0);
 
     if (total === 0) {
       return { groups: [], total: 0 };
@@ -96,7 +96,7 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
       return { groups: [], total };
     }
 
-    const persons = await (BaseRepository as any)['_db']
+    const persons = await this.db
       .selectFrom('persons')
       .select(['id', 'first_name', 'last_name', 'email', 'company_id'])
       .where('tenant_id', '=', tenant_id)
@@ -128,15 +128,25 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
       });
     }
 
-    const sortedGroups = groupKeys.map((key) => groupsMap.get(key)).filter((g) => g && g.companies.length > 1) as any[];
+    const sortedGroups = groupKeys
+      .map((key) => groupsMap.get(key))
+      .filter((g): g is NonNullable<typeof g> => !!(g && g.companies.length > 1));
 
     return { groups: sortedGroups, total };
   }
 
   public async mergeCompanies(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
     return this.transaction().execute(async (trx) => {
-      const target = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.target_id }, trx)) as any;
-      const source = (await this.getOneBy('id', { tenant_id: input.tenant_id, value: input.source_id }, trx)) as any;
+      const target = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'companies'>, value: input.target_id },
+        trx,
+      )) as Selectable<Models['companies']>;
+      const source = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'companies'>, value: input.source_id },
+        trx,
+      )) as Selectable<Models['companies']>;
 
       if (!target || !source) {
         throw new Error('Target or Source company not found');
@@ -167,7 +177,7 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
       // 2. Reassign people (persons.company_id)
       await trx
         .updateTable('persons')
-        .set({ company_id: input.target_id as any, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .set({ company_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
         .where('tenant_id', '=', input.tenant_id)
         .where('company_id', '=', input.source_id)
         .execute();
@@ -199,11 +209,11 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
     await this.getUpdate(trx)
       .set({
         file_id: null,
-        updated_at: sql`now()` as any,
+        updated_at: sql`now()`,
         updatedby_id: input.user_id,
-      } as OperationDataType<'companies', 'update'>)
-      .where('tenant_id', '=', input.tenant_id as any)
-      .where('file_id', '=', input.import_id as any)
+      } as unknown as OperationDataType<'companies', 'update'>)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
       .executeTakeFirst();
   }
 }

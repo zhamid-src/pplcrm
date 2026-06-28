@@ -14,7 +14,7 @@ export class NotificationsRepo extends BaseRepository<'notifications'> {
       .where('user_id', '=', user_id)
       .where('read', '=', false)
       .executeTakeFirst();
-    return Number((res as any)?.count || 0);
+    return Number(res?.count ?? 0);
   }
 
   public async getLatestForUser(tenant_id: string, user_id: string, limit = 20, offset = 0, trx?: Transaction<Models>) {

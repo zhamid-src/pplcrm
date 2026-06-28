@@ -73,15 +73,11 @@ export class EmailIngesterService {
         .where('email_id', 'in', emailIds)
         .execute();
       await trx
-        .deleteFrom('email_attachments' as any)
+        .deleteFrom('email_attachments')
         .where('tenant_id', '=', tenantId)
         .where('email_id', 'in', emailIds)
         .execute();
-      await trx
-        .deleteFrom('email_trash' as any)
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', 'in', emailIds)
-        .execute();
+      await trx.deleteFrom('email_trash').where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
 
       // Delete from emails table
       await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', 'in', emailIds).execute();
@@ -120,15 +116,11 @@ export class EmailIngesterService {
         .where('email_id', '=', emailId)
         .execute();
       await trx
-        .deleteFrom('email_attachments' as any)
+        .deleteFrom('email_attachments')
         .where('tenant_id', '=', tenantId)
         .where('email_id', '=', emailId)
         .execute();
-      await trx
-        .deleteFrom('email_trash' as any)
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', '=', emailId)
-        .execute();
+      await trx.deleteFrom('email_trash').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
 
       // Delete from emails table
       await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', emailId).execute();

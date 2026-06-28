@@ -18,8 +18,8 @@ export class DonationsRepo extends BaseRepository<'donations'> {
 
     const result = await this.getSelect()
       .select(({ fn }) => [fn.sum<string | number>('amount').as('total')])
-      .where('tenant_id', '=', tenantId as any)
-      .where('person_id', '=', personId as any)
+      .where('tenant_id', '=', tenantId)
+      .where('person_id', '=', personId)
       .where('status', '=', 'succeeded')
       .where('created_at', '>=', startOfYear)
       .where('created_at', '<=', endOfYear)
@@ -40,8 +40,8 @@ export class DonationsRepo extends BaseRepository<'donations'> {
   ): Promise<number> {
     let query = this.getSelect()
       .select(({ fn }) => [fn.sum<string | number>('amount').as('total')])
-      .where('tenant_id', '=', tenantId as any)
-      .where('person_id', '=', personId as any)
+      .where('tenant_id', '=', tenantId)
+      .where('person_id', '=', personId)
       .where('status', '=', 'succeeded')
       .where('created_at', '>=', startDate);
 
@@ -61,8 +61,8 @@ export class DonationsRepo extends BaseRepository<'donations'> {
   public async getPersonDonationsList(tenantId: string, personId: string): Promise<Selectable<Models['donations']>[]> {
     return this.getSelect()
       .selectAll()
-      .where('tenant_id', '=', tenantId as any)
-      .where('person_id', '=', personId as any)
+      .where('tenant_id', '=', tenantId)
+      .where('person_id', '=', personId)
       .orderBy('created_at', 'desc')
       .execute();
   }
@@ -91,7 +91,7 @@ export class DonationsRepo extends BaseRepository<'donations'> {
         this.db.fn.coalesce('persons.last_name', 'donations.last_name').as('person_last_name'),
         this.db.fn.coalesce('persons.email', 'donations.email').as('person_email'),
       ])
-      .where('donations.tenant_id', '=', tenantId as any)
+      .where('donations.tenant_id', '=', tenantId)
       .orderBy('donations.created_at', 'desc')
       .execute();
   }

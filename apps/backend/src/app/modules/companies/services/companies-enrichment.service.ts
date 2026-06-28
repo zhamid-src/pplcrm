@@ -10,8 +10,8 @@ export class CompaniesEnrichmentService {
     const company = await this.db
       .selectFrom('companies')
       .selectAll()
-      .where('id', '=', companyId as any)
-      .where('tenant_id', '=', tenantId as any)
+      .where('id', '=', companyId)
+      .where('tenant_id', '=', tenantId)
       .executeTakeFirst();
 
     if (!company) {
@@ -119,8 +119,8 @@ export class CompaniesEnrichmentService {
     await this.db
       .updateTable('companies')
       .set(updatePayload)
-      .where('id', '=', companyId as any)
-      .where('tenant_id', '=', tenantId as any)
+      .where('id', '=', companyId)
+      .where('tenant_id', '=', tenantId)
       .execute();
   }
 
@@ -131,7 +131,7 @@ export class CompaniesEnrichmentService {
       .where((eb) => eb.or([eb('json', 'is', null), sql<boolean>`json->>'google_enriched' is null`]));
 
     if (tenantId) {
-      query = query.where('tenant_id', '=', tenantId as any);
+      query = query.where('tenant_id', '=', tenantId);
     }
 
     const unenriched = await query.execute();
@@ -150,10 +150,7 @@ export class CompaniesEnrichmentService {
       max_attempts: 3,
     }));
 
-    await this.db
-      .insertInto('background_jobs' as any)
-      .values(values as any)
-      .execute();
+    await this.db.insertInto('background_jobs').values(values).execute();
 
     return unenriched.length;
   }

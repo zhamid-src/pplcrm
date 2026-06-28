@@ -90,7 +90,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     const db = this.getRepo().db;
     let query = db
       .selectFrom('persons')
-      .where('persons.tenant_id', '=', tenant_id as any)
+      .where('persons.tenant_id', '=', tenant_id)
       .where('persons.email', 'is not', null)
       .where('persons.email', '!=', '')
       // Exclude unconfirmed double opt-in subscribers (NULL = never required to opt in, so still included).
@@ -104,8 +104,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
             db
               .selectFrom('map_lists_persons')
               .select('person_id')
-              .where('map_lists_persons.tenant_id', '=', tenant_id as any)
-              .whereRef('map_lists_persons.person_id' as any, '=', 'persons.id' as any)
+              .where('map_lists_persons.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
               .where('map_lists_persons.list_id', 'in', includeListIds),
           ),
         );
@@ -117,8 +117,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
               .selectFrom('map_peoples_tags')
               .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
               .select('map_peoples_tags.person_id')
-              .where('map_peoples_tags.tenant_id', '=', tenant_id as any)
-              .whereRef('map_peoples_tags.person_id' as any, '=', 'persons.id' as any)
+              .where('map_peoples_tags.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
               .where('tags.name', 'in', includeTags),
           ),
         );
@@ -137,8 +137,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
             db
               .selectFrom('map_lists_persons')
               .select('person_id')
-              .where('map_lists_persons.tenant_id', '=', tenant_id as any)
-              .whereRef('map_lists_persons.person_id' as any, '=', 'persons.id' as any)
+              .where('map_lists_persons.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_lists_persons.person_id = persons.id`)
               .where('map_lists_persons.list_id', 'in', excludeListIds),
           ),
         ),
@@ -153,8 +153,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
               .selectFrom('map_peoples_tags')
               .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
               .select('map_peoples_tags.person_id')
-              .where('map_peoples_tags.tenant_id', '=', tenant_id as any)
-              .whereRef('map_peoples_tags.person_id' as any, '=', 'persons.id' as any)
+              .where('map_peoples_tags.tenant_id', '=', tenant_id)
+              .where(sql<boolean>`map_peoples_tags.person_id = persons.id`)
               .where('tags.name', 'in', excludeTags),
           ),
         ),
@@ -199,7 +199,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     });
 
     await db
-      .insertInto('background_jobs' as any)
+      .insertInto('background_jobs')
       .values({
         tenant_id,
         queue: 'default',
@@ -226,8 +226,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     const activities = await db
       .selectFrom('newsletter_events')
       .select(['email', 'event_type', 'timestamp', 'url', 'ip', 'user_agent'])
-      .where('newsletter_id', '=', id as any)
-      .where('tenant_id', '=', tenant_id as any)
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
       .where('event_type', 'in', ['open', 'click', 'bounce', 'dropped', 'unsubscribe', 'spamreport'])
       .orderBy('timestamp', 'desc')
       .limit(100)
@@ -241,8 +241,8 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
         sql<number>`COUNT(id) FILTER (WHERE event_type = 'open')`.as('opens'),
         sql<number>`COUNT(id) FILTER (WHERE event_type = 'click')`.as('clicks'),
       ])
-      .where('newsletter_id', '=', id as any)
-      .where('tenant_id', '=', tenant_id as any)
+      .where('newsletter_id', '=', id)
+      .where('tenant_id', '=', tenant_id)
       .where('event_type', 'in', ['open', 'click'])
       .groupBy('time_bucket')
       .orderBy('time_bucket', 'asc')

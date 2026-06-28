@@ -15,7 +15,7 @@ export class MapTeamsPersonsRepo extends BaseRepository<'map_teams_persons'> {
       .where('tenant_id', '=', input.tenant_id)
       .where('team_id', '=', input.team_id)
       .execute();
-    return rows.map((row) => String((row as any).person_id));
+    return rows.map((row) => String(row.person_id));
   }
 
   public async getTeamsForPerson(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
@@ -69,7 +69,7 @@ export class MapTeamsPersonsRepo extends BaseRepository<'map_teams_persons'> {
         .where('tenant_id', '=', input.tenant_id)
         .where('team_id', '=', input.team_id)
         .execute();
-      const currentIds = new Set(currentRows.map((row) => String((row as any).person_id)));
+      const currentIds = new Set(currentRows.map((row) => String(row.person_id)));
       const incoming = new Set(uniqueIds);
 
       const toRemove = Array.from(currentIds).filter((id) => !incoming.has(id));

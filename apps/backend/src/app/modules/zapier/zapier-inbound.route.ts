@@ -29,7 +29,7 @@ async function resolveAuth(tenantId: string, db: any): Promise<IAuthKeyPayload |
   const owner = await db
     .selectFrom('authusers')
     .select(['id', 'first_name', 'last_name', 'role'])
-    .where('tenant_id', '=', tenantId as any)
+    .where('tenant_id', '=', tenantId)
     .where('role', 'in', ['owner', 'admin'])
     .orderBy('id', 'asc')
     .limit(1)
@@ -82,7 +82,7 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
       const existing = await db
         .selectFrom('persons')
         .select(['id', 'email'])
-        .where('tenant_id', '=', tenantId as any)
+        .where('tenant_id', '=', tenantId)
         .where('email', 'ilike', email.trim())
         .executeTakeFirst();
 
@@ -123,7 +123,7 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
       const person = await db
         .selectFrom('persons')
         .select(['id'])
-        .where('tenant_id', '=', tenantId as any)
+        .where('tenant_id', '=', tenantId)
         .where('email', 'ilike', email.trim())
         .executeTakeFirst();
 
@@ -163,7 +163,7 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
       const person = await db
         .selectFrom('persons')
         .select(['id'])
-        .where('tenant_id', '=', tenantId as any)
+        .where('tenant_id', '=', tenantId)
         .where('email', 'ilike', email.trim())
         .executeTakeFirst();
 

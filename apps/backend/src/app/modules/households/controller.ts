@@ -175,7 +175,7 @@ export class HouseholdsController extends BaseController<'households', Household
         // Queue geocoding background job if geocoding status is pending
         if (geocoding_status === 'pending') {
           await this.getRepo()
-            .db.insertInto('background_jobs' as any)
+            .db.insertInto('background_jobs')
             .values({
               tenant_id: input.tenant_id,
               queue: 'default',
@@ -208,7 +208,11 @@ export class HouseholdsController extends BaseController<'households', Household
       });
     }
 
-    const randomHexColor = () => '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
+    const randomHexColor = () =>
+      '#' +
+      Math.floor(Math.random() * 0xffffff)
+        .toString(16)
+        .padStart(6, '0');
     const row = {
       name,
       color: randomHexColor(),
@@ -354,9 +358,9 @@ export class HouseholdsController extends BaseController<'households', Household
 
   public async getLastFingerprintRecomputation(tenantId: string): Promise<{ lastRunAt: string | null }> {
     const job = await this.getRepo()
-      .db.selectFrom('background_jobs' as any)
+      .db.selectFrom('background_jobs')
       .select(['created_at'])
-      .where('tenant_id', '=', tenantId as any)
+      .where('tenant_id', '=', tenantId)
       .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
       .orderBy('created_at', 'desc')
       .executeTakeFirst();
@@ -369,9 +373,9 @@ export class HouseholdsController extends BaseController<'households', Household
     oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
 
     const existingJob = await this.getRepo()
-      .db.selectFrom('background_jobs' as any)
+      .db.selectFrom('background_jobs')
       .select(['created_at'])
-      .where('tenant_id', '=', tenantId as any)
+      .where('tenant_id', '=', tenantId)
       .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
       .where('created_at', '>', oneMonthAgo)
       .executeTakeFirst();
@@ -384,7 +388,7 @@ export class HouseholdsController extends BaseController<'households', Household
     }
 
     await this.getRepo()
-      .db.insertInto('background_jobs' as any)
+      .db.insertInto('background_jobs')
       .values({
         tenant_id: tenantId,
         queue: 'default',

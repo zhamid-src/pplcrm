@@ -37,7 +37,7 @@ export class PasskeyController {
     const row = await this.db
       .selectFrom('passkeys')
       .select(this.db.fn.countAll<string>().as('count'))
-      .where('user_id', '=', user.id as any)
+      .where('user_id', '=', user.id)
       .where('tenant_id', '=', user.tenant_id)
       .executeTakeFirst();
 
@@ -47,8 +47,8 @@ export class PasskeyController {
   public async deletePasskey(auth: IAuthKeyPayload, id: string) {
     const result = await this.db
       .deleteFrom('passkeys')
-      .where('id', '=', id as any)
-      .where('user_id', '=', auth.user_id as any)
+      .where('id', '=', id)
+      .where('user_id', '=', auth.user_id)
       .where('tenant_id', '=', auth.tenant_id)
       .executeTakeFirst();
 
@@ -77,7 +77,7 @@ export class PasskeyController {
     const user = await this.db
       .selectFrom('authusers')
       .select(['id', 'email', 'first_name', 'last_name'])
-      .where('id', '=', auth.user_id as any)
+      .where('id', '=', auth.user_id)
       .where('tenant_id', '=', auth.tenant_id)
       .executeTakeFirst();
 
@@ -86,7 +86,7 @@ export class PasskeyController {
     const existingPasskeys = await this.db
       .selectFrom('passkeys')
       .select(['credential_id', 'transports'])
-      .where('user_id', '=', auth.user_id as any)
+      .where('user_id', '=', auth.user_id)
       .where('tenant_id', '=', auth.tenant_id)
       .execute();
 
@@ -115,7 +115,7 @@ export class PasskeyController {
     return this.db
       .selectFrom('passkeys')
       .select(['id', 'friendly_name', 'device_type', 'backed_up', 'aaguid', 'transports', 'created_at'])
-      .where('user_id', '=', auth.user_id as any)
+      .where('user_id', '=', auth.user_id)
       .where('tenant_id', '=', auth.tenant_id)
       .orderBy('created_at', 'asc')
       .execute();
@@ -125,8 +125,8 @@ export class PasskeyController {
     const result = await this.db
       .updateTable('passkeys')
       .set({ friendly_name: friendlyName })
-      .where('id', '=', id as any)
-      .where('user_id', '=', auth.user_id as any)
+      .where('id', '=', id)
+      .where('user_id', '=', auth.user_id)
       .where('tenant_id', '=', auth.tenant_id)
       .executeTakeFirst();
 
@@ -182,7 +182,7 @@ export class PasskeyController {
     const user = await this.db
       .selectFrom('authusers')
       .select(['id', 'email', 'first_name', 'last_name', 'tenant_id', 'role', 'verified', 'deletion_scheduled_at'])
-      .where('id', '=', passkey.user_id as any)
+      .where('id', '=', passkey.user_id)
       .executeTakeFirst();
 
     if (!user) throw new UnauthorizedError();
@@ -222,18 +222,18 @@ export class PasskeyController {
     const user = await this.db
       .selectFrom('authusers')
       .select('tenant_id')
-      .where('id', '=', auth.user_id as any)
+      .where('id', '=', auth.user_id)
       .where('tenant_id', '=', auth.tenant_id)
       .executeTakeFirstOrThrow();
 
     await this.db
       .insertInto('passkeys')
       .values({
-        user_id: auth.user_id as any,
-        tenant_id: user.tenant_id as any,
+        user_id: auth.user_id,
+        tenant_id: user.tenant_id,
         credential_id: credential.id,
         public_key: Buffer.from(credential.publicKey).toString('base64url'),
-        counter: credential.counter as any,
+        counter: credential.counter,
         device_type: credentialDeviceType,
         backed_up: credentialBackedUp,
         transports: (credential.transports as string[] | undefined) ?? null,

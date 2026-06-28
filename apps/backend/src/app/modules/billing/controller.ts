@@ -167,11 +167,11 @@ export class BillingController {
     // Handles idempotency: duplicate events will trigger unique constraint
     // violation on `stripe_event_id` and be ignored, returning 200 OK.
     await webhookEventsRepo.db
-      .insertInto('webhook_events' as any)
+      .insertInto('webhook_events')
       .values({
         stripe_event_id: event.id,
         type: event.type,
-        payload: event as any,
+        payload: JSON.stringify(event),
         status: 'pending',
       })
       .onConflict((oc: any) => oc.column('stripe_event_id').doNothing())
@@ -295,7 +295,7 @@ export class BillingController {
           const admin = await tenantsRepo.db
             .selectFrom('authusers')
             .select(['email', 'first_name'])
-            .where('id', '=', dbTenant.admin_id as any)
+            .where('id', '=', dbTenant.admin_id)
             .executeTakeFirst();
 
           if (admin && admin.email) {
@@ -366,7 +366,7 @@ export class BillingController {
           const admin = await tenantsRepo.db
             .selectFrom('authusers')
             .select(['email', 'first_name'])
-            .where('id', '=', dbTenant.admin_id as any)
+            .where('id', '=', dbTenant.admin_id)
             .executeTakeFirst();
 
           if (admin && admin.email) {
@@ -479,7 +479,7 @@ export class BillingController {
     const admin = await tenantsRepo.db
       .selectFrom('authusers')
       .select(['email', 'first_name'])
-      .where('id', '=', BigInt(tenant.admin_id) as any)
+      .where('id', '=', String(tenant.admin_id))
       .executeTakeFirst();
 
     if (admin && admin.email) {

@@ -179,27 +179,23 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const tenant = await db
       .selectFrom('tenants')
       .select(['id', 'deletion_scheduled_at'])
-      .where('id', '=', auth.tenant_id as any)
+      .where('id', '=', auth.tenant_id)
       .executeTakeFirst();
 
     if (!tenant) throw new NotFoundError('Tenant not found');
     if (!tenant.deletion_scheduled_at) throw new BadRequestError('No deletion is scheduled for this account.');
-    if (new Date(tenant.deletion_scheduled_at as any) <= new Date()) {
+    if (tenant.deletion_scheduled_at <= new Date()) {
       throw new BadRequestError('The deletion window has already passed and data has been removed.');
     }
 
     const ownerEmail = await db
       .selectFrom('authusers')
       .select(['email', 'first_name'])
-      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .where('role', '=', 'owner')
       .executeTakeFirst();
 
-    await db
-      .updateTable('tenants')
-      .set({ deletion_scheduled_at: null })
-      .where('id', '=', auth.tenant_id as any)
-      .execute();
+    await db.updateTable('tenants').set({ deletion_scheduled_at: null }).where('id', '=', auth.tenant_id).execute();
 
     if (ownerEmail?.email) {
       await this.mailService.sendMail({
@@ -228,27 +224,23 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const tenant = await db
       .selectFrom('tenants')
       .select(['id', 'deletion_scheduled_at'])
-      .where('id', '=', tenantId as any)
+      .where('id', '=', tenantId)
       .executeTakeFirst();
 
     if (!tenant) throw new NotFoundError('Account not found.');
     if (!tenant.deletion_scheduled_at) throw new BadRequestError('No deletion is pending for this account.');
-    if (new Date(tenant.deletion_scheduled_at as any) <= new Date()) {
+    if (tenant.deletion_scheduled_at <= new Date()) {
       throw new BadRequestError('The deletion window has already passed and data has been removed.');
     }
 
     const ownerEmail = await db
       .selectFrom('authusers')
       .select(['email', 'first_name'])
-      .where('tenant_id', '=', tenantId as any)
+      .where('tenant_id', '=', tenantId)
       .where('role', '=', 'owner')
       .executeTakeFirst();
 
-    await db
-      .updateTable('tenants')
-      .set({ deletion_scheduled_at: null })
-      .where('id', '=', tenantId as any)
-      .execute();
+    await db.updateTable('tenants').set({ deletion_scheduled_at: null }).where('id', '=', tenantId).execute();
 
     if (ownerEmail?.email) {
       await this.mailService.sendMail({
@@ -282,7 +274,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       });
       if (!user) return null;
 
-      const profile = (await this.profiles.getOneByAuthId(String((user as any).id))) as Models['profiles'] | undefined;
+      const typedUser = user as { id: string; verified: boolean; passkey_setup_dismissed_at: Date | null };
+      const profile = (await this.profiles.getOneByAuthId(String(typedUser.id))) as Models['profiles'] | undefined;
       const avatar_url = profile?.['avatar_file_id'] ? `/api/files/download/${profile['avatar_file_id']}` : null;
 
       let tenant_deletion_scheduled_at: Date | null = null;
@@ -291,23 +284,21 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         const tenant = await this.getRepo()
           .db.selectFrom('tenants')
           .select(['deletion_scheduled_at', 'paused_at'])
-          .where('id', '=', auth.tenant_id as any)
+          .where('id', '=', auth.tenant_id)
           .executeTakeFirst();
         if (tenant?.deletion_scheduled_at) {
-          tenant_deletion_scheduled_at = new Date(tenant.deletion_scheduled_at as any);
+          tenant_deletion_scheduled_at = tenant.deletion_scheduled_at;
         }
         if (tenant?.paused_at) {
-          tenant_paused_at = new Date(tenant.paused_at as any);
+          tenant_paused_at = tenant.paused_at;
         }
       }
 
       return {
         ...user,
         avatar_url,
-        email_verified: this.coerceBoolean((user as any).verified),
-        passkey_setup_dismissed_at: (user as any).passkey_setup_dismissed_at
-          ? new Date((user as any).passkey_setup_dismissed_at)
-          : null,
+        email_verified: this.coerceBoolean(typedUser.verified),
+        passkey_setup_dismissed_at: typedUser.passkey_setup_dismissed_at ?? null,
         tenant_deletion_scheduled_at,
         tenant_paused_at,
       };
@@ -317,7 +308,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async deleteAvatar(auth: IAuthKeyPayload) {
-    const existingProfile = (await this.profiles.getOneByAuthId(auth.user_id)) as any;
+    const existingProfile = await this.profiles.getOneByAuthId(auth.user_id);
     if (!existingProfile?.avatar_file_id) return { success: true };
 
     const fileId = existingProfile.avatar_file_id;
@@ -370,7 +361,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
 
     return await repo.transaction().execute(async (trx) => {
-      const profile = (await this.profiles.getOneByAuthId(userIdToDelete)) as any;
+      const profile = await this.profiles.getOneByAuthId(userIdToDelete);
       if (profile?.avatar_file_id) {
         try {
           const oldFile = await trx
@@ -427,9 +418,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   public async dismissPasskeyPrompt(auth: IAuthKeyPayload) {
     await this.getRepo()
       .db.updateTable('authusers')
-      .set({ passkey_setup_dismissed_at: new Date() as any })
-      .where('id', '=', auth.user_id as any)
-      .where('tenant_id', '=', auth.tenant_id as any)
+      .set({ passkey_setup_dismissed_at: new Date() })
+      .where('id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
       .execute();
     return { success: true };
   }
@@ -462,7 +453,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       .where('deletion_scheduled_at', 'is', null);
 
     if (excludeUserId) {
-      query = query.where('id', '!=', excludeUserId as any);
+      query = query.where('id', '!=', excludeUserId);
     }
 
     const oldestUser = await query.orderBy('created_at', 'asc').executeTakeFirst();
@@ -493,7 +484,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const tenant = await this.getRepo()
       .db.selectFrom('tenants')
       .select(['deletion_scheduled_at', 'suspended_at', 'paused_at'])
-      .where('id', '=', auth.tenant_id as any)
+      .where('id', '=', auth.tenant_id)
       .executeTakeFirst();
 
     if (!tenant) throw new NotFoundError('Tenant not found');
@@ -642,7 +633,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const tenant = await db
       .selectFrom('tenants')
       .select(['id', 'paused_at'])
-      .where('id', '=', auth.tenant_id as any)
+      .where('id', '=', auth.tenant_id)
       .executeTakeFirst();
 
     if (!tenant) throw new NotFoundError('Tenant not found');
@@ -651,22 +642,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const ownerEmail = await db
       .selectFrom('authusers')
       .select(['email', 'first_name'])
-      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .where('role', '=', 'owner')
       .executeTakeFirst();
 
     await db.transaction().execute(async (trx) => {
-      await trx
-        .updateTable('tenants')
-        .set({ paused_at: new Date() })
-        .where('id', '=', auth.tenant_id as any)
-        .execute();
+      await trx.updateTable('tenants').set({ paused_at: new Date() }).where('id', '=', auth.tenant_id).execute();
 
       // Sign out all users immediately so the pause takes effect for active sessions
-      await trx
-        .deleteFrom('sessions')
-        .where('tenant_id', '=', auth.tenant_id as any)
-        .execute();
+      await trx.deleteFrom('sessions').where('tenant_id', '=', auth.tenant_id).execute();
     });
 
     if (ownerEmail?.email) {
@@ -708,8 +692,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         .select(['id', 'expires_at', 'last_used_at'])
         .where('session_id', '=', sessionHash)
         .where('refresh_token', '=', refreshHash)
-        .where('user_id', '=', payload.user_id as any)
-        .where('tenant_id', '=', payload.tenant_id as any)
+        .where('user_id', '=', payload.user_id)
+        .where('tenant_id', '=', payload.tenant_id)
         .where('status', '=', 'active')
         .executeTakeFirst();
 
@@ -719,12 +703,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
       const now = new Date();
 
-      if (session.expires_at && new Date(session.expires_at as any) < now) {
+      if (session.expires_at && session.expires_at < now) {
         throw new UnauthorizedError('Session has expired. Please sign in again.');
       }
 
       if (session.last_used_at) {
-        const idleMs = now.getTime() - new Date(session.last_used_at as any).getTime();
+        const idleMs = now.getTime() - session.last_used_at.getTime();
         if (idleMs > IDLE_TIMEOUT_MS) {
           throw new UnauthorizedError('Session timed out due to inactivity. Please sign in again.');
         }
@@ -736,7 +720,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         tenant_id: payload.tenant_id,
         name: payload.name,
         oldSession: payload.session_id,
-        existingExpiresAt: session.expires_at ? new Date(session.expires_at as any) : null,
+        existingExpiresAt: session.expires_at ?? null,
       });
     } catch (err) {
       if (err instanceof AppError) throw err;
@@ -832,7 +816,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const tenant = await db
       .selectFrom('tenants')
       .select(['id', 'paused_at'])
-      .where('id', '=', auth.tenant_id as any)
+      .where('id', '=', auth.tenant_id)
       .executeTakeFirst();
 
     if (!tenant) throw new NotFoundError('Tenant not found');
@@ -841,15 +825,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const ownerEmail = await db
       .selectFrom('authusers')
       .select(['email', 'first_name'])
-      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .where('role', '=', 'owner')
       .executeTakeFirst();
 
-    await db
-      .updateTable('tenants')
-      .set({ paused_at: null })
-      .where('id', '=', auth.tenant_id as any)
-      .execute();
+    await db.updateTable('tenants').set({ paused_at: null }).where('id', '=', auth.tenant_id).execute();
 
     if (ownerEmail?.email) {
       await this.mailService.sendMail({
@@ -907,7 +887,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const tenant = await db
       .selectFrom('tenants')
       .select(['id', 'name', 'deletion_scheduled_at'])
-      .where('id', '=', auth.tenant_id as any)
+      .where('id', '=', auth.tenant_id)
       .executeTakeFirst();
 
     if (!tenant) throw new NotFoundError('Tenant not found');
@@ -916,7 +896,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const ownerEmail = await db
       .selectFrom('authusers')
       .select(['email', 'first_name'])
-      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .where('role', '=', 'owner')
       .executeTakeFirst();
 
@@ -929,14 +909,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await trx
         .updateTable('tenants')
         .set({ deletion_scheduled_at: deletionDate })
-        .where('id', '=', auth.tenant_id as any)
+        .where('id', '=', auth.tenant_id)
         .execute();
 
       // Invalidate every active session for the tenant so all users are signed out immediately
-      await trx
-        .deleteFrom('sessions')
-        .where('tenant_id', '=', auth.tenant_id as any)
-        .execute();
+      await trx.deleteFrom('sessions').where('tenant_id', '=', auth.tenant_id).execute();
 
       if (ownerEmail?.email) {
         await this.mailService.enqueueMail(
@@ -1058,7 +1035,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       const tenant = await this.getRepo()
         .db.selectFrom('tenants')
         .select(['suspended_at', 'paused_at'])
-        .where('id', '=', user.tenant_id as any)
+        .where('id', '=', user.tenant_id!)
         .executeTakeFirst();
 
       if (tenant?.suspended_at) {
@@ -1123,14 +1100,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             {
               tenant_id,
               key: 'current_campaign',
-              value: { id: Number(campaign.id) } as any,
+              value: { id: Number(campaign.id) },
               createdby_id: user.id,
               updatedby_id: user.id,
             },
             {
               tenant_id,
               key: 'notifications',
-              value: false as any,
+              value: false,
               createdby_id: user.id,
               updatedby_id: user.id,
             },
@@ -1143,17 +1120,17 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           .insertInto('households')
           .values({
             tenant_id,
-            campaign_id: campaign.id as any,
+            campaign_id: campaign.id,
             createdby_id: user.id,
             updatedby_id: user.id,
-          } as any)
+          })
           .returning('id')
           .executeTakeFirstOrThrow();
 
         await trx
           .updateTable('tenants')
-          .set({ placeholder_household_id: placeholderHousehold.id as any })
-          .where('id', '=', tenant_id as any)
+          .set({ placeholder_household_id: placeholderHousehold.id })
+          .where('id', '=', tenant_id)
           .execute();
 
         await seedOnboardingData({ tenant_id, user_id: userId, campaign_id: campaign.id }, trx);
@@ -1240,7 +1217,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         if (otherUser && String(otherUser.id) !== userId) {
           throw new ConflictError('Email already exists');
         }
-        row['email'] = nextEmail as any;
+        row['email'] = nextEmail;
         row['verified'] = false;
 
         if (isOwnEmailChange) {
@@ -1250,14 +1227,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         }
       }
     }
-    if (data.first_name !== undefined) row['first_name'] = data.first_name as any;
-    if (data.last_name !== undefined) row['last_name'] = (data.last_name ?? '') as any;
-    if (data.role !== undefined) row['role'] = (data.role ?? null) as any;
-    if (data.verified !== undefined) row['verified'] = data.verified as any;
-    if (data.two_factor_enabled !== undefined) row['two_factor_enabled'] = data.two_factor_enabled as any;
+    if (data.first_name !== undefined) row['first_name'] = data.first_name;
+    if (data.last_name !== undefined) row['last_name'] = data.last_name ?? '';
+    if (data.role !== undefined) row['role'] = data.role ?? null;
+    if (data.verified !== undefined) row['verified'] = data.verified;
+    if (data.two_factor_enabled !== undefined) row['two_factor_enabled'] = data.two_factor_enabled;
     if (Object.keys(row).length > 0) {
-      row['updated_at'] = new Date() as any;
-      row['updatedby_id'] = auth.user_id as any;
+      row['updated_at'] = new Date();
+      row['updatedby_id'] = auth.user_id;
     }
 
     let updated = existingUser;
@@ -1325,8 +1302,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           const changes: Record<string, any> = {};
           for (const key of Object.keys(row)) {
             if (skipKeys.includes(key)) continue;
-            const oldVal = (existingUser as any)[key];
-            const newVal = (row as any)[key];
+            const oldVal = (existingUser as Record<string, unknown>)[key];
+            const newVal = (row as Record<string, unknown>)[key];
             if (oldVal !== newVal) {
               changes[key] = { from: oldVal ?? null, to: newVal ?? null };
             }
@@ -1381,7 +1358,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     await this.getRepo()
       .db.transaction()
       .execute(async (trx) => {
-        const existingProfile = (await this.profiles.getOneByAuthId(auth.user_id)) as any;
+        const existingProfile = await this.profiles.getOneByAuthId(auth.user_id);
 
         // Clean up old avatar
         if (existingProfile?.avatar_file_id) {
@@ -1466,7 +1443,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       );
     }
 
-    if (!user.two_factor_expires_at || new Date(user.two_factor_expires_at as any).getTime() < Date.now()) {
+    if (!user.two_factor_expires_at || (user.two_factor_expires_at as unknown as Date).getTime() < Date.now()) {
       throw new BadRequestError('Verification code has expired. Please log in again.');
     }
 
@@ -1500,7 +1477,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       const tenant = await this.getRepo()
         .db.selectFrom('tenants')
         .select(['suspended_at', 'paused_at'])
-        .where('id', '=', user.tenant_id as any)
+        .where('id', '=', user.tenant_id!)
         .executeTakeFirst();
 
       if (tenant?.suspended_at) {
@@ -1740,7 +1717,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const row = await this.getRepo()
       .db.selectFrom('settings')
       .select('value')
-      .where('tenant_id', '=', tenant_id as any)
+      .where('tenant_id', '=', String(tenant_id))
       .where('key', '=', key)
       .executeTakeFirst();
     return row?.value;
@@ -1778,7 +1755,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const existing = await this.sessions.db
       .selectFrom('sessions')
       .select('id')
-      .where('user_id', '=', BigInt(userId) as any)
+      .where('user_id', '=', userId)
       .where('ip_address', '=', ipAddress)
       .where('user_agent', '=', userAgent || '')
       .where('status', '=', 'active')
@@ -1874,7 +1851,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       }
 
       if (data.last_name !== undefined || data.notification_preferences !== undefined) {
-        await this.profiles.update({ tenant_id: auth.tenant_id as any, id: profileId as any, row });
+        await this.profiles.update({ tenant_id: auth.tenant_id, id: profileId, row });
       }
       return;
     }

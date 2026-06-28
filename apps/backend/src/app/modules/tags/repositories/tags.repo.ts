@@ -56,7 +56,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
       .where('tenant_id', '=', row.tenant_id)
       .where('name', '=', row.name)
       .where('type', '=', type)
-      .executeTakeFirst() as any;
+      .executeTakeFirst();
   }
 
   public override async update(
@@ -86,7 +86,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
   ) {
     let query = this.getSelectWithColumns(input.options, trx);
     query = query.where('tenant_id', '=', input.tenant_id);
-    const type = (input.options as any)?.type;
+    const type = input.options?.type;
     if (type) {
       query = query.where('type', '=', type);
     }
@@ -122,7 +122,7 @@ export class TagsRepo extends BaseRepository<'tags'> {
 
       // Fix: Nullify the tag association on past imports before deleting the tag
       await trx
-        .updateTable('data_imports' as any)
+        .updateTable('data_imports')
         .set({ tag_id: null })
         .where('tag_id', 'in', deletableIds)
         .where('tenant_id', '=', input.tenant_id)

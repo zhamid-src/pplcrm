@@ -70,7 +70,7 @@ export class TaskView {
   protected tempDetails = signal('');
   protected readonly defaultDetails =
     '<p class="italic text-base-content/40">No details or description provided. Click here to add descriptions...</p>';
-  private readonly activityHistory = viewChild<any>('activityHistory');
+  private readonly activityHistory = viewChild<RecordActivities>('activityHistory');
 
   private refreshActivities() {
     const component = this.activityHistory();
@@ -90,7 +90,7 @@ export class TaskView {
   protected showAttachments = signal(true);
 
   // Autocomplete mentions (shared controller)
-  private readonly taskComposer = viewChild<any>('taskComposer');
+  private readonly taskComposer = viewChild<{ nativeElement: HTMLTextAreaElement }>('taskComposer');
   public mc = new MentionController(() => this.users());
 
   // Priority classes and options for display/inputs
@@ -134,18 +134,18 @@ export class TaskView {
   }
 
   private async loadComments() {
-    const list = await (this.tasks as any).api.tasks.getComments.query(this.id());
-    this.comments.set(list as any[]);
+    const list = await this.tasks.api.tasks.getComments.query(this.id());
+    this.comments.set(list);
   }
 
   private async loadAttachments() {
-    const list = await (this.tasks as any).api.tasks.getAttachments.query(this.id());
-    this.attachments.set(list as any[]);
+    const list = await this.tasks.api.tasks.getAttachments.query(this.id());
+    this.attachments.set(list);
   }
 
   private async loadSubtasks() {
-    const list = await (this.tasks as any).api.tasks.getSubtasks.query(this.id());
-    this.subtasks.set(list as any[]);
+    const list = await this.tasks.api.tasks.getSubtasks.query(this.id());
+    this.subtasks.set(list);
   }
 
   protected asDate(v: any) {
@@ -226,7 +226,7 @@ export class TaskView {
     if (!name) return;
     const end = this._loading.begin();
     try {
-      await (this.tasks as any).api.tasks.addSubtask.mutate({ task_id: this.id(), name });
+      await this.tasks.api.tasks.addSubtask.mutate({ task_id: this.id(), name });
       this.subtaskName.set('');
       await this.loadSubtasks();
       this.refreshActivities();
@@ -238,7 +238,7 @@ export class TaskView {
   protected async toggleSubtask(s: any, isDone: boolean) {
     const end = this._loading.begin();
     try {
-      await (this.tasks as any).api.tasks.updateSubtask.mutate({
+      await this.tasks.api.tasks.updateSubtask.mutate({
         id: String(s.id),
         data: { status: isDone ? 'done' : 'todo' },
       });
@@ -255,7 +255,7 @@ export class TaskView {
     if (!plain) return;
     const end = this._loading.begin();
     try {
-      await (this.tasks as any).api.tasks.addComment.mutate({ task_id: this.id(), comment: plain });
+      await this.tasks.api.tasks.addComment.mutate({ task_id: this.id(), comment: plain });
       this.newComment.set('');
       await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
       this.refreshActivities();
@@ -271,7 +271,7 @@ export class TaskView {
     if (!name) return;
     const end = this._loading.begin();
     try {
-      await (this.tasks as any).api.tasks.addAttachment.mutate({ task_id: this.id(), filename: name, url });
+      await this.tasks.api.tasks.addAttachment.mutate({ task_id: this.id(), filename: name, url });
       this.attName.set('');
       this.attUrl.set('');
       await this.loadAttachments();
@@ -359,7 +359,7 @@ export class TaskView {
     if (!id) return null;
     const uid = String(id);
     const u = this.users().find((x) => String(x.id) === uid);
-    return u ? this.userService.resolveAvatarUrl((u as any).avatar_url) : null;
+    return u ? this.userService.resolveAvatarUrl(u.avatar_url) : null;
   }
 
   protected myUserId(): string | null {

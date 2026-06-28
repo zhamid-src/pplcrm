@@ -1,4 +1,4 @@
-import type { SelectQueryBuilder, Transaction} from 'kysely';
+import type { SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
@@ -20,7 +20,7 @@ export class ListsRepo extends BaseRepository<'lists'> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = ((options as any)?.filterModel ?? {}) as Record<string, any>;
+    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as Record<string, any>;
 
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
@@ -34,13 +34,13 @@ export class ListsRepo extends BaseRepository<'lists'> {
         .$if(!!searchStr, (qb) => {
           const text = searchStr;
           return qb.where(
-            sql`(
+            sql<boolean>`(
               LOWER(lists.name) LIKE ${text} OR
               LOWER(lists.description) LIKE ${text} OR
               LOWER(COALESCE(authusers.first_name, '')) LIKE ${text} OR
               LOWER(COALESCE(authusers.last_name, '')) LIKE ${text} OR
               LOWER(COALESCE(authusers.first_name || ' ' || authusers.last_name, '')) LIKE ${text}
-            )` as any,
+            )`,
           );
         })
         // Column filters
@@ -49,33 +49,33 @@ export class ListsRepo extends BaseRepository<'lists'> {
           q.where('lists.description', 'ilike', `%${filterModel['description'].value}%`),
         )
         .$if(!!filterModel['object']?.value || typeof filterModel['object'] === 'string', (q) => {
-          const raw = (filterModel['object']?.value ?? filterModel['object']) as any;
+          const raw: unknown = filterModel['object']?.value ?? filterModel['object'];
           const v = String(raw || '')
             .trim()
             .toLowerCase();
           if (!v) return q;
-          if (v === 'people' || v === 'households') return q.where('lists.object', '=', v as any);
-          return q.where('lists.object', '=', v as any);
+          if (v === 'people' || v === 'households') return q.where('lists.object', '=', v as 'people' | 'households');
+          return q.where('lists.object', '=', v as 'people' | 'households');
         })
         .$if(!!filterModel['created_by']?.value || typeof filterModel['created_by'] === 'string', (q) => {
-          const raw = (filterModel['created_by']?.value ?? filterModel['created_by']) as any;
+          const raw: unknown = filterModel['created_by']?.value ?? filterModel['created_by'];
           const val = String(raw || '').trim();
           if (!val) return q;
           const isNumeric = /^\d+$/.test(val);
           if (isNumeric) {
             return q.where(
-              sql`(
+              sql<boolean>`(
                 COALESCE(authusers.first_name || ' ' || authusers.last_name, '') ILIKE ${'%' + val + '%'} OR
                 lists.createdby_id = ${Number(val)}
-              )` as any,
+              )`,
             );
           }
           return q.where(
-            sql`COALESCE(authusers.first_name || ' ' || authusers.last_name, '') ILIKE ${'%' + val + '%'}` as any,
+            sql<boolean>`COALESCE(authusers.first_name || ' ' || authusers.last_name, '') ILIKE ${'%' + val + '%'}`,
           );
         })
         .$if(!!filterModel['updated_at']?.value, (q) =>
-          q.where(sql`CAST(lists.updated_at AS TEXT) ILIKE ${'%' + filterModel['updated_at'].value + '%'}` as any),
+          q.where(sql<boolean>`CAST(lists.updated_at AS TEXT) ILIKE ${'%' + filterModel['updated_at'].value + '%'}`),
         );
 
     const countResult = await applyFilters(this.getSelect(trx))
@@ -115,26 +115,23 @@ export class ListsRepo extends BaseRepository<'lists'> {
         const others = sorts.filter(
           (s) => s.colId !== 'created_by' && s.colId !== 'list_size' && s.colId !== 'used_in',
         );
-        let acc: any = qb;
+        let acc = qb;
         // created_by sort: sort by full name of creator
         if (createdSort) {
-          acc = acc.orderBy(
-            sql`COALESCE(authusers.first_name || ' ' || authusers.last_name, '')`,
-            (createdSort as any).sort,
-          );
+          acc = acc.orderBy(sql`COALESCE(authusers.first_name || ' ' || authusers.last_name, '')`, createdSort.sort);
         }
         // list_size sort: derived from people_count vs household_count
         if (listSizeSort) {
           acc = acc.orderBy(
             sql`CASE WHEN lists.object = 'people' THEN COUNT(DISTINCT map_lists_persons.person_id) ELSE COUNT(DISTINCT map_lists_households.household_id) END`,
-            (listSizeSort as any).sort,
+            listSizeSort.sort,
           );
         }
         // used_in sort: field is a UI placeholder; sort by a stable column instead (updated_at)
         if (usedInSort) {
-          acc = acc.orderBy('lists.updated_at' as any, (usedInSort as any).sort);
+          acc = acc.orderBy('lists.updated_at', usedInSort.sort);
         }
-        for (const s of others) acc = acc.orderBy(s.colId as any, (s as any).sort);
+        for (const s of others) acc = acc.orderBy(s.colId, s.sort);
         return acc;
       })
       .offset(startRow)

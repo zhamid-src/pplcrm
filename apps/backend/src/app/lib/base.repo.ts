@@ -16,6 +16,7 @@ import type {
   SelectQueryBuilder,
   Selectable,
   Transaction,
+  UpdateObject,
   UpdateQueryBuilder,
   UpdateResult,
 } from 'kysely';
@@ -103,7 +104,7 @@ export class BaseRepository<T extends keyof Models> {
     return this.getSelect(trx)
       .selectAll()
       .where(lhs, '=', matchValue)
-      .where('tenant_id', '=', input.row.tenant_id as any)
+      .where('tenant_id', '=', input.row.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>)
       .executeTakeFirst() as unknown as Selectable<Models[T]> | undefined;
   }
 
@@ -268,7 +269,7 @@ export class BaseRepository<T extends keyof Models> {
       return 0; // or just return early, nothing to update
     }
     let query = this.getUpdate(trx)
-      .set(input.row as any)
+      .set(input.row as unknown as UpdateObject<Models, T, T>)
       .where('id' as ReferenceExpression<Models, T>, '=', input.id);
     if (this.table !== 'tenants') {
       query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
@@ -282,7 +283,7 @@ export class BaseRepository<T extends keyof Models> {
       ? query.select(
           options.columns.map((c) => {
             if (typeof c === 'string' && !c.includes('.')) {
-              return `${String(this.table)}.${c}` as any;
+              return `${String(this.table)}.${c}` as SelectExpression<Models, T>;
             }
             return c;
           }) as SelectExpression<Models, T>[],
@@ -305,7 +306,7 @@ export class BaseRepository<T extends keyof Models> {
 
     // Map generic sortModel (from UI) to orderBy clauses when provided
     if (opts.sortModel && Array.isArray(opts.sortModel) && opts.sortModel.length > 0) {
-      query = opts.sortModel.reduce((acc: any, sort: any) => {
+      query = opts.sortModel.reduce((acc: typeof query, sort: { colId: string; sort: 'asc' | 'desc' }) => {
         const direction: 'asc' | 'desc' = sort.sort === 'desc' ? 'desc' : 'asc';
         let col = sort.colId;
         if (typeof col === 'string' && !col.includes('.')) {
@@ -426,22 +427,22 @@ export class BaseRepository<T extends keyof Models> {
 
     switch (op) {
       case 'equals':
-        return query.where(sql`${sqlExpression} ILIKE ${normalized}` as any);
+        return query.where(sql<boolean>`${sqlExpression} ILIKE ${normalized}`);
       case 'startsWith':
-        return query.where(sql`${sqlExpression} ILIKE ${normalized + '%'}` as any);
+        return query.where(sql<boolean>`${sqlExpression} ILIKE ${normalized + '%'}`);
       case 'endsWith':
-        return query.where(sql`${sqlExpression} ILIKE ${'%' + normalized}` as any);
+        return query.where(sql<boolean>`${sqlExpression} ILIKE ${'%' + normalized}`);
       case 'notContains':
-        return query.where(sql`${sqlExpression} NOT ILIKE ${'%' + normalized + '%'}` as any);
+        return query.where(sql<boolean>`${sqlExpression} NOT ILIKE ${'%' + normalized + '%'}`);
       case 'notEquals':
-        return query.where(sql`${sqlExpression} NOT ILIKE ${normalized}` as any);
+        return query.where(sql<boolean>`${sqlExpression} NOT ILIKE ${normalized}`);
       case 'isEmpty':
-        return query.where(sql`${sqlExpression} IS NULL OR ${sqlExpression} = ''` as any);
+        return query.where(sql<boolean>`${sqlExpression} IS NULL OR ${sqlExpression} = ''`);
       case 'isNotEmpty':
-        return query.where(sql`${sqlExpression} IS NOT NULL AND ${sqlExpression} != ''` as any);
+        return query.where(sql<boolean>`${sqlExpression} IS NOT NULL AND ${sqlExpression} != ''`);
       case 'contains':
       default:
-        return query.where(sql`${sqlExpression} ILIKE ${'%' + normalized + '%'}` as any);
+        return query.where(sql<boolean>`${sqlExpression} ILIKE ${'%' + normalized + '%'}`);
     }
   }
 
@@ -526,7 +527,7 @@ export class BaseRepository<T extends keyof Models> {
       return query;
     }
 
-    const isLegacy = !('kind' in advancedFilterModel) || (advancedFilterModel as any).kind !== 'group';
+    const isLegacy = !('kind' in advancedFilterModel) || (advancedFilterModel as { kind: unknown }).kind !== 'group';
     let rootGroup: QueryBuilderGroupNode;
 
     if (isLegacy) {

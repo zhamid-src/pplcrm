@@ -50,7 +50,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     // For dynamic lists, trigger an immediate initial refresh via background job
     if (row.is_dynamic) {
       await this.getRepo()
-        .db.insertInto('background_jobs' as any)
+        .db.insertInto('background_jobs')
         .values({
           tenant_id: auth.tenant_id,
           queue: 'default',
@@ -62,7 +62,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
             user_id: auth.user_id,
           }),
           run_at: new Date(),
-        } as any)
+        })
         .execute();
     } else {
       // For static lists, populate membership by explicit IDs if provided; otherwise by definition
@@ -165,7 +165,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
 
     // Queue background job
     await this.getRepo()
-      .db.insertInto('background_jobs' as any)
+      .db.insertInto('background_jobs')
       .values({
         tenant_id: auth.tenant_id,
         queue: 'default',
@@ -177,7 +177,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
           user_id: auth.user_id,
         }),
         run_at: new Date(),
-      } as any)
+      })
       .execute();
 
     return { ...list, status: 'refreshing' };
@@ -391,16 +391,16 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
         const result = await this.mapListsPersonsRepo.db
           .selectFrom('map_lists_persons')
           .select(({ fn }) => fn.countAll().as('count'))
-          .where('tenant_id', '=', auth.tenant_id as any)
-          .where('list_id', '=', id as any)
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('list_id', '=', id)
           .executeTakeFirst();
         return Number(result?.count ?? 0);
       } else {
         const result = await this.mapListsHouseholdsRepo.db
           .selectFrom('map_lists_households')
           .select(({ fn }) => fn.countAll().as('count'))
-          .where('tenant_id', '=', auth.tenant_id as any)
-          .where('list_id', '=', id as any)
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('list_id', '=', id)
           .executeTakeFirst();
         return Number(result?.count ?? 0);
       }
@@ -433,7 +433,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       });
 
       await this.getRepo()
-        .db.insertInto('background_jobs' as any)
+        .db.insertInto('background_jobs')
         .values({
           tenant_id: auth.tenant_id,
           queue: 'default',
@@ -445,7 +445,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
             user_id: auth.user_id,
           }),
           run_at: new Date(),
-        } as any)
+        })
         .execute();
     }
 
@@ -455,14 +455,14 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
   public override async delete(tenant_id: string, idToDelete: string, userId?: string) {
     await this.mapListsPersonsRepo.db
       .deleteFrom('map_lists_persons')
-      .where('tenant_id', '=', tenant_id as any)
-      .where('list_id', '=', idToDelete as any)
+      .where('tenant_id', '=', tenant_id)
+      .where('list_id', '=', idToDelete)
       .execute();
 
     await this.mapListsHouseholdsRepo.db
       .deleteFrom('map_lists_households')
-      .where('tenant_id', '=', tenant_id as any)
-      .where('list_id', '=', idToDelete as any)
+      .where('tenant_id', '=', tenant_id)
+      .where('list_id', '=', idToDelete)
       .execute();
 
     return super.delete(tenant_id as any, idToDelete, userId);
@@ -473,13 +473,13 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
 
     await this.mapListsPersonsRepo.db
       .deleteFrom('map_lists_persons')
-      .where('tenant_id', '=', tenant_id as any)
+      .where('tenant_id', '=', tenant_id)
       .where('list_id', 'in', idsToDelete)
       .execute();
 
     await this.mapListsHouseholdsRepo.db
       .deleteFrom('map_lists_households')
-      .where('tenant_id', '=', tenant_id as any)
+      .where('tenant_id', '=', tenant_id)
       .where('list_id', 'in', idsToDelete)
       .execute();
 

@@ -20,7 +20,7 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
         .selectFrom('settings')
         .select('tenant_id')
         .where('key', '=', 'donations.webhook_token')
-        .where('value', '=', JSON.stringify(token) as any)
+        .where('value', '=', JSON.stringify(token))
         .executeTakeFirst();
 
       if (!tokenRow) {
@@ -37,7 +37,7 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
       const secretRow = await BaseRepository.dbInstance
         .selectFrom('settings')
         .select('value')
-        .where('tenant_id', '=', tenantId as any)
+        .where('tenant_id', '=', tenantId)
         .where('key', '=', 'donations.stripe_webhook_secret')
         .executeTakeFirst();
 
@@ -46,7 +46,7 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
       const keyRow = await BaseRepository.dbInstance
         .selectFrom('settings')
         .select('value')
-        .where('tenant_id', '=', tenantId as any)
+        .where('tenant_id', '=', tenantId)
         .where('key', '=', 'donations.stripe_secret_key')
         .executeTakeFirst();
 
@@ -73,12 +73,12 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 
       // 2. Persist webhook event for background worker processing
       await BaseRepository.dbInstance
-        .insertInto('webhook_events' as any)
+        .insertInto('webhook_events')
         .values({
           tenant_id: tenantId,
           stripe_event_id: event.id,
           type: event.type,
-          payload: event as any,
+          payload: JSON.stringify(event),
           status: 'pending',
         })
         .onConflict((oc: any) => oc.column('stripe_event_id').doNothing())

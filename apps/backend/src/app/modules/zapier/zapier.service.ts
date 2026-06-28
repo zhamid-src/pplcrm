@@ -37,16 +37,16 @@ export async function queueZapierTrigger(
   data: Record<string, any>,
 ): Promise<void> {
   const sub = await db
-    .selectFrom('zapier_subscriptions' as any)
+    .selectFrom('zapier_subscriptions')
     .select('id')
-    .where('tenant_id', '=', tenant_id as any)
+    .where('tenant_id', '=', tenant_id)
     .where('event_type', '=', event_type)
     .executeTakeFirst();
 
   if (!sub) return;
 
   await db
-    .insertInto('background_jobs' as any)
+    .insertInto('background_jobs')
     .values({
       tenant_id,
       queue: 'default',
@@ -65,9 +65,9 @@ export class ZapierService {
 
   async getOrCreateApiKey(tenant_id: string): Promise<string> {
     const row = await this.db
-      .selectFrom('settings' as any)
+      .selectFrom('settings')
       .select('value')
-      .where('tenant_id', '=', tenant_id as any)
+      .where('tenant_id', '=', tenant_id)
       .where('key', '=', 'zapier.api_key')
       .executeTakeFirst();
 
@@ -82,7 +82,7 @@ export class ZapierService {
   async regenerateApiKey(tenant_id: string): Promise<string> {
     const key = 'zap_' + crypto.randomBytes(32).toString('hex');
     await this.db
-      .insertInto('settings' as any)
+      .insertInto('settings')
       .values({ tenant_id, key: 'zapier.api_key', value: JSON.stringify(key) })
       .onConflict((oc: any) =>
         oc.columns(['tenant_id', 'key']).doUpdateSet({ value: JSON.stringify(key), updated_at: new Date() }),
@@ -93,15 +93,15 @@ export class ZapierService {
 
   async getSubscriptions(tenant_id: string) {
     return this.db
-      .selectFrom('zapier_subscriptions' as any)
+      .selectFrom('zapier_subscriptions')
       .select(['id', 'event_type', 'webhook_url', 'created_at', 'updated_at'])
-      .where('tenant_id', '=', tenant_id as any)
+      .where('tenant_id', '=', tenant_id)
       .execute();
   }
 
   async subscribe(tenant_id: string, event_type: ZapierEventType, webhook_url: string): Promise<void> {
     await this.db
-      .insertInto('zapier_subscriptions' as any)
+      .insertInto('zapier_subscriptions')
       .values({ tenant_id, event_type, webhook_url })
       .onConflict((oc: any) =>
         oc.columns(['tenant_id', 'event_type']).doUpdateSet({ webhook_url, updated_at: new Date() }),
@@ -111,17 +111,17 @@ export class ZapierService {
 
   async unsubscribe(tenant_id: string, event_type: ZapierEventType): Promise<void> {
     await this.db
-      .deleteFrom('zapier_subscriptions' as any)
-      .where('tenant_id', '=', tenant_id as any)
+      .deleteFrom('zapier_subscriptions')
+      .where('tenant_id', '=', tenant_id)
       .where('event_type', '=', event_type)
       .execute();
   }
 
   async fireTrigger(tenant_id: string, event_type: ZapierEventType, data: Record<string, any>): Promise<void> {
     const subs = await this.db
-      .selectFrom('zapier_subscriptions' as any)
+      .selectFrom('zapier_subscriptions')
       .select('webhook_url')
-      .where('tenant_id', '=', tenant_id as any)
+      .where('tenant_id', '=', tenant_id)
       .where('event_type', '=', event_type)
       .execute();
 
@@ -145,10 +145,10 @@ export class ZapierService {
   async lookupTenantByApiKey(apiKey: string): Promise<string | null> {
     // eslint-disable-next-line local/no-unscoped-db-query
     const row = await this.db
-      .selectFrom('settings' as any)
+      .selectFrom('settings')
       .select('tenant_id')
       .where('key', '=', 'zapier.api_key')
-      .where('value', '=', JSON.stringify(apiKey) as any)
+      .where('value', '=', JSON.stringify(apiKey))
       .executeTakeFirst();
 
     return row ? String(row.tenant_id) : null;

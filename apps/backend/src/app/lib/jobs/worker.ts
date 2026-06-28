@@ -98,9 +98,9 @@ export class BackgroundJobWorker {
 
   private async ensureAddressFingerprintsJobScheduled(): Promise<void> {
     try {
-      await this.db.transaction().execute(async (trx: any) => {
+      await this.db.transaction().execute(async (trx) => {
         const existing = await trx
-          .selectFrom('background_jobs' as any)
+          .selectFrom('background_jobs')
           .select('id')
           .where('status', 'in', ['pending', 'processing'])
           .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
@@ -109,7 +109,7 @@ export class BackgroundJobWorker {
         if (!existing) {
           console.log('Scheduling nightly address fingerprints recomputation background job…');
           await trx
-            .insertInto('background_jobs' as any)
+            .insertInto('background_jobs')
             .values({
               tenant_id: null,
               queue: 'default',
@@ -128,9 +128,9 @@ export class BackgroundJobWorker {
 
   private async ensureCleanupJobScheduled(): Promise<void> {
     try {
-      await this.db.transaction().execute(async (trx: any) => {
+      await this.db.transaction().execute(async (trx) => {
         const existing = await trx
-          .selectFrom('background_jobs' as any)
+          .selectFrom('background_jobs')
           .select('id')
           .where('status', 'in', ['pending', 'processing'])
           .where(sql`payload->>'type'`, '=', 'cleanup_activities')
@@ -139,7 +139,7 @@ export class BackgroundJobWorker {
         if (!existing) {
           console.log('Scheduling daily activity feed cleanup background job…');
           await trx
-            .insertInto('background_jobs' as any)
+            .insertInto('background_jobs')
             .values({
               tenant_id: null,
               queue: 'default',
@@ -158,9 +158,9 @@ export class BackgroundJobWorker {
 
   private async ensureCompaniesGoogleRefreshJobScheduled(): Promise<void> {
     try {
-      await this.db.transaction().execute(async (trx: any) => {
+      await this.db.transaction().execute(async (trx) => {
         const existing = await trx
-          .selectFrom('background_jobs' as any)
+          .selectFrom('background_jobs')
           .select('id')
           .where('status', 'in', ['pending', 'processing'])
           .where(sql`payload->>'type'`, '=', 'refresh_companies_google')
@@ -169,7 +169,7 @@ export class BackgroundJobWorker {
         if (!existing) {
           console.log('Scheduling daily company google enrichment background job…');
           await trx
-            .insertInto('background_jobs' as any)
+            .insertInto('background_jobs')
             .values({
               tenant_id: null,
               queue: 'default',
@@ -188,9 +188,9 @@ export class BackgroundJobWorker {
 
   private async ensureDueTasksCheckScheduled(): Promise<void> {
     try {
-      await this.db.transaction().execute(async (trx: any) => {
+      await this.db.transaction().execute(async (trx) => {
         const existing = await trx
-          .selectFrom('background_jobs' as any)
+          .selectFrom('background_jobs')
           .select('id')
           .where('status', 'in', ['pending', 'processing'])
           .where(sql`payload->>'type'`, '=', 'check_due_tasks')
@@ -199,7 +199,7 @@ export class BackgroundJobWorker {
         if (!existing) {
           console.log('Scheduling daily due tasks check background job…');
           await trx
-            .insertInto('background_jobs' as any)
+            .insertInto('background_jobs')
             .values({
               tenant_id: null,
               queue: 'default',
@@ -218,9 +218,9 @@ export class BackgroundJobWorker {
 
   private async ensureDuplicatesRecomputeJobScheduled(): Promise<void> {
     try {
-      await this.db.transaction().execute(async (trx: any) => {
+      await this.db.transaction().execute(async (trx) => {
         const existing = await trx
-          .selectFrom('background_jobs' as any)
+          .selectFrom('background_jobs')
           .select('id')
           .where('status', 'in', ['pending', 'processing'])
           .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
@@ -229,7 +229,7 @@ export class BackgroundJobWorker {
         if (!existing) {
           console.log('Scheduling nightly duplicates recomputation background job…');
           await trx
-            .insertInto('background_jobs' as any)
+            .insertInto('background_jobs')
             .values({
               tenant_id: null,
               queue: 'default',
@@ -248,9 +248,9 @@ export class BackgroundJobWorker {
 
   private async ensurePerformScheduledDeletionsJobScheduled(): Promise<void> {
     try {
-      await this.db.transaction().execute(async (trx: any) => {
+      await this.db.transaction().execute(async (trx) => {
         const existing = await trx
-          .selectFrom('background_jobs' as any)
+          .selectFrom('background_jobs')
           .select('id')
           .where('status', 'in', ['pending', 'processing'])
           .where(sql`payload->>'type'`, '=', 'perform_scheduled_deletions')
@@ -259,7 +259,7 @@ export class BackgroundJobWorker {
         if (!existing) {
           console.log('Scheduling daily scheduled deletions background job…');
           await trx
-            .insertInto('background_jobs' as any)
+            .insertInto('background_jobs')
             .values({
               tenant_id: null,
               queue: 'default',
@@ -278,9 +278,9 @@ export class BackgroundJobWorker {
 
   private async ensurePruneNewsletterEventsJobScheduled(): Promise<void> {
     try {
-      await this.db.transaction().execute(async (trx: any) => {
+      await this.db.transaction().execute(async (trx) => {
         const existing = await trx
-          .selectFrom('background_jobs' as any)
+          .selectFrom('background_jobs')
           .select('id')
           .where('status', 'in', ['pending', 'processing'])
           .where(sql`payload->>'type'`, '=', 'prune_newsletter_events')
@@ -289,7 +289,7 @@ export class BackgroundJobWorker {
         if (!existing) {
           console.log('Scheduling daily newsletter events pruning background job…');
           await trx
-            .insertInto('background_jobs' as any)
+            .insertInto('background_jobs')
             .values({
               tenant_id: null,
               queue: 'default',
@@ -308,9 +308,9 @@ export class BackgroundJobWorker {
 
   private async ensureSyncSchedulerJobScheduled(): Promise<void> {
     try {
-      await this.db.transaction().execute(async (trx: any) => {
+      await this.db.transaction().execute(async (trx) => {
         const existing = await trx
-          .selectFrom('background_jobs' as any)
+          .selectFrom('background_jobs')
           .select('id')
           .where('status', 'in', ['pending', 'processing'])
           .where(sql`payload->>'type'`, '=', 'schedule_sync_jobs')
@@ -319,7 +319,7 @@ export class BackgroundJobWorker {
         if (!existing) {
           console.log('Scheduling sync scheduler background job…');
           await trx
-            .insertInto('background_jobs' as any)
+            .insertInto('background_jobs')
             .values({
               tenant_id: null,
               queue: 'default',
@@ -338,9 +338,9 @@ export class BackgroundJobWorker {
 
   private async ensureUsageLimitChecksScheduled(): Promise<void> {
     try {
-      await this.db.transaction().execute(async (trx: any) => {
+      await this.db.transaction().execute(async (trx) => {
         const existing = await trx
-          .selectFrom('background_jobs' as any)
+          .selectFrom('background_jobs')
           .select('id')
           .where('status', 'in', ['pending', 'processing'])
           .where(sql`payload->>'type'`, '=', 'check_all_usage_limits')
@@ -349,7 +349,7 @@ export class BackgroundJobWorker {
         if (!existing) {
           console.log('Scheduling daily usage limits check background job…');
           await trx
-            .insertInto('background_jobs' as any)
+            .insertInto('background_jobs')
             .values({
               tenant_id: null,
               queue: 'default',
@@ -368,9 +368,9 @@ export class BackgroundJobWorker {
 
   private async ensureWorkflowsJobScheduled(): Promise<void> {
     try {
-      await this.db.transaction().execute(async (trx: any) => {
+      await this.db.transaction().execute(async (trx) => {
         const existing = await trx
-          .selectFrom('background_jobs' as any)
+          .selectFrom('background_jobs')
           .select('id')
           .where('status', 'in', ['pending', 'processing'])
           .where(sql`payload->>'type'`, '=', 'process_drip_workflows')
@@ -379,7 +379,7 @@ export class BackgroundJobWorker {
         if (!existing) {
           console.log('Scheduling periodic drip workflows processing background job…');
           await trx
-            .insertInto('background_jobs' as any)
+            .insertInto('background_jobs')
             .values({
               tenant_id: null,
               queue: 'default',
@@ -431,9 +431,9 @@ export class BackgroundJobWorker {
     const workerId = `worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
 
     // Try to find and lock a job using SKIP LOCKED
-    const job = await this.db.transaction().execute(async (trx: any) => {
-      const pendingJob = (await trx
-        .selectFrom('background_jobs' as any)
+    const job = await this.db.transaction().execute(async (trx) => {
+      const pendingJob = await trx
+        .selectFrom('background_jobs')
         .selectAll()
         .where('status', '=', 'pending')
         .where('run_at', '<=', new Date())
@@ -441,12 +441,12 @@ export class BackgroundJobWorker {
         .limit(1)
         .forUpdate()
         .skipLocked()
-        .executeTakeFirst()) as any;
+        .executeTakeFirst();
 
       if (!pendingJob) return null;
 
       const updatedJob = await trx
-        .updateTable('background_jobs' as any)
+        .updateTable('background_jobs')
         .set({
           status: 'processing',
           locked_at: new Date(),
@@ -472,7 +472,7 @@ export class BackgroundJobWorker {
 
       // Mark job as completed
       await this.db
-        .updateTable('background_jobs' as any)
+        .updateTable('background_jobs')
         .set({
           status: 'completed',
           locked_at: null,
@@ -491,14 +491,14 @@ export class BackgroundJobWorker {
         // If it was an import job, mark the import as failed and store the error message
         if (payload.import_id) {
           await this.importsRepo.update({
-            tenant_id: payload.tenant_id as any,
-            id: payload.import_id as any,
+            tenant_id: payload.tenant_id,
+            id: payload.import_id,
             row: {
               status: 'failed',
               error_message: errorMsg.substring(0, 1000), // Truncate just in case
               processed_at: new Date(),
               updated_at: new Date(),
-            } as any,
+            },
           });
         }
       } catch (dbErr) {
@@ -521,7 +521,7 @@ export class BackgroundJobWorker {
         console.log(`Rescheduling job ${job.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`);
 
         await this.db
-          .updateTable('background_jobs' as any)
+          .updateTable('background_jobs')
           .set({
             status: 'pending',
             locked_at: null,
@@ -535,7 +535,7 @@ export class BackgroundJobWorker {
       } else {
         console.error(`Job ${job.id} exceeded maximum attempts (${maxAttempts}). Marking as failed.`);
         await this.db
-          .updateTable('background_jobs' as any)
+          .updateTable('background_jobs')
           .set({
             status: 'failed',
             locked_at: null,
@@ -564,7 +564,7 @@ export class BackgroundJobWorker {
           try {
             const { MsOAuthService } = await import('../../modules/ms-sync/ms-oauth.service');
             const { env } = await import('../../../env');
-            const oauthSvc = new MsOAuthService(this.db as any, {
+            const oauthSvc = new MsOAuthService(this.db, {
               clientId: env.msClientId ?? '',
               clientSecret: env.msClientSecret ?? '',
               tenantId: env.msTenantId ?? 'common',
@@ -585,7 +585,7 @@ export class BackgroundJobWorker {
           try {
             const { GoogleOAuthService } = await import('../../modules/google-sync/google-oauth.service');
             const { env } = await import('../../../env');
-            const oauthSvc = new GoogleOAuthService(this.db as any, {
+            const oauthSvc = new GoogleOAuthService(this.db, {
               clientId: env.googleClientId ?? '',
               clientSecret: env.googleClientSecret ?? '',
               redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
@@ -620,7 +620,7 @@ export class BackgroundJobWorker {
     try {
       const staleTime = new Date(Date.now() - 30 * 60 * 1000); // 30 minutes
       await this.db
-        .updateTable('background_jobs' as any)
+        .updateTable('background_jobs')
         .set({
           status: 'pending',
           locked_at: null,
@@ -635,16 +635,16 @@ export class BackgroundJobWorker {
       // Clean up/timeout data exports stuck in pending/processing for more than 1 hour
       const staleExportTime = new Date(Date.now() - 60 * 60 * 1000); // 1 hour
       const staleExports = await this.db
-        .selectFrom('data_exports' as any)
+        .selectFrom('data_exports')
         .select(['id', 'tenant_id'])
         .where('status', 'in', ['pending', 'processing'])
         .where('created_at', '<', staleExportTime)
         .execute();
 
       if (staleExports.length > 0) {
-        const ids = staleExports.map((e: any) => e.id as any);
+        const ids = staleExports.map((e) => e.id);
         await this.db
-          .updateTable('data_exports' as any)
+          .updateTable('data_exports')
           .set({
             status: 'failed',
             error: 'Export processing timed out',
@@ -655,8 +655,8 @@ export class BackgroundJobWorker {
 
         for (const exp of staleExports) {
           await this.db
-            .deleteFrom('background_jobs' as any)
-            .where('tenant_id', '=', exp.tenant_id as any)
+            .deleteFrom('background_jobs')
+            .where('tenant_id', '=', exp.tenant_id)
             .where(sql`payload->>'type'`, '=', 'export_csv')
             .where(sql`payload->>'export_id'`, '=', String(exp.id))
             .execute();
@@ -692,7 +692,7 @@ export class BackgroundJobWorker {
     if (delayMs > 0) {
       try {
         await this.db
-          .insertInto('background_jobs' as any)
+          .insertInto('background_jobs')
           .values({
             tenant_id: null,
             queue: 'default',

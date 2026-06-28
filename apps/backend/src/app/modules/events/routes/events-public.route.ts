@@ -343,15 +343,7 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
     // Count current registrations for capacity display
     let regCount = 0;
     try {
-      const countRow = await (ctrl as any)
-        .getRepo()
-        .db.selectFrom('event_registrations')
-        .select(({ fn }: any) => [fn.count('id').as('cnt')])
-        .where('tenant_id', '=', String(event.tenant_id))
-        .where('event_id', '=', String(event.id))
-        .where('status', '!=', 'cancelled')
-        .executeTakeFirst();
-      regCount = Number(countRow?.cnt || 0);
+      regCount = await ctrl.getRegistrationCountForEvent(String(event.id), String(event.tenant_id));
     } catch {
       /* ignore */
     }

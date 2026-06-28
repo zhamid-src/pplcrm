@@ -464,8 +464,8 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       // Extract fields configuration, default to all fields if null/empty
       const fields: string[] = form.fields
         ? Array.isArray(form.fields)
-          ? (form.fields as any)
-          : JSON.parse(form.fields as any)
+          ? (form.fields as string[])
+          : JSON.parse(String(form.fields))
         : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
       reply.type('text/html');

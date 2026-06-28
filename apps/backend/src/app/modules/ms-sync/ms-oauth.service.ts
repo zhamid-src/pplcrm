@@ -92,7 +92,7 @@ export class MsOAuthService {
         .execute();
 
       await trx
-        .insertInto('background_jobs' as any)
+        .insertInto('background_jobs')
         .values({
           tenant_id: tenantId,
           queue: 'default',
@@ -153,9 +153,7 @@ export class MsOAuthService {
     return response.accessToken;
   }
 
-  public async getConnectionStatus(
-    tenantId: string,
-  ): Promise<{
+  public async getConnectionStatus(tenantId: string): Promise<{
     connected: boolean;
     msEmail: string | null;
     syncedAt: Date | null;

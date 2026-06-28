@@ -41,7 +41,7 @@ function getConnectionStatus() {
     const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id);
 
     const activeJob = await db
-      .selectFrom('background_jobs' as any)
+      .selectFrom('background_jobs')
       .select('id')
       .where('status', 'in', ['pending', 'processing'])
       .where('tenant_id', '=', ctx.auth.tenant_id)
@@ -60,7 +60,7 @@ function syncNow() {
     const db = (BaseRepository as any)['_db'];
 
     const existing = await db
-      .selectFrom('background_jobs' as any)
+      .selectFrom('background_jobs')
       .select('id')
       .where('status', 'in', ['pending', 'processing'])
       .where('tenant_id', '=', ctx.auth.tenant_id)
@@ -69,7 +69,7 @@ function syncNow() {
 
     if (!existing) {
       await db
-        .insertInto('background_jobs' as any)
+        .insertInto('background_jobs')
         .values({
           tenant_id: ctx.auth.tenant_id,
           queue: 'default',

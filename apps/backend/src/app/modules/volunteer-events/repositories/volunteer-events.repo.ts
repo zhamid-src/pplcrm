@@ -25,16 +25,16 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
       let q = qb.where('volunteer_events.tenant_id', '=', tenantId).$if(!!searchStr, (qb2) => {
         const text = searchStr;
         return qb2.where(
-          sql`(
+          sql<boolean>`(
               LOWER(volunteer_events.name) LIKE ${text} OR
               LOWER(volunteer_events.description) LIKE ${text} OR
               LOWER(volunteer_events.location_address) LIKE ${text}
-            )` as any,
+            )`,
         );
       });
 
       // Archive filter based on event time
-      const includeArchived = (options as any).includeArchived === true;
+      const includeArchived = (options as { includeArchived?: boolean }).includeArchived === true;
       if (includeArchived) {
         q = q.where('volunteer_events.end_time', '<', new Date());
       } else {
@@ -88,7 +88,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
         'volunteer_events.updated_at',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId as any, sort.sort), qb),
+        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId, sort.sort), qb),
       )
       .$if(!options.sortModel?.length, (qb) => qb.orderBy('volunteer_events.start_time', 'desc'))
       .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
@@ -103,7 +103,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
   }
 
   public async getShiftsForEvent(input: { tenant_id: string; event_id: string }, trx?: Transaction<Models>) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     return db
       .selectFrom('volunteer_shifts')
       .innerJoin('persons', 'persons.id', 'volunteer_shifts.person_id')
@@ -139,7 +139,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
     },
     trx?: Transaction<Models>,
   ) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
 
     // Check if shift already exists
     const existing = await db
@@ -181,7 +181,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
     },
     trx?: Transaction<Models>,
   ) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     return db
       .updateTable('volunteer_shifts')
       .set({
@@ -196,7 +196,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
   }
 
   public async deleteShift(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     const res = await db
       .deleteFrom('volunteer_shifts')
       .where('tenant_id', '=', input.tenant_id)
@@ -206,7 +206,7 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
   }
 
   public async getHistoryForPerson(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
     return db
       .selectFrom('volunteer_shifts')
       .innerJoin('volunteer_events', 'volunteer_events.id', 'volunteer_shifts.event_id')
@@ -228,19 +228,19 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
   }
 
   public async getVolunteerStats(input: { tenant_id: string; person_id: string }, trx?: Transaction<Models>) {
-    const db = trx || (BaseRepository as any)['_db'];
+    const db = trx || this.db;
 
     const result = await db
       .selectFrom('volunteer_shifts')
-      .select((eb: any) => [eb.fn.count('id').as('shifts_count'), eb.fn.sum('hours_worked').as('total_hours')])
+      .select(({ fn }) => [fn.count<number>('id').as('shifts_count'), fn.sum<number>('hours_worked').as('total_hours')])
       .where('tenant_id', '=', input.tenant_id)
       .where('person_id', '=', input.person_id)
       .where('status', '=', 'attended')
       .executeTakeFirst();
 
     return {
-      shifts_count: Number((result as any)?.shifts_count || 0),
-      total_hours: parseFloat((result as any)?.total_hours || '0.0'),
+      shifts_count: Number(result?.shifts_count ?? 0),
+      total_hours: parseFloat(String(result?.total_hours ?? '0.0')),
     };
   }
 }

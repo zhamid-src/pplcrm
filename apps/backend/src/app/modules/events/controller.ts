@@ -26,7 +26,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     const existing = await this.getRepo()
       .db.selectFrom('events')
       .select('id')
-      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .where('slug', '=', payload.slug)
       .executeTakeFirst();
 
@@ -72,8 +72,19 @@ export class EventsController extends BaseController<'events', EventsRepo> {
       .db.selectFrom('events')
       .selectAll()
       .where('slug', '=', slug)
-      .where('is_published', '=', true as any)
+      .where('is_published', '=', true)
       .executeTakeFirst();
+  }
+
+  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
+    const row = await this.getRepo()
+      .db.selectFrom('event_registrations')
+      .select(({ fn }) => [fn.count('id').as('cnt')])
+      .where('tenant_id', '=', tenantId)
+      .where('event_id', '=', eventId)
+      .where('status', '!=', 'cancelled')
+      .executeTakeFirst();
+    return Number(row?.cnt ?? 0);
   }
 
   public async getTicketTypesByEventId(eventId: string, tenantId: string) {
@@ -91,10 +102,10 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     let query = this.getRepo()
       .db.selectFrom('events')
       .select('id')
-      .where('tenant_id', '=', auth.tenant_id as any)
+      .where('tenant_id', '=', auth.tenant_id)
       .where('slug', '=', slug);
     if (excludeId) {
-      query = query.where('id', '!=', excludeId as any);
+      query = query.where('id', '!=', excludeId);
     }
     const existing = await query.executeTakeFirst();
     return { unique: !existing };
@@ -105,9 +116,9 @@ export class EventsController extends BaseController<'events', EventsRepo> {
       const existing = await this.getRepo()
         .db.selectFrom('events')
         .select('id')
-        .where('tenant_id', '=', auth.tenant_id as any)
+        .where('tenant_id', '=', auth.tenant_id)
         .where('slug', '=', payload.slug)
-        .where('id', '!=', id as any)
+        .where('id', '!=', id)
         .executeTakeFirst();
 
       if (existing) {
@@ -137,7 +148,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     if (payload.send_reminder === false) {
       try {
         await this.getRepo()
-          .db.deleteFrom('background_jobs' as any)
+          .db.deleteFrom('background_jobs')
           .where('tenant_id', '=', auth.tenant_id)
           .where('status', '=', 'pending')
           .where(sql`payload->>'type'`, '=', 'send-event-reminder')
@@ -170,7 +181,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
 
             for (const reg of registrations) {
               await this.getRepo()
-                .db.deleteFrom('background_jobs' as any)
+                .db.deleteFrom('background_jobs')
                 .where('tenant_id', '=', auth.tenant_id)
                 .where('status', '=', 'pending')
                 .where(sql`payload->>'type'`, '=', 'send-event-reminder')
@@ -178,7 +189,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
                 .execute();
 
               await this.getRepo()
-                .db.insertInto('background_jobs' as any)
+                .db.insertInto('background_jobs')
                 .values({
                   tenant_id: auth.tenant_id,
                   queue: 'default',
@@ -300,7 +311,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
       if (event.send_registration_confirmation !== false) {
         try {
           await this.getRepo()
-            .db.insertInto('background_jobs' as any)
+            .db.insertInto('background_jobs')
             .values({
               tenant_id: auth.tenant_id,
               queue: 'default',
@@ -327,7 +338,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
           if (startMs > nowMs) {
             const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
             await this.getRepo()
-              .db.insertInto('background_jobs' as any)
+              .db.insertInto('background_jobs')
               .values({
                 tenant_id: auth.tenant_id,
                 queue: 'default',
@@ -376,7 +387,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     // Cancel pending reminder — they've already arrived
     try {
       await this.getRepo()
-        .db.deleteFrom('background_jobs' as any)
+        .db.deleteFrom('background_jobs')
         .where('tenant_id', '=', auth.tenant_id)
         .where('status', '=', 'pending')
         .where(sql`payload->>'type'`, '=', 'send-event-reminder')
@@ -415,7 +426,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     if (payload.status && payload.status !== 'registered') {
       try {
         await this.getRepo()
-          .db.deleteFrom('background_jobs' as any)
+          .db.deleteFrom('background_jobs')
           .where('tenant_id', '=', auth.tenant_id)
           .where('status', '=', 'pending')
           .where(sql`payload->>'type'`, '=', 'send-event-reminder')
@@ -449,7 +460,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     if (result) {
       try {
         await this.getRepo()
-          .db.deleteFrom('background_jobs' as any)
+          .db.deleteFrom('background_jobs')
           .where('tenant_id', '=', auth.tenant_id)
           .where('status', '=', 'pending')
           .where(sql`payload->>'type'`, '=', 'send-event-reminder')
@@ -532,7 +543,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
         const tenantRow = await trx
           .selectFrom('tenants')
           .select(['placeholder_household_id', 'admin_id'])
-          .where('id', '=', tenantId as any)
+          .where('id', '=', tenantId)
           .executeTakeFirst();
 
         const householdId = tenantRow?.placeholder_household_id;
@@ -547,8 +558,8 @@ export class EventsController extends BaseController<'events', EventsRepo> {
           const countRow = await trx
             .selectFrom('event_registrations')
             .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-            .where('tenant_id', '=', tenantId as any)
-            .where('event_id', '=', String(event.id) as any)
+            .where('tenant_id', '=', tenantId)
+            .where('event_id', '=', String(event.id))
             .where('status', '!=', 'cancelled')
             .executeTakeFirst();
           if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
@@ -560,7 +571,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
         const existing = await trx
           .selectFrom('persons')
           .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId as any)
+          .where('tenant_id', '=', tenantId)
           .where(sql`lower(email)`, '=', email.toLowerCase())
           .executeTakeFirst();
 
@@ -579,7 +590,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
             await trx
               .updateTable('persons')
               .set(updateRow)
-              .where('tenant_id', '=', tenantId as any)
+              .where('tenant_id', '=', tenantId)
               .where('id', '=', existing.id)
               .execute();
           }
@@ -589,7 +600,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
             const campaignRow = await trx
               .selectFrom('campaigns')
               .select('id')
-              .where('tenant_id', '=', tenantId as any)
+              .where('tenant_id', '=', tenantId)
               .orderBy('created_at', 'asc')
               .limit(1)
               .executeTakeFirst();
@@ -599,10 +610,10 @@ export class EventsController extends BaseController<'events', EventsRepo> {
           }
 
           const insertRow: any = {
-            tenant_id: tenantId as any,
-            household_id: householdId as any,
-            createdby_id: creatorId as any,
-            updatedby_id: creatorId as any,
+            tenant_id: tenantId,
+            household_id: householdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
             first_name: firstName,
             last_name: lastName,
             email,
@@ -631,9 +642,9 @@ export class EventsController extends BaseController<'events', EventsRepo> {
         const existingReg = await trx
           .selectFrom('event_registrations')
           .select('id')
-          .where('tenant_id', '=', tenantId as any)
-          .where('event_id', '=', String(event.id) as any)
-          .where('person_id', '=', personId as any)
+          .where('tenant_id', '=', tenantId)
+          .where('event_id', '=', String(event.id))
+          .where('person_id', '=', personId)
           .where('status', '!=', 'cancelled')
           .executeTakeFirst();
 
@@ -645,15 +656,15 @@ export class EventsController extends BaseController<'events', EventsRepo> {
         const reg = await trx
           .insertInto('event_registrations')
           .values({
-            tenant_id: tenantId as any,
+            tenant_id: tenantId,
             event_id: String(event.id) as any,
-            person_id: personId as any,
+            person_id: personId,
             ticket_type_id: null,
             status: 'registered',
             notes: notes ?? null,
-            createdby_id: creatorId as any,
-            updatedby_id: creatorId as any,
-          } as any)
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
           .returning('id')
           .executeTakeFirstOrThrow();
 
@@ -661,9 +672,9 @@ export class EventsController extends BaseController<'events', EventsRepo> {
         if ((event as any).send_registration_confirmation !== false) {
           try {
             await trx
-              .insertInto('background_jobs' as any)
+              .insertInto('background_jobs')
               .values({
-                tenant_id: tenantId as any,
+                tenant_id: tenantId,
                 queue: 'default',
                 status: 'pending',
                 payload: JSON.stringify({
@@ -688,9 +699,9 @@ export class EventsController extends BaseController<'events', EventsRepo> {
             if (startMs > nowMs) {
               const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
               await trx
-                .insertInto('background_jobs' as any)
+                .insertInto('background_jobs')
                 .values({
-                  tenant_id: tenantId as any,
+                  tenant_id: tenantId,
                   queue: 'default',
                   status: 'pending',
                   payload: JSON.stringify({

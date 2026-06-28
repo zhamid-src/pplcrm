@@ -41,7 +41,7 @@ module.exports = [
         '@typescript-eslint/explicit-function-return-type': 'off',
 
         /* General JS/TS best practices */
-        'no-console': ['warn', { allow: ['warn', 'error'] }],
+        'no-console': ['warn', { allow: ['warn', 'error', 'log'] }],
         'prefer-const': 'error',
         'no-var': 'error',
         'no-empty': ['warn', { allowEmptyCatch: true }],

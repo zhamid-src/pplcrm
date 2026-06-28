@@ -39,9 +39,9 @@ export class EmailTrashRepo extends BaseRepository<'email_trash'> {
             sql`id`.as('email_id'),
             sql`folder_id`.as('from_folder_id'),
           ])
-          .where('tenant_id', '=', tenant_id as any)
-          .where('id', 'in', emailIds as any)
-          .where('folder_id', '!=', folder_id as any);
+          .where('tenant_id', '=', tenant_id)
+          .where('id', 'in', emailIds)
+          .where('folder_id', '!=', folder_id);
 
         // tack on audit user if requested
         return actorUserId
