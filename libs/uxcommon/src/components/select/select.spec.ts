@@ -1,10 +1,10 @@
+import { signal } from '@angular/core';
 import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
-import { Select } from './select';
-import { describe, it, expect, beforeEach } from 'vitest';
-import { By } from '@angular/platform-browser';
-import { signal } from '@angular/core';
 import { form } from '@angular/forms/signals';
+import { By } from '@angular/platform-browser';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { Select } from './select';
 
 describe('Select Component', () => {
   let component: Select;

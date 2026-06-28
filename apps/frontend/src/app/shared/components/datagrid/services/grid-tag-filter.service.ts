@@ -121,6 +121,6 @@ export class GridTagFilterService {
 
   // ── Private ───────────────────────────────────────────────────────────────
   private _doRefresh: () => void = () => {
-    /* noop */
+    /*noop */
   };
 }
