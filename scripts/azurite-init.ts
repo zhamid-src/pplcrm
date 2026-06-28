@@ -38,7 +38,9 @@ async function main() {
     credential,
   ).toString();
 
+  // eslint-disable-next-line no-console
   console.log(`SAS URL for container '${containerName}':`);
+  // eslint-disable-next-line no-console
   console.log(`${containerClient.url}?${sas}`);
 }
 

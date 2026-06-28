@@ -25,9 +25,7 @@ describe('Navbar Component', () => {
   let initNotificationsSpy: any;
 
   beforeEach(async () => {
-    initNotificationsSpy = vi.spyOn(Navbar.prototype as any, 'initNotifications').mockImplementation(async () => {
-      /* noop */
-    });
+    initNotificationsSpy = vi.spyOn(Navbar.prototype as any, 'initNotifications').mockReturnValue(Promise.resolve());
 
     mockAuthSvc = {
       signOut: vi.fn(),
@@ -258,9 +256,7 @@ describe('Navbar Component', () => {
     component.notifications.set([notif]);
     component.unreadCount.set(1);
 
-    vi.spyOn(component as any, 'closeDropdown').mockImplementation(() => {
-      /* noop */
-    });
+    vi.spyOn(component as any, 'closeDropdown').mockReturnValue(undefined);
 
     await component['clickNotification'](notif);
 
