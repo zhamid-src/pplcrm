@@ -1,4 +1,4 @@
-import { IAuthKeyPayload, ImportListItem } from '../../../../../../libs/common/src';
+import type { IAuthKeyPayload, ImportListItem } from '../../../../../../libs/common/src';
 
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
@@ -10,7 +10,8 @@ import { MapPersonsTagRepo } from '../persons/repositories/map-persons-tags.repo
 import { PersonsRepo } from '../persons/repositories/persons.repo';
 import { CompaniesRepo } from '../companies/repositories/companies.repo';
 import { TasksRepo } from '../tasks/repositories/tasks.repo';
-import { ImportsRepo, DataImportWithStats } from './repositories/imports.repo';
+import type { DataImportWithStats } from './repositories/imports.repo';
+import { ImportsRepo } from './repositories/imports.repo';
 
 export class ImportsController extends BaseController<'data_imports', ImportsRepo> {
   private readonly personsRepo = new PersonsRepo();

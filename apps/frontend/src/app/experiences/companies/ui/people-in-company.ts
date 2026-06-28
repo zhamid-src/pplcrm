@@ -9,7 +9,7 @@ import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models'
   template: `<div>
     <ul class="space-y-1.5">
       @if (!peopleInCompany().length && !isLoading()) {
-        <span class="text-sm text-base-content/50 italic">No employees found.</span>
+        <span i18n class="text-sm text-base-content/50 italic">No employees found.</span>
       }
       @for (person of peopleInCompany(); track person.id) {
         <li class="flex items-center gap-2">
@@ -24,7 +24,13 @@ import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models'
     </ul>
     @if (hasMore()) {
       <div class="mt-2">
-        <button type="button" class="btn btn-xs btn-ghost text-primary" (click)="loadMore()" [disabled]="isLoading()">
+        <button
+          i18n
+          type="button"
+          class="btn btn-xs btn-ghost text-primary"
+          (click)="loadMore()"
+          [disabled]="isLoading()"
+        >
           - More -
         </button>
       </div>
@@ -34,9 +40,7 @@ import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models'
 export class PeopleInCompany {
   private personsSvc = inject(PersonsService);
 
-  protected peopleInCompany = signal<
-    Array<Persons & { full_name: string }>
-  >([]);
+  protected peopleInCompany = signal<Array<Persons & { full_name: string }>>([]);
   protected isLoading = signal(false);
   protected hasMore = signal(false);
 

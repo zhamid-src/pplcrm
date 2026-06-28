@@ -12,14 +12,18 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
     <div class="flex flex-col gap-6">
       <pc-datagrid
         title="Donation Pages"
+        i18n-title
         description="Manage embeddable donation and recurring pledge pages that connect to Stripe."
+        i18n-description
         [showDescription]="true"
         [colDefs]="col"
         [disableDelete]="false"
         [allowFilter]="false"
         [disableView]="false"
         addRoute="add"
+        i18n-addRoute
         plusIcon="add-fundraising"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,

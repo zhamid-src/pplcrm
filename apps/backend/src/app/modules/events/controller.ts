@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
-import { sql, Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
 import { BaseController } from '../../lib/base.controller';
 import { EventsRepo } from './repositories/events.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
@@ -66,6 +67,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
   }
 
   public async getEventBySlug(slug: string) {
+    // eslint-disable-next-line local/no-unscoped-db-query
     return this.getRepo()
       .db.selectFrom('events')
       .selectAll()
@@ -592,7 +594,9 @@ export class EventsController extends BaseController<'events', EventsRepo> {
               .limit(1)
               .executeTakeFirst();
             campaignId = campaignRow ? String(campaignRow.id) : null;
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
 
           const insertRow: any = {
             tenant_id: tenantId as any,
@@ -612,11 +616,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
           };
           if (campaignId) insertRow.campaign_id = campaignId as any;
 
-          const insertRes = await trx
-            .insertInto('persons')
-            .values(insertRow)
-            .returning('id')
-            .executeTakeFirstOrThrow();
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
           personId = String(insertRes.id);
 
           try {

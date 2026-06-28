@@ -10,7 +10,7 @@ import { PersonsService } from '../services/persons-service';
   template: `<div>
     <ul>
       @if (!peopleInHousehold().length && !isLoading()) {
-        <span> No one else </span>
+        <span i18n> No one else </span>
       }
       @for (person of peopleInHousehold(); track person.id) {
         <li>
@@ -20,7 +20,7 @@ import { PersonsService } from '../services/persons-service';
     </ul>
     @if (hasMore()) {
       <div class="mt-2">
-        <button type="button" class="link" (click)="loadMore()" [disabled]="isLoading()">- More -</button>
+        <button i18n type="button" class="link" (click)="loadMore()" [disabled]="isLoading()">- More -</button>
       </div>
     }
   </div>`,

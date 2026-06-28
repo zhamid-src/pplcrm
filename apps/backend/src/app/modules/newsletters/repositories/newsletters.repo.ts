@@ -1,6 +1,7 @@
 import { sql } from 'kysely';
 
-import { BaseRepository, QueryParams } from '../../../lib/base.repo';
+import type { QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
 
 export class NewslettersRepo extends BaseRepository<'newsletters'> {
   constructor() {

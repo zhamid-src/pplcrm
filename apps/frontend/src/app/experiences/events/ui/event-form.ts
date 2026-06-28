@@ -1,23 +1,23 @@
-import { Component, computed, effect, inject, input, signal, untracked } from "@angular/core";
-import { FormsModule } from "@angular/forms";
-import { FormField, form, validateStandardSchema } from "@angular/forms/signals";
-import { Router, RouterModule } from "@angular/router";
-import { Icon } from "@icons/icon";
-import { AlertService } from "@uxcommon/components/alerts/alert-service";
-import { Card as PcCard } from "@uxcommon/components/card/card";
-import { DetailHeader as PcDetailHeader } from "@uxcommon/components/detail-header/detail-header";
-import { EntityOverview as PcEntityOverview } from "@uxcommon/components/entity-overview/entity-overview";
-import { Input as PcInput } from "@uxcommon/components/input/input";
-import { Textarea as PcTextarea } from "@uxcommon/components/textarea/textarea";
-import { createLoadingGate } from "@uxcommon/loading-gate";
-import { FieldsSelector } from "@uxcommon/components/fields-selector/fields-selector";
-import { PublicLinkPanel } from "@uxcommon/components/public-link-panel/public-link-panel";
-import { environment } from "../../../../environments/environment";
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
+import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
+import { environment } from '../../../../environments/environment';
 
-import { AddEventObj, AddEventType, UpdateEventType } from "../../../../../../../libs/common/src";
-import { EventsService } from "../../../services/api/events-service";
-import { ConfirmDialogService } from "../../../services/shared-dialog.service";
-import { EventsFrontendService } from "../services/events-frontend-service";
+import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../../libs/common/src';
+import { EventsService } from '../../../services/api/events-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { EventsFrontendService } from '../services/events-frontend-service';
 
 @Component({
   selector: 'pc-event-form',
@@ -89,6 +89,16 @@ export class EventFormComponent {
   protected readonly ticketTypes = signal<any[]>([]);
 
   protected slugManuallyEdited = false;
+
+  protected setNewTicketName(v: string) {
+    this.newTicket.update((t) => ({ ...t, name: v }));
+  }
+  protected setNewTicketPrice(v: string) {
+    this.newTicket.update((t) => ({ ...t, price_cents: +v }));
+  }
+  protected setNewTicketCapacity(v: string) {
+    this.newTicket.update((t) => ({ ...t, capacity: v ? +v : null }));
+  }
 
   public readonly id = input<string>();
 

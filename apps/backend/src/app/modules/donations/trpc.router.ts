@@ -7,17 +7,15 @@ const controller = new DonationsController();
 export const DonationsRouter = router({
   // ── One-time donations ──────────────────────────────────────────────────────
 
-  listDonations: authProcedure.query(({ ctx }) => {
-    return controller.getTenantDonationsList(ctx.auth.tenant_id);
-  }),
+  listDonations: authProcedure.query(({ ctx }) => controller.getTenantDonationsList(ctx.auth.tenant_id)),
 
-  getPersonDonationHistory: authProcedure.input(z.string()).query(({ ctx, input }) => {
-    return controller.getPersonDonationsList(ctx.auth.tenant_id, input);
-  }),
+  getPersonDonationHistory: authProcedure
+    .input(z.string())
+    .query(({ ctx, input }) => controller.getPersonDonationsList(ctx.auth.tenant_id, input)),
 
-  getDonationStats: authProcedure.input(z.string()).query(async ({ ctx, input }) => {
-    return controller.getDonationStats(ctx.auth.tenant_id, input);
-  }),
+  getDonationStats: authProcedure
+    .input(z.string())
+    .query(async ({ ctx, input }) => controller.getDonationStats(ctx.auth.tenant_id, input)),
 
   checkEligibility: authProcedure
     .input(
@@ -32,12 +30,12 @@ export const DonationsRouter = router({
         remainingMonths: z.number().optional(),
       }),
     )
-    .query(({ ctx, input }) => {
-      return controller.checkEligibility(ctx.auth.tenant_id, input.personId, input.amountCents, input.address, {
+    .query(({ ctx, input }) =>
+      controller.checkEligibility(ctx.auth.tenant_id, input.personId, input.amountCents, input.address, {
         isRecurring: input.isRecurring,
         remainingMonths: input.remainingMonths,
-      });
-    }),
+      }),
+    ),
 
   createCheckout: authProcedure
     .input(
@@ -50,15 +48,13 @@ export const DonationsRouter = router({
         }),
       }),
     )
-    .mutation(({ ctx, input }) => {
-      return controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address);
-    }),
+    .mutation(({ ctx, input }) =>
+      controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address),
+    ),
 
   confirmDonation: authProcedure
     .input(z.object({ sessionId: z.string() }))
-    .mutation(({ ctx, input }) => {
-      return controller.confirmDonation(ctx.auth.tenant_id, ctx.auth.user_id, input.sessionId);
-    }),
+    .mutation(({ ctx, input }) => controller.confirmDonation(ctx.auth.tenant_id, ctx.auth.user_id, input.sessionId)),
 
   confirmMockDonation: authProcedure
     .input(
@@ -70,8 +66,8 @@ export const DonationsRouter = router({
         country: z.string(),
       }),
     )
-    .mutation(({ ctx, input }) => {
-      return controller.confirmMockDonation(
+    .mutation(({ ctx, input }) =>
+      controller.confirmMockDonation(
         ctx.auth.tenant_id,
         ctx.auth.user_id,
         input.personId,
@@ -79,8 +75,8 @@ export const DonationsRouter = router({
         input.sessionId,
         input.province,
         input.country,
-      );
-    }),
+      ),
+    ),
 
   // ── Recurring pledges ───────────────────────────────────────────────────────
 
@@ -95,14 +91,9 @@ export const DonationsRouter = router({
         }),
       }),
     )
-    .mutation(({ ctx, input }) => {
-      return controller.createRecurringCheckoutSession(
-        ctx.auth,
-        input.personId,
-        input.monthlyAmountCents,
-        input.address,
-      );
-    }),
+    .mutation(({ ctx, input }) =>
+      controller.createRecurringCheckoutSession(ctx.auth, input.personId, input.monthlyAmountCents, input.address),
+    ),
 
   confirmMockPledge: authProcedure
     .input(
@@ -114,8 +105,8 @@ export const DonationsRouter = router({
         country: z.string(),
       }),
     )
-    .mutation(({ ctx, input }) => {
-      return controller.confirmMockPledge(
+    .mutation(({ ctx, input }) =>
+      controller.confirmMockPledge(
         ctx.auth.tenant_id,
         ctx.auth.user_id,
         input.personId,
@@ -123,28 +114,22 @@ export const DonationsRouter = router({
         input.mockSubId,
         input.province,
         input.country,
-      );
-    }),
+      ),
+    ),
 
-  listPledges: authProcedure.query(({ ctx }) => {
-    return controller.getTenantPledgesList(ctx.auth.tenant_id);
-  }),
+  listPledges: authProcedure.query(({ ctx }) => controller.getTenantPledgesList(ctx.auth.tenant_id)),
 
-  getPersonPledges: authProcedure.input(z.string()).query(({ ctx, input }) => {
-    return controller.getPersonPledges(ctx.auth.tenant_id, input);
-  }),
+  getPersonPledges: authProcedure
+    .input(z.string())
+    .query(({ ctx, input }) => controller.getPersonPledges(ctx.auth.tenant_id, input)),
 
   cancelPledge: authProcedure
     .input(z.object({ pledgeId: z.string() }))
-    .mutation(({ ctx, input }) => {
-      return controller.cancelPledge(ctx.auth.tenant_id, input.pledgeId, ctx.auth.user_id);
-    }),
+    .mutation(({ ctx, input }) => controller.cancelPledge(ctx.auth.tenant_id, input.pledgeId, ctx.auth.user_id)),
 
   // ── Donation periods ────────────────────────────────────────────────────────
 
-  getDonationPeriods: authProcedure.query(({ ctx }) => {
-    return controller.getDonationPeriods(ctx.auth.tenant_id);
-  }),
+  getDonationPeriods: authProcedure.query(({ ctx }) => controller.getDonationPeriods(ctx.auth.tenant_id)),
 
   createDonationPeriod: authProcedure
     .input(
@@ -155,9 +140,7 @@ export const DonationsRouter = router({
         limit_amount: z.number().int().positive(),
       }),
     )
-    .mutation(({ ctx, input }) => {
-      return controller.createDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, input);
-    }),
+    .mutation(({ ctx, input }) => controller.createDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, input)),
 
   updateDonationPeriod: authProcedure
     .input(
@@ -177,7 +160,5 @@ export const DonationsRouter = router({
 
   deleteDonationPeriod: authProcedure
     .input(z.object({ id: z.string() }))
-    .mutation(({ ctx, input }) => {
-      return controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id);
-    }),
+    .mutation(({ ctx, input }) => controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id)),
 });

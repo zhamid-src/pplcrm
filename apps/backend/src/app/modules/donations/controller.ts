@@ -6,9 +6,9 @@ import { DonationsRepo } from './repositories/donations.repo';
 import { DonationPeriodsRepo } from './repositories/periods.repo';
 import { DonationPledgesRepo } from './repositories/pledges.repo';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
-import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { WorkflowsController } from '../workflows/controller';
-import { Selectable } from 'kysely';
+import type { Selectable } from 'kysely';
 
 export class DonationsController extends BaseController<'donations', DonationsRepo> {
   private settingsRepo = new SettingsRepo();
@@ -62,7 +62,13 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     tenantId: string,
     userId: string,
     id: string,
-    payload: { name?: string; start_date?: string; end_date?: string | null; limit_amount?: number; is_active?: boolean },
+    payload: {
+      name?: string;
+      start_date?: string;
+      end_date?: string | null;
+      limit_amount?: number;
+      is_active?: boolean;
+    },
   ) {
     const set: any = { updatedby_id: userId, updated_at: new Date() };
     if (payload.name !== undefined) set.name = payload.name;
@@ -222,9 +228,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
 
     // For recurring: check total commitment (monthly × remaining months) against limit
     const effectiveAmount =
-      options?.isRecurring && options?.remainingMonths
-        ? amountCents * options.remainingMonths
-        : amountCents;
+      options?.isRecurring && options?.remainingMonths ? amountCents * options.remainingMonths : amountCents;
 
     if (cumulative + effectiveAmount > limitCents) {
       const allowedAmount = Math.max(0, limitCents - cumulative) / 100;
@@ -329,7 +333,9 @@ export class DonationsController extends BaseController<'donations', DonationsRe
         },
       ],
       mode: 'payment',
-      success_url: customUrls?.successUrl || `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
+      success_url:
+        customUrls?.successUrl ||
+        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
       metadata: {
         tenantId: auth.tenant_id,
@@ -367,17 +373,12 @@ export class DonationsController extends BaseController<'donations', DonationsRe
   ) {
     // Determine remaining months for limit enforcement
     const activePeriod = await this.periodsRepo.getActivePeriodForToday(auth.tenant_id);
-    const remainingMonths = activePeriod?.end_date
-      ? this.getRemainingMonths(new Date(activePeriod.end_date))
-      : null;
+    const remainingMonths = activePeriod?.end_date ? this.getRemainingMonths(new Date(activePeriod.end_date)) : null;
 
-    const eligibility = await this.checkEligibility(
-      auth.tenant_id,
-      personId,
-      monthlyAmountCents,
-      address,
-      { isRecurring: true, remainingMonths: remainingMonths ?? 12 },
-    );
+    const eligibility = await this.checkEligibility(auth.tenant_id, personId, monthlyAmountCents, address, {
+      isRecurring: true,
+      remainingMonths: remainingMonths ?? 12,
+    });
     if (!eligibility.eligible) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: eligibility.reason });
     }
@@ -419,7 +420,9 @@ export class DonationsController extends BaseController<'donations', DonationsRe
         },
       ],
       mode: 'subscription',
-      success_url: customUrls?.successUrl || `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
+      success_url:
+        customUrls?.successUrl ||
+        `${env.appUrl}/people/${personId}?checkout_success=true&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: customUrls?.cancelUrl || `${env.appUrl}/people/${personId}?checkout_cancel=true`,
       subscription_data: {
         metadata: {
@@ -482,7 +485,15 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     const province = String(session.metadata?.['residencyProvince'] || '');
     const country = String(session.metadata?.['residencyCountry'] || '');
 
-    const record = await this.recordSuccessfulDonation(tenantId, personId, amountCents, sessionId, province, country, userId);
+    const record = await this.recordSuccessfulDonation(
+      tenantId,
+      personId,
+      amountCents,
+      sessionId,
+      province,
+      country,
+      userId,
+    );
     return { success: true, donation: record };
   }
 
@@ -506,7 +517,15 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       return { success: true, donation: existing };
     }
 
-    const record = await this.recordSuccessfulDonation(tenantId, personId, amountCents, sessionId, province, country, userId);
+    const record = await this.recordSuccessfulDonation(
+      tenantId,
+      personId,
+      amountCents,
+      sessionId,
+      province,
+      country,
+      userId,
+    );
     return { success: true, donation: record };
   }
 
@@ -537,6 +556,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     country: string,
     userId: string,
   ): Promise<Selectable<Models['donation_pledges']>> {
+    // eslint-disable-next-line local/no-unscoped-db-query
     const existing = await this.pledgesRepo.db
       .selectFrom('donation_pledges')
       .selectAll()
@@ -586,7 +606,14 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       if (!tag) {
         const insertTagRes = await trx
           .insertInto('tags')
-          .values({ tenant_id: tenantId as any, name: tagName, type: 'tag', deletable: true, createdby_id: userId as any, updatedby_id: userId as any })
+          .values({
+            tenant_id: tenantId as any,
+            name: tagName,
+            type: 'tag',
+            deletable: true,
+            createdby_id: userId as any,
+            updatedby_id: userId as any,
+          })
           .returning('id')
           .executeTakeFirstOrThrow();
         tag = { id: insertTagRes.id };
@@ -603,7 +630,13 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       if (!mapExists) {
         await trx
           .insertInto('map_peoples_tags')
-          .values({ tenant_id: tenantId as any, person_id: personId as any, tag_id: tag.id as any, createdby_id: userId as any, updatedby_id: userId as any })
+          .values({
+            tenant_id: tenantId as any,
+            person_id: personId as any,
+            tag_id: tag.id as any,
+            createdby_id: userId as any,
+            updatedby_id: userId as any,
+          })
           .execute();
         try {
           const wc = new WorkflowsController();
@@ -643,92 +676,107 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     userId: string,
     pledgeId?: string,
   ): Promise<Selectable<Models['donations']>> {
-    const person = await this.getRepo().db
-      .selectFrom('persons')
+    const person = await this.getRepo()
+      .db.selectFrom('persons')
       .select(['first_name', 'last_name', 'email'])
       .where('id', '=', personId as any)
       .where('tenant_id', '=', tenantId as any)
       .executeTakeFirst();
 
-    const record = await this.getRepo().db.transaction().execute(async (trx) => {
-      const inserted = (await trx
-        .insertInto('donations' as any)
-        .values({
-          tenant_id: tenantId,
-          person_id: personId,
-          first_name: person?.first_name ?? null,
-          last_name: person?.last_name ?? null,
-          email: person?.email ?? null,
-          amount: amountCents,
-          status: 'succeeded',
-          stripe_session_id: sessionId,
-          state: province || null,
-          country: country || null,
-          pledge_id: pledgeId ? pledgeId : null,
-        } as any)
-        .returningAll()
-        .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;
-
-      const tagName = 'donor';
-      let tag = await trx
-        .selectFrom('tags')
-        .select('id')
-        .where('tenant_id', '=', tenantId as any)
-        .where('name', '=', tagName)
-        .where('type', '=', 'tag')
-        .executeTakeFirst();
-
-      if (!tag) {
-        const insertTagRes = await trx
-          .insertInto('tags')
-          .values({ tenant_id: tenantId as any, name: tagName, type: 'tag', deletable: true, createdby_id: userId as any, updatedby_id: userId as any })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-        tag = { id: insertTagRes.id };
-      }
-
-      const mapExists = await trx
-        .selectFrom('map_peoples_tags')
-        .select('person_id')
-        .where('tenant_id', '=', tenantId as any)
-        .where('person_id', '=', personId as any)
-        .where('tag_id', '=', tag.id as any)
-        .executeTakeFirst();
-
-      if (!mapExists) {
-        await trx
-          .insertInto('map_peoples_tags')
-          .values({ tenant_id: tenantId as any, person_id: personId as any, tag_id: tag.id as any, createdby_id: userId as any, updatedby_id: userId as any })
-          .execute();
-
-        try {
-          const workflowsController = new WorkflowsController();
-          await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
-        } catch (err) {
-          console.error('Failed to trigger tag_added workflow in DonationsController:', err);
-        }
-      }
-
-      try {
-        await trx
-          .insertInto('user_activity' as any)
+    const record = await this.getRepo()
+      .db.transaction()
+      .execute(async (trx) => {
+        const inserted = (await trx
+          .insertInto('donations' as any)
           .values({
             tenant_id: tenantId,
-            user_id: userId,
-            activity: `Collected a donation of $${amountCents / 100}`,
-            entity: 'persons',
-            entity_id: personId,
-            quantity: 1,
-            createdby_id: userId,
-            updatedby_id: userId,
+            person_id: personId,
+            first_name: person?.first_name ?? null,
+            last_name: person?.last_name ?? null,
+            email: person?.email ?? null,
+            amount: amountCents,
+            status: 'succeeded',
+            stripe_session_id: sessionId,
+            state: province || null,
+            country: country || null,
+            pledge_id: pledgeId ? pledgeId : null,
           } as any)
-          .execute();
-      } catch (err) {
-        console.error('Failed to write audit activity log for donation:', err);
-      }
+          .returningAll()
+          .executeTakeFirstOrThrow()) as Selectable<Models['donations']>;
 
-      return inserted;
-    });
+        const tagName = 'donor';
+        let tag = await trx
+          .selectFrom('tags')
+          .select('id')
+          .where('tenant_id', '=', tenantId as any)
+          .where('name', '=', tagName)
+          .where('type', '=', 'tag')
+          .executeTakeFirst();
+
+        if (!tag) {
+          const insertTagRes = await trx
+            .insertInto('tags')
+            .values({
+              tenant_id: tenantId as any,
+              name: tagName,
+              type: 'tag',
+              deletable: true,
+              createdby_id: userId as any,
+              updatedby_id: userId as any,
+            })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+          tag = { id: insertTagRes.id };
+        }
+
+        const mapExists = await trx
+          .selectFrom('map_peoples_tags')
+          .select('person_id')
+          .where('tenant_id', '=', tenantId as any)
+          .where('person_id', '=', personId as any)
+          .where('tag_id', '=', tag.id as any)
+          .executeTakeFirst();
+
+        if (!mapExists) {
+          await trx
+            .insertInto('map_peoples_tags')
+            .values({
+              tenant_id: tenantId as any,
+              person_id: personId as any,
+              tag_id: tag.id as any,
+              createdby_id: userId as any,
+              updatedby_id: userId as any,
+            })
+            .execute();
+
+          try {
+            const workflowsController = new WorkflowsController();
+            await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
+          } catch (err) {
+            console.error('Failed to trigger tag_added workflow in DonationsController:', err);
+          }
+        }
+
+        try {
+          await trx
+            .insertInto('user_activity' as any)
+            .values({
+              tenant_id: tenantId,
+              user_id: userId,
+              activity: `Collected a donation of $${amountCents / 100}`,
+              entity: 'persons',
+              entity_id: personId,
+              quantity: 1,
+              createdby_id: userId,
+              updatedby_id: userId,
+            } as any)
+            .execute();
+        } catch (err) {
+          console.error('Failed to write audit activity log for donation:', err);
+        }
+
+        return inserted;
+      });
 
     try {
       const workflowsController = new WorkflowsController();

@@ -11,7 +11,9 @@ import { TeamsService } from '../services/teams-service';
     <div class="flex flex-col gap-6">
       <pc-datagrid
         title="Teams"
+        i18n-title
         description="Organize volunteers and staff into structured teams, assign captains, and coordinate group activities."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"
@@ -20,6 +22,7 @@ import { TeamsService } from '../services/teams-service';
         [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-group"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,

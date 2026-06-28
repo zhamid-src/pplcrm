@@ -29,9 +29,9 @@ export const WorkflowsRouter = router({
         ),
       }),
     )
-    .mutation(async ({ input, ctx }) => {
-      return workflows.saveSteps(ctx.auth.tenant_id, input.workflowId, input.steps, ctx.auth.user_id);
-    }),
+    .mutation(async ({ input, ctx }) =>
+      workflows.saveSteps(ctx.auth.tenant_id, input.workflowId, input.steps, ctx.auth.user_id),
+    ),
 
   getEnrollments: authProcedure
     .input(z.object({ workflowId: idSchema, options: getAllOptions.optional() }))
@@ -39,11 +39,13 @@ export const WorkflowsRouter = router({
 
   enrollPerson: authProcedure
     .input(z.object({ workflowId: idSchema, personId: idSchema }))
-    .mutation(async ({ input, ctx }) => {
-      return workflows.enrollPerson(ctx.auth.tenant_id, input.personId, input.workflowId, ctx.auth.user_id);
-    }),
+    .mutation(async ({ input, ctx }) =>
+      workflows.enrollPerson(ctx.auth.tenant_id, input.personId, input.workflowId, ctx.auth.user_id),
+    ),
 
-  cancelEnrollment: authProcedure.input(z.object({ enrollmentId: idSchema })).mutation(async ({ input, ctx }) => {
-    return workflows.cancelEnrollment(ctx.auth.tenant_id, input.enrollmentId, ctx.auth.user_id);
-  }),
+  cancelEnrollment: authProcedure
+    .input(z.object({ enrollmentId: idSchema }))
+    .mutation(async ({ input, ctx }) =>
+      workflows.cancelEnrollment(ctx.auth.tenant_id, input.enrollmentId, ctx.auth.user_id),
+    ),
 });

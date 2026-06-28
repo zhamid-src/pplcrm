@@ -15,7 +15,7 @@ export const NewslettersRouter = router({
     .input(idSchema)
     .query(({ input, ctx }) => newsletters.getEngagementStats(ctx.auth.tenant_id, input)),
 
-  send: authProcedure.input(idSchema).mutation(async ({ input, ctx }) => {
-    return newsletters.sendNewsletter(ctx.auth.tenant_id, input, ctx.auth.user_id);
-  }),
+  send: authProcedure
+    .input(idSchema)
+    .mutation(async ({ input, ctx }) => newsletters.sendNewsletter(ctx.auth.tenant_id, input, ctx.auth.user_id)),
 });

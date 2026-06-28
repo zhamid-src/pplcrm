@@ -1,4 +1,5 @@
-import { FormBuilder, NonNullableFormBuilder, Validators } from '@angular/forms';
+import type { FormBuilder, NonNullableFormBuilder } from '@angular/forms';
+import { Validators } from '@angular/forms';
 
 // Consolidated form control builders and password breach utilities
 export type AnyFormBuilder = FormBuilder | NonNullableFormBuilder;

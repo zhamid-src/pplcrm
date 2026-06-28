@@ -1,9 +1,11 @@
-import { SelectQueryBuilder, Transaction, sql } from 'kysely';
+import type { SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
 
-import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { HouseholdRepo } from '../../households/repositories/households.repo';
-import { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class PersonsRepo extends BaseRepository<'persons'> {
   constructor() {
@@ -197,7 +199,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
           eb.or([
             eb.and([eb('tags.type', '=', 'tag' as any), eb('tags.name', 'ilike', tagVal)]),
             eb.and([eb('tags.type', '=', 'issue' as any), eb('tags.name', 'ilike', issueVal)]),
-          ])
+          ]),
         );
       } else if (filterModel['tags']?.value) {
         q = q.where('tags.type', '=', 'tag');

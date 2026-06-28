@@ -1,7 +1,7 @@
+import type { StorageSharedKeyCredential } from '@azure/storage-blob';
 import {
   BlobServiceClient,
   BlobSASPermissions,
-  StorageSharedKeyCredential,
   generateBlobSASQueryParameters,
   SASProtocol,
 } from '@azure/storage-blob';

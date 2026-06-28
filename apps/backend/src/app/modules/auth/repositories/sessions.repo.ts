@@ -1,6 +1,6 @@
-import { Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
 
-import { GetOperandType, Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { GetOperandType, Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { BaseRepository } from '../../../lib/base.repo';
 import { hashToken } from '../../../lib/token-hash';
 

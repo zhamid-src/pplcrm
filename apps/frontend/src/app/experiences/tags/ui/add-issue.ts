@@ -10,7 +10,12 @@ import { Input as PcInput } from '@uxcommon/components/input/input';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 
 function randomHexColor(): string {
-  return '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
+  return (
+    '#' +
+    Math.floor(Math.random() * 0xffffff)
+      .toString(16)
+      .padStart(6, '0')
+  );
 }
 
 @Component({
@@ -19,13 +24,13 @@ function randomHexColor(): string {
   template: `<div class="flex min-h-full flex-col bg-base-100">
     <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
       <div class="flex flex-col gap-2">
-        <label class="label text-base font-light">
+        <label i18n class="label text-base font-light">
           Enter a unique issue name (and optionally, give it a description)
         </label>
-        <pc-input placeholder="Issue Name" [formField]="form.name"></pc-input>
-        <pc-input placeholder="Optional description" [formField]="form.description"></pc-input>
+        <pc-input placeholder="Issue Name" i18n-placeholder [formField]="form.name"></pc-input>
+        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
         <div class="flex items-center gap-2">
-          <label class="label-text font-light text-sm">Colour</label>
+          <label i18n class="label-text font-light text-sm">Colour</label>
           <input
             class="input input-bordered input-sm w-24"
             type="color"

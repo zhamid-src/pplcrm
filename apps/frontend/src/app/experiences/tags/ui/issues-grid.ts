@@ -1,9 +1,9 @@
 import { Component, inject } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import type { getAllOptionsType } from '../../../../../../../libs/common/src';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 
 class IssuesService extends TagsService {
   private readonly globalTagsSvc = inject(TagsService, { skipSelf: true, optional: true });
@@ -25,12 +25,16 @@ class IssuesService extends TagsService {
     <div class="flex flex-col gap-6">
       <pc-datagrid
         title="Issues"
+        i18n-title
         description="Manage political or support issues to track contact stances and interests."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="false"
         [allowFilter]="false"
         addRoute="add"
+        i18n-addRoute
         plusIcon="add-issue"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,
@@ -55,8 +59,6 @@ export class IssuesGridComponent {
     { field: 'use_count_people', headerName: 'People' },
     { field: 'use_count_households', headerName: 'Households' },
   ];
-
-  constructor() {}
 
   protected renderColorCell(raw: unknown): string {
     const v = typeof raw === 'string' ? raw.trim() : '';

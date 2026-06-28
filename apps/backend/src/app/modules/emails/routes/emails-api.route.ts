@@ -102,6 +102,7 @@ export async function saveLocalEmail(
     // email_folders(id) — not tenant_id — so the existence check must be by id
     // alone. onConflict guards against a concurrent/global row already present.
 
+    // eslint-disable-next-line local/no-unscoped-db-query
     const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
 
     if (!existingOutbox) {

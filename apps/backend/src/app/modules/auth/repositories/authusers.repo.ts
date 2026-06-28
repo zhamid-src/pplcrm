@@ -1,7 +1,9 @@
-import { SelectQueryBuilder, Transaction, UpdateResult, sql } from 'kysely';
+import type { SelectQueryBuilder, Transaction, UpdateResult } from 'kysely';
+import { sql } from 'kysely';
 
-import { GetOperandType, Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { BaseRepository, JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import type { GetOperandType, Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
 import { generateToken, hashToken } from '../../../lib/token-hash';
 
 export class AuthUsersRepo extends BaseRepository<'authusers'> {
@@ -76,8 +78,8 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
         sql<string>`profiles.last_name`.as('profile_last_name'),
         'profiles.avatar_file_id',
       ])
-      .$if(sorts.length > 0, (qb) => {
-        return sorts.reduce((acc, sort) => {
+      .$if(sorts.length > 0, (qb) =>
+        sorts.reduce((acc, sort) => {
           const dir = sort.sort;
           switch (sort.colId) {
             case 'id':
@@ -99,8 +101,8 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
             default:
               return acc.orderBy(sort.colId as any, dir);
           }
-        }, qb);
-      })
+        }, qb),
+      )
       .offset(startRow)
       .limit(pageSize)
       .execute();

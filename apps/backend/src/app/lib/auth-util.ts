@@ -1,6 +1,6 @@
 import { createVerifier } from 'fast-jwt';
 import { env } from '../../env';
-import { IAuthKeyPayload } from '../../../../../libs/common/src';
+import type { IAuthKeyPayload } from '../../../../../libs/common/src';
 import { UnauthorizedError } from '../errors/app-errors';
 
 const verifier = createVerifier({

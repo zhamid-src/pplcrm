@@ -17,7 +17,9 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
       <pc-datagrid
         #grid
         title="Tasks"
+        i18n-title
         description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"
@@ -25,7 +27,9 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
         [showArchiveIcon]="true"
         (importCSV)="openImportDialog()"
         plusIcon="add-task"
+        i18n-plusIcon
         addRoute="add"
+        i18n-addRoute
       ></pc-datagrid>
     </div>
 

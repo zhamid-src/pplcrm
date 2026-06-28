@@ -12,7 +12,9 @@ import { EventsFrontendService } from '../services/events-frontend-service';
     <div class="flex flex-col gap-6">
       <pc-datagrid
         title="Event Pages"
+        i18n-title
         description="Manage public event pages with RSVP and ticketing for fundraisers, town halls, and meet-and-greets."
+        i18n-description
         [showDescription]="true"
         [colDefs]="col"
         [disableDelete]="false"
@@ -22,9 +24,12 @@ import { EventsFrontendService } from '../services/events-frontend-service';
         [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-ticket"
+        i18n-plusIcon
         [showArchiveIcon]="true"
         archiveIcon="archive-box-arrow-down"
+        i18n-archiveIcon
         archiveTip="See past events"
+        i18n-archiveTip
       ></pc-datagrid>
     </div>
   `,

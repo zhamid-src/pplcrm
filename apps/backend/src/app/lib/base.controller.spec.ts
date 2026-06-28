@@ -83,15 +83,15 @@ describe('BaseController', () => {
 
   it('should delegate getCount and getOneById to repository', async () => {
     const countSpy = vi.spyOn(repo, 'count').mockResolvedValue(5);
-    const getOneBySpy = vi.spyOn(repo, 'getOneBy').mockResolvedValue({ id: '1' } as any);
+    const getOneByIdSpy = vi.spyOn(repo, 'getOneById').mockResolvedValue({ id: '1' } as any);
 
     const count = await controller.getCount('tenant-1');
     expect(count).toBe(5);
     expect(countSpy).toHaveBeenCalledWith('tenant-1');
 
     await controller.getOneById({ tenant_id: 'tenant-1', id: 'tag-1' });
-    expect(getOneBySpy).toHaveBeenCalledWith('id', {
-      value: 'tag-1',
+    expect(getOneByIdSpy).toHaveBeenCalledWith({
+      id: 'tag-1',
       tenant_id: 'tenant-1',
     });
   });

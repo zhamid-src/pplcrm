@@ -65,15 +65,16 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
   public async moveEntireHousehold(oldHouseholdId: string, newHouseholdId: string, tenantId: string) {
     return this.getRepo()
       .transaction()
-      .execute(async (trx) => {
-        return await trx
-          .updateTable('persons')
-          .set({ household_id: newHouseholdId })
-          .where('household_id', '=', oldHouseholdId)
-          .where('tenant_id', '=', tenantId)
-          .returningAll()
-          .execute();
-      });
+      .execute(
+        async (trx) =>
+          await trx
+            .updateTable('persons')
+            .set({ household_id: newHouseholdId })
+            .where('household_id', '=', oldHouseholdId)
+            .where('tenant_id', '=', tenantId)
+            .returningAll()
+            .execute(),
+      );
   }
 
   public override async deleteMany(tenant_id: string, idsToDelete: string[], force?: boolean): Promise<boolean> {

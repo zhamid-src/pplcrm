@@ -1,4 +1,4 @@
-import { Transaction, Kysely } from 'kysely';
+import type { Transaction, Kysely } from 'kysely';
 import { env } from '../../../env';
 import { InternalError } from '../../errors/app-errors';
 import { BaseRepository } from '../base.repo';

@@ -1,19 +1,19 @@
-import { Component, inject, signal, input, viewChild, OnInit } from '@angular/core';
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
 
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { HouseholdsService } from '../services/households-service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { HouseholdsService } from '../services/households-service';
 
 interface ParamsType {
   value: string[];
@@ -28,7 +28,9 @@ interface ParamsType {
         #grid
         [showToolbar]="!inline()"
         title="Households"
+        i18n-title
         description="Manage household groups, track shared addresses, and organize family relationships."
+        i18n-description
         [listId]="listId()"
         [colDefs]="col"
         [disableDelete]="false"
@@ -39,7 +41,9 @@ interface ParamsType {
         [rowCanSelect]="rowCanSelectFn"
         (importCSV)="openImportDialog()"
         addRoute="add"
+        i18n-addRoute
         plusIcon="add-home"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
 
@@ -55,10 +59,11 @@ interface ParamsType {
       (closeSummary)="importSummary.set(null)"
     >
       <div pc-import-extras class="grid gap-2">
-        <label class="font-semibold">3) Add tags to all imported rows (optional)</label>
+        <label i18n class="font-semibold">3) Add tags to all imported rows (optional)</label>
         <input
           class="input input-bordered"
           placeholder="Comma separated e.g. neighborhood, parish"
+          i18n-placeholder
           [(ngModel)]="tagsInput"
         />
       </div>
@@ -234,8 +239,6 @@ export class HouseholdsGrid implements OnInit {
       this.issueOptionValues = [];
     }
   }
-
-  constructor() {}
 
   protected openEditOnDoubleClick(event: any) {
     this.grid()?.openEditOnDoubleClick(event?.data ?? event);

@@ -23,7 +23,7 @@ export class GlobalErrorHandler implements ErrorHandler {
     }
 
     this.errors.handle(error);
-    // eslint-disable-next-line no-console
+
     console.error(error);
   }
 }

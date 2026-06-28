@@ -12,14 +12,14 @@ import { Component, input, model, output } from '@angular/core';
         (input)="searchQuery.set($any($event.target).value)"
       />
       <div class="flex gap-2 text-[11px] text-primary px-1">
-        <button class="hover:underline cursor-pointer font-medium" (click)="selectAll.emit()">Select all</button>
+        <button i18n class="hover:underline cursor-pointer font-medium" (click)="selectAll.emit()">Select all</button>
         <span class="text-base-300">|</span>
-        <button class="hover:underline cursor-pointer font-medium" (click)="clearVisible.emit()">Clear</button>
+        <button i18n class="hover:underline cursor-pointer font-medium" (click)="clearVisible.emit()">Clear</button>
       </div>
       <div class="border-t border-base-200 my-0.5"></div>
       <div class="overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar" [style.max-height.rem]="maxHeight()">
         @if (options().length === 0) {
-          <div class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
+          <div i18n class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
         } @else {
           @for (opt of options(); track opt) {
             <label

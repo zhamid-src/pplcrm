@@ -12,7 +12,9 @@ import { ShiftsService } from '../services/shifts-service';
     <div class="flex flex-col gap-6">
       <pc-datagrid
         title="Shifts"
+        i18n-title
         description="Manage volunteer shifts, schedule events, and track attendance records."
+        i18n-description
         [showDescription]="true"
         [colDefs]="col"
         [disableDelete]="false"
@@ -22,9 +24,12 @@ import { ShiftsService } from '../services/shifts-service';
         [allowFilter]="false"
         [addRoute]="'add'"
         plusIcon="add-schedule"
+        i18n-plusIcon
         [showArchiveIcon]="true"
         archiveIcon="archive-box-arrow-down"
+        i18n-archiveIcon
         archiveTip="See archived events"
+        i18n-archiveTip
       ></pc-datagrid>
     </div>
   `,

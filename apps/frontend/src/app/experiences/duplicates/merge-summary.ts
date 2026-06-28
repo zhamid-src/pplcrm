@@ -37,7 +37,7 @@ export class DuplicatePageShellComponent {
 
         <div class="space-y-3 text-sm flex-1">
           @if (!hasSelections()) {
-            <div class="text-base-content/50 py-4 italic text-center text-xs">
+            <div i18n class="text-base-content/50 py-4 italic text-center text-xs">
               Select which record to Keep and which to Merge.
             </div>
           } @else {
@@ -46,13 +46,13 @@ export class DuplicatePageShellComponent {
                 <span>{{ mergeDescription() }}</span>
               </div>
               <div class="text-xs space-y-1.5 bg-base-100 p-2.5 rounded-lg border border-base-300">
-                <div class="font-semibold text-base-content/70">Merge Actions:</div>
+                <div i18n class="font-semibold text-base-content/70">Merge Actions:</div>
                 <div class="flex justify-between text-success gap-2">
-                  <span class="flex-shrink-0">Keep Primary:</span>
+                  <span i18n class="flex-shrink-0">Keep Primary:</span>
                   <span class="font-bold truncate text-right flex-1" [title]="targetName()">{{ targetName() }}</span>
                 </div>
                 <div class="flex justify-between text-error gap-2">
-                  <span class="flex-shrink-0">Remove Duplicate:</span>
+                  <span i18n class="flex-shrink-0">Remove Duplicate:</span>
                   <span class="font-bold truncate text-right flex-1" [title]="sourceName()">{{ sourceName() }}</span>
                 </div>
               </div>

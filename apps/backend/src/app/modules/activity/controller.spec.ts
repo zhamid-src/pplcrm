@@ -2,13 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ActivityController } from './controller';
 import { ExportsRepo } from '../exports/repositories/exports.repo';
 
-vi.mock('../../lib/mail/transactional-mail.service', () => {
-  return {
-    TransactionalEmailService: class {
-      sendMail = vi.fn().mockResolvedValue(undefined);
-    },
-  };
-});
+vi.mock('../../lib/mail/transactional-mail.service', () => ({
+  TransactionalEmailService: class {
+    sendMail = vi.fn().mockResolvedValue(undefined);
+  },
+}));
 
 describe('ActivityController', () => {
   let controller: ActivityController;

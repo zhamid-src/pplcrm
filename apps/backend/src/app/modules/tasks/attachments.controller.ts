@@ -1,4 +1,4 @@
-import { Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
 import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { BaseController } from '../../lib/base.controller';
 import { TaskAttachmentsRepo } from './repositories/task-attachments.repo';

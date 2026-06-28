@@ -1,7 +1,7 @@
 import { Component } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { WorkflowsService } from '../services/workflows-service';
 
 @Component({
@@ -11,7 +11,9 @@ import { WorkflowsService } from '../services/workflows-service';
     <div class="flex flex-col gap-6">
       <pc-datagrid
         title="Automated Workflows"
+        i18n-title
         description="Create automated drip email campaigns triggered by volunteer events, tag changes, form submissions, list signups, or manual enrollment."
+        i18n-description
         [colDefs]="col"
         [disableDelete]="false"
         [disableView]="false"
@@ -20,6 +22,7 @@ import { WorkflowsService } from '../services/workflows-service';
         [addRoute]="'add'"
         [allowFilter]="false"
         plusIcon="plus"
+        i18n-plusIcon
       ></pc-datagrid>
     </div>
   `,
@@ -63,8 +66,6 @@ export class WorkflowsGridComponent {
       valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.updated_at),
     },
   ];
-
-  constructor() {}
 
   private formatDate(value: unknown): string {
     if (!value) return '--';

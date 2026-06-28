@@ -1,4 +1,5 @@
-import { TestBed, ComponentFixture } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { Summary } from './summary';
 import { DashboardService } from './services/dashboard.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';

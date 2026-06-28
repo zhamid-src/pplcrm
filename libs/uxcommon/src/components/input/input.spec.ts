@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { Input } from './input';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { By } from '@angular/platform-browser';
@@ -17,7 +18,9 @@ describe('Input Component', () => {
 
     TestBed.runInInjectionContext(() => {
       const payload = signal({ testField: '' });
-      testForm = form(payload, () => {});
+      testForm = form(payload, () => {
+        /* noop */
+      });
     });
 
     fixture = TestBed.createComponent(Input);

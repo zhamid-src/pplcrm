@@ -1,4 +1,5 @@
-import { TestBed, ComponentFixture } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { vi, describe, beforeEach, beforeAll, it, expect } from 'vitest';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -7,7 +8,7 @@ import { HouseholdsService } from '../services/households-service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { TagsService } from '../../tags/services/tags-service';
 import { HouseholdForm } from './household-form';
-import { AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 const mockHouseholdData = {
   id: '123',

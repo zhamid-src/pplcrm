@@ -1,7 +1,8 @@
-import { Insertable, OperandValueExpressionOrList, sql } from 'kysely';
+import type { Insertable, OperandValueExpressionOrList } from 'kysely';
+import { sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class SettingsRepo extends BaseRepository<'settings'> {
   constructor() {

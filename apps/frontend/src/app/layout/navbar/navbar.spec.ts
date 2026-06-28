@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { Navbar } from './navbar';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -24,7 +25,9 @@ describe('Navbar Component', () => {
   let initNotificationsSpy: any;
 
   beforeEach(async () => {
-    initNotificationsSpy = vi.spyOn(Navbar.prototype as any, 'initNotifications').mockImplementation(async () => {});
+    initNotificationsSpy = vi.spyOn(Navbar.prototype as any, 'initNotifications').mockImplementation(async () => {
+      /* noop */
+    });
 
     mockAuthSvc = {
       signOut: vi.fn(),
@@ -255,7 +258,9 @@ describe('Navbar Component', () => {
     component.notifications.set([notif]);
     component.unreadCount.set(1);
 
-    vi.spyOn(component as any, 'closeDropdown').mockImplementation(() => {});
+    vi.spyOn(component as any, 'closeDropdown').mockImplementation(() => {
+      /* noop */
+    });
 
     await component['clickNotification'](notif);
 

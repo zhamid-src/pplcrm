@@ -1,6 +1,6 @@
-import { Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
 import { BaseRepository } from '../../../lib/base.repo';
-import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class PersonConnectionsRepo extends BaseRepository<'person_connections'> {
   constructor() {
@@ -65,12 +65,7 @@ export class PersonConnectionsRepo extends BaseRepository<'person_connections'> 
     return db
       .deleteFrom('person_connections')
       .where('tenant_id', '=', tenant_id as any)
-      .where((eb) =>
-        eb.or([
-          eb('from_person_id', '=', person_id as any),
-          eb('to_person_id', '=', person_id as any),
-        ]),
-      )
+      .where((eb) => eb.or([eb('from_person_id', '=', person_id as any), eb('to_person_id', '=', person_id as any)]))
       .execute();
   }
 }

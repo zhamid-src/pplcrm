@@ -1,7 +1,7 @@
-import { SelectQueryBuilder, Transaction } from 'kysely';
+import type { SelectQueryBuilder, Transaction } from 'kysely';
 
 import { BaseRepository } from './base.repo';
-import { Models, OperationDataType } from '../../../../../libs/common/src/lib/kysely.models';
+import type { Models, OperationDataType } from '../../../../../libs/common/src/lib/kysely.models';
 
 export class UserActivityRepo extends BaseRepository<'user_activity'> {
   constructor() {
@@ -248,4 +248,4 @@ export type UserActivityType =
   | 'close'
   | 'reopen'
   | 'send';
-import { QueryParams } from './base.repo';
+import type { QueryParams } from './base.repo';

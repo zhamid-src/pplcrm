@@ -1,5 +1,6 @@
 import { env } from '../../../env';
-import { Kysely, sql } from 'kysely';
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
 import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
