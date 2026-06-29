@@ -414,6 +414,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   }
 
   public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // eslint-disable-next-line local/no-unscoped-db-query -- tenant_id filtered inside subquery
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -437,6 +438,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     const page = options?.page ?? 1;
     const pageSize = options?.pageSize ?? 20;
 
+    // eslint-disable-next-line local/no-unscoped-db-query -- tenant_id filtered inside subquery
     const countResult = await this.db
       .selectFrom((qb) =>
         qb

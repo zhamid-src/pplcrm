@@ -1,13 +1,13 @@
 import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { UpdateTaskType } from '../../../../../../../libs/common/src';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { UserService } from '@frontend/services/user.service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { UpdateTaskType } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Component({
   selector: 'pc-tasks-grid',
@@ -126,7 +126,11 @@ export class TasksGrid implements OnInit {
   protected importerOpen = signal(false);
   protected isArchiveMode = signal(false);
 
-  public async ngOnInit() {
+  public ngOnInit() {
+    void this.initialize();
+  }
+
+  private async initialize() {
     // Load users to drive Assigned To options and name mapping
     try {
       const users = await this.userService.getUsers();

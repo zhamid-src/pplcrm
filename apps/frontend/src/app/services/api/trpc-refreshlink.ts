@@ -1,5 +1,5 @@
 import type { Router } from '@angular/router';
-import type { TRPCLink} from '@trpc/client';
+import type { TRPCLink } from '@trpc/client';
 import { type Operation, TRPCClientError, createTRPCClient, httpLink } from '@trpc/client';
 import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
 import superjson from 'superjson';
@@ -78,7 +78,7 @@ function handleRefreshFailure(
   observer: Observer<unknown, unknown>,
 ): void {
   tokenSvc.clearAll();
-  router.navigate([router.url]);
+  void router.navigate([router.url]);
   observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
 }
 
@@ -109,7 +109,7 @@ export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TR
   return () => {
     return ({ op, next }: { op: Operation; next: NextLink }) =>
       observable<unknown, unknown>((observer) => {
-        (async () => {
+        void (async () => {
           try {
             const authToken = await getValidAuthToken(tokenSvc);
 

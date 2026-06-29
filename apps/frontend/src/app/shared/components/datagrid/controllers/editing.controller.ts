@@ -1,9 +1,9 @@
 import { Injectable, inject } from '@angular/core';
+import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import type { DataGrid } from '../datagrid';
 import { GridStoreService } from '../services/grid-store.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { DataGridUtilsService } from '../services/utils.service';
-import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
 
 @Injectable()
 export class EditingController {
@@ -62,7 +62,7 @@ export class EditingController {
     if (!changed) return true;
     try {
       if (this.shouldBlockEdit(row, key)) {
-        this.grid.undoMgr.undo();
+        void this.grid.undoMgr.undo();
         this.alertSvc.showError('Editing this field is blocked');
         Object.assign(row as object, { [key]: before[key] });
         return false;
@@ -73,7 +73,7 @@ export class EditingController {
         .then(() => true)
         .catch(() => false);
       if (!edited) {
-        this.grid.undoMgr.undo();
+        void this.grid.undoMgr.undo();
         Object.assign(row as object, { [key]: before[key] });
         this.alertSvc.showError('Update failed');
         return false;

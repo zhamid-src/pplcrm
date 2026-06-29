@@ -1,9 +1,9 @@
-import { Component, OnInit, inject, input, output, ChangeDetectorRef, DestroyRef } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, OnInit, inject, input, output } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { merge } from 'rxjs';
 
 @Component({
@@ -58,7 +58,7 @@ export class FormActions implements OnInit {
   }
 
   public cancel() {
-    this.router.navigate(['../'], { relativeTo: this.route });
+    void this.router.navigate(['../'], { relativeTo: this.route });
   }
 
   public handleDeleteClicked() {

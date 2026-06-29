@@ -1,7 +1,7 @@
 import { Component, ElementRef, OnInit, ViewChild, inject, input, output } from '@angular/core';
 import { Loader } from '@googlemaps/js-api-loader';
-import { parseAddress } from './googlePlacesAddressMapper';
 import { AddressType } from '../../../../common/src/lib/kysely.models';
+import { parseAddress } from './googlePlacesAddressMapper';
 
 @Component({
   selector: 'pc-address-autocomplete',
@@ -40,7 +40,11 @@ export class AddressAutocomplete implements OnInit {
     }
   }
 
-  public async ngOnInit() {
+  public ngOnInit() {
+    void this.initialize();
+  }
+
+  private async initialize() {
     try {
       await this.loader.importLibrary('places');
       this.isLibraryLoaded = true;

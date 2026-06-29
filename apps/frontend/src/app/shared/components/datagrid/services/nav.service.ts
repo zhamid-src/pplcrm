@@ -6,9 +6,9 @@ export class DataGridNavService {
   navigateIfValid(router: Router, route: ActivatedRoute, path: string | null | undefined): void {
     if (path) {
       if (path.startsWith('/')) {
-        router.navigate([path]);
+        void router.navigate([path]);
       } else {
-        router.navigate([path], { relativeTo: route });
+        void router.navigate([path], { relativeTo: route });
       }
     }
   }
