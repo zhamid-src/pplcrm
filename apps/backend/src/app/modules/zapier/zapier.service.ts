@@ -9,33 +9,34 @@ export type ZapierEventType =
   | 'person_tag_added'
   | 'person_tag_removed';
 
-function pickPersonFields(p: any): Record<string, any> {
+function pickPersonFields(p: Record<string, unknown>): Record<string, unknown> {
   if (!p) return {};
   return {
-    id: p.id ? String(p.id) : null,
-    first_name: p.first_name ?? null,
-    last_name: p.last_name ?? null,
-    email: p.email ?? null,
-    email2: p.email2 ?? null,
-    mobile: p.mobile ?? null,
-    home_phone: p.home_phone ?? null,
-    linkedin: p.linkedin ?? null,
-    twitter: p.twitter ?? null,
-    facebook: p.facebook ?? null,
-    instagram: p.instagram ?? null,
-    notes: p.notes ?? null,
-    created_at: p.created_at ?? null,
-    updated_at: p.updated_at ?? null,
+    id: p['id'] ? String(p['id']) : null,
+    first_name: p['first_name'] ?? null,
+    last_name: p['last_name'] ?? null,
+    email: p['email'] ?? null,
+    email2: p['email2'] ?? null,
+    mobile: p['mobile'] ?? null,
+    home_phone: p['home_phone'] ?? null,
+    linkedin: p['linkedin'] ?? null,
+    twitter: p['twitter'] ?? null,
+    facebook: p['facebook'] ?? null,
+    instagram: p['instagram'] ?? null,
+    notes: p['notes'] ?? null,
+    created_at: p['created_at'] ?? null,
+    updated_at: p['updated_at'] ?? null,
   };
 }
 
 export { pickPersonFields };
 
 export async function queueZapierTrigger(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
   tenant_id: string,
   event_type: ZapierEventType,
-  data: Record<string, any>,
+  data: Record<string, unknown>,
 ): Promise<void> {
   const sub = await db
     .selectFrom('zapier_subscriptions')
@@ -85,7 +86,7 @@ export class ZapierService {
     await this.db
       .insertInto('settings')
       .values({ tenant_id, key: 'zapier.api_key', value: JSON.stringify(key) })
-      .onConflict((oc: any) =>
+      .onConflict((oc) =>
         oc.columns(['tenant_id', 'key']).doUpdateSet({ value: JSON.stringify(key), updated_at: new Date() }),
       )
       .execute();
@@ -104,9 +105,7 @@ export class ZapierService {
     await this.db
       .insertInto('zapier_subscriptions')
       .values({ tenant_id, event_type, webhook_url })
-      .onConflict((oc: any) =>
-        oc.columns(['tenant_id', 'event_type']).doUpdateSet({ webhook_url, updated_at: new Date() }),
-      )
+      .onConflict((oc) => oc.columns(['tenant_id', 'event_type']).doUpdateSet({ webhook_url, updated_at: new Date() }))
       .execute();
   }
 
@@ -118,7 +117,7 @@ export class ZapierService {
       .execute();
   }
 
-  async fireTrigger(tenant_id: string, event_type: ZapierEventType, data: Record<string, any>): Promise<void> {
+  async fireTrigger(tenant_id: string, event_type: ZapierEventType, data: Record<string, unknown>): Promise<void> {
     const subs = await this.db
       .selectFrom('zapier_subscriptions')
       .select('webhook_url')
@@ -137,14 +136,15 @@ export class ZapierService {
         if (!response.ok) {
           logger.error(`[ZapierTrigger] POST to ${sub.webhook_url} failed with status ${response.status}`);
         }
-      } catch (err: any) {
-        logger.error(`[ZapierTrigger] POST to ${sub.webhook_url} error: ${err.message}`);
+      } catch (err: unknown) {
+        logger.error(
+          `[ZapierTrigger] POST to ${sub.webhook_url} error: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
   }
 
   async lookupTenantByApiKey(apiKey: string): Promise<string | null> {
-    // eslint-disable-next-line local/no-unscoped-db-query
     const row = await this.db
       .selectFrom('settings')
       .select('tenant_id')

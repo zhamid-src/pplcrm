@@ -1,4 +1,17 @@
 import type { IAuthKeyPayload, SettingsEntryType } from '../../../../../../libs/common/src';
+
+interface VerifiedDomainEntry {
+  domain: string;
+  domainAuthId?: string | number;
+  linkBrandingId?: string | number;
+  spf?: boolean;
+  dkim?: boolean;
+  dmarc?: boolean;
+  linkBranded?: boolean;
+  status?: string;
+  domainAuthDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
+  linkBrandingDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
+}
 import { TRPCError } from '@trpc/server';
 import { createSigner, createVerifier } from 'fast-jwt';
 import { env } from '../../../env';
@@ -359,18 +372,18 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       ])
       .execute();
 
-    const settingsMap: Record<string, any> = {};
+    const settingsMap: Record<string, unknown> = {};
     for (const row of settingsRows) {
       settingsMap[row.key] = row.value;
     }
 
     const apiKey = settingsMap['communications.sendgrid_api_key'];
     const subuser = settingsMap['communications.sendgrid_subuser_username'];
-    const currentList: any[] = Array.isArray(settingsMap['communications.verified_domains'])
-      ? settingsMap['communications.verified_domains']
+    const currentList: VerifiedDomainEntry[] = Array.isArray(settingsMap['communications.verified_domains'])
+      ? (settingsMap['communications.verified_domains'] as VerifiedDomainEntry[])
       : [];
 
-    if (currentList.some((d: any) => d.domain === domainVal)) {
+    if (currentList.some((d) => d.domain === domainVal)) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
         message: 'This domain is already added.',
@@ -378,8 +391,16 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     }
 
     const sendgridSvc = new SendGridWhitelabelService();
-    const domainAuth = await sendgridSvc.createDomainAuthentication(domainVal, apiKey, subuser);
-    const linkBranding = await sendgridSvc.createLinkBranding(domainVal, apiKey, subuser);
+    const domainAuth = await sendgridSvc.createDomainAuthentication(
+      domainVal,
+      apiKey as string | undefined,
+      subuser as string | undefined,
+    );
+    const linkBranding = await sendgridSvc.createLinkBranding(
+      domainVal,
+      apiKey as string | undefined,
+      subuser as string | undefined,
+    );
 
     const newEntry = {
       domain: domainVal,
@@ -444,8 +465,8 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       });
     }
 
-    const currentList = row.value as any[];
-    const domainEntry = currentList.find((d: any) => d.domain === domainVal);
+    const currentList = row.value as unknown as VerifiedDomainEntry[];
+    const domainEntry = currentList.find((d) => d.domain === domainVal);
 
     if (!domainEntry) {
       throw new TRPCError({
@@ -467,7 +488,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
       .execute();
 
-    const settingsMap: Record<string, any> = {};
+    const settingsMap: Record<string, unknown> = {};
     for (const settingsRow of settingsRows) {
       settingsMap[settingsRow.key] = settingsRow.value;
     }
@@ -484,39 +505,47 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
 
     // Check with SendGrid if IDs are present
     if (domainEntry.domainAuthId) {
-      const authRes = await sendgridSvc.validateDomainAuthentication(domainEntry.domainAuthId, apiKey, subuser);
+      const authRes = await sendgridSvc.validateDomainAuthentication(
+        Number(domainEntry.domainAuthId),
+        apiKey as string | undefined,
+        subuser as string | undefined,
+      );
       spfVerified = !!authRes.validationResults?.['mail_cname'];
       dkimVerified = !!authRes.validationResults?.['dkim1'] && !!authRes.validationResults?.['dkim2'];
     }
 
     if (domainEntry.linkBrandingId) {
-      linkBranded = await sendgridSvc.validateLinkBranding(domainEntry.linkBrandingId, apiKey, subuser);
+      linkBranded = await sendgridSvc.validateLinkBranding(
+        Number(domainEntry.linkBrandingId),
+        apiKey as string | undefined,
+        subuser as string | undefined,
+      );
     }
 
     // Check DMARC via live DNS check
     dmarcVerified = await sendgridSvc.verifyDmarc(domainVal);
 
     // Fallback/Mock behavior in local development mode (no valid API key)
-    const hasValidKey = apiKey && apiKey.trim().startsWith('SG.') && apiKey.trim().length > 20;
+    const hasValidKey = apiKey && (apiKey as string).trim().startsWith('SG.') && (apiKey as string).trim().length > 20;
     if (!hasValidKey) {
       // For local development, if real DNS check fails (e.g. mock domains),
       // we auto-verify to allow testing success state.
       // But we still attempt real CNAME / TXT checks first in case they set up local DNS.
       const realSpf = await sendgridSvc.verifyCname(
-        domainEntry.domainAuthDns?.mail_cname?.host || '',
-        domainEntry.domainAuthDns?.mail_cname?.data,
+        domainEntry.domainAuthDns?.['mail_cname']?.host || '',
+        domainEntry.domainAuthDns?.['mail_cname']?.data,
       );
       const realDkim1 = await sendgridSvc.verifyCname(
-        domainEntry.domainAuthDns?.dkim1?.host || '',
-        domainEntry.domainAuthDns?.dkim1?.data,
+        domainEntry.domainAuthDns?.['dkim1']?.host || '',
+        domainEntry.domainAuthDns?.['dkim1']?.data,
       );
       const realDkim2 = await sendgridSvc.verifyCname(
-        domainEntry.domainAuthDns?.dkim2?.host || '',
-        domainEntry.domainAuthDns?.dkim2?.data,
+        domainEntry.domainAuthDns?.['dkim2']?.host || '',
+        domainEntry.domainAuthDns?.['dkim2']?.data,
       );
       const realLink = await sendgridSvc.verifyCname(
-        domainEntry.linkBrandingDns?.domain?.host || '',
-        domainEntry.linkBrandingDns?.domain?.data,
+        domainEntry.linkBrandingDns?.['domain']?.host || '',
+        domainEntry.linkBrandingDns?.['domain']?.data,
       );
 
       spfVerified = realSpf || true;
@@ -525,7 +554,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       dmarcVerified = dmarcVerified || true;
     }
 
-    const updatedList = currentList.map((d: any) => {
+    const updatedList = currentList.map((d) => {
       if (d.domain === domainVal) {
         const isVerified = spfVerified && dkimVerified && dmarcVerified && linkBranded;
         return {
@@ -537,13 +566,15 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
           status: isVerified ? 'verified' : 'pending',
           domainAuthDns: {
             ...d.domainAuthDns,
-            mail_cname: d.domainAuthDns?.mail_cname ? { ...d.domainAuthDns.mail_cname, valid: spfVerified } : undefined,
-            dkim1: d.domainAuthDns?.dkim1 ? { ...d.domainAuthDns.dkim1, valid: dkimVerified } : undefined,
-            dkim2: d.domainAuthDns?.dkim2 ? { ...d.domainAuthDns.dkim2, valid: dkimVerified } : undefined,
+            mail_cname: d.domainAuthDns?.['mail_cname']
+              ? { ...d.domainAuthDns['mail_cname'], valid: spfVerified }
+              : undefined,
+            dkim1: d.domainAuthDns?.['dkim1'] ? { ...d.domainAuthDns['dkim1'], valid: dkimVerified } : undefined,
+            dkim2: d.domainAuthDns?.['dkim2'] ? { ...d.domainAuthDns['dkim2'], valid: dkimVerified } : undefined,
           },
           linkBrandingDns: {
             ...d.linkBrandingDns,
-            domain: d.linkBrandingDns?.domain ? { ...d.linkBrandingDns.domain, valid: linkBranded } : undefined,
+            domain: d.linkBrandingDns?.['domain'] ? { ...d.linkBrandingDns['domain'], valid: linkBranded } : undefined,
           },
         };
       }
@@ -575,8 +606,8 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       });
     }
 
-    const currentList = row.value as any[];
-    const domainEntry = currentList.find((d: any) => d.domain === domainVal);
+    const currentList = row.value as unknown as VerifiedDomainEntry[];
+    const domainEntry = currentList.find((d) => d.domain === domainVal);
 
     if (!domainEntry) {
       throw new TRPCError({
@@ -593,7 +624,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       .where('key', 'in', ['communications.sendgrid_api_key', 'communications.sendgrid_subuser_username'])
       .execute();
 
-    const settingsMap: Record<string, any> = {};
+    const settingsMap: Record<string, unknown> = {};
     for (const settingsRow of settingsRows) {
       settingsMap[settingsRow.key] = settingsRow.value;
     }
@@ -605,13 +636,21 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
 
     // Delete from SendGrid
     if (domainEntry.domainAuthId) {
-      await sendgridSvc.deleteDomainAuthentication(domainEntry.domainAuthId, apiKey, subuser);
+      await sendgridSvc.deleteDomainAuthentication(
+        Number(domainEntry.domainAuthId),
+        apiKey as string | undefined,
+        subuser as string | undefined,
+      );
     }
     if (domainEntry.linkBrandingId) {
-      await sendgridSvc.deleteLinkBranding(domainEntry.linkBrandingId, apiKey, subuser);
+      await sendgridSvc.deleteLinkBranding(
+        Number(domainEntry.linkBrandingId),
+        apiKey as string | undefined,
+        subuser as string | undefined,
+      );
     }
 
-    const updatedList = currentList.filter((d: any) => d.domain !== domainVal);
+    const updatedList = currentList.filter((d) => d.domain !== domainVal);
 
     await this.getRepo().upsertMany({
       tenant_id: auth.tenant_id,

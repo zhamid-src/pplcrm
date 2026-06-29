@@ -221,7 +221,7 @@ describe('PersonsRepo Integration', () => {
     });
 
     const randTagId = String(Math.floor(Math.random() * 100000000) + 10000000);
-    const tag = await db
+    const _tag = await db
       .insertInto('tags')
       .values({
         id: randTagId,
@@ -483,7 +483,7 @@ describe('PersonsRepo Integration', () => {
     const maintenanceSvc = new DuplicateMaintenanceService();
 
     // 1. Create duplicate name persons
-    const p1 = await repo.add({
+    const _p1 = await repo.add({
       row: {
         tenant_id: tenantId,
         campaign_id: campaignId,
@@ -529,7 +529,7 @@ describe('PersonsRepo Integration', () => {
     const maintenanceSvc = new DuplicateMaintenanceService();
 
     // 1. Create duplicates
-    const p1 = await repo.add({
+    const _p1 = await repo.add({
       row: {
         tenant_id: tenantId,
         campaign_id: campaignId,
@@ -563,7 +563,7 @@ describe('PersonsRepo Integration', () => {
       .where('tenant_id', '=', tenantId)
       .where('person_id', '=', p2.id)
       .execute();
-    const groupKeys = activeGroupKeys.map((k: any) => k.group_key);
+    const _groupKeys = activeGroupKeys.map((k: { group_key: string }) => k.group_key);
 
     await repo.delete({ tenant_id: tenantId, id: p2.id });
 

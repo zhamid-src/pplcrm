@@ -8,18 +8,21 @@ export function emailControl(fb: AnyFormBuilder) {
   return fb.control('', { validators: [Validators.required, Validators.email] });
 }
 
-export function passwordBreachNumber(control: any) {
-  let errs: any;
-  if (control && typeof control.errors === 'function') {
+type BreachError = { kind: string; pwnedPasswordOccurrence?: number };
+type SignalFieldState = { errors: () => BreachError[] };
+
+export function passwordBreachNumber(control: unknown) {
+  let errs: { pwnedPasswordOccurrence?: number } | null = null;
+  if (control && typeof (control as SignalFieldState).errors === 'function') {
     // It's a FieldState (Signal Forms)
-    const activeErrors = control.errors() as any[];
+    const activeErrors = (control as SignalFieldState).errors();
     const breachErr = activeErrors.find(
       (e) => e.kind === 'pwnedPasswordOccurrence' || e.pwnedPasswordOccurrence !== undefined,
     );
-    errs = breachErr;
+    errs = breachErr ?? null;
   } else {
     // It's an AbstractControl (Reactive Forms)
-    errs = control?.errors;
+    errs = (control as { errors?: { pwnedPasswordOccurrence?: number } | null } | null)?.errors ?? null;
   }
   return errs?.pwnedPasswordOccurrence ?? null;
 }
@@ -28,6 +31,6 @@ export function passwordControl(fb: AnyFormBuilder) {
   return fb.control('', { validators: [Validators.required, Validators.minLength(8)] });
 }
 
-export function passwordInBreach(control: any) {
+export function passwordInBreach(control: unknown) {
   return !!passwordBreachNumber(control);
 }

@@ -4,6 +4,7 @@ import { sql } from 'kysely';
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { SortModelType } from '../../../../../../../libs/common/src';
 
 export class TeamsRepo extends BaseRepository<'teams'> {
   private readonly volunteerTag = 'volunteer';
@@ -15,17 +16,18 @@ export class TeamsRepo extends BaseRepository<'teams'> {
   public override async getAllWithCounts(
     input: { tenant_id: string; options?: QueryParams<'teams' | 'persons' | 'map_teams_persons'> },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as Record<string, any>;
+    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as Record<string, { value: string }>;
 
     const startRow = typeof options.startRow === 'number' ? Math.max(0, options.startRow) : 0;
     const endRowCandidate =
       typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
     const limit = endRowCandidate - startRow;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
       qb
         .leftJoin('map_teams_persons', (join) =>
@@ -50,13 +52,13 @@ export class TeamsRepo extends BaseRepository<'teams'> {
           );
         })
         .$if(!!filterModel['name']?.value, (builder) =>
-          builder.where('teams.name', 'ilike', `%${filterModel['name'].value}%`),
+          builder.where('teams.name', 'ilike', `%${filterModel['name']?.value}%`),
         )
         .$if(!!filterModel['team_captain_id']?.value, (builder) =>
-          builder.where('teams.team_captain_id', '=', filterModel['team_captain_id'].value as string),
+          builder.where('teams.team_captain_id', '=', filterModel['team_captain_id']?.value as string),
         )
         .$if(!!filterModel['team_lead_user_id']?.value, (builder) =>
-          builder.where('teams.team_lead_user_id', '=', filterModel['team_lead_user_id'].value as string),
+          builder.where('teams.team_lead_user_id', '=', filterModel['team_lead_user_id']?.value as string),
         );
 
     const countRow = await applyFilters(this.getSelect(trx))
@@ -91,7 +93,8 @@ export class TeamsRepo extends BaseRepository<'teams'> {
         'lead_user.last_name',
       ])
       .$if(Array.isArray(options.sortModel) && options.sortModel.length > 0, (builder) =>
-        options.sortModel!.reduce((acc: any, sort: any) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (options.sortModel ?? []).reduce((acc: any, sort: SortModelType) => {
           switch (sort.colId) {
             case 'volunteer_count':
               return acc.orderBy(sql`COUNT(DISTINCT map_teams_persons.person_id)`, sort.sort);
@@ -128,16 +131,17 @@ export class TeamsRepo extends BaseRepository<'teams'> {
       .limit(limit)
       .execute();
 
-    const rows = rowsRaw.map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      team_captain_id: row.team_captain_id != null ? String(row.team_captain_id) : null,
-      team_captain_name: row.captain_name ? String(row.captain_name) : null,
-      team_lead_user_id: row.team_lead_user_id != null ? String(row.team_lead_user_id) : null,
-      team_lead_user_name: row.lead_user_name ? String(row.lead_user_name) : null,
-      volunteer_count: Number(row.volunteer_count ?? 0),
-      updated_at: row.updated_at,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows = (rowsRaw as any[]).map((row) => ({
+      id: row['id'],
+      name: row['name'],
+      description: row['description'],
+      team_captain_id: row['team_captain_id'] != null ? String(row['team_captain_id']) : null,
+      team_captain_name: row['captain_name'] ? String(row['captain_name']) : null,
+      team_lead_user_id: row['team_lead_user_id'] != null ? String(row['team_lead_user_id']) : null,
+      team_lead_user_name: row['lead_user_name'] ? String(row['lead_user_name']) : null,
+      volunteer_count: Number(row['volunteer_count'] ?? 0),
+      updated_at: row['updated_at'],
     }));
 
     return { rows, count };

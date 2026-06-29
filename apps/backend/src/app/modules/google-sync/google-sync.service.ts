@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import type { GoogleOAuthService } from './google-oauth.service';
@@ -206,7 +207,7 @@ export class GoogleSyncService {
     const extractEmail = (val: string | null): string | null => {
       if (!val) return null;
       const match = val.match(/<([^>]+)>/);
-      return match ? match[1]! : val.trim();
+      return match ? (match[1] as string) : val.trim();
     };
 
     const fromEmail = extractEmail(fromVal);
@@ -252,9 +253,9 @@ export class GoogleSyncService {
         const trimmed = item.trim();
         if (!trimmed) return;
         const emailMatch = trimmed.match(/<([^>]+)>/);
-        const email = emailMatch ? emailMatch[1]! : trimmed;
+        const email = emailMatch ? (emailMatch[1] as string) : trimmed;
         const nameMatch = trimmed.match(/^([^<]+)/);
-        let name = nameMatch ? nameMatch[1]!.trim() : null;
+        let name = nameMatch ? (nameMatch[1] as string).trim() : null;
         if (name) {
           name = name.replace(/^["']|["']$/g, ''); // strip quotes
         }

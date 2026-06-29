@@ -137,15 +137,16 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       issues?: string[];
     },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
     const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
     const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
     const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
-    const filterModel = (options.filterModel ?? {}) as Record<string, any>;
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
 
     // Shared where clause builder
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
       let q = qb
         .leftJoin('households', 'persons.household_id', 'households.id')
@@ -157,11 +158,12 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!).where('tags.type', '=', 'tag'))
         .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues!).where('tags.type', '=', 'issue'))
         .$if(!!options.listId, (qb) =>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           qb.where('persons.id', 'in', (eb: any) =>
             eb
               .selectFrom('map_lists_persons')
               .select('person_id')
-              .where('list_id', '=', options.listId!)
+              .where('list_id', '=', options.listId ?? '')
               .where('tenant_id', '=', tenantId),
           ),
         )
@@ -182,15 +184,15 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         });
 
       // Apply dynamic, operator-aware column filters
-      q = this.applyColumnFilter(q, 'persons.first_name', filterModel['first_name']);
-      q = this.applyColumnFilter(q, 'persons.last_name', filterModel['last_name']);
-      q = this.applyColumnFilter(q, 'persons.email', filterModel['email']);
-      q = this.applyColumnFilter(q, 'persons.mobile', filterModel['mobile']);
-      q = this.applyColumnFilter(q, 'households.city', filterModel['city']);
-      q = this.applyColumnFilter(q, 'households.state', filterModel['state']);
-      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1']);
-      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num']);
-      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip']);
+      q = this.applyColumnFilter(q, 'persons.first_name', filterModel['first_name'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.last_name', filterModel['last_name'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.email', filterModel['email'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.mobile', filterModel['mobile'] ?? {});
+      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
+      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
+      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
+      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
       if (filterModel['tags']?.value && filterModel['issues']?.value) {
         // Both filters present — use OR grouping to avoid contradictory AND on tags.type
         const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
@@ -208,7 +210,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         q = q.where('tags.type', '=', 'issue');
         q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
       }
-      q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name']);
+      q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name'] ?? {});
 
       // Apply advanced query builder filters if present
       const columnMapping = {
@@ -302,7 +304,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         'tenants.placeholder_household_id',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce((acc, sort) => {
+        (options.sortModel ?? []).reduce((acc, sort) => {
           let col = sort.colId;
           if (typeof col === 'string' && !col.includes('.')) {
             const personsCols = [
@@ -347,7 +349,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         }, qb),
       )
       .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow!).limit(options.endRow! - options.startRow!),
+        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
       )
       .execute();
 
@@ -414,7 +416,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   }
 
   public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -434,11 +435,10 @@ export class PersonsRepo extends BaseRepository<'persons'> {
   public async getPotentialDuplicates(
     tenant_id: string,
     options?: { page?: number; pageSize?: number },
-  ): Promise<{ groups: any[]; total: number }> {
+  ): Promise<{ groups: unknown[]; total: number }> {
     const page = options?.page ?? 1;
     const pageSize = options?.pageSize ?? 20;
 
-    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -497,7 +497,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       .where('potential_duplicates.group_key', 'in', groupKeys)
       .execute();
 
-    const groupsMap = new Map<string, { reason: string; persons: any[] }>();
+    const groupsMap = new Map<string, { reason: string; persons: Record<string, unknown>[] }>();
     for (const row of rows) {
       const groupKey = row.group_key;
       if (!groupsMap.has(groupKey)) {
@@ -506,7 +506,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
           persons: [],
         });
       }
-      groupsMap.get(groupKey)!.persons.push({
+      groupsMap.get(groupKey)?.persons.push({
         ...row,
         id: String(row.id),
       });
@@ -537,7 +537,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       }
 
       // 1. Merge fields (copy null/empty fields from source to target)
-      const targetUpdate: Record<string, any> = {};
+      const targetUpdate: Record<string, unknown> = {};
       const fields = [
         'first_name',
         'middle_names',

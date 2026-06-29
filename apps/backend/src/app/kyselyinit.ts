@@ -16,7 +16,7 @@ async function ensureMigrationTableUpdated(): Promise<void> {
       SET name = '2026-07-01-b-security-ops-improvements'
       WHERE name IN ('2026-06-31-security-ops-improvements', '2026-07-01-security-ops-improvements')
     `.execute(BaseRepository.dbInstance);
-  } catch (err) {
+  } catch (_err) {
     // Ignore if table doesn't exist or update fails
   }
 }

@@ -1,4 +1,5 @@
-import type { Kysely} from 'kysely';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 
 /**

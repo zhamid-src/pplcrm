@@ -9,7 +9,7 @@ export class UserService extends TRPCService<any> {
   private readonly authService = inject(AuthService);
 
   public getUsers() {
-    return this.api.users.getUsers.query() as Promise<IAuthUser[]>;
+    return this.api.users.getUsers.query() as unknown as Promise<IAuthUser[]>;
   }
 
   public getProfileById(id: string) {
@@ -24,7 +24,7 @@ export class UserService extends TRPCService<any> {
       this.authService.getUserSignal().set({
         ...current,
         ...updated,
-        first_name: updated.first_name ?? current.first_name,
+        first_name: (updated.first_name as string | undefined) ?? current.first_name,
       });
     }
     return updated;

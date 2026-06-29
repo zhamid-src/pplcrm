@@ -193,11 +193,11 @@ export class TagsRepo extends BaseRepository<'tags'> {
       };
     },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
     const options: JoinedQueryParams & { type?: 'tag' | 'issue' } = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = (options.filterModel ?? {}) as Record<string, any>;
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
     const type = options.type;
 
     // Pagination defaults
@@ -205,12 +205,13 @@ export class TagsRepo extends BaseRepository<'tags'> {
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
 
     // Shared filter/search logic for both queries
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
       qb
         .leftJoin('map_peoples_tags', 'map_peoples_tags.tag_id', 'tags.id')
         .leftJoin('map_households_tags', 'map_households_tags.tag_id', 'tags.id')
         .where('tags.tenant_id', '=', tenantId)
-        .$if(!!type, (qb) => qb.where('tags.type', '=', type!))
+        .$if(!!type, (qb) => qb.where('tags.type', '=', type ?? 'tag'))
         .$if(!!searchStr, (qb) => {
           const text = searchStr;
           return qb.where(
@@ -220,9 +221,9 @@ export class TagsRepo extends BaseRepository<'tags'> {
           )`,
           );
         })
-        .$if(!!filterModel['name']?.value, (q) => q.where('tags.name', 'ilike', `%${filterModel['name'].value}%`))
+        .$if(!!filterModel['name']?.value, (q) => q.where('tags.name', 'ilike', `%${filterModel['name']?.value}%`))
         .$if(!!filterModel['description']?.value, (q) =>
-          q.where('tags.description', 'ilike', `%${filterModel['description'].value}%`),
+          q.where('tags.description', 'ilike', `%${filterModel['description']?.value}%`),
         )
         .$if(!!filterModel['deletable']?.value || typeof filterModel['deletable'] === 'string', (q) => {
           const raw = filterModel['deletable']?.value ?? filterModel['deletable'];
@@ -255,7 +256,8 @@ export class TagsRepo extends BaseRepository<'tags'> {
       ])
       .groupBy(['tags.id', 'tags.name', 'tags.description', 'tags.color', 'tags.deletable', 'tags.type'])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce(
+        (options.sortModel ?? []).reduce(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
           qb,
         ),

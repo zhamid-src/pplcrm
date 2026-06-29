@@ -165,7 +165,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       issues?: string[];
     },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
     const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
@@ -173,23 +173,25 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
     const filterModel = ((options as JoinedQueryParams & { issues?: string[] })?.filterModel ?? {}) as Record<
       string,
-      any
+      { value: unknown } | undefined
     >;
 
     // Shared where clause builder (for both queries)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
       let q = qb
         .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
         .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')
         .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
-        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!).where('tags.type', '=', 'tag'))
-        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues!).where('tags.type', '=', 'issue'))
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
+        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
         .$if(!!options.listId, (qb) =>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           qb.where('households.id', 'in', (eb: any) =>
             eb
               .selectFrom('map_lists_households')
               .select('household_id')
-              .where('list_id', '=', options.listId!)
+              .where('list_id', '=', options.listId ?? '')
               .where('tenant_id', '=', tenantId),
           ),
         )
@@ -214,13 +216,13 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         });
 
       // Apply dynamic, operator-aware column filters
-      q = this.applyColumnFilter(q, 'households.city', filterModel['city']);
-      q = this.applyColumnFilter(q, 'households.state', filterModel['state']);
-      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1']);
-      q = this.applyColumnFilter(q, 'households.street2', filterModel['street2']);
-      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num']);
-      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip']);
-      q = this.applyColumnFilter(q, 'households.home_phone', filterModel['home_phone']);
+      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
+      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street2', filterModel['street2'] ?? {});
+      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
+      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
+      q = this.applyColumnFilter(q, 'households.home_phone', filterModel['home_phone'] ?? {});
       if (filterModel['tags']?.value && filterModel['issues']?.value) {
         // Both filters present — use OR grouping to avoid contradictory AND on tags.type
         const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
@@ -337,7 +339,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'tenants.placeholder_household_id',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce((acc, sort) => {
+        (options.sortModel ?? []).reduce((acc, sort) => {
           let col = sort.colId;
           if (typeof col === 'string' && !col.includes('.')) {
             const hhCols = [
@@ -376,7 +378,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         }, qb),
       )
       .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow!).limit(options.endRow! - options.startRow!),
+        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
       )
       .execute();
 
@@ -469,7 +471,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   }
 
   public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -489,11 +490,10 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   public async getPotentialDuplicates(
     tenant_id: string,
     options?: { page?: number; pageSize?: number },
-  ): Promise<{ groups: any[]; total: number }> {
+  ): Promise<{ groups: unknown[]; total: number }> {
     const page = options?.page ?? 1;
     const pageSize = options?.pageSize ?? 20;
 
-    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -566,16 +566,25 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .where('household_id', 'in', hhIds)
       .execute();
 
-    const hhToPersons = new Map<string, any[]>();
+    const hhToPersons = new Map<
+      string,
+      Array<{
+        id: unknown;
+        first_name: string | null;
+        last_name: string | null;
+        email: string | null;
+        household_id: unknown;
+      }>
+    >();
     for (const p of persons) {
       const hhId = String(p.household_id);
       if (!hhToPersons.has(hhId)) {
         hhToPersons.set(hhId, []);
       }
-      hhToPersons.get(hhId)!.push(p);
+      hhToPersons.get(hhId)?.push(p);
     }
 
-    const groupsMap = new Map<string, { reason: string; households: any[] }>();
+    const groupsMap = new Map<string, { reason: string; households: Record<string, unknown>[] }>();
     for (const row of rows) {
       const groupKey = row.group_key;
       if (!groupsMap.has(groupKey)) {
@@ -584,7 +593,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
           households: [],
         });
       }
-      groupsMap.get(groupKey)!.households.push({
+      groupsMap.get(groupKey)?.households.push({
         ...row,
         id: String(row.id),
         persons: hhToPersons.get(String(row.id)) || [],
@@ -616,7 +625,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       }
 
       // 1. Merge fields (copy null/empty fields from source to target)
-      const targetUpdate: Record<string, any> = {};
+      const targetUpdate: Record<string, unknown> = {};
       const fields = [
         'apt',
         'street_num',

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import type { JoinedQueryParams } from '../../../lib/base.repo';

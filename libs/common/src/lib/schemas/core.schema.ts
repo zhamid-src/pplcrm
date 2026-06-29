@@ -1,11 +1,9 @@
 import { z } from 'zod';
 
-export const sortModelItem = z
-  .object({
-    colId: z.string(),
-    sort: z.enum(['asc', 'desc']),
-  })
-  .optional();
+export const sortModelItem = z.object({
+  colId: z.string(),
+  sort: z.enum(['asc', 'desc']),
+});
 
 export interface QueryBuilderRuleNode {
   kind: 'rule';

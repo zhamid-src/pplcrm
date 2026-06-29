@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { FastifyPluginCallback } from 'fastify';
 import { StorageService } from '../../../lib/storage.service';
 import { BaseRepository } from '../../../lib/base.repo';
@@ -102,7 +103,6 @@ export async function saveLocalEmail(
     // email_folders(id) — not tenant_id — so the existence check must be by id
     // alone. onConflict guards against a concurrent/global row already present.
 
-    // eslint-disable-next-line local/no-unscoped-db-query
     const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
 
     if (!existingOutbox) {
@@ -286,7 +286,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     let payload: any = null;
     try {
       payload = await verifyAuthToken(token);
-    } catch (err) {
+    } catch (_err) {
       return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
     }
 
@@ -518,8 +518,8 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
           try {
             const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
             await queueUsageLimitCheck(tenantId, db);
-          } catch (err) {
-            fastify.log.error(err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
+          } catch (_err) {
+            fastify.log.error(_err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
           }
 
           return reply.jsendSuccess(finalEmail);
@@ -606,8 +606,8 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
           try {
             const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
             await queueUsageLimitCheck(tenantId, db);
-          } catch (err) {
-            fastify.log.error(err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
+          } catch (_err) {
+            fastify.log.error(_err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
           }
 
           return reply.jsendSuccess(finalEmail);
@@ -650,7 +650,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     let payload: any = null;
     try {
       payload = await verifyAuthToken(token);
-    } catch (err) {
+    } catch (_err) {
       return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
     }
 
@@ -686,8 +686,8 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       reply.type(file.mime_type || 'application/octet-stream');
       reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
       return reply.send(buffer);
-    } catch (err) {
-      fastify.log.error(err);
+    } catch (_err) {
+      fastify.log.error(_err);
       return reply.status(500).send({ error: 'Failed to download attachment' });
     }
   });
@@ -707,7 +707,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     let payload: any = null;
     try {
       payload = await verifyAuthToken(token);
-    } catch (err) {
+    } catch (_err) {
       return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
     }
 
@@ -744,8 +744,8 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
       reply.type(file.mime_type || 'application/octet-stream');
       reply.header('Cache-Control', 'public, max-age=31536000');
       return reply.send(buffer);
-    } catch (err) {
-      fastify.log.error(err);
+    } catch (_err) {
+      fastify.log.error(_err);
       return reply.status(500).send({ error: 'Failed to load inline image' });
     }
   });

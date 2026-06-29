@@ -20,15 +20,16 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
       options?: QueryParams<'web_forms'>;
     },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
     const options = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = (options.filterModel ?? {}) as Record<string, any>;
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: string } | undefined>;
 
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
       qb
         .where('web_forms.tenant_id', '=', tenantId)
@@ -41,11 +42,11 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
           )`,
           );
         })
-        .$if(!!filterModel['name']?.value, (q) => q.where('web_forms.name', 'ilike', `%${filterModel['name'].value}%`))
+        .$if(!!filterModel['name']?.value, (q) => q.where('web_forms.name', 'ilike', `%${filterModel['name']?.value}%`))
         .$if(!!filterModel['description']?.value, (q) =>
-          q.where('web_forms.description', 'ilike', `%${filterModel['description'].value}%`),
+          q.where('web_forms.description', 'ilike', `%${filterModel['description']?.value}%`),
         )
-        .$if(!!filterModel['status']?.value, (q) => q.where('web_forms.status', '=', filterModel['status'].value));
+        .$if(!!filterModel['status']?.value, (q) => q.where('web_forms.status', '=', filterModel['status']?.value));
 
     const countResult = await applyFilters(this.getSelect(trx))
       .select(({ fn }) => [fn.count(sql`DISTINCT web_forms.id`).as('total')])
@@ -71,7 +72,8 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
         'web_forms.send_alert',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (options.sortModel ?? []).reduce(
           (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
           qb,
         ),

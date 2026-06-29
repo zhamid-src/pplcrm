@@ -72,7 +72,7 @@ export class DonationsGridComponent implements OnInit {
     try {
       const data = await this.donationsSvc.listDonations();
       this.donations.set(data || []);
-    } catch (err) {
+    } catch (_err) {
       this.alertSvc.showError('Failed to load donations. Please try again.');
     } finally {
       end();

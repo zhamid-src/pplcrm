@@ -3,6 +3,7 @@ import { sql } from 'kysely';
 import type { JoinedQueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { QueryParams } from '../../../lib/base.repo';
 
 export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
   constructor() {
@@ -12,15 +13,17 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
   public async getAllEventsWithCount(
     input: {
       tenant_id: string;
-      options?: any;
+      options?: QueryParams<'volunteer_events'> & { includeArchived?: boolean };
     },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: any[]; count: number }> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ): Promise<{ rows: Record<string, any>[]; count: number }> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = (options.filterModel ?? {}) as Record<string, any>;
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
       let q = qb.where('volunteer_events.tenant_id', '=', tenantId).$if(!!searchStr, (qb2) => {
         const text = searchStr;
@@ -42,8 +45,8 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
       }
 
       // Apply basic column filters
-      q = this.applyColumnFilter(q, 'volunteer_events.name', filterModel['name']);
-      q = this.applyColumnFilter(q, 'volunteer_events.location_address', filterModel['location_address']);
+      q = this.applyColumnFilter(q, 'volunteer_events.name', filterModel['name'] ?? {});
+      q = this.applyColumnFilter(q, 'volunteer_events.location_address', filterModel['location_address'] ?? {});
 
       return q;
     };
@@ -88,11 +91,11 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
         'volunteer_events.updated_at',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
-        options.sortModel!.reduce((acc, sort) => acc.orderBy(sort.colId, sort.sort), qb),
+        (options.sortModel ?? []).reduce((acc, sort) => acc.orderBy(sort.colId, sort.sort), qb),
       )
       .$if(!options.sortModel?.length, (qb) => qb.orderBy('volunteer_events.start_time', 'desc'))
       .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow!).limit(options.endRow! - options.startRow!),
+        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
       )
       .execute();
 

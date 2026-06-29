@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Selectable, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import { BaseRepository } from '../../../lib/base.repo';

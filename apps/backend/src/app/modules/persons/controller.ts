@@ -81,7 +81,12 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
   public override async deleteMany(tenant_id: string, idsToDelete: string[], force?: boolean): Promise<boolean> {
     if (!idsToDelete?.length) return false;
 
-    let personSnapshots: any[] = [];
+    let personSnapshots: Array<{
+      id: unknown;
+      email: string | null;
+      first_name: string | null;
+      last_name: string | null;
+    }> = [];
     try {
       personSnapshots = await this.getRepo()
         .db.selectFrom('persons')
@@ -136,7 +141,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
         // Delete list mappings
         await this.mapListsPersonsRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
         // Delete persons within the same transaction
-        const result = await this.getRepo().deleteMany({ tenant_id: tenant_id as any, ids: idsToDelete as any }, trx);
+        const result = await this.getRepo().deleteMany({ tenant_id, ids: idsToDelete }, trx);
 
         return result;
       });

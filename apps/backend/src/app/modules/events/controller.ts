@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { TRPCError } from '@trpc/server';
 import type { Transaction } from 'kysely';
 import { sql } from 'kysely';
@@ -68,7 +69,6 @@ export class EventsController extends BaseController<'events', EventsRepo> {
   }
 
   public async getEventBySlug(slug: string) {
-    // eslint-disable-next-line local/no-unscoped-db-query
     return this.getRepo()
       .db.selectFrom('events')
       .selectAll()

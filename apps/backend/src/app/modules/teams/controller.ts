@@ -86,15 +86,21 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
         : undefined;
 
       const finalListIds = input.list_ids ?? [];
-      let lists: any[] = [];
+      let lists: Array<{
+        id: string;
+        name: string;
+        description: string | null;
+        object: string | null;
+        is_dynamic: boolean | null;
+      }> = [];
       if (finalListIds.length > 0) {
-        lists = await trx
+        const rawLists = await trx
           .selectFrom('lists')
           .select(['id', 'name', 'description', 'object', 'is_dynamic'])
           .where('tenant_id', '=', auth.tenant_id)
           .where('id', 'in', finalListIds)
           .execute();
-        lists = lists.map((l) => ({
+        lists = rawLists.map((l) => ({
           id: String(l.id),
           name: l.name,
           description: l.description,
@@ -176,15 +182,21 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     const sanitized = this.sanitizeTeam(teamWithUsers, captainName ?? undefined, leadUserName ?? undefined);
 
     const listIds = await this.mapListsRepo.getListIds({ tenant_id: auth.tenant_id, team_id: id });
-    let lists: any[] = [];
+    let lists: Array<{
+      id: string;
+      name: string;
+      description: string | null;
+      object: string | null;
+      is_dynamic: boolean | null;
+    }> = [];
     if (listIds.length > 0) {
-      lists = await this.getRepo()
+      const rawLists = await this.getRepo()
         .db.selectFrom('lists')
         .select(['id', 'name', 'description', 'object', 'is_dynamic'])
         .where('tenant_id', '=', auth.tenant_id)
         .where('id', 'in', listIds)
         .execute();
-      lists = lists.map((l) => ({
+      lists = rawLists.map((l) => ({
         id: String(l.id),
         name: l.name,
         description: l.description,
@@ -305,15 +317,21 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
           ? input.list_ids
           : await this.mapListsRepo.getListIds({ tenant_id: auth.tenant_id, team_id: id }, trx);
 
-      let lists: any[] = [];
+      let lists: Array<{
+        id: string;
+        name: string;
+        description: string | null;
+        object: string | null;
+        is_dynamic: boolean | null;
+      }> = [];
       if (finalListIds.length > 0) {
-        lists = await trx
+        const rawLists = await trx
           .selectFrom('lists')
           .select(['id', 'name', 'description', 'object', 'is_dynamic'])
           .where('tenant_id', '=', auth.tenant_id)
           .where('id', 'in', finalListIds)
           .execute();
-        lists = lists.map((l) => ({
+        lists = rawLists.map((l) => ({
           id: String(l.id),
           name: l.name,
           description: l.description,
@@ -403,7 +421,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
   }
 
   private resolveCaptainName(
-    record: any,
+    record: { team_captain_id?: string | number | null },
     volunteers: Array<{ id: string; first_name: string; last_name: string }>,
     fallbackId?: string | null,
   ) {
@@ -422,19 +440,19 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     return full || null;
   }
 
-  private sanitizeTeam(record: any, captainName?: string | null, leadUserName?: string | null) {
+  private sanitizeTeam(record: Record<string, unknown>, captainName?: string | null, leadUserName?: string | null) {
     return {
-      id: record.id != null ? String(record.id) : '',
-      name: record.name ?? '',
-      description: record.description ?? null,
-      team_captain_id: record.team_captain_id != null ? String(record.team_captain_id) : null,
-      team_lead_user_id: record.team_lead_user_id != null ? String(record.team_lead_user_id) : null,
-      created_at: record.created_at ?? null,
-      updated_at: record.updated_at ?? null,
+      id: record['id'] != null ? String(record['id']) : '',
+      name: (record['name'] as string | null | undefined) ?? '',
+      description: (record['description'] as string | null | undefined) ?? null,
+      team_captain_id: record['team_captain_id'] != null ? String(record['team_captain_id']) : null,
+      team_lead_user_id: record['team_lead_user_id'] != null ? String(record['team_lead_user_id']) : null,
+      created_at: (record['created_at'] as Date | string | null | undefined) ?? null,
+      updated_at: (record['updated_at'] as Date | string | null | undefined) ?? null,
       team_captain_name: captainName ?? null,
       team_lead_user_name: leadUserName ?? null,
-      created_by_name: record.created_by_name ?? null,
-      updated_by_name: record.updated_by_name ?? null,
+      created_by_name: (record['created_by_name'] as string | null | undefined) ?? null,
+      updated_by_name: (record['updated_by_name'] as string | null | undefined) ?? null,
     };
   }
 }

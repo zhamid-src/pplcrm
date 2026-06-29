@@ -22,7 +22,7 @@ export async function createContext({ req, res }: CreateFastifyContextOptions) {
 
   try {
     payload = await verifyAuthToken(token);
-  } catch (e) {
+  } catch (_e) {
     // Ignore verification failure; auth remains null
   }
 

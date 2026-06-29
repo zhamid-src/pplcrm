@@ -134,7 +134,7 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
     return query;
   }
 
-  private mapRow(row: any): DataImportWithStats {
+  private mapRow(row: Record<string, unknown>): DataImportWithStats {
     const cast = (value: unknown) => (value == null ? null : String(value));
     const toNumber = (value: unknown) => {
       if (value == null) return 0;

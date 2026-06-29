@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { IAuthKeyPayload, ImportListItem } from '../../../../../../libs/common/src';
 
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';

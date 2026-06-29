@@ -146,7 +146,6 @@ export class PasskeyController {
     const challenge = consumeChallenge(`auth:${nonce}`);
     if (!challenge) throw new UnauthorizedError('Authentication challenge expired. Please try again.');
 
-    // eslint-disable-next-line local/no-unscoped-db-query -- pre-auth: credential_id is globally unique; no tenant context available until the passkey is resolved
     const passkey = await this.db
       .selectFrom('passkeys')
       .selectAll()

@@ -28,7 +28,7 @@ export class MapTeamsPersonsRepo extends BaseRepository<'map_teams_persons'> {
       .where('map_teams_persons.person_id', '=', input.person_id)
       .execute();
 
-    return rows.map((row: any) => ({
+    return rows.map((row) => ({
       team_id: row.team_id != null ? String(row.team_id) : '',
       team_name: row.team_name ?? '',
       is_captain: Boolean(row.is_captain),
