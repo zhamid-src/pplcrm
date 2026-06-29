@@ -2,7 +2,8 @@
   "compilerOptions": {
     "module": "commonjs",
     "target": "ES2020",
-    "strict": false
+    "strict": false,
+    "allowJs": true
   },
   "include": ["rules/**/*.cjs", "index.cjs"]
 }
