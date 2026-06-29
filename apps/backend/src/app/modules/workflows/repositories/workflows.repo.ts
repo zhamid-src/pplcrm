@@ -15,7 +15,6 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
       options?: QueryParams<'workflows'>;
     },
     trx?: Transaction<Models>,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<{ rows: Record<string, any>[]; count: number }> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
@@ -25,7 +24,6 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Kysely SelectQueryBuilder requires any for generic chaining
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
       qb
         .where('workflows.tenant_id', '=', tenantId)
@@ -82,7 +80,6 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
       ])
       .$if(!!options.sortModel?.length, (qb) =>
         options.sortModel!.reduce(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ReferenceExpression generic cannot be narrowed here
           (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
           qb,
         ),

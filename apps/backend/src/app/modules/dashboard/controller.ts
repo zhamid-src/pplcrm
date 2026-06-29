@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { BaseRepository } from '../../lib/base.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import { sql } from 'kysely';

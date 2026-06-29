@@ -177,7 +177,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     >;
 
     // Shared where clause builder (for both queries)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
       let q = qb
         .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
@@ -186,7 +185,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
         .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
         .$if(!!options.listId, (qb) =>
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           qb.where('households.id', 'in', (eb: any) =>
             eb
               .selectFrom('map_lists_households')

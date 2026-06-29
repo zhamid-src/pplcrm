@@ -16,14 +16,12 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
       options?: QueryParams<'volunteer_events'> & { includeArchived?: boolean };
     },
     trx?: Transaction<Models>,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<{ rows: Record<string, any>[]; count: number }> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
     const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
       let q = qb.where('volunteer_events.tenant_id', '=', tenantId).$if(!!searchStr, (qb2) => {
         const text = searchStr;

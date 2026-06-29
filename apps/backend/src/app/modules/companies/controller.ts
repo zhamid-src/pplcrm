@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { BaseController } from '../../lib/base.controller';
 import { CompaniesRepo } from './repositories/companies.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';

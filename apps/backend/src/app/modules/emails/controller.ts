@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { env } from '../../../env';
 import { getAllEmailFolders } from '../../config/email-folders.config';
 import { AppError, BadRequestError, InternalError, NotFoundError } from '../../errors/app-errors';

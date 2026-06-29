@@ -29,7 +29,6 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
       qb
         .where('web_forms.tenant_id', '=', tenantId)
@@ -72,7 +71,6 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
         'web_forms.send_alert',
       ])
       .$if(!!options.sortModel?.length, (qb) =>
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (options.sortModel ?? []).reduce(
           (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
           qb,

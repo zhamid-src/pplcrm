@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { AddWebFormType, IAuthKeyPayload, UpdateWebFormType } from '../../../../../../libs/common/src';
 import { BaseController } from '../../lib/base.controller';
 import { WebFormsRepo } from './repositories/web-forms.repo';

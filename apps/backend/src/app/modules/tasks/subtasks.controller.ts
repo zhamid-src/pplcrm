@@ -9,7 +9,6 @@ export class TaskSubtasksController extends BaseController<'task_subtasks', Task
   }
 
   public getByTaskId(input: { tenant_id: string; task_id: string }) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- bypassing protected access to getManyBy which has no public equivalent
     return (this as any).getRepo().getManyBy('task_id', { tenant_id: input.tenant_id, value: input.task_id });
   }
 
@@ -32,9 +31,7 @@ export class TaskSubtasksController extends BaseController<'task_subtasks', Task
     return subtask;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- row is a partial update shape that varies at call sites
   public override async update(input: { tenant_id: string; id: string; row: any }) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- getOneById return type doesn't expose task_id/name/status without a cast
     const subtaskBefore = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as any;
     const result = await super.update(input);
     if (result && subtaskBefore) {
@@ -58,7 +55,6 @@ export class TaskSubtasksController extends BaseController<'task_subtasks', Task
     return result;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- row is a partial update shape that varies at call sites
   public updateSubtask(input: { tenant_id: string; id: string; row: any }) {
     return this.update({ tenant_id: input.tenant_id, id: input.id, row: input.row });
   }
