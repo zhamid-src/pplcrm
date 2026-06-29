@@ -73,12 +73,13 @@ export const TasksRouter = router({
       }),
     )
     .mutation(({ input, ctx }) =>
-      (new TaskCommentsController() as any).add({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- author_id is an extra runtime field not in the typed insert shape
+      new TaskCommentsController().add({
         tenant_id: ctx.auth.tenant_id,
         task_id: input.task_id,
         author_id: ctx.auth.user_id,
         comment: input.comment,
-      }),
+      } as any),
     ),
   getAttachments: authProcedure
     .input(idSchema)

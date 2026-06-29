@@ -46,7 +46,7 @@ export class DuplicateMaintenanceService {
       .where(sql`trim(first_name)`, '!=', '')
       .where(sql`trim(last_name)`, '!=', '')
       .where('household_id', 'is not', null)
-      .$if(!!placeholderHhId, (qb) => qb.where('household_id', '!=', placeholderHhId!))
+      .$if(!!placeholderHhId, (qb) => qb.where('household_id', '!=', placeholderHhId as string))
       .groupBy([sql`lower(first_name)`, sql`lower(last_name)`, 'household_id'])
       .having(sql`count(persons.id)`, '>', 1)
       .execute();
@@ -98,6 +98,7 @@ export class DuplicateMaintenanceService {
       }
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const inserts: any[] = [];
 
     // Email duplicates
@@ -160,7 +161,7 @@ export class DuplicateMaintenanceService {
       .where('tenant_id', '=', tenantId)
       .where('address_fp_full', 'is not', null)
       .where(sql`trim(address_fp_full)`, '!=', '')
-      .$if(!!placeholderHhId, (qb: any) => qb.where('id', '!=', placeholderHhId!))
+      .$if(!!placeholderHhId, (qb) => qb.where('id', '!=', placeholderHhId as string))
       .groupBy('address_fp_full')
       .having(sql`count(households.id)`, '>', 1)
       .execute();
@@ -168,7 +169,7 @@ export class DuplicateMaintenanceService {
     const hhIds = new Set<string>();
     for (const group of duplicateAddresses) {
       if (Array.isArray(group.ids)) {
-        group.ids.forEach((id: any) => hhIds.add(String(id)));
+        group.ids.forEach((id) => hhIds.add(String(id)));
       }
     }
 
@@ -180,17 +181,19 @@ export class DuplicateMaintenanceService {
         .where('id', 'in', Array.from(hhIds))
         .execute();
 
-      const hhMap = new Map<string, any>();
+      const hhMap = new Map<string, Record<string, unknown>>();
       for (const row of dbRows) {
         hhMap.set(String(row.id), row);
       }
 
       for (const group of duplicateAddresses) {
-        const groupHouseholds = group.ids.map((id: any) => hhMap.get(String(id))).filter(Boolean);
+        const groupHouseholds = group.ids
+          .map((id) => hhMap.get(String(id)))
+          .filter((x): x is Record<string, unknown> => !!x);
 
         if (groupHouseholds.length > 1) {
           const first = groupHouseholds[0];
-          const addrStr = [first.street_num, first.street1, first.apt, first.city, first.state, first.zip]
+          const addrStr = [first?.street_num, first?.street1, first?.apt, first?.city, first?.state, first?.zip]
             .filter(Boolean)
             .join(' ');
           const reason = `Matching Address: "${addrStr}"`;
@@ -227,7 +230,7 @@ export class DuplicateMaintenanceService {
     const companyIds = new Set<string>();
     for (const group of duplicateNames) {
       if (Array.isArray(group.ids)) {
-        group.ids.forEach((id: any) => companyIds.add(String(id)));
+        group.ids.forEach((id) => companyIds.add(String(id)));
       }
     }
 
@@ -239,17 +242,19 @@ export class DuplicateMaintenanceService {
         .where('id', 'in', Array.from(companyIds))
         .execute();
 
-      const companyMap = new Map<string, any>();
+      const companyMap = new Map<string, Record<string, unknown>>();
       for (const row of dbRows) {
         companyMap.set(String(row.id), row);
       }
 
       for (const group of duplicateNames) {
-        const groupCompanies = group.ids.map((id: any) => companyMap.get(String(id))).filter(Boolean);
+        const groupCompanies = group.ids
+          .map((id) => companyMap.get(String(id)))
+          .filter((x): x is Record<string, unknown> => !!x);
 
         if (groupCompanies.length > 1) {
           const first = groupCompanies[0];
-          const reason = `Matching Company Name: "${first.name}"`;
+          const reason = `Matching Company Name: "${first?.name}"`;
           const key = `company:name:${group.name_lower}`;
 
           for (const c of groupCompanies) {

@@ -89,7 +89,12 @@ export class PersonsService {
       }
       try {
         const workflowsController = new WorkflowsController();
-        await workflowsController.triggerWorkflow(auth.tenant_id, String((result as any).id), 'contact_created', null);
+        await workflowsController.triggerWorkflow(
+          auth.tenant_id,
+          String((result as Record<string, unknown>)['id']),
+          'contact_created',
+          null,
+        );
       } catch (err) {
         logger.error({ err }, 'Failed to trigger contact_created workflow in add');
       }
@@ -112,16 +117,16 @@ export class PersonsService {
               }
             }
             if (optedIn) {
-              const createdPerson = result as any;
+              const createdPerson = result as Record<string, unknown>;
               const personName =
-                `${createdPerson.first_name || ''} ${createdPerson.last_name || ''}`.trim() || 'unnamed contact';
-              const link = `${env.appUrl}/persons/${createdPerson.id}`;
+                `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
+              const link = `${env.appUrl}/persons/${createdPerson['id']}`;
               const mailService = new TransactionalEmailService();
               await mailService.sendMail({
                 to: assignee.email,
                 subject: `Contact Assigned to You: ${personName}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${createdPerson.email || 'None'}\nPhone: ${createdPerson.mobile || createdPerson.home_phone || 'None'}\n\nView details: ${link}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${createdPerson.email || 'None'}<br>Phone: ${createdPerson.mobile || createdPerson.home_phone || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${createdPerson['email'] || 'None'}\nPhone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${createdPerson['email'] || 'None'}<br>Phone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
               });
             }
           }
@@ -148,7 +153,12 @@ export class PersonsService {
       logger.error({ err: e }, 'Failed to log create person activity');
     }
     try {
-      await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_created', pickPersonFields(result as any));
+      await queueZapierTrigger(
+        this.personsRepo.db,
+        auth.tenant_id,
+        'person_created',
+        pickPersonFields(result as Record<string, unknown>),
+      );
     } catch (e) {
       logger.error({ err: e }, '[Zapier] Failed to queue person_created trigger');
     }
@@ -168,9 +178,12 @@ export class PersonsService {
       }
     }
 
-    let original: any = null;
+    let original: Record<string, unknown> | null = null;
     try {
-      original = await this.personsRepo.getOneBy('id', { value: id, tenant_id: auth.tenant_id });
+      original = ((await this.personsRepo.getOneBy('id', { value: id, tenant_id: auth.tenant_id })) ?? null) as Record<
+        string,
+        unknown
+      > | null;
     } catch (err) {
       logger.error({ err }, 'Failed to fetch original person record for activity log');
     }
@@ -183,8 +196,8 @@ export class PersonsService {
       } as OperationDataType<'persons', 'update'>,
     });
     if (result && typeof result === 'object') {
-      const updatedPerson = result as any;
-      if (data.assigned_to !== undefined && original && String(data.assigned_to) !== String(original.assigned_to)) {
+      const updatedPerson = result as Record<string, unknown>;
+      if (data.assigned_to !== undefined && original && String(data.assigned_to) !== String(original['assigned_to'])) {
         const newAssigneeId = data.assigned_to;
         if (newAssigneeId) {
           try {
@@ -207,14 +220,15 @@ export class PersonsService {
               }
               if (optedIn) {
                 const personName =
-                  `${updatedPerson.first_name || ''} ${updatedPerson.last_name || ''}`.trim() || 'unnamed contact';
-                const link = `${env.appUrl}/persons/${updatedPerson.id}`;
+                  `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
+                  'unnamed contact';
+                const link = `${env.appUrl}/persons/${updatedPerson['id']}`;
                 const mailService = new TransactionalEmailService();
                 await mailService.sendMail({
                   to: assignee.email,
                   subject: `Contact Assigned to You: ${personName}`,
-                  text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${updatedPerson.email || 'None'}\nPhone: ${updatedPerson.mobile || updatedPerson.home_phone || 'None'}\n\nView details: ${link}`,
-                  html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${updatedPerson.email || 'None'}<br>Phone: ${updatedPerson.mobile || updatedPerson.home_phone || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+                  text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${updatedPerson['email'] || 'None'}\nPhone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
+                  html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${updatedPerson['email'] || 'None'}<br>Phone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
                 });
               }
             }
@@ -225,13 +239,13 @@ export class PersonsService {
       }
     }
     try {
-      const changes: Record<string, any> = {};
-      const resultObj = result && typeof result === 'object' ? (result as any) : null;
+      const changes: Record<string, unknown> = {};
+      const resultObj = result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
       if (original && resultObj) {
         const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
         for (const key of Object.keys(data)) {
           if (skipKeys.includes(key)) continue;
-          const oldVal = (original as any)[key];
+          const oldVal = (original as Record<string, unknown>)[key];
           const newVal = resultObj[key];
           if (oldVal !== newVal) {
             changes[key] = { from: oldVal ?? null, to: newVal ?? null };
@@ -248,7 +262,7 @@ export class PersonsService {
         metadata: {
           id,
           entity_label: resultObj
-            ? `${resultObj.first_name || ''} ${resultObj.last_name || ''}`.trim() || 'Person'
+            ? `${resultObj['first_name'] || ''} ${resultObj['last_name'] || ''}`.trim() || 'Person'
             : 'Person',
           changes,
           ...(auth.source ? { source: auth.source } : {}),
@@ -258,7 +272,12 @@ export class PersonsService {
       logger.error({ err: e }, 'Failed to log update person activity');
     }
     try {
-      await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_updated', pickPersonFields(result as any));
+      await queueZapierTrigger(
+        this.personsRepo.db,
+        auth.tenant_id,
+        'person_updated',
+        pickPersonFields(result as Record<string, unknown>),
+      );
     } catch (e) {
       logger.error({ err: e }, '[Zapier] Failed to queue person_updated trigger');
     }
@@ -279,7 +298,10 @@ export class PersonsService {
   }
 
   public async getPersonActivity(person_id: string, auth: IAuthKeyPayload) {
-    const person = (await this.personsRepo.getOneBy('id', { value: person_id, tenant_id: auth.tenant_id })) as any;
+    const person = (await this.personsRepo.getOneBy('id', { value: person_id, tenant_id: auth.tenant_id })) as Record<
+      string,
+      unknown
+    > | null;
     if (!person) {
       throw new TRPCError({
         code: 'NOT_FOUND',
@@ -288,8 +310,8 @@ export class PersonsService {
     }
 
     const emails: string[] = [];
-    if (person.email) emails.push(person.email.trim().toLowerCase());
-    if (person.email2) emails.push(person.email2.trim().toLowerCase());
+    if (person['email']) emails.push((person['email'] as string).trim().toLowerCase());
+    if (person['email2']) emails.push((person['email2'] as string).trim().toLowerCase());
 
     if (emails.length === 0) {
       return {
@@ -558,7 +580,7 @@ export class PersonsService {
         persons_total_after: personsBefore,
         persons_total_before: personsBefore,
         status: 'completed',
-      } as any;
+      };
     }
 
     const importRow = {
@@ -577,6 +599,7 @@ export class PersonsService {
       status: 'pending',
       metadata: null,
       processed_at: now,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
 
     const savedImport = await this.importsRepo.add({ row: importRow });
@@ -595,7 +618,7 @@ export class PersonsService {
       await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
     } catch (err) {
       logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
+      await this.importsRepo.delete({ tenant_id: auth.tenant_id, id: importRecordId });
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Failed to store import payload on server storage',
@@ -607,6 +630,7 @@ export class PersonsService {
       id: importRecordId,
       row: {
         metadata: JSON.stringify({ storage_key: storageKey }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
     });
 
@@ -640,7 +664,7 @@ export class PersonsService {
       tenant_id: auth.tenant_id,
       campaign_id,
       status: 'pending',
-    } as any;
+    };
   }
 
   public async processImportRows(
@@ -650,7 +674,7 @@ export class PersonsService {
     campaign_id: string,
     tags: string[],
     skipped: number,
-    rows: any[],
+    rows: Record<string, string>[],
   ) {
     const households = new HouseholdRepo();
     const results: { inserted: number; errors: number; households_created: number; skipped: number } = {
@@ -752,6 +776,7 @@ export class PersonsService {
             households_created: results.households_created,
             updatedby_id: user_id,
             updated_at: new Date(),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } as any,
         });
         continue;
@@ -842,7 +867,7 @@ export class PersonsService {
             campaign_id,
             createdby_id: user_id,
             updatedby_id: user_id,
-            household_id: isBlankAddress ? localBlankHouseholdId! : fpCache.get(fp_full!)!,
+            household_id: isBlankAddress ? (localBlankHouseholdId ?? '') : (fpCache.get(fp_full ?? '') ?? ''),
             first_name: sanitized.first_name ?? null,
             middle_names: null,
             last_name: sanitized.last_name ?? null,
@@ -854,10 +879,10 @@ export class PersonsService {
             notes: sanitized.notes ?? null,
             json: null,
           }));
-          const insertedPersons: any[] = await trx
+          const insertedPersons = await trx
             .insertInto('persons')
             .values(personRows)
-            .onConflict((oc: any) => oc.doNothing())
+            .onConflict((oc) => oc.doNothing())
             .returningAll()
             .execute();
 
@@ -881,7 +906,7 @@ export class PersonsService {
 
           // 5. Batch insert all tag-person mappings in one statement
           if (tagRecords.length > 0 && insertedPersons.length > 0) {
-            const tagMapRows = insertedPersons.flatMap((person: any) =>
+            const tagMapRows = insertedPersons.flatMap((person) =>
               tagRecords.map(({ id: tag_id }) => ({
                 tenant_id,
                 person_id: String(person.id),
@@ -890,6 +915,7 @@ export class PersonsService {
                 updatedby_id: user_id,
               })),
             );
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             await (trx as any).insertInto('map_peoples_tags').values(tagMapRows).execute();
           }
 
@@ -925,10 +951,10 @@ export class PersonsService {
         results.households_created += outcome.householdsCreatedDelta;
         if (outcome.blankHouseholdId) cachedBlankHouseholdId = outcome.blankHouseholdId;
         if (!autoTagId && outcome.autoTagId) autoTagId = outcome.autoTagId;
-      } catch (err: any) {
+      } catch (err: unknown) {
         // If the chunk transaction fails, count all valid rows in the chunk as errors
         results.errors += validEntries.length;
-        const message = err?.message || String(err);
+        const message = err instanceof Error ? err.message : String(err);
         errorMessages.push(message);
         logger.error({ err, message }, 'Import chunk failed');
       }
@@ -945,6 +971,7 @@ export class PersonsService {
           households_created: results.households_created,
           updatedby_id: user_id,
           updated_at: new Date(),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any,
       });
     }
@@ -1023,7 +1050,7 @@ export class PersonsService {
     await this.userActivity.log({
       tenant_id: auth.tenant_id,
       user_id: auth.user_id,
-      activity: 'merge' as any,
+      activity: 'merge',
       entity: 'persons',
       quantity: 1,
       metadata: {

@@ -52,6 +52,7 @@ export class PersonConnectionsController extends BaseController<'person_connecti
 
     try {
       await this.getRepo()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 'user_activity' is a valid table but Kysely requires the cast when accessed cross-module
         .db.insertInto('user_activity' as any)
         .values({
           tenant_id: auth.tenant_id,
@@ -88,6 +89,7 @@ export class PersonConnectionsController extends BaseController<'person_connecti
 
     try {
       await this.getRepo()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 'user_activity' is a valid table but Kysely requires the cast when accessed cross-module
         .db.insertInto('user_activity' as any)
         .values({
           tenant_id: auth.tenant_id,

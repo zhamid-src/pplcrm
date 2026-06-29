@@ -1,26 +1,26 @@
-import { Component, inject, signal, input, viewChild, OnInit } from '@angular/core';
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
 
 import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { DATA_TYPE, PersonsService } from '../services/persons-service';
 import {
-  provideDataGridConfig,
   DATA_GRID_CONFIG,
   DEFAULT_DATA_GRID_CONFIG,
+  provideDataGridConfig,
 } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
 
 interface ParamsType {
   value: string[];
@@ -222,9 +222,18 @@ export class PersonsGrid implements OnInit {
 
   protected tagsInput = '';
 
-  public async ngOnInit() {
-    await this.loadTagOptions();
-    await this.loadIssueOptions();
+  public ngOnInit() {
+    void this.initializeComponent();
+  }
+
+  private async initializeComponent(): Promise<void> {
+    try {
+      await this.loadTagOptions();
+      await this.loadIssueOptions();
+      // Any logic that depends on this data should go here
+    } catch (error) {
+      console.error('Initialization failed', error);
+    }
   }
 
   private async loadTagOptions() {
@@ -257,7 +266,7 @@ export class PersonsGrid implements OnInit {
   protected onAddressCellClicked(event: any) {
     const householdId = event?.data?.household_id ?? event?.household_id;
     if (householdId) {
-      this.router.navigate(['households', householdId]);
+      void this.router.navigate(['households', householdId]);
     }
   }
 
@@ -283,7 +292,7 @@ export class PersonsGrid implements OnInit {
     dialog.close();
 
     if (this.addressChangeModalId !== null) {
-      this.router.navigate(['households', this.addressChangeModalId]);
+      void this.router.navigate(['households', this.addressChangeModalId]);
     }
   }
 
@@ -312,7 +321,7 @@ export class PersonsGrid implements OnInit {
         errors: 0,
         skipped,
         queued: true,
-        tag: res?.tag,
+        tag: res?.tag ?? undefined,
         failed: false,
         message: msg,
       });

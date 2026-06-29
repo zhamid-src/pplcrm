@@ -88,14 +88,12 @@ describe('TagsRepo Integration', () => {
   const db = (BaseRepository as any)._db;
   let tenantId: string;
   let userId: string;
-  let campaignId: string;
   let householdId: string;
 
   beforeEach(async () => {
     const seed = await createTestSeed(db);
     tenantId = seed.tenantId;
     userId = seed.userId;
-    campaignId = seed.campaignId;
     householdId = seed.householdId;
   });
 

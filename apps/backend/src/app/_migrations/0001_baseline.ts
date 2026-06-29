@@ -1,6 +1,7 @@
 // tsco: ignore
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-import type { Kysely} from 'kysely';
+import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import * as fs from 'fs';
 import * as path from 'path';

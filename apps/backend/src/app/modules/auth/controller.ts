@@ -467,10 +467,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async getAllUsers(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    const sanitizedOptions = options ? ({ ...options, columns: undefined } as any) : undefined;
+    const sanitizedOptions = options ? ({ ...options, columns: undefined } as typeof options) : undefined;
     const result = await this.getRepo().getAllWithCounts({
       tenant_id: auth.tenant_id,
-      options: sanitizedOptions,
+      options: sanitizedOptions as never,
     });
     return {
       rows: result.rows.map((row) => ({
@@ -676,15 +676,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
     try {
       // 1. Verify the signature of the expired auth token (ignoring expiration)
-      const payload = (await renewalVerifier(input.auth_token)) as any;
+      const payload = (await renewalVerifier(input.auth_token)) as Record<string, unknown>;
 
       // Basic payload validation
-      if (!payload?.user_id || !payload?.tenant_id || !payload?.name || !payload?.session_id) {
+      if (!payload?.['user_id'] || !payload?.['tenant_id'] || !payload?.['name'] || !payload?.['session_id']) {
         throw new UnauthorizedError();
       }
 
       // 2. Hash the session ID and incoming refresh token
-      const sessionHash = hashToken(payload.session_id);
+      const sessionHash = hashToken(payload['session_id'] as string);
       const refreshHash = hashToken(input.refresh_token);
 
       // 3. Verify that the session is active and matches in the database
@@ -693,8 +693,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         .select(['id', 'expires_at', 'last_used_at'])
         .where('session_id', '=', sessionHash)
         .where('refresh_token', '=', refreshHash)
-        .where('user_id', '=', payload.user_id)
-        .where('tenant_id', '=', payload.tenant_id)
+        .where('user_id', '=', payload['user_id'] as string)
+        .where('tenant_id', '=', payload['tenant_id'] as string)
         .where('status', '=', 'active')
         .executeTakeFirst();
 
@@ -717,10 +717,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
       // 4. Generate a new set of tokens and delete the old session
       return this.createTokens({
-        user_id: payload.user_id,
-        tenant_id: payload.tenant_id,
-        name: payload.name,
-        oldSession: payload.session_id,
+        user_id: payload['user_id'] as string,
+        tenant_id: payload['tenant_id'] as string,
+        name: payload['name'] as string,
+        oldSession: payload['session_id'] as string,
         existingExpiresAt: session.expires_at ?? null,
       });
     } catch (err) {
@@ -1036,7 +1036,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       const tenant = await this.getRepo()
         .db.selectFrom('tenants')
         .select(['suspended_at', 'paused_at'])
-        .where('id', '=', user.tenant_id!)
+        .where('id', '=', user.tenant_id)
         .executeTakeFirst();
 
       if (tenant?.suspended_at) {
@@ -1205,7 +1205,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       throw new ForbiddenError('Verification status cannot be changed manually.');
     }
 
-    const row: Record<string, any> = {};
+    const row: Record<string, unknown> = {};
 
     const isOwnEmailChange =
       data.email && data.email.toLowerCase() !== existingUser.email.toLowerCase() && userId === auth.user_id;
@@ -1213,7 +1213,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     if (data.email) {
       const nextEmail = data.email.toLowerCase();
       if (nextEmail !== existingUser.email.toLowerCase()) {
-        const other = await this.getRepo().getByEmail(nextEmail as any, { columns: ['id'] as any });
+        const other = await this.getRepo().getByEmail(nextEmail, { columns: ['id'] });
         const otherUser = other as AuthUsersType | undefined;
         if (otherUser && String(otherUser.id) !== userId) {
           throw new ConflictError('Email already exists');
@@ -1269,7 +1269,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
             await this.mailService.enqueueMail(
               {
-                to: nextEmail,
+                to: nextEmail as string,
                 tenant_id: auth.tenant_id,
                 subject: 'Verify Your New Email Address - CampaignRaven',
                 text: `Please verify your new email address by clicking this link: ${env.appUrl}/verify-email?code=${code}`,
@@ -1300,7 +1300,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           }
 
           const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at', 'password'];
-          const changes: Record<string, any> = {};
+          const changes: Record<string, unknown> = {};
           for (const key of Object.keys(row)) {
             if (skipKeys.includes(key)) continue;
             const oldVal = (existingUser as Record<string, unknown>)[key];
@@ -1478,7 +1478,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       const tenant = await this.getRepo()
         .db.selectFrom('tenants')
         .select(['suspended_at', 'paused_at'])
-        .where('id', '=', user.tenant_id!)
+        .where('id', '=', user.tenant_id)
         .executeTakeFirst();
 
       if (tenant?.suspended_at) {
@@ -1518,7 +1518,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
 
     await repo.transaction().execute(async (trx) => {
-      const updateData: Record<string, any> = {
+      const updateData: Record<string, unknown> = {
         verified: true,
         password_reset_code: null,
         password_reset_code_created_at: null,
@@ -1764,9 +1764,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return !existing;
   }
 
-  private sanitizeUser(record: any) {
-    const lastName =
-      record.last_name ?? record.profile_last_name ?? record.effective_last_name ?? record.profile?.last_name ?? '';
+  private sanitizeUser(record: Record<string, unknown>) {
+    const lastName: string =
+      (record['last_name'] as string | null | undefined) ??
+      (record['profile_last_name'] as string | null | undefined) ??
+      (record['effective_last_name'] as string | null | undefined) ??
+      ((record['profile'] as Record<string, unknown>)?.['last_name'] as string | null | undefined) ??
+      '';
 
     let notificationPreferences = {
       mention_in_comment: true,
@@ -1783,7 +1787,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       import_summary_in_app: true,
     };
 
-    const profileJson = record.profile?.json ?? record.json;
+    const profileJson = (record['profile'] as Record<string, unknown>)?.['json'] ?? record['json'];
     if (profileJson) {
       try {
         const parsed = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
@@ -1799,19 +1803,19 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     }
 
     return {
-      id: record.id != null ? String(record.id) : '',
-      email: record.email ?? '',
-      first_name: record.first_name ?? '',
-      last_name: lastName ?? '',
-      role: record.role != null ? String(record.role) : null,
-      verified: this.coerceBoolean(record.verified),
-      email_verified: this.coerceBoolean(record.verified),
-      two_factor_enabled: this.coerceBoolean(record.two_factor_enabled),
-      deletion_scheduled_at: this.coerceDate(record.deletion_scheduled_at),
-      created_at: this.coerceDate(record.created_at),
-      updated_at: this.coerceDate(record.updated_at),
-      previous_email: record.previous_email ?? null,
-      previous_role: record.previous_role ?? null,
+      id: record['id'] != null ? String(record['id']) : '',
+      email: (record['email'] as string | null | undefined) ?? '',
+      first_name: (record['first_name'] as string | null | undefined) ?? '',
+      last_name: lastName,
+      role: record['role'] != null ? String(record['role']) : null,
+      verified: this.coerceBoolean(record['verified']),
+      email_verified: this.coerceBoolean(record['verified']),
+      two_factor_enabled: this.coerceBoolean(record['two_factor_enabled']),
+      deletion_scheduled_at: this.coerceDate(record['deletion_scheduled_at']),
+      created_at: this.coerceDate(record['created_at']),
+      updated_at: this.coerceDate(record['updated_at']),
+      previous_email: (record['previous_email'] as string | null | undefined) ?? null,
+      previous_role: (record['previous_role'] as string | null | undefined) ?? null,
       notification_preferences: notificationPreferences,
     };
   }
@@ -1820,7 +1824,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const existingProfile = (await this.profiles.getOneByAuthId(authUserId)) as Models['profiles'] | undefined;
     const profileId = existingProfile?.id != null ? String(existingProfile.id) : authUserId;
 
-    let finalJson: any = null;
+    let finalJson: Record<string, unknown> | null = null;
     if (existingProfile?.json) {
       try {
         finalJson = typeof existingProfile.json === 'string' ? JSON.parse(existingProfile.json) : existingProfile.json;
@@ -1833,22 +1837,22 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       finalJson = {
         ...(finalJson || {}),
         notifications: {
-          ...((finalJson || {}).notifications || {}),
+          ...(((finalJson || {})['notifications'] as Record<string, unknown>) || {}),
           ...data.notification_preferences,
         },
       };
     }
 
     if (existingProfile) {
-      const row: any = {
+      const row: Record<string, unknown> = {
         updatedby_id: auth.user_id,
         updated_at: new Date(),
       };
       if (data.last_name !== undefined) {
-        row.last_name = data.last_name ?? null;
+        row['last_name'] = data.last_name ?? null;
       }
       if (finalJson !== null) {
-        row.json = JSON.stringify(finalJson);
+        row['json'] = JSON.stringify(finalJson);
       }
 
       if (data.last_name !== undefined || data.notification_preferences !== undefined) {

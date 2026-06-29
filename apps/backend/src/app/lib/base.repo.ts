@@ -73,6 +73,7 @@ export class BaseRepository<T extends keyof Models> {
 
   public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
     const results = await this.addMany({ rows: [input.row] }, trx);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     return results[0]!;
   }
 
@@ -185,12 +186,15 @@ export class BaseRepository<T extends keyof Models> {
   public async getAllWithCounts(
     input: {
       tenant_id: TypeTenantId<T>;
-      options?: QueryParams<any>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      options?: any;
     },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
-    const rows = await this.getAll(input, trx);
-    return { rows, count: rows.length };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ): Promise<{ rows: Record<string, any>[]; count: number }> {
+    const rows = await this.getAll({ tenant_id: input.tenant_id, options: input.options as QueryParams<T> }, trx);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { rows: rows as Record<string, any>[], count: rows.length };
   }
 
   protected selectBy<C extends ColName<T>>(
@@ -278,7 +282,7 @@ export class BaseRepository<T extends keyof Models> {
   }
 
   protected applyOptions(query: SelectQueryBuilder<Models, T, unknown>, options?: QueryParams<T>) {
-    const opts: any = options ?? {};
+    const opts = options ?? {};
     query = options?.columns
       ? query.select(
           options.columns.map((c) => {
@@ -298,8 +302,8 @@ export class BaseRepository<T extends keyof Models> {
     const derivedLimit = !hasLimit && typeof endRow === 'number' ? Math.max(0, endRow - (startRow ?? 0)) : undefined;
     const derivedOffset = !hasOffset && typeof startRow === 'number' ? startRow : undefined;
 
-    const finalLimit = hasLimit ? options!.limit : derivedLimit;
-    const finalOffset = hasOffset ? options!.offset : derivedOffset;
+    const finalLimit = hasLimit ? options?.limit : derivedLimit;
+    const finalOffset = hasOffset ? options?.offset : derivedOffset;
 
     query = typeof finalLimit === 'number' ? query.limit(finalLimit) : query;
     query = typeof finalOffset === 'number' ? query.offset(finalOffset) : query;
@@ -364,11 +368,13 @@ export class BaseRepository<T extends keyof Models> {
       }, query);
     }
     query = options?.orderBy ? query.orderBy(options.orderBy) : query;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     query = options?.groupBy ? query.groupBy(options.groupBy as any) : query;
     return query;
   }
 
-  protected applyColumnFilter(query: any, column: string, filter: { op?: string; value?: any }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  protected applyColumnFilter(query: any, column: string, filter: { op?: string; value?: unknown }) {
     if (!filter) {
       return query;
     }
@@ -399,8 +405,10 @@ export class BaseRepository<T extends keyof Models> {
       case 'notEquals':
         return query.where(column, 'not ilike', normalized);
       case 'isEmpty':
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return query.where((eb: any) => eb.or([eb(column, 'is', null), eb(column, '=', '')]));
       case 'isNotEmpty':
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return query.where((eb: any) => eb.and([eb(column, 'is not', null), eb(column, '!=', '')]));
       case 'contains':
       default:
@@ -408,7 +416,12 @@ export class BaseRepository<T extends keyof Models> {
     }
   }
 
-  protected applyCastColumnFilter(query: any, sqlExpression: any, filter: { op?: string; value?: any }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  protected applyCastColumnFilter(
+    query: any,
+    sqlExpression: ReturnType<typeof sql>,
+    filter: { op?: string; value?: unknown },
+  ) {
     if (!filter) {
       return query;
     }
@@ -478,7 +491,8 @@ export class BaseRepository<T extends keyof Models> {
     return ret as unknown as UpdateQueryBuilder<Models, T, T, UpdateResult>;
   }
 
-  protected buildRuleExpression(eb: any, column: string, isCast: boolean, op: string, val: any) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  protected buildRuleExpression(eb: any, column: string, isCast: boolean, op: string, val: unknown) {
     // Allow users to type * as a wildcard; normalize to SQL %.
     // The operator's own wrapping is always applied — Postgres collapses %% naturally.
     const normalized = String(val ?? '').replace(/\*/g, '%');
@@ -516,10 +530,11 @@ export class BaseRepository<T extends keyof Models> {
   }
 
   protected applyAdvancedFilters(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     query: any,
     advancedFilterModel:
       | QueryBuilderGroupNode
-      | { conjunction: 'AND' | 'OR'; rules: { field: string; op: string; value: any }[] }
+      | { conjunction: 'AND' | 'OR'; rules: { field: string; op: string; value: unknown }[] }
       | undefined,
     columnMapping: Record<string, { col: string; isCast?: boolean }>,
   ) {
@@ -533,7 +548,7 @@ export class BaseRepository<T extends keyof Models> {
     if (isLegacy) {
       const legacyModel = advancedFilterModel as {
         conjunction: 'AND' | 'OR';
-        rules: { field: string; op: string; value: any }[];
+        rules: { field: string; op: string; value: unknown }[];
       };
       if (!Array.isArray(legacyModel.rules) || legacyModel.rules.length === 0) {
         return query;
@@ -554,6 +569,7 @@ export class BaseRepository<T extends keyof Models> {
       rootGroup = advancedFilterModel as QueryBuilderGroupNode;
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return query.where((eb: any) => {
       const expression = this.buildGroupExpression(eb, rootGroup, columnMapping);
       return expression || sql`true`;
@@ -561,9 +577,11 @@ export class BaseRepository<T extends keyof Models> {
   }
 
   private buildGroupExpression(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     eb: any,
     group: QueryBuilderGroupNode,
     columnMapping: Record<string, { col: string; isCast?: boolean }>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): any {
     if (!group.rules || group.rules.length === 0) {
       return null;
@@ -614,7 +632,7 @@ export type JoinedQueryParams = {
     | QueryBuilderGroupNode
     | {
         conjunction: 'AND' | 'OR';
-        rules: { field: string; op: string; value: any }[];
+        rules: { field: string; op: string; value: unknown }[];
       };
 };
 

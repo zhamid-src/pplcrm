@@ -18,7 +18,19 @@
       "Bash(perl -i -pe \"s/\\\\.where\\\\\\('id', '=', BigInt\\\\\\(userId\\\\\\)\\\\\\)/.where\\('id', '=', userId\\)/g\" apps/backend/src/app/lib/jobs/job-handlers.ts)",
       "Bash(perl -i -pe \"s/\\\\.where\\\\\\('tenant_id', '=', BigInt\\\\\\(tenantId\\\\\\)\\\\\\)/.where\\('tenant_id', '=', tenantId\\)/g\" apps/backend/src/app/lib/jobs/job-handlers.ts)",
       "Bash(perl -i -pe \"s/const tid = BigInt\\\\\\(tenantId\\\\\\) as any;/const tid = tenantId;/g\" apps/backend/src/app/lib/jobs/job-handlers.ts)",
-      "Bash(python3)"
+      "Bash(python3)",
+      "Bash(tee /tmp/backend_lint.txt)",
+      "Bash(awk '/^apps\\\\/backend/{file=$0} /warning/{count[file]++} END{for \\(f in count\\) print count[f], f}')",
+      "Bash(node -e ' *)",
+      "Bash(sed -i '' '/\\\\/\\\\/ eslint-disable-next-line @typescript-eslint\\\\/no-explicit-any/d' apps/backend/src/app/modules/billing/controller.ts)",
+      "Bash(sed -i '' '/\\\\/\\\\/ eslint-disable-next-line @typescript-eslint\\\\/no-non-null-assertion/d' apps/backend/src/app/modules/billing/controller.ts)",
+      "Bash(sed -i '' 's/return match ? match\\\\[1\\\\]! : val.trim\\(\\);/return match ? \\(match[1] as string\\) : val.trim\\(\\);/' apps/backend/src/app/modules/google-sync/google-sync.service.ts)",
+      "Bash(sed -i '' 's/const email = emailMatch ? emailMatch\\\\[1\\\\]! : trimmed;/const email = emailMatch ? \\(emailMatch[1] as string\\) : trimmed;/' apps/backend/src/app/modules/google-sync/google-sync.service.ts)",
+      "Bash(sed -i '' 's/let name = nameMatch ? nameMatch\\\\[1\\\\]!.trim\\(\\) : null;/let name = nameMatch ? \\(nameMatch[1] as string\\).trim\\(\\) : null;/' apps/backend/src/app/modules/google-sync/google-sync.service.ts)",
+      "Bash(sed -i '' '523s/fastify.log.error\\(err,/fastify.log.error\\(_err,/' apps/backend/src/app/modules/emails/routes/emails-api.route.ts)",
+      "Bash(sed -i '' '611s/fastify.log.error\\(err,/fastify.log.error\\(_err,/' apps/backend/src/app/modules/emails/routes/emails-api.route.ts)",
+      "Bash(sed -i '' '691s/fastify.log.error\\(err\\)/fastify.log.error\\(_err\\)/' apps/backend/src/app/modules/emails/routes/emails-api.route.ts)",
+      "Bash(sed -i '' '749s/fastify.log.error\\(err\\)/fastify.log.error\\(_err\\)/' apps/backend/src/app/modules/emails/routes/emails-api.route.ts)"
     ]
   },
   "enabledPlugins": {

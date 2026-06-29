@@ -309,7 +309,13 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
     };
   }
 
-  public async processImportRows(import_id: string, tenant_id: string, user_id: string, skipped: number, rows: any[]) {
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    skipped: number,
+    rows: Record<string, string>[],
+  ) {
     const results = { inserted: 0, errors: 0, skipped: 0 };
     const errorMessages: string[] = [];
 
@@ -347,35 +353,36 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
       const chunk = rows.slice(i, i + chunkSize);
 
       // 1. Normalize and filter valid rows upfront
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const taskRows: any[] = [];
       for (const raw of chunk) {
-        if (!raw.name || !raw.name.trim()) {
+        if (!raw['name'] || !raw['name'].trim()) {
           results.skipped += 1;
           continue;
         }
 
-        let status: any = 'todo';
-        if (raw.status) {
-          const normStatus = normalize(raw.status);
+        let status: string = 'todo';
+        if (raw['status']) {
+          const normStatus = normalize(raw['status']);
           const matchedStatus = validStatuses.find((s) => normalize(s) === normStatus);
           if (matchedStatus) status = matchedStatus;
         }
 
-        let priority: any = null;
-        if (raw.priority) {
-          const normPriority = normalize(raw.priority);
+        let priority: string | null = null;
+        if (raw['priority']) {
+          const normPriority = normalize(raw['priority']);
           const matchedPriority = validPriorities.find((p) => normalize(p) === normPriority);
           if (matchedPriority) priority = matchedPriority;
         }
 
         let assigned_to: string | null = null;
-        if (raw.assigned_to) {
-          assigned_to = userMap.get(raw.assigned_to.toLowerCase().trim()) ?? null;
+        if (raw['assigned_to']) {
+          assigned_to = userMap.get(raw['assigned_to'].toLowerCase().trim()) ?? null;
         }
 
         let due_at: Date | null = null;
-        if (raw.due_at) {
-          const parsedDate = new Date(raw.due_at);
+        if (raw['due_at']) {
+          const parsedDate = new Date(raw['due_at']);
           if (!isNaN(parsedDate.getTime())) due_at = parsedDate;
         }
 
@@ -383,8 +390,8 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
           tenant_id,
           createdby_id: user_id,
           updatedby_id: user_id,
-          name: raw.name.trim(),
-          details: raw.details ?? null,
+          name: raw['name'].trim(),
+          details: raw['details'] ?? null,
           status,
           priority,
           assigned_to,
@@ -410,9 +417,9 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
               }
             });
           results.inserted += taskRows.length;
-        } catch (err: any) {
+        } catch (err: unknown) {
           results.errors += taskRows.length;
-          errorMessages.push(err?.message || String(err));
+          errorMessages.push(err instanceof Error ? err.message : String(err));
         }
       }
 

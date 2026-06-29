@@ -15,15 +15,17 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
       options?: QueryParams<'workflows'>;
     },
     trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ): Promise<{ rows: Record<string, any>[]; count: number }> {
     const options: JoinedQueryParams = input.options || {};
     const tenantId = input.tenant_id;
     const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = (options.filterModel ?? {}) as Record<string, any>;
+    const filterModel = (options.filterModel ?? {}) as Record<string, Record<string, unknown>>;
 
     const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Kysely SelectQueryBuilder requires any for generic chaining
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
       qb
         .where('workflows.tenant_id', '=', tenantId)
@@ -36,10 +38,14 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
           )`,
           );
         })
-        .$if(!!filterModel['name']?.value, (q) => q.where('workflows.name', 'ilike', `%${filterModel['name'].value}%`))
-        .$if(!!filterModel['status']?.value, (q) => q.where('workflows.status', '=', filterModel['status'].value))
-        .$if(!!filterModel['trigger_type']?.value, (q) =>
-          q.where('workflows.trigger_type', '=', filterModel['trigger_type'].value),
+        .$if(!!filterModel['name']?.['value'], (q) =>
+          q.where('workflows.name', 'ilike', `%${filterModel['name']?.['value']}%`),
+        )
+        .$if(!!filterModel['status']?.['value'], (q) =>
+          q.where('workflows.status', '=', filterModel['status']?.['value']),
+        )
+        .$if(!!filterModel['trigger_type']?.['value'], (q) =>
+          q.where('workflows.trigger_type', '=', filterModel['trigger_type']?.['value']),
         );
 
     const countResult = await applyFilters(this.getSelect(trx))
@@ -76,6 +82,7 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
       ])
       .$if(!!options.sortModel?.length, (qb) =>
         options.sortModel!.reduce(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ReferenceExpression generic cannot be narrowed here
           (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
           qb,
         ),

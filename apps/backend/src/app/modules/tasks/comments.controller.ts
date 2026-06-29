@@ -12,12 +12,14 @@ export class TaskCommentsController extends BaseController<'task_comments', Task
   }
 
   public getByTaskId(input: { tenant_id: string; task_id: string }) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- bypassing protected access to getManyBy which has no public equivalent
     return (this as any).getRepo().getManyBy('task_id', { tenant_id: input.tenant_id, value: input.task_id });
   }
 
   public override async add(row: OperationDataType<'task_comments', 'insert'>, trx?: Transaction<Models>) {
     const comment = await super.add(row, trx);
     if (comment && row.comment && row.task_id && row.tenant_id) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- author_id is passed at runtime but not in the typed insert shape
       const actorId = row.createdby_id || (row as any).author_id || '';
       if (actorId) {
         await this.userActivity.log(

@@ -1,8 +1,7 @@
 import { JSDOM } from 'jsdom';
-import DOMPurify from 'dompurify';
 
 const window = new JSDOM('').window;
-// @ts-ignore
+// @ts-expect-error DOMPurify types don't accept JSDOM window
 const purify = DOMPurify(window);
 
 export function sanitizeHtml(html: string | null | undefined): string {

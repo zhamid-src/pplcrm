@@ -48,7 +48,7 @@ export class ActivityController extends BaseController<'user_activity', UserActi
 
     const options = (input?.options ?? {}) as any;
     // Remove pagination options to export all matching records
-    const { startRow, endRow, ...restOptions } = options;
+    const { startRow: _startRow, endRow: _endRow, ...restOptions } = options;
 
     const now = new Date();
     const pad = (n: number) => String(n).padStart(2, '0');

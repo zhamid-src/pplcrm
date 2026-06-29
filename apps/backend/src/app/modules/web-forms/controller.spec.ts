@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { randomUUID } from 'crypto';
 import { WebFormsController } from './controller';
 import { BaseRepository } from '../../lib/base.repo';
@@ -336,7 +336,7 @@ describe('WebFormsController Integration', () => {
 
     try {
       await controller.submitFormPublic(formId, payload, '127.0.0.1');
-    } catch (err) {
+    } catch (_err) {
       // Mock Stripe key redirect or exception is fine
     }
 

@@ -10,7 +10,11 @@ export class CsvTransformStream extends Transform {
     this.columns = columns;
   }
 
-  override _transform(row: any, _encoding: string, callback: (err?: Error | null, chunk?: any) => void) {
+  override _transform(
+    row: Record<string, unknown>,
+    _encoding: string,
+    callback: (err?: Error | null, chunk?: unknown) => void,
+  ) {
     this.rowCount++;
     let chunk = '';
 
@@ -26,9 +30,7 @@ export class CsvTransformStream extends Transform {
       if (value === null || value === undefined) return '';
       if (value instanceof Date) return value.toISOString();
       const str = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
-      return str.includes(',') || str.includes('"') || str.includes('\n')
-        ? '"' + str.replace(/"/g, '""') + '"'
-        : str;
+      return str.includes(',') || str.includes('"') || str.includes('\n') ? '"' + str.replace(/"/g, '""') + '"' : str;
     };
 
     chunk += this.columns.map((col) => escape(row[col])).join(',') + '\n';

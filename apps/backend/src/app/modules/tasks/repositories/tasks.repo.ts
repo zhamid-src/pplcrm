@@ -35,6 +35,7 @@ export class TasksRepo extends BaseRepository<'tasks'> {
 
   private buildTasksQueryBuilder(tenant_id: string, isArchived: boolean, options?: QueryParams<'tasks'>) {
     const text = this.normalizeSearch(options?.searchStr);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filterModel: Record<string, any> = options?.filterModel ?? {};
     // Extract priority/assigned_to sort to apply custom ordering
     const pri = options?.sortModel?.find((s) => s.colId === 'priority');
@@ -142,10 +143,10 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       .$if(!!pri, (qb) =>
         qb.orderBy(
           sql`CASE tasks.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END`,
-          pri!.sort,
+          pri?.sort,
         ),
       )
-      .$if(!!ass, (qb) => qb.orderBy(sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '')`, ass!.sort));
+      .$if(!!ass, (qb) => qb.orderBy(sql`COALESCE(au_assign.first_name || ' ' || au_assign.last_name, '')`, ass?.sort));
   }
 
   public async getAllArchived(tenant_id: string, options?: QueryParams<'tasks'>) {

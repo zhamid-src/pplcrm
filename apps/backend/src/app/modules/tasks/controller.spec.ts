@@ -72,8 +72,8 @@ describe('TasksController Notifications', () => {
     const mockExistingTask = { id: 'task-1', name: 'Existing Task', assigned_to: 'user-2' };
     const mockUpdatedTask = { id: 'task-1', name: 'Existing Task', assigned_to: 'user-2' };
 
-    const getSpy = vi.spyOn(controller, 'getOneById').mockResolvedValue(mockExistingTask as any);
-    const updateSpy = vi.spyOn(controller, 'update').mockResolvedValue(mockUpdatedTask as any);
+    const _getSpy = vi.spyOn(controller, 'getOneById').mockResolvedValue(mockExistingTask as any);
+    const _updateSpy = vi.spyOn(controller, 'update').mockResolvedValue(mockUpdatedTask as any);
     const pushSpy = vi.spyOn(NotificationsRepo.prototype, 'pushNotification');
 
     await controller.updateTask('task-1', updatePayload, auth);
