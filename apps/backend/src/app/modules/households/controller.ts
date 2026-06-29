@@ -18,6 +18,7 @@ import { matchCoordinatesToDistrict } from '../../lib/gis/geocoding';
 import { BaseController } from '../../lib/base.controller';
 import { SettingsController } from '../settings/controller';
 import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../logger';
 
 export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
   private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
@@ -145,7 +146,7 @@ export class HouseholdsController extends BaseController<'households', Household
             ward = matched.ward;
             geocoding_status = 'success';
           } catch (err) {
-            console.error('Failed to map coordinates to district during update', err);
+            logger.error({ err }, 'Failed to map coordinates to district during update');
           }
         }
 
@@ -192,7 +193,7 @@ export class HouseholdsController extends BaseController<'households', Household
         }
         // Duplicate maintenance is only calculated nightly
       } catch (err) {
-        console.error('Failed to update address fingerprint and queue duplicates maintenance', err);
+        logger.error({ err }, 'Failed to update address fingerprint and queue duplicates maintenance');
       }
     }
 
@@ -269,7 +270,7 @@ export class HouseholdsController extends BaseController<'households', Household
         });
       }
     } catch (e) {
-      console.error('Failed to log detach tag activity', e);
+      logger.error({ err: e }, 'Failed to log detach tag activity');
     }
   }
 

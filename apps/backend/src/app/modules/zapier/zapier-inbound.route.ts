@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ZapierService } from './zapier.service';
 import { PersonsService } from '../persons/services/persons.service';
 import type { IAuthKeyPayload } from '@common';
+import { logger } from '../../logger';
 
 const zapierService = new ZapierService();
 const personsService = new PersonsService();
@@ -94,7 +95,7 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
         return reply.code(201).send({ action: 'created', person: result });
       }
     } catch (err: any) {
-      console.error('[Zapier Inbound] /persons/upsert error:', err.message);
+      logger.error({ err: err.message }, '[Zapier Inbound] /persons/upsert error');
       return reply.code(500).send({ error: 'Failed to upsert person' });
     }
   });
@@ -134,7 +135,7 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
       await personsService.attachTag(String(person.id), tag_name, 'tag', auth);
       return reply.code(200).send({ success: true });
     } catch (err: any) {
-      console.error('[Zapier Inbound] /persons/tag error:', err.message);
+      logger.error({ err: err.message }, '[Zapier Inbound] /persons/tag error');
       return reply.code(500).send({ error: 'Failed to add tag' });
     }
   });
@@ -182,7 +183,7 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 
       return reply.code(200).send({ success: true });
     } catch (err: any) {
-      console.error('[Zapier Inbound] /persons/untag error:', err.message);
+      logger.error({ err: err.message }, '[Zapier Inbound] /persons/untag error');
       return reply.code(500).send({ error: 'Failed to remove tag' });
     }
   });

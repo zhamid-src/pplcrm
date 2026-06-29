@@ -22,7 +22,7 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
         [disableView]="false"
         addRoute="add"
         i18n-addRoute
-        plusIcon="add-fundraising"
+        plusIcon="plus"
         i18n-plusIcon
       ></pc-datagrid>
     </div>

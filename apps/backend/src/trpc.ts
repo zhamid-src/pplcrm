@@ -5,15 +5,16 @@ import { ZodError } from 'zod';
 import type { Context } from './context';
 import { toTRPCError } from './app/errors/to-trpc-errors';
 import superjson from 'superjson';
+import { logger } from './app/logger';
 
 const GENERIC_LOGIN_MSG = 'Please check your email and password and try again';
 
 const trpc = initTRPC.context<Context>().create({
   transformer: superjson,
   errorFormatter({ shape, error }) {
-    console.error('tRPC Error:', error);
+    logger.error({ err: error }, 'tRPC Error');
     if (error.cause) {
-      console.error('tRPC Error Cause:', error.cause);
+      logger.error({ err: error.cause }, 'tRPC Error Cause');
     }
     // Path may be on error.path, or on shape.data.path (or absent)
     const errorObj = error as unknown as Record<string, unknown>;

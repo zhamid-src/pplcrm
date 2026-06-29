@@ -6,6 +6,7 @@ import { BaseRepository } from '../../../lib/base.repo';
 import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
 import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
+import { logger } from '../../../logger';
 
 export class HouseholdRepo extends BaseRepository<'households'> {
   constructor() {
@@ -34,7 +35,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
             ward = matched.ward;
             geocoding_status = 'success';
           } catch (err) {
-            console.error('Failed to map coordinates to district during insert', err);
+            logger.error({ err }, 'Failed to map coordinates to district during insert');
           }
         }
 

@@ -1,4 +1,5 @@
 import { promises as dns } from 'dns';
+import { logger } from '../../logger';
 
 export interface DNSVerificationRecord {
   host: string;
@@ -130,7 +131,7 @@ export class SendGridWhitelabelService {
         },
       };
     } catch (err: any) {
-      console.warn(`[SendGridWhitelabelService] real API call failed, falling back to mock:`, err.message);
+      logger.warn({ err: err.message }, '[SendGridWhitelabelService] real API call failed, falling back to mock');
       return this.createDomainAuthentication(domain, undefined);
     }
   }
@@ -176,7 +177,10 @@ export class SendGridWhitelabelService {
         },
       };
     } catch (err: any) {
-      console.warn(`[SendGridWhitelabelService] real Link Branding API failed, falling back to mock:`, err.message);
+      logger.warn(
+        { err: err.message },
+        '[SendGridWhitelabelService] real Link Branding API failed, falling back to mock',
+      );
       return this.createLinkBranding(domain, undefined);
     }
   }
@@ -216,7 +220,7 @@ export class SendGridWhitelabelService {
         validationResults,
       };
     } catch (err: any) {
-      console.warn(`[SendGridWhitelabelService] Validate domain API failed, falling back to true:`, err.message);
+      logger.warn({ err: err.message }, '[SendGridWhitelabelService] Validate domain API failed, falling back to true');
       return {
         valid: true,
         validationResults: {
@@ -242,7 +246,10 @@ export class SendGridWhitelabelService {
 
       return !!res.valid;
     } catch (err: any) {
-      console.warn(`[SendGridWhitelabelService] Validate link branding API failed, falling back to true:`, err.message);
+      logger.warn(
+        { err: err.message },
+        '[SendGridWhitelabelService] Validate link branding API failed, falling back to true',
+      );
       return true;
     }
   }
@@ -257,7 +264,7 @@ export class SendGridWhitelabelService {
         subuser,
       });
     } catch (err: any) {
-      console.warn(`[SendGridWhitelabelService] Delete domain authentication failed:`, err.message);
+      logger.warn({ err: err.message }, '[SendGridWhitelabelService] Delete domain authentication failed');
     }
   }
 
@@ -271,7 +278,7 @@ export class SendGridWhitelabelService {
         subuser,
       });
     } catch (err: any) {
-      console.warn(`[SendGridWhitelabelService] Delete link branding failed:`, err.message);
+      logger.warn({ err: err.message }, '[SendGridWhitelabelService] Delete link branding failed');
     }
   }
 

@@ -3,6 +3,7 @@ import { env } from '../../../env';
 import { BillingController } from '../../modules/billing/controller';
 import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
 import { DonationsController } from '../../modules/donations/controller';
+import { logger } from '../../logger';
 
 export class WebhookEventWorker {
   private isRunning = false;
@@ -18,8 +19,8 @@ export class WebhookEventWorker {
   public start() {
     if (this.isRunning) return;
     this.isRunning = true;
-    console.log('Webhook Event Worker started.');
-    this.setupListener();
+    logger.info('Webhook Event Worker started.');
+    void this.setupListener();
     this.poll();
   }
 
@@ -37,20 +38,20 @@ export class WebhookEventWorker {
       try {
         await this.pgClient.end();
       } catch (err) {
-        console.error('Error closing Postgres listener client on shutdown:', err);
+        logger.error({ err }, 'Error closing Postgres listener client on shutdown');
       }
       this.pgClient = null;
     }
 
     if (this.activeJobsCount > 0) {
-      console.log(
+      logger.info(
         `Webhook Event Worker: Waiting for ${this.activeJobsCount} active events to process before shutting down...`,
       );
       await new Promise<void>((resolve) => {
         this.shutdownResolver = resolve;
       });
     }
-    console.log('Webhook Event Worker stopped.');
+    logger.info('Webhook Event Worker stopped.');
   }
 
   private async setupListener() {
@@ -61,25 +62,25 @@ export class WebhookEventWorker {
 
       this.pgClient.on('notification', (msg) => {
         if (msg.channel === 'webhook_events_channel') {
-          console.log('Webhook Event Worker received notify, waking up...');
+          logger.debug('Webhook Event Worker received notify, waking up...');
           this.wakeUp();
         }
       });
 
       this.pgClient.on('error', (err) => {
-        console.error('Postgres listener client error:', err);
+        logger.error({ err }, 'Postgres listener client error');
         this.reconnectListener();
       });
 
       this.pgClient.on('end', () => {
-        console.warn('Postgres listener connection closed.');
+        logger.warn('Postgres listener connection closed');
         this.reconnectListener();
       });
 
       await this.pgClient.query('LISTEN webhook_events_channel');
-      console.log('Listening for webhook_events notifications...');
+      logger.info('Listening for webhook_events notifications');
     } catch (err) {
-      console.error('Failed to setup Postgres listener:', err);
+      logger.error({ err }, 'Failed to setup Postgres listener');
       this.reconnectListener();
     }
   }
@@ -94,7 +95,7 @@ export class WebhookEventWorker {
     if (!this.isRunning) return;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = setTimeout(() => {
-      this.setupListener();
+      void this.setupListener();
     }, 5000);
   }
 
@@ -108,28 +109,31 @@ export class WebhookEventWorker {
 
   private poll() {
     if (!this.isRunning) return;
-
-    this.timer = setTimeout(async () => {
-      let processedAnEvent = false;
-      try {
-        this.activeJobsCount++;
-        processedAnEvent = await this.processNextEvent();
-      } catch (err) {
-        console.error('Error in webhook event worker poll cycle:', err);
-      } finally {
-        this.activeJobsCount--;
-
-        // If shutdown was requested and no active jobs remain, resolve the stop() promise
-        if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
-          this.shutdownResolver();
-        } else {
-          // Poll again immediately (10ms) if an event was processed to drain the queue quickly,
-          // or back off to 30 seconds if no events were found.
-          const delay = processedAnEvent ? 10 : 30000;
-          this.pollWithDelay(delay);
-        }
-      }
+    this.timer = setTimeout(() => {
+      void this.runPollCycle();
     }, 0);
+  }
+
+  private async runPollCycle(): Promise<void> {
+    let processedAnEvent = false;
+    try {
+      this.activeJobsCount++;
+      processedAnEvent = await this.processNextEvent();
+    } catch (err) {
+      logger.error({ err }, 'Error in webhook event worker poll cycle');
+    } finally {
+      this.activeJobsCount--;
+
+      // If shutdown was requested and no active jobs remain, resolve the stop() promise
+      if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
+        this.shutdownResolver();
+      } else {
+        // Poll again immediately (10ms) if an event was processed to drain the queue quickly,
+        // or back off to 30 seconds if no events were found.
+        const delay = processedAnEvent ? 10 : 30000;
+        this.pollWithDelay(delay);
+      }
+    }
   }
 
   private pollWithDelay(ms: number) {
@@ -173,8 +177,9 @@ export class WebhookEventWorker {
 
     if (!eventRecord) return false;
 
-    console.log(
-      `Processing webhook event ${eventRecord.id} (Stripe Event: ${eventRecord.stripe_event_id}, Type: ${eventRecord.type})`,
+    logger.info(
+      { webhookEventId: eventRecord.id, stripeEventId: eventRecord.stripe_event_id, type: eventRecord.type },
+      'Processing webhook event',
     );
 
     const payload = typeof eventRecord.payload === 'string' ? JSON.parse(eventRecord.payload) : eventRecord.payload;
@@ -347,10 +352,10 @@ export class WebhookEventWorker {
         .where('id', '=', eventRecord.id)
         .execute();
 
-      console.log(`Webhook event ${eventRecord.id} completed successfully.`);
+      logger.info({ webhookEventId: eventRecord.id }, 'Webhook event completed successfully');
     } catch (err: any) {
       const errorMsg = err?.message || String(err);
-      console.error(`Failed to process webhook event ${eventRecord.id}:`, err);
+      logger.error({ err, webhookEventId: eventRecord.id }, 'Failed to process webhook event');
 
       const attempts = Number(eventRecord.attempts || 0);
       const maxAttempts = Number(eventRecord.max_attempts || 3);
@@ -359,8 +364,9 @@ export class WebhookEventWorker {
         // Retry with backoff (attempts * 30s delay)
         const delaySeconds = attempts * 30;
         const runAt = new Date(Date.now() + delaySeconds * 1000);
-        console.log(
-          `Rescheduling webhook event ${eventRecord.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`,
+        logger.info(
+          { webhookEventId: eventRecord.id, runAt: runAt.toISOString(), attempt: attempts, maxAttempts },
+          'Rescheduling webhook event',
         );
 
         await this.db
@@ -376,7 +382,10 @@ export class WebhookEventWorker {
           .where('id', '=', eventRecord.id)
           .execute();
       } else {
-        console.error(`Webhook event ${eventRecord.id} exceeded maximum attempts (${maxAttempts}). Marking as failed.`);
+        logger.error(
+          { webhookEventId: eventRecord.id, maxAttempts },
+          'Webhook event exceeded maximum attempts, marking as failed',
+        );
         await this.db
           .updateTable('webhook_events')
           .set({

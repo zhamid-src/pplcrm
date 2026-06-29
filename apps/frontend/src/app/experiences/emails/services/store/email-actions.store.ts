@@ -112,7 +112,6 @@ export class EmailActionsStore {
   }
 
   public async saveDraft(input: DraftPayload): Promise<{ id: string }> {
-    console.log(input);
     const saved = await this.svc.saveDraft(input);
     const currentFolderId = this.folders.currentSelectedFolderId();
     if (currentFolderId === ALL_FOLDERS.DRAFTS) {

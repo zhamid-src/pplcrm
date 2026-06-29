@@ -17,7 +17,8 @@
       "Bash(perl -i -pe \"s/\\\\.where\\\\\\('auth_id', '=', BigInt\\\\\\(userId\\\\\\)\\\\\\)/.where\\('auth_id', '=', userId\\)/g\" apps/backend/src/app/lib/jobs/job-handlers.ts)",
       "Bash(perl -i -pe \"s/\\\\.where\\\\\\('id', '=', BigInt\\\\\\(userId\\\\\\)\\\\\\)/.where\\('id', '=', userId\\)/g\" apps/backend/src/app/lib/jobs/job-handlers.ts)",
       "Bash(perl -i -pe \"s/\\\\.where\\\\\\('tenant_id', '=', BigInt\\\\\\(tenantId\\\\\\)\\\\\\)/.where\\('tenant_id', '=', tenantId\\)/g\" apps/backend/src/app/lib/jobs/job-handlers.ts)",
-      "Bash(perl -i -pe \"s/const tid = BigInt\\\\\\(tenantId\\\\\\) as any;/const tid = tenantId;/g\" apps/backend/src/app/lib/jobs/job-handlers.ts)"
+      "Bash(perl -i -pe \"s/const tid = BigInt\\\\\\(tenantId\\\\\\) as any;/const tid = tenantId;/g\" apps/backend/src/app/lib/jobs/job-handlers.ts)",
+      "Bash(python3)"
     ]
   },
   "enabledPlugins": {

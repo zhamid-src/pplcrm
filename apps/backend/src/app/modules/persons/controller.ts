@@ -12,6 +12,7 @@ import { MapPersonsTagRepo } from './repositories/map-persons-tags.repo';
 import { PersonsRepo } from './repositories/persons.repo';
 import { MapTeamsPersonsRepo } from '../teams/repositories/map-teams-persons.repo';
 import { queueZapierTrigger } from '../zapier/zapier.service';
+import { logger } from '../../logger';
 
 export class PersonsController extends BaseController<'persons', PersonsRepo> {
   private mapPersonsTagRepo = new MapPersonsTagRepo();
@@ -150,7 +151,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
         });
       }
     } catch (e) {
-      console.error('[Zapier] Failed to queue person_deleted trigger(s)', e);
+      logger.error({ err: e }, '[Zapier] Failed to queue person_deleted trigger(s)');
     }
 
     return result;
@@ -176,7 +177,7 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
         });
       }
     } catch (e) {
-      console.error('Failed to log delete person activity', e);
+      logger.error({ err: e }, 'Failed to log delete person activity');
     }
     return result;
   }

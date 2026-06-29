@@ -2,6 +2,7 @@ import type { Transaction, Kysely } from 'kysely';
 import { env } from '../../../env';
 import { InternalError } from '../../errors/app-errors';
 import { BaseRepository } from '../base.repo';
+import { logger } from '../../logger';
 
 export interface SendMailOptions {
   to: string;
@@ -155,13 +156,10 @@ export class TransactionalEmailService {
     const wrappedHtml = this.wrapInTemplate(options.subject, options.html);
 
     if (!this.serverToken) {
-      console.info(`[POSTMARK DEV MOCK] Transactional Email Outbound:
-        From: ${this.fromEmail}
-        To: ${options.to}
-        Subject: ${options.subject}
-        Text: ${options.text}
-        HTML: ${wrappedHtml}
-      `);
+      logger.info(
+        { from: this.fromEmail, to: options.to, subject: options.subject },
+        '[POSTMARK DEV MOCK] Transactional Email Outbound',
+      );
       return;
     }
 

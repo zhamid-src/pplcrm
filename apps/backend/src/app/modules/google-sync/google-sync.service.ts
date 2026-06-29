@@ -4,6 +4,7 @@ import type { GoogleOAuthService } from './google-oauth.service';
 import type { IngestableEmail } from '../emails/services/email-ingester.service';
 import { EmailIngesterService } from '../emails/services/email-ingester.service';
 import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
+import { logger } from '../../logger';
 
 const MAX_MESSAGES_PER_SYNC = 50;
 
@@ -28,7 +29,7 @@ async function fetchWithRetry(url: string, init?: RequestInit, maxRetries = 3): 
       } else {
         delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
       }
-      console.warn(
+      logger.warn(
         `Google API rate limited (429) on ${url}. Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`,
       );
       await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -131,7 +132,7 @@ export class GoogleSyncService {
           const wasSaved = await this.syncMessageDetails(accessToken, msgId, tenantId, requestedBy, folder.pplcrmId);
           if (wasSaved) inserted++;
         } catch (err) {
-          console.error(`Failed to sync Gmail message details for ${msgId}:`, err);
+          logger.error({ err }, `Failed to sync Gmail message details for ${msgId}`);
         }
       }
 

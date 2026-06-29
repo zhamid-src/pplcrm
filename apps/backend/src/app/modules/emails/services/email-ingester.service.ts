@@ -4,6 +4,7 @@ import { StorageService } from '../../../lib/storage.service';
 import { env } from '../../../../env';
 import crypto from 'crypto';
 import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+import { logger } from '../../../logger';
 
 export interface IngestableEmail {
   id: string; // Remote provider's unique message ID
@@ -176,11 +177,11 @@ export class EmailIngesterService {
           try {
             await this.storageService.delete(file.storage_key);
           } catch (err) {
-            console.error(`Failed to delete storage blob ${file.storage_key} for file ${fileId}`, err);
+            logger.error({ err }, `Failed to delete storage blob ${file.storage_key} for file ${fileId}`);
           }
         }
       } catch (err) {
-        console.error(`Failed to purge orphaned file ${fileId}`, err);
+        logger.error({ err }, `Failed to purge orphaned file ${fileId}`);
       }
     }
   }
@@ -275,7 +276,7 @@ export class EmailIngesterService {
             is_inline: att.isInline,
           };
         } catch (err) {
-          console.error(`Failed to upload attachment ${att.name} for message ${email.id} to storage:`, err);
+          logger.error({ err }, `Failed to upload attachment ${att.name} for message ${email.id} to storage`);
           return null;
         }
       }),

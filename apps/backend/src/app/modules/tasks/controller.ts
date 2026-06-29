@@ -11,12 +11,20 @@ import { env } from '../../../env';
 import { BaseController } from '../../lib/base.controller';
 
 import { TasksRepo } from './repositories/tasks.repo';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Selectable } from 'kysely';
+import type {
+  Models,
+  OperationDataType,
+  TypeId,
+  TypeTenantId,
+} from '../../../../../../libs/common/src/lib/kysely.models';
+import type { QueryParams } from '../../lib/base.repo';
 import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { ImportsRepo } from '../imports/repositories/imports.repo';
 import { StorageService } from '../../lib/storage.service';
 import { TRPCError } from '@trpc/server';
+import { logger } from '../../logger';
 
 export class TasksController extends BaseController<'tasks', TasksRepo> {
   private mailService = new TransactionalEmailService();
@@ -71,7 +79,7 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
                   optedIn = false;
                 }
               } catch (e) {
-                console.error('Failed to parse profile json in addTask', e);
+                logger.error({ err: e }, 'Failed to parse profile json in addTask');
               }
             }
 
@@ -86,22 +94,24 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
           }
         }
       } catch (nErr) {
-        console.error('Failed to process task assignment alert/notification', nErr);
+        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
       }
     }
     return task;
   }
 
   public async getAllTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getAllExcludingArchivedWithCount(auth.tenant_id, options as any);
+    return this.getRepo().getAllExcludingArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
   }
 
   public async getArchivedTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getAllArchivedWithCount(auth.tenant_id, options as any);
+    return this.getRepo().getAllArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
   }
 
   public async updateTask(id: string, row: UpdateTaskType, auth: IAuthKeyPayload) {
-    const existingTask = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as any;
+    const existingTask = (await this.getOneById({ tenant_id: auth.tenant_id, id })) as
+      | Selectable<Models['tasks']>
+      | undefined;
     const rowWithUpdatedBy = { ...row, updatedby_id: auth.user_id } as OperationDataType<'tasks', 'update'>;
     const updated = await this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
 
@@ -135,7 +145,7 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
                   optedIn = false;
                 }
               } catch (e) {
-                console.error('Failed to parse profile json in updateTask', e);
+                logger.error({ err: e }, 'Failed to parse profile json in updateTask');
               }
             }
 
@@ -150,7 +160,7 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
           }
         }
       } catch (nErr) {
-        console.error('Failed to process task assignment alert/notification', nErr);
+        logger.error({ err: nErr }, 'Failed to process task assignment alert/notification');
       }
     }
     return updated;
@@ -161,7 +171,7 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
     auth?: IAuthKeyPayload,
   ): Promise<ExportCsvResponseType> {
     if (auth) {
-      const includeArchived = Boolean(input?.options && (input.options as any)?.includeArchived);
+      const includeArchived = Boolean(input?.options && input.options?.includeArchived);
       const result = includeArchived
         ? await this.getArchivedTasks(auth, input?.options)
         : await this.getAllTasks(auth, input?.options);
@@ -233,7 +243,7 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
       status: 'pending',
       metadata: null,
       processed_at: now,
-    } as any;
+    };
 
     const savedImport = await this.importsRepo.add({ row: importRow });
     if (!savedImport || !savedImport.id) {
@@ -250,8 +260,11 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
       const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
       await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
     } catch (err) {
-      console.error('Failed to upload import payload to storage', err);
-      await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({
+        tenant_id: auth.tenant_id as TypeTenantId<'data_imports'>,
+        id: importRecordId as TypeId<'data_imports'>,
+      });
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Failed to store import payload on server storage',
@@ -263,7 +276,7 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
       id: importRecordId,
       row: {
         metadata: JSON.stringify({ storage_key: storageKey }),
-      } as any,
+      },
     });
 
     await this.importsRepo.db
@@ -293,7 +306,7 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
       import_id: importRecordId,
       tenant_id: auth.tenant_id,
       status: 'pending',
-    } as any;
+    };
   }
 
   public async processImportRows(import_id: string, tenant_id: string, user_id: string, skipped: number, rows: any[]) {
@@ -412,7 +425,7 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
           skipped_count: skipped + results.skipped,
           updatedby_id: user_id,
           updated_at: new Date(),
-        } as any,
+        },
       });
     }
 

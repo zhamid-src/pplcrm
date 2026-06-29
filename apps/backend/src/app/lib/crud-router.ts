@@ -20,29 +20,26 @@ export function createCrudRouter<
       .query(({ input, ctx }) => controller.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
     add: authProcedure.input(insertSchema).mutation(({ input, ctx }) =>
       controller.add({
-        ...(input as any),
+        ...(input as Record<string, unknown>),
         tenant_id: ctx.auth.tenant_id,
         createdby_id: ctx.auth.user_id,
         updatedby_id: ctx.auth.user_id,
-      } as any),
+      }),
     ),
     create: authProcedure.input(insertSchema).mutation(({ input, ctx }) =>
       controller.add({
-        ...(input as any),
+        ...(input as Record<string, unknown>),
         tenant_id: ctx.auth.tenant_id,
         createdby_id: ctx.auth.user_id,
         updatedby_id: ctx.auth.user_id,
-      } as any),
+      }),
     ),
     update: authProcedure.input(z.object({ id: idSchema, data: updateSchema })).mutation(({ input, ctx }) => {
-      const inp = input as any;
+      const { id, data } = input as unknown as { id: string; data: Record<string, unknown> };
       return controller.update({
         tenant_id: ctx.auth.tenant_id,
-        id: inp.id,
-        row: {
-          ...inp.data,
-          updatedby_id: ctx.auth.user_id,
-        } as any,
+        id,
+        row: { ...data, updatedby_id: ctx.auth.user_id },
       });
     }),
     delete: authProcedure

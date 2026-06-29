@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { BaseRepository } from '../../lib/base.repo';
+import { logger } from '../../logger';
 
 export type ZapierEventType =
   | 'person_created'
@@ -134,10 +135,10 @@ export class ZapierService {
           signal: AbortSignal.timeout(15000),
         });
         if (!response.ok) {
-          console.error(`[ZapierTrigger] POST to ${sub.webhook_url} failed with status ${response.status}`);
+          logger.error(`[ZapierTrigger] POST to ${sub.webhook_url} failed with status ${response.status}`);
         }
       } catch (err: any) {
-        console.error(`[ZapierTrigger] POST to ${sub.webhook_url} error: ${err.message}`);
+        logger.error(`[ZapierTrigger] POST to ${sub.webhook_url} error: ${err.message}`);
       }
     }
   }

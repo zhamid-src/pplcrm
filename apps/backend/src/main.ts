@@ -1,35 +1,29 @@
-import * as pino from 'pino';
 import './env';
 
 import { migrateToLatest } from './app/kyselyinit';
+import { WebhookEventWorker } from './app/lib/jobs/webhook-worker';
+import { BackgroundJobWorker } from './app/lib/jobs/worker';
+import { logger } from './app/logger';
 import { FastifyServer } from './fastify.server';
 import { onShutdown } from './shutdown';
-import { BackgroundJobWorker } from './app/lib/jobs/worker';
-import { WebhookEventWorker } from './app/lib/jobs/webhook-worker';
-
-const logger: pino.Logger = pino.pino({
-  transport: {
-    target: 'pino-pretty',
-  },
-});
 
 const worker = new BackgroundJobWorker();
 const webhookWorker = new WebhookEventWorker();
 
-(async () => {
+void (async () => {
   await migrateToLatest();
   worker.start();
   webhookWorker.start();
 })();
 
-const server = new FastifyServer(logger);
+const server = new FastifyServer();
 
-(async () => await server.serve())();
+void (async () => await server.serve())();
 
 onShutdown(async () => {
-  console.log('Stopping background workers…');
+  logger.info('Stopping background workers…');
   await worker.stop();
   await webhookWorker.stop();
-  console.log('Closing DB…');
+  logger.info('Closing DB…');
   await server.close();
 });

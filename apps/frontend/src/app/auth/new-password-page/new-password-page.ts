@@ -1,7 +1,7 @@
 import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { RouterLink, ActivatedRoute, Router } from '@angular/router';
-import { form, submit, required, minLength, FormField } from '@angular/forms/signals';
+import { FormField, form, minLength, required, submit } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -46,9 +46,8 @@ export class NewPasswordPage implements OnInit {
     return this.form.password();
   }
 
-  public async ngOnInit() {
+  public ngOnInit() {
     const code = this.route.snapshot.queryParamMap.get('code');
-    console.log(code);
 
     if (!code) {
       this.error.set(true);
@@ -80,7 +79,7 @@ export class NewPasswordPage implements OnInit {
           });
 
           this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
-          this.router.navigateByUrl('signin');
+          void this.router.navigateByUrl('signin');
         } catch (err: any) {
           // Catch backend/network rejections properly
           this.alertSvc.showError(err?.message || 'Failed to reset password. Please try again.');

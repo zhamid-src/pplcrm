@@ -4,6 +4,7 @@ import { WorkflowEnrollmentsRepo } from './repositories/workflow-enrollments.rep
 import type { Transaction, Kysely } from 'kysely';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { TRPCError } from '@trpc/server';
+import { logger } from '../../logger';
 
 export class WorkflowsController extends BaseController<'workflows', WorkflowsRepo> {
   private readonly enrollmentsRepo = new WorkflowEnrollmentsRepo();
@@ -331,7 +332,7 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     // Look up the default tenant admin actor ID
     const tenantRow = await db.selectFrom('tenants').select('admin_id').where('id', '=', tenantId).executeTakeFirst();
     if (!tenantRow?.admin_id) {
-      console.warn(`triggerWorkflow: skipping automation for tenant ${tenantId} — admin_id not configured.`);
+      logger.warn(`triggerWorkflow: skipping automation for tenant ${tenantId} — admin_id not configured.`);
       return;
     }
     const creatorId = String(tenantRow.admin_id);
@@ -342,9 +343,9 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
       } catch (err: any) {
         // Safe check in case they're already enrolled
         if (err.message?.includes('already enrolled')) {
-          console.log(`Person ${personId} is already enrolled in workflow ${wf.id}. Skipping.`);
+          logger.info(`Person ${personId} is already enrolled in workflow ${wf.id}. Skipping.`);
         } else {
-          console.error(`Failed to enroll person ${personId} in workflow ${wf.id}:`, err);
+          logger.error({ err }, `Failed to enroll person ${personId} in workflow ${wf.id}`);
         }
       }
     }

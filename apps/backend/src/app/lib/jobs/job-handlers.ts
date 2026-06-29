@@ -22,6 +22,7 @@ import { ExportsRepo } from '../../modules/exports/repositories/exports.repo';
 import { Readable } from 'stream';
 import { CsvTransformStream } from '../csv-stream';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../logger';
 
 const storageService = new StorageService();
 const importsRepo = new ImportsRepo();
@@ -155,7 +156,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
           await maintenanceSvc.recomputeAllDuplicates(String(tenant.id));
         }
       } catch (tenantErr) {
-        console.error(`Failed to recompute duplicates for tenant ${tenant.id}:`, tenantErr);
+        logger.error({ err: tenantErr }, `Failed to recompute duplicates for tenant ${tenant.id}`);
       }
     }
 
@@ -187,7 +188,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
       .executeTakeFirst();
 
     if (!event) {
-      console.log(`Skipping volunteer signup notifications: event ${payload.eventId} not found.`);
+      logger.info(`Skipping volunteer signup notifications: event ${payload.eventId} not found.`);
       return;
     }
 
@@ -255,12 +256,12 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
     // Proceed with sending the email...
 
     if (!shift) {
-      console.log(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
+      logger.info(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
       return;
     }
 
     if (shift.status !== 'signed_up') {
-      console.log(`Skipping shift reminder: shift ${payload.shiftId} status is ${shift.status} instead of signed_up.`);
+      logger.info(`Skipping shift reminder: shift ${payload.shiftId} status is ${shift.status} instead of signed_up.`);
       return;
     }
 
@@ -271,24 +272,24 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
       .executeTakeFirst();
 
     if (!event) {
-      console.log(`Skipping shift reminder: event ${shift.event_id} not found.`);
+      logger.info(`Skipping shift reminder: event ${shift.event_id} not found.`);
       return;
     }
 
     if (event.send_reminder === false) {
-      console.log(`Skipping shift reminder: reminders disabled for event ${event.id}.`);
+      logger.info(`Skipping shift reminder: reminders disabled for event ${event.id}.`);
       return;
     }
 
     const person = await db.selectFrom('persons').selectAll().where('id', '=', shift.person_id).executeTakeFirst();
 
     if (!person) {
-      console.log(`Skipping shift reminder: person ${shift.person_id} not found.`);
+      logger.info(`Skipping shift reminder: person ${shift.person_id} not found.`);
       return;
     }
 
     if (!person.email) {
-      console.log(`Skipping shift reminder: person ${shift.person_id} has no email address.`);
+      logger.info(`Skipping shift reminder: person ${shift.person_id} has no email address.`);
       return;
     }
 
@@ -325,7 +326,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
       html,
     });
 
-    console.log(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
+    logger.info(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
   } else if (payload.type === 'send-webform-notifications') {
     const form = await db
       .selectFrom('web_forms')
@@ -334,7 +335,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
       .executeTakeFirst();
 
     if (!form) {
-      console.log(`Skipping web form notifications: form ${payload.formId} not found.`);
+      logger.info(`Skipping web form notifications: form ${payload.formId} not found.`);
       return;
     }
 
@@ -374,7 +375,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
       .executeTakeFirst();
 
     if (!registration || registration.status === 'cancelled') {
-      console.log(`Skipping event confirmation: registration ${payload.registrationId} not found or cancelled.`);
+      logger.info(`Skipping event confirmation: registration ${payload.registrationId} not found or cancelled.`);
       return;
     }
 
@@ -393,7 +394,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
       .executeTakeFirst();
 
     if (!event || event.send_registration_confirmation === false) {
-      console.log(`Skipping event confirmation: event ${registration.event_id} not found or confirmations disabled.`);
+      logger.info(`Skipping event confirmation: event ${registration.event_id} not found or confirmations disabled.`);
       return;
     }
 
@@ -404,7 +405,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
       .executeTakeFirst();
 
     if (!person || !person.email) {
-      console.log(`Skipping event confirmation: person ${registration.person_id} has no email.`);
+      logger.info(`Skipping event confirmation: person ${registration.person_id} has no email.`);
       return;
     }
 
@@ -430,7 +431,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
       html: `<p>Hi ${person.first_name || 'there'},</p><p>You're registered for <strong>"${event.name}"</strong>!</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${coordHtml ? `<p style="margin:12px 0 4px 0"><strong>Contact:</strong><br>${coordHtml}</p>` : ''}</div><p>We look forward to seeing you there!</p>`,
     });
 
-    console.log(`Sent registration confirmation to ${person.email} for event ${registration.event_id}`);
+    logger.info(`Sent registration confirmation to ${person.email} for event ${registration.event_id}`);
   } else if (payload.type === 'send-event-reminder') {
     const registration = await db
       .selectFrom('event_registrations')
@@ -439,7 +440,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
       .executeTakeFirst();
 
     if (!registration || registration.status !== 'registered') {
-      console.log(
+      logger.info(
         `Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`,
       );
       return;
@@ -448,7 +449,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
     const event = await db.selectFrom('events').selectAll().where('id', '=', registration.event_id).executeTakeFirst();
 
     if (!event || event.send_reminder === false) {
-      console.log(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
+      logger.info(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
       return;
     }
 
@@ -459,7 +460,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
       .executeTakeFirst();
 
     if (!person || !person.email) {
-      console.log(`Skipping event reminder: person ${registration.person_id} has no email.`);
+      logger.info(`Skipping event reminder: person ${registration.person_id} has no email.`);
       return;
     }
 
@@ -476,7 +477,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
       html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;padding:24px;"><h2 style="color:#0284c7;margin-top:0;">Event Reminder</h2><p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you're registered for <strong>"${event.name}"</strong> tomorrow.</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${mapsUrl ? `<p style="margin:12px 0 4px 0"><a href="${mapsUrl}" target="_blank" style="color:#0284c7;font-weight:600;">Open in Google Maps</a></p>` : ''}</div><p>We look forward to seeing you there!</p></div>`,
     });
 
-    console.log(`Sent event reminder to ${person.email} for event ${registration.event_id}`);
+    logger.info(`Sent event reminder to ${person.email} for event ${registration.event_id}`);
   } else if (payload.type === 'send-transactional-email') {
     await mailService.sendMail({
       to: payload.to,
@@ -552,7 +553,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
     try {
       await storageService.delete(payload.storage_key);
     } catch (storageErr) {
-      console.error(`Failed to clean up storage key ${payload.storage_key}:`, storageErr);
+      logger.error({ err: storageErr }, `Failed to clean up storage key ${payload.storage_key}`);
     }
 
     try {
@@ -572,7 +573,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
               optedIn = false;
             }
           } catch (e) {
-            console.error('Failed to parse profile json for import summary check', e);
+            logger.error({ err: e }, 'Failed to parse profile json for import summary check');
           }
         }
 
@@ -598,7 +599,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
         }
       }
     } catch (mailErr) {
-      console.error('Failed to send import completion summary email', mailErr);
+      logger.error({ err: mailErr }, 'Failed to send import completion summary email');
     }
   } else if (payload.type === 'check_due_tasks') {
     await checkDueTasks(db);
@@ -630,7 +631,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
       .executeTakeFirst();
 
     if (!newsletter) {
-      console.warn(`Newsletter ${newsletterId} not found.`);
+      logger.warn(`Newsletter ${newsletterId} not found.`);
       return;
     }
 
@@ -808,7 +809,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
       try {
         await recomputeTenantAddressFingerprints(tenantId, db);
       } catch (tenantErr) {
-        console.error(`Failed to recompute address fingerprints for tenant ${tenantId}:`, tenantErr);
+        logger.error({ err: tenantErr }, `Failed to recompute address fingerprints for tenant ${tenantId}`);
       }
     }
 
@@ -973,7 +974,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
           }
         });
       } catch (err) {
-        console.error(`Failed to process drip workflow enrollment ${enrollment.id}:`, err);
+        logger.error({ err }, `Failed to process drip workflow enrollment ${enrollment.id}`);
       }
     }
 
@@ -1024,7 +1025,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
         .where('role', '=', 'owner')
         .execute();
 
-      console.log(`Hard-deleting tenant ${tenantId} (deletion_scheduled_at <= now)…`);
+      logger.info(`Hard-deleting tenant ${tenantId} (deletion_scheduled_at <= now)…`);
       await db.transaction().execute(async (trx) => {
         const tid = tenantId;
 
@@ -1093,7 +1094,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
         await trx.deleteFrom('authusers').where('tenant_id', '=', tid).execute();
         await trx.deleteFrom('tenants').where('id', '=', tid).execute();
 
-        console.log(`Tenant ${tenantId} fully hard-deleted.`);
+        logger.info(`Tenant ${tenantId} fully hard-deleted.`);
       });
 
       // Send confirmation emails after the transaction commits (outside the wiped tenant scope)
@@ -1282,7 +1283,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
         storageKey: count > 0 ? storageKey : undefined,
       });
 
-      console.log(`Export job ${exportId} completed: ${count} rows exported.`);
+      logger.info(`Export job ${exportId} completed: ${count} rows exported.`);
 
       // Notify the user who requested the export
       if (payload.user_id) {
@@ -1308,7 +1309,7 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
                   inAppOptedIn = false;
                 }
               } catch (e) {
-                console.error('Failed to parse profile json for export notifications', e);
+                logger.error({ err: e }, 'Failed to parse profile json for export notifications');
               }
             }
 
@@ -1338,11 +1339,11 @@ export async function executeJob(payload: any, db: Kysely<Models>, jobId?: strin
             }
           }
         } catch (notifErr) {
-          console.error(`Failed to send notifications for export job ${exportId}:`, notifErr);
+          logger.error({ err: notifErr }, `Failed to send notifications for export job ${exportId}`);
         }
       }
     } catch (err: any) {
-      console.error(`Export job ${exportId} failed:`, err);
+      logger.error({ err }, `Export job ${exportId} failed`);
       await exportsRepo.updateStatus(exportId, tenantId, 'failed', {
         error: (err?.message || String(err)).substring(0, 500),
       });
@@ -1520,7 +1521,7 @@ async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
           .execute();
       }
     } catch (err) {
-      console.error(`[prune_newsletter_events] Failed for tenant ${tenant.id}:`, err);
+      logger.error({ err }, `[prune_newsletter_events] Failed for tenant ${tenant.id}`);
     }
   }
 }
@@ -1648,7 +1649,7 @@ async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
         .executeTakeFirst();
 
       if (!existing) {
-        console.log(`Auto-scheduling Google sync job for tenant ${tenantId}`);
+        logger.info(`Auto-scheduling Google sync job for tenant ${tenantId}`);
         await db
           .insertInto('background_jobs')
           .values({
@@ -1683,7 +1684,7 @@ async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
         .executeTakeFirst();
 
       if (!existing) {
-        console.log(`Auto-scheduling MS sync job for tenant ${tenantId}`);
+        logger.info(`Auto-scheduling MS sync job for tenant ${tenantId}`);
         await db
           .insertInto('background_jobs')
           .values({
@@ -1702,7 +1703,7 @@ async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('Failed to queue tenant sync jobs:', err);
+    logger.error({ err }, 'Failed to queue tenant sync jobs');
   }
 }
 
@@ -1755,7 +1756,7 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
             optedIn = false;
           }
         } catch (e) {
-          console.error('Failed to parse profile json in checkDueTasks', e);
+          logger.error({ err: e }, 'Failed to parse profile json in checkDueTasks');
         }
       }
 
@@ -1780,6 +1781,6 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('Failed to check and notify due tasks:', err);
+    logger.error({ err }, 'Failed to check and notify due tasks');
   }
 }

@@ -2,6 +2,7 @@ import { BaseController } from '../../lib/base.controller';
 import { FilesRepo } from './repositories/files.repo';
 import { StorageService } from '../../lib/storage.service';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import { logger } from '../../logger';
 
 export class FilesController extends BaseController<'files', FilesRepo> {
   private storageService = new StorageService();
@@ -36,7 +37,7 @@ export class FilesController extends BaseController<'files', FilesRepo> {
         try {
           await this.storageService.delete(input.storageKey);
         } catch (err) {
-          console.error(`Failed to clean up duplicate file ${input.storageKey}`, err);
+          logger.error({ err }, `Failed to clean up duplicate file ${input.storageKey}`);
         }
         return existing;
       }
@@ -69,7 +70,7 @@ export class FilesController extends BaseController<'files', FilesRepo> {
       try {
         await this.storageService.delete(file.storage_key);
       } catch (err) {
-        console.error(`Failed to delete blob for storage key ${file.storage_key}`, err);
+        logger.error({ err }, `Failed to delete blob for storage key ${file.storage_key}`);
       }
     }
     return deleted;

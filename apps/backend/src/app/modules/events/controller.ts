@@ -6,6 +6,7 @@ import { EventsRepo } from './repositories/events.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { WorkflowsController } from '../workflows/controller';
+import { logger } from '../../logger';
 
 const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
@@ -155,7 +156,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
           .where(sql`payload->>'eventId'`, '=', String(id))
           .execute();
       } catch (err) {
-        console.error('Failed to clean up pending event reminders', err);
+        logger.error({ err }, 'Failed to clean up pending event reminders');
       }
     } else if (payload.send_reminder === true) {
       try {
@@ -207,7 +208,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
           }
         }
       } catch (err) {
-        console.error('Failed to re-schedule event reminders', err);
+        logger.error({ err }, 'Failed to re-schedule event reminders');
       }
     }
 
@@ -326,7 +327,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
             })
             .execute();
         } catch (err) {
-          console.error('Failed to queue registration confirmation', err);
+          logger.error({ err }, 'Failed to queue registration confirmation');
         }
       }
 
@@ -354,7 +355,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
               .execute();
           }
         } catch (err) {
-          console.error('Failed to queue event reminder', err);
+          logger.error({ err }, 'Failed to queue event reminder');
         }
       }
 
@@ -369,7 +370,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
           metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
         });
       } catch (e) {
-        console.error('Failed to log registration activity', e);
+        logger.error({ err: e }, 'Failed to log registration activity');
       }
     }
 
@@ -394,7 +395,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
         .where(sql`payload->>'registrationId'`, '=', String(id))
         .execute();
     } catch (err) {
-      console.error('Failed to cancel event reminder on check-in', err);
+      logger.error({ err }, 'Failed to cancel event reminder on check-in');
     }
 
     try {
@@ -408,7 +409,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
         metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
       });
     } catch (e) {
-      console.error('Failed to log check-in activity', e);
+      logger.error({ err: e }, 'Failed to log check-in activity');
     }
 
     return result;
@@ -433,7 +434,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
           .where(sql`payload->>'registrationId'`, '=', String(id))
           .execute();
       } catch (err) {
-        console.error('Failed to cancel event reminder on status change', err);
+        logger.error({ err }, 'Failed to cancel event reminder on status change');
       }
     }
 
@@ -448,7 +449,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
         metadata: { id, status: payload.status },
       });
     } catch (e) {
-      console.error('Failed to log registration update activity', e);
+      logger.error({ err: e }, 'Failed to log registration update activity');
     }
 
     return result;
@@ -467,7 +468,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
           .where(sql`payload->>'registrationId'`, '=', String(id))
           .execute();
       } catch (err) {
-        console.error('Failed to cancel event reminder on registration delete', err);
+        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
       }
 
       try {
@@ -481,7 +482,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
           metadata: { id },
         });
       } catch (e) {
-        console.error('Failed to log registration delete activity', e);
+        logger.error({ err: e }, 'Failed to log registration delete activity');
       }
     }
 
@@ -634,7 +635,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
             const workflowsCtrl = new WorkflowsController();
             await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
           } catch (err) {
-            console.error('Failed to trigger contact_created workflow in rsvpPublic:', err);
+            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
           }
         }
 
@@ -687,7 +688,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
               })
               .execute();
           } catch (err) {
-            console.error('Failed to queue RSVP confirmation', err);
+            logger.error({ err }, 'Failed to queue RSVP confirmation');
           }
         }
 
@@ -715,7 +716,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
                 .execute();
             }
           } catch (err) {
-            console.error('Failed to queue event reminder in rsvpPublic', err);
+            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
           }
         }
       });

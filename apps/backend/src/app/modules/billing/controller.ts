@@ -6,6 +6,7 @@ import { WebhookEventsRepo } from './repositories/webhook-events.repo';
 import { WorkflowsController } from '../workflows/controller';
 import { sql } from 'kysely';
 import { getPlanLimits } from './usage-limits';
+import { logger } from '../../logger';
 
 const isMockMode = !env.stripeSecretKey || env.stripeSecretKey.includes('MockKey');
 const stripe = isMockMode ? null : new Stripe(env.stripeSecretKey!);
@@ -15,7 +16,7 @@ const webhookEventsRepo = new WebhookEventsRepo();
 export class BillingController {
   constructor() {
     if (isMockMode) {
-      console.log('💳 [BillingController] Running in Mock Mode (no Stripe secret key provided)');
+      logger.info('[BillingController] Running in Mock Mode (no Stripe secret key provided)');
     }
   }
 
@@ -148,7 +149,7 @@ export class BillingController {
 
   public async handleWebhook(payload: string, signature: string) {
     if (isMockMode || !stripe || !env.stripeWebhookSecret) {
-      console.log('💳 [BillingController] Webhook received, but ignored due to mock mode or missing secret');
+      logger.info('[BillingController] Webhook received, but ignored due to mock mode or missing secret');
       return;
     }
 
@@ -157,11 +158,11 @@ export class BillingController {
     try {
       event = stripe.webhooks.constructEvent(payload, signature, env.stripeWebhookSecret);
     } catch (err: any) {
-      console.error(`⚠️ Webhook signature verification failed: ${err.message}`);
+      logger.error(`Webhook signature verification failed: ${err.message}`);
       throw new Error(`Webhook Error: ${err.message}`);
     }
 
-    console.log(`💳 Persisting webhook event: ${event.id} (${event.type})`);
+    logger.info(`Persisting webhook event: ${event.id} (${event.type})`);
 
     // Persist event for background worker processing.
     // Handles idempotency: duplicate events will trigger unique constraint
@@ -179,7 +180,7 @@ export class BillingController {
   }
 
   public async processWebhookEvent(event: Stripe.Event) {
-    console.log(`💳 Processing webhook event: ${event.id} (${event.type})`);
+    logger.info(`Processing webhook event: ${event.id} (${event.type})`);
 
     switch (event.type) {
       case 'checkout.session.completed': {
@@ -207,11 +208,11 @@ export class BillingController {
               subscription_ends_at: new Date(subscription.current_period_end * 1000).toISOString(),
             } as any,
           });
-          console.log(`💳 Plan activated successfully for Tenant ID: ${tenantId}`);
+          logger.info(`Plan activated successfully for Tenant ID: ${tenantId}`);
           try {
             await this.handleSubscriptionChange(tenantId, planName);
           } catch (mailErr) {
-            console.error('Failed to send subscription changed email on checkout.session.completed:', mailErr);
+            logger.error({ err: mailErr }, 'Failed to send subscription changed email on checkout.session.completed');
           }
         }
         break;
@@ -244,11 +245,14 @@ export class BillingController {
               subscription_ends_at: new Date((subscription as any).current_period_end * 1000).toISOString(),
             } as any,
           });
-          console.log(`💳 Subscription updated for Tenant ID: ${dbTenant.id}`);
+          logger.info(`Subscription updated for Tenant ID: ${dbTenant.id}`);
           try {
             await this.handleSubscriptionChange(dbTenant.id, planName);
           } catch (mailErr) {
-            console.error('Failed to send subscription changed email on customer.subscription.updated:', mailErr);
+            logger.error(
+              { err: mailErr },
+              'Failed to send subscription changed email on customer.subscription.updated',
+            );
           }
         }
         break;
@@ -273,11 +277,14 @@ export class BillingController {
               subscription_ends_at: new Date().toISOString(),
             } as any,
           });
-          console.log(`💳 Subscription canceled for Tenant ID: ${dbTenant.id}`);
+          logger.info(`Subscription canceled for Tenant ID: ${dbTenant.id}`);
           try {
             await this.handleSubscriptionChange(dbTenant.id, 'free');
           } catch (mailErr) {
-            console.error('Failed to send subscription cancellation email on customer.subscription.deleted:', mailErr);
+            logger.error(
+              { err: mailErr },
+              'Failed to send subscription cancellation email on customer.subscription.deleted',
+            );
           }
         }
         break;
@@ -311,7 +318,7 @@ export class BillingController {
                 const workflowsController = new WorkflowsController();
                 await workflowsController.triggerWorkflow(dbTenant.id, String(person.id), 'payment_event', event.type);
               } catch (err) {
-                console.error('Failed to trigger billing workflow on invoice.paid:', err);
+                logger.error({ err }, 'Failed to trigger billing workflow on invoice.paid');
               }
             }
 
@@ -382,7 +389,7 @@ export class BillingController {
                 const workflowsController = new WorkflowsController();
                 await workflowsController.triggerWorkflow(dbTenant.id, String(person.id), 'payment_event', event.type);
               } catch (err) {
-                console.error('Failed to trigger billing workflow on invoice.payment_failed:', err);
+                logger.error({ err }, 'Failed to trigger billing workflow on invoice.payment_failed');
               }
             }
 
@@ -428,7 +435,7 @@ export class BillingController {
     try {
       await this.handleSubscriptionChange(auth.tenant_id, plan, true);
     } catch (mailErr) {
-      console.error('Failed to send mock subscription update email', mailErr);
+      logger.error({ err: mailErr }, 'Failed to send mock subscription update email');
     }
 
     return { success: true, plan };
@@ -453,7 +460,7 @@ export class BillingController {
     try {
       await this.handleSubscriptionChange(auth.tenant_id, 'free', true);
     } catch (mailErr) {
-      console.error('Failed to send mock subscription cancellation email', mailErr);
+      logger.error({ err: mailErr }, 'Failed to send mock subscription cancellation email');
     }
 
     return { success: true };

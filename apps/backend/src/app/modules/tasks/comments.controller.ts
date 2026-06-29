@@ -4,6 +4,7 @@ import type { Transaction } from 'kysely';
 import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { TaskCommentsRepo } from './repositories/task-comments.repo';
 import { processMentions } from '../../lib/mail/mentions-util';
+import { logger } from '../../logger';
 
 export class TaskCommentsController extends BaseController<'task_comments', TaskCommentsRepo> {
   constructor() {
@@ -35,7 +36,7 @@ export class TaskCommentsController extends BaseController<'task_comments', Task
 
       const commentLink = `${env.appUrl}/tasks/${row.task_id}`;
       processMentions(this.getRepo().db, String(row.tenant_id), row.comment, commentLink, String(actorId)).catch(
-        (err) => console.error('Failed to process task comment mentions', err),
+        (err) => logger.error({ err }, 'Failed to process task comment mentions'),
       );
     }
     return comment;

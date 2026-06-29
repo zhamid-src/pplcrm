@@ -2,6 +2,7 @@ import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { env } from '../../../../env';
+import { logger } from '../../../logger';
 
 export class CompaniesEnrichmentService {
   constructor(private readonly db: Kysely<Models>) {}
@@ -15,7 +16,7 @@ export class CompaniesEnrichmentService {
       .executeTakeFirst();
 
     if (!company) {
-      console.warn(`Company enrichment skipped: Company ${companyId} not found.`);
+      logger.warn(`Company enrichment skipped: Company ${companyId} not found.`);
       return;
     }
 
@@ -25,7 +26,7 @@ export class CompaniesEnrichmentService {
       currentJson = typeof company.json === 'string' ? JSON.parse(company.json) : company.json;
     }
     if (currentJson?.google_enriched) {
-      console.log(`Company ${companyId} is already enriched from Google. Skipping.`);
+      logger.info(`Company ${companyId} is already enriched from Google. Skipping.`);
       return;
     }
 
@@ -78,7 +79,7 @@ export class CompaniesEnrichmentService {
           }
         }
       } catch (err) {
-        console.error(`Google Places API enrichment failed for company ${companyId}:`, err);
+        logger.error({ err }, `Google Places API enrichment failed for company ${companyId}`);
         throw err;
       }
     } else {
@@ -89,7 +90,7 @@ export class CompaniesEnrichmentService {
       description = `Mock description for ${company.name} from Google Places.`;
       industry = company.industry || 'Technology';
       rawResult = { mock: true };
-      console.log(`Mock Google enrichment completed for company ${companyId}`);
+      logger.info(`Mock Google enrichment completed for company ${companyId}`);
     }
 
     const updatedJson = {
