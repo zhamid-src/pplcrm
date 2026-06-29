@@ -10,7 +10,6 @@ export class TaskAttachmentsController extends BaseController<'task_attachments'
 
   public getByTaskId(input: { tenant_id: string; task_id: string }) {
     // getManyBy is protected in repo; expose via controller method on repo instance
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- bypassing protected access to getManyBy which has no public equivalent
     return (this as any).getRepo().getManyBy('task_id', { tenant_id: input.tenant_id, value: input.task_id });
   }
 

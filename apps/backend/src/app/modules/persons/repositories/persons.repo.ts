@@ -146,7 +146,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
 
     // Shared where clause builder
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
       let q = qb
         .leftJoin('households', 'persons.household_id', 'households.id')
@@ -158,7 +157,6 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!).where('tags.type', '=', 'tag'))
         .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues!).where('tags.type', '=', 'issue'))
         .$if(!!options.listId, (qb) =>
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           qb.where('persons.id', 'in', (eb: any) =>
             eb
               .selectFrom('map_lists_persons')

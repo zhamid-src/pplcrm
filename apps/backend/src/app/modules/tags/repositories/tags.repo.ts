@@ -205,7 +205,6 @@ export class TagsRepo extends BaseRepository<'tags'> {
     const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
 
     // Shared filter/search logic for both queries
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
       qb
         .leftJoin('map_peoples_tags', 'map_peoples_tags.tag_id', 'tags.id')
@@ -257,7 +256,6 @@ export class TagsRepo extends BaseRepository<'tags'> {
       .groupBy(['tags.id', 'tags.name', 'tags.description', 'tags.color', 'tags.deletable', 'tags.type'])
       .$if(!!options.sortModel?.length, (qb) =>
         (options.sortModel ?? []).reduce(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
           qb,
         ),

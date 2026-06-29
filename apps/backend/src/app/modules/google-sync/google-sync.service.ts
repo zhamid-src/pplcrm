@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import type { GoogleOAuthService } from './google-oauth.service';

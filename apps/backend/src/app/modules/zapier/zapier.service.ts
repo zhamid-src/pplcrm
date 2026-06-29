@@ -32,7 +32,6 @@ function pickPersonFields(p: Record<string, unknown>): Record<string, unknown> {
 export { pickPersonFields };
 
 export async function queueZapierTrigger(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: any,
   tenant_id: string,
   event_type: ZapierEventType,

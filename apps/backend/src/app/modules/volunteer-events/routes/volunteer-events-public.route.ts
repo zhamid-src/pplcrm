@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { FastifyPluginCallback } from 'fastify';
 import { VolunteerEventsController } from '../controller';
 import formBody from '@fastify/formbody';

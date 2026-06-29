@@ -27,7 +27,6 @@ export class TeamsRepo extends BaseRepository<'teams'> {
       typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
     const limit = endRowCandidate - startRow;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
       qb
         .leftJoin('map_teams_persons', (join) =>
@@ -93,7 +92,6 @@ export class TeamsRepo extends BaseRepository<'teams'> {
         'lead_user.last_name',
       ])
       .$if(Array.isArray(options.sortModel) && options.sortModel.length > 0, (builder) =>
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (options.sortModel ?? []).reduce((acc: any, sort: SortModelType) => {
           switch (sort.colId) {
             case 'volunteer_count':
@@ -131,7 +129,6 @@ export class TeamsRepo extends BaseRepository<'teams'> {
       .limit(limit)
       .execute();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rows = (rowsRaw as any[]).map((row) => ({
       id: row['id'],
       name: row['name'],

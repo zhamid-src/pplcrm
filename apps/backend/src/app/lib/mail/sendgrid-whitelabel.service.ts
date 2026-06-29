@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { promises as dns } from 'dns';
 import { logger } from '../../logger';
 

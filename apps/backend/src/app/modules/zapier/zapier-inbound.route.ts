@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { ZapierService } from './zapier.service';

@@ -98,7 +98,6 @@ export class DuplicateMaintenanceService {
       }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const inserts: any[] = [];
 
     // Email duplicates

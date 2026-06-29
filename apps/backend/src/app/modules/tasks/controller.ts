@@ -353,7 +353,6 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
       const chunk = rows.slice(i, i + chunkSize);
 
       // 1. Normalize and filter valid rows upfront
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const taskRows: any[] = [];
       for (const raw of chunk) {
         if (!raw['name'] || !raw['name'].trim()) {

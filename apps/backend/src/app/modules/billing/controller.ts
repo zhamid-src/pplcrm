@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import Stripe from 'stripe';
 import { env } from '../../../env';
 import { TenantsRepo } from '../auth/repositories/tenants.repo';

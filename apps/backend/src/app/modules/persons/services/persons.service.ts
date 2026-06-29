@@ -599,7 +599,6 @@ export class PersonsService {
       status: 'pending',
       metadata: null,
       processed_at: now,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any;
 
     const savedImport = await this.importsRepo.add({ row: importRow });
@@ -630,7 +629,6 @@ export class PersonsService {
       id: importRecordId,
       row: {
         metadata: JSON.stringify({ storage_key: storageKey }),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any,
     });
 
@@ -776,7 +774,6 @@ export class PersonsService {
             households_created: results.households_created,
             updatedby_id: user_id,
             updated_at: new Date(),
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } as any,
         });
         continue;
@@ -915,7 +912,6 @@ export class PersonsService {
                 updatedby_id: user_id,
               })),
             );
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             await (trx as any).insertInto('map_peoples_tags').values(tagMapRows).execute();
           }
 
@@ -971,7 +967,6 @@ export class PersonsService {
           households_created: results.households_created,
           updatedby_id: user_id,
           updated_at: new Date(),
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any,
       });
     }

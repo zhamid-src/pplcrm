@@ -23,7 +23,6 @@ export class NotificationsController extends BaseController<'notifications', Not
     return this.update({
       tenant_id: auth.tenant_id,
       id,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial update row; OperationDataType<'notifications','update'> is not narrowly exported
       row: { read: true } as any,
     });
   }

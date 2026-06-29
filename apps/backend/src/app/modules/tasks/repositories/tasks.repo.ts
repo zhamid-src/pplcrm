@@ -35,7 +35,6 @@ export class TasksRepo extends BaseRepository<'tasks'> {
 
   private buildTasksQueryBuilder(tenant_id: string, isArchived: boolean, options?: QueryParams<'tasks'>) {
     const text = this.normalizeSearch(options?.searchStr);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filterModel: Record<string, any> = options?.filterModel ?? {};
     // Extract priority/assigned_to sort to apply custom ordering
     const pri = options?.sortModel?.find((s) => s.colId === 'priority');
