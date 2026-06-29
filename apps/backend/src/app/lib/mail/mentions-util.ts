@@ -1,4 +1,5 @@
 import { TransactionalEmailService } from './transactional-mail.service';
+import { logger } from '../../logger';
 
 export async function processMentions(
   db: any,
@@ -45,7 +46,7 @@ export async function processMentions(
               optedIn = false;
             }
           } catch (e) {
-            console.error('Failed to parse profile json in processMentions', e);
+            logger.error({ err: e }, 'Failed to parse profile json in processMentions');
           }
         }
 
@@ -60,6 +61,6 @@ export async function processMentions(
       }
     }
   } catch (error) {
-    console.error('Failed to process comment mentions', error);
+    logger.error({ err: error }, 'Failed to process comment mentions');
   }
 }

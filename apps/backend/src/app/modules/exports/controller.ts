@@ -3,6 +3,7 @@ import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth
 import type { QueueExportInputType } from '../../../../../../libs/common/src';
 import { ExportsRepo } from './repositories/exports.repo';
 import { StorageService } from '../../lib/storage.service';
+import { logger } from '../../logger';
 
 const ENTITY_LABEL_MAP: Record<string, string> = {
   persons: 'persons',
@@ -127,7 +128,7 @@ export class ExportsController {
         const storageService = new StorageService();
         await storageService.delete((row as any).storage_key);
       } catch (err) {
-        console.error(`Failed to delete storage file ${(row as any).storage_key}:`, err);
+        logger.error({ err }, `Failed to delete storage file ${(row as any).storage_key}`);
       }
     }
 

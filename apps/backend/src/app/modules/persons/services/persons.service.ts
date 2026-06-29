@@ -18,6 +18,7 @@ import { StorageService } from '../../../lib/storage.service';
 import { WorkflowsController } from '../../workflows/controller';
 import { TransactionalEmailService } from '../../../lib/mail/transactional-mail.service';
 import { queueZapierTrigger, pickPersonFields } from '../../zapier/zapier.service';
+import { logger } from '../../../logger';
 
 export class PersonsService {
   private mapPersonsTagRepo = new MapPersonsTagRepo();
@@ -84,13 +85,13 @@ export class PersonsService {
         const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
         await queueUsageLimitCheck(auth.tenant_id, this.personsRepo.db);
       } catch (err) {
-        console.error('Failed to trigger usage check in addPerson:', err);
+        logger.error({ err }, 'Failed to trigger usage check in addPerson');
       }
       try {
         const workflowsController = new WorkflowsController();
         await workflowsController.triggerWorkflow(auth.tenant_id, String((result as any).id), 'contact_created', null);
       } catch (err) {
-        console.error('Failed to trigger contact_created workflow in add:', err);
+        logger.error({ err }, 'Failed to trigger contact_created workflow in add');
       }
 
       if (payload.assigned_to) {
@@ -125,7 +126,7 @@ export class PersonsService {
             }
           }
         } catch (mailErr) {
-          console.error('Failed to send contact assignment email in addPerson', mailErr);
+          logger.error({ err: mailErr }, 'Failed to send contact assignment email in addPerson');
         }
       }
     }
@@ -144,12 +145,12 @@ export class PersonsService {
         },
       });
     } catch (e) {
-      console.error('Failed to log create person activity', e);
+      logger.error({ err: e }, 'Failed to log create person activity');
     }
     try {
       await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_created', pickPersonFields(result as any));
     } catch (e) {
-      console.error('[Zapier] Failed to queue person_created trigger', e);
+      logger.error({ err: e }, '[Zapier] Failed to queue person_created trigger');
     }
     return result;
   }
@@ -171,7 +172,7 @@ export class PersonsService {
     try {
       original = await this.personsRepo.getOneBy('id', { value: id, tenant_id: auth.tenant_id });
     } catch (err) {
-      console.error('Failed to fetch original person record for activity log', err);
+      logger.error({ err }, 'Failed to fetch original person record for activity log');
     }
     const result = await this.personsRepo.update({
       tenant_id: auth.tenant_id,
@@ -218,7 +219,7 @@ export class PersonsService {
               }
             }
           } catch (mailErr) {
-            console.error('Failed to send contact assignment email in updatePerson', mailErr);
+            logger.error({ err: mailErr }, 'Failed to send contact assignment email in updatePerson');
           }
         }
       }
@@ -254,12 +255,12 @@ export class PersonsService {
         },
       });
     } catch (e) {
-      console.error('Failed to log update person activity', e);
+      logger.error({ err: e }, 'Failed to log update person activity');
     }
     try {
       await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_updated', pickPersonFields(result as any));
     } catch (e) {
-      console.error('[Zapier] Failed to queue person_updated trigger', e);
+      logger.error({ err: e }, '[Zapier] Failed to queue person_updated trigger');
     }
     return result;
   }
@@ -380,7 +381,7 @@ export class PersonsService {
         const workflowsController = new WorkflowsController();
         await workflowsController.triggerTagAdded(auth.tenant_id, person_id, String(tag.id), name);
       } catch (err) {
-        console.error('Failed to trigger tag_added workflow:', err);
+        logger.error({ err }, 'Failed to trigger tag_added workflow');
       }
     }
 
@@ -395,7 +396,7 @@ export class PersonsService {
         metadata: { id: person_id, action: `attach_${type}`, name, ...(auth.source ? { source: auth.source } : {}) },
       });
     } catch (e) {
-      console.error('Failed to log attach tag activity', e);
+      logger.error({ err: e }, 'Failed to log attach tag activity');
     }
     try {
       await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_tag_added', {
@@ -404,7 +405,7 @@ export class PersonsService {
         tag_type: type,
       });
     } catch (e) {
-      console.error('[Zapier] Failed to queue person_tag_added trigger', e);
+      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_added trigger');
     }
 
     return result;
@@ -450,7 +451,7 @@ export class PersonsService {
         });
       }
     } catch (e) {
-      console.error('Failed to log detach tag activity', e);
+      logger.error({ err: e }, 'Failed to log detach tag activity');
     }
     try {
       await queueZapierTrigger(this.personsRepo.db, input.tenant_id, 'person_tag_removed', {
@@ -459,7 +460,7 @@ export class PersonsService {
         tag_type: input.type ?? 'tag',
       });
     } catch (e) {
-      console.error('[Zapier] Failed to queue person_tag_removed trigger', e);
+      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_removed trigger');
     }
 
     const isVolunteerTag = input.name.trim().toLowerCase() === 'volunteer';
@@ -593,7 +594,7 @@ export class PersonsService {
       const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
       await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
     } catch (err) {
-      console.error('Failed to upload import payload to storage', err);
+      logger.error({ err }, 'Failed to upload import payload to storage');
       await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
@@ -909,13 +910,13 @@ export class PersonsService {
           try {
             await workflowsController.triggerWorkflow(tenant_id, personId, 'contact_created', null);
           } catch (err) {
-            console.error('Failed to trigger contact_created workflow in CSV import:', err);
+            logger.error({ err }, 'Failed to trigger contact_created workflow in CSV import');
           }
           for (const { name, id: tagId } of outcome.tagRecords) {
             try {
               await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
             } catch (err) {
-              console.error('Failed to trigger tag_added workflow in CSV import:', err);
+              logger.error({ err }, 'Failed to trigger tag_added workflow in CSV import');
             }
           }
         }
@@ -929,7 +930,7 @@ export class PersonsService {
         results.errors += validEntries.length;
         const message = err?.message || String(err);
         errorMessages.push(message);
-        console.error('Import chunk failed', { message, err });
+        logger.error({ err, message }, 'Import chunk failed');
       }
 
       // Update intermediate counts after each chunk
@@ -967,7 +968,7 @@ export class PersonsService {
         },
       });
     } catch (e) {
-      console.error('Failed to log import activity', e);
+      logger.error({ err: e }, 'Failed to log import activity');
     }
 
     if (importedPersonIds.length > 0) {
@@ -975,7 +976,7 @@ export class PersonsService {
         const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
         await queueUsageLimitCheck(tenant_id, this.personsRepo.db);
       } catch (err) {
-        console.error('Failed to queue duplicate maintenance job or usage check for imported persons', err);
+        logger.error({ err }, 'Failed to queue duplicate maintenance job or usage check for imported persons');
       }
     }
 

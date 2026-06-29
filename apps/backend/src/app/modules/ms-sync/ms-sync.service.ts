@@ -5,6 +5,7 @@ import type { MsOAuthService } from './ms-oauth.service';
 import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
 import type { IngestableEmail } from '../emails/services/email-ingester.service';
 import { EmailIngesterService } from '../emails/services/email-ingester.service';
+import { logger } from '../../logger';
 
 const MAX_MESSAGES_PER_SYNC = 50;
 
@@ -26,7 +27,7 @@ async function graphCallWithRetry<T>(callFn: () => Promise<T>, maxRetries = 3): 
         } else {
           delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
         }
-        console.warn(`MS Graph API rate limited (429). Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`);
+        logger.warn(`MS Graph API rate limited (429). Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`);
         await new Promise((resolve) => setTimeout(resolve, delayMs));
         continue;
       }
@@ -134,7 +135,7 @@ export class MsSyncService {
           const wasSaved = await this.saveMessage(client, msg, tenantId, requestedBy, folder.pplcrmId);
           if (wasSaved) inserted++;
         } catch (err) {
-          console.error(`Failed to ingest MS Graph message ${msg.id}:`, err);
+          logger.error({ err }, `Failed to ingest MS Graph message ${msg.id}`);
         }
       }
 
@@ -198,7 +199,7 @@ export class MsSyncService {
         const attRes = await graphCallWithRetry(() => client.api(`/me/messages/${msId}/attachments`).get());
         graphAttachments = attRes.value ?? [];
       } catch (err) {
-        console.error(`Failed to fetch attachments for message ${msId}:`, err);
+        logger.error({ err }, `Failed to fetch attachments for message ${msId}`);
       }
     }
 

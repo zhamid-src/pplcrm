@@ -45,9 +45,7 @@ export class EmailBody {
     const id = this.emailId();
     if (!id) return [] as any[];
     const header = this.store.getEmailHeaderById(id)();
-    const r = (header?.attachments || []).filter((a: any) => !a.is_inline);
-    console.log(r);
-    return r;
+    return (header?.attachments || []).filter((a: any) => !a.is_inline);
   });
   protected readonly bodyHtml = computed(() => {
     const id = this.emailId();

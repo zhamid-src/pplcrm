@@ -11,6 +11,7 @@ import { HouseholdRepo } from '../households/repositories/households.repo';
 
 import { WorkflowsController } from '../workflows/controller';
 import { DonationsController } from '../donations/controller';
+import { logger } from '../../logger';
 
 // Sliding window memory for rate-limiting
 const ipSubmissionTimestamps = new Map<string, number[]>();
@@ -123,7 +124,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 
     // 3. Honeypot check
     if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      console.warn(`Spam bot detected from IP ${clientIp} for form ${formId}`);
+      logger.warn(`Spam bot detected from IP ${clientIp} for form ${formId}`);
       return { redirect_url: form.redirect_url || null };
     }
 
@@ -416,7 +417,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
             const workflowsController = new WorkflowsController();
             await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
           } catch (err) {
-            console.error('Failed to trigger contact_created workflow in WebFormsController:', err);
+            logger.error({ err }, 'Failed to trigger contact_created workflow in WebFormsController');
           }
 
           // Queue the double opt-in confirmation email (transactional outbox) for brand-new subscribers.
@@ -496,7 +497,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
             try {
               await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
             } catch (err) {
-              console.error('Failed to trigger tag_added workflow in WebFormsController:', err);
+              logger.error({ err }, 'Failed to trigger tag_added workflow in WebFormsController');
             }
           }
         }
@@ -540,7 +541,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
             try {
               await workflowsController.triggerWorkflow(tenantId, personId, 'list_joined', listId, trx);
             } catch (err) {
-              console.error('Failed to trigger list_joined workflow in WebFormsController:', err);
+              logger.error({ err }, 'Failed to trigger list_joined workflow in WebFormsController');
             }
           }
         }
@@ -549,7 +550,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         try {
           await workflowsController.triggerWorkflow(tenantId, personId, 'web_form_submitted', formId, trx);
         } catch (err) {
-          console.error('Failed to trigger web_form_submitted workflow in WebFormsController:', err);
+          logger.error({ err }, 'Failed to trigger web_form_submitted workflow in WebFormsController');
         }
 
         // Log user activity
@@ -678,7 +679,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
   ): Promise<void> {
     const key = process.env['SHARED_SECRET'] || env.sharedSecret;
     if (!key) {
-      console.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
+      logger.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
       return;
     }
 

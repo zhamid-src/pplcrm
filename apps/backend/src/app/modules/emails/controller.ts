@@ -17,6 +17,7 @@ import { processMentions } from '../../lib/mail/mentions-util';
 import { sanitizeHtml } from '../../lib/mail/sanitize-util';
 import { StorageService } from '../../lib/storage.service';
 import { sql } from 'kysely';
+import { logger } from '../../logger';
 
 export class EmailsController extends BaseController<'emails', EmailRepo> {
   private attachmentsRepo = new EmailAttachmentsRepo();
@@ -49,7 +50,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
       const commentLink = `${env.appUrl}/emails/${email_id}`;
       processMentions(this.commentsRepo.db, tenant_id, comment, commentLink, author_id).catch((err) =>
-        console.error('Failed to process email comment mentions', err),
+        logger.error({ err }, 'Failed to process email comment mentions'),
       );
 
       return row;
@@ -87,7 +88,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
             entity_id: id,
             metadata,
           })
-          .catch((e) => console.error('Failed to log email assign activity', e));
+          .catch((e) => logger.error({ err: e }, 'Failed to log email assign activity'));
       }
 
       if (user_id) {
@@ -106,7 +107,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
             });
           }
         } catch (nErr) {
-          console.error('Failed to push notification for email assignment', nErr);
+          logger.error({ err: nErr }, 'Failed to push notification for email assignment');
         }
       }
 
@@ -225,11 +226,11 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
           try {
             await this.storageService.delete(file.storage_key);
           } catch (err) {
-            console.error(`Failed to delete storage blob ${file.storage_key} for file ${fileId}`, err);
+            logger.error({ err }, `Failed to delete storage blob ${file.storage_key} for file ${fileId}`);
           }
         }
       } catch (err) {
-        console.error(`Failed to purge orphaned file ${fileId}`, err);
+        logger.error({ err }, `Failed to purge orphaned file ${fileId}`);
       }
     }
   }
@@ -454,7 +455,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
             entity_id: id,
             metadata: { folder_id },
           })
-          .catch((e) => console.error('Failed to log email move activity', e));
+          .catch((e) => logger.error({ err: e }, 'Failed to log email move activity'));
       }
 
       return updated;
@@ -515,7 +516,7 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
             entity_id: id,
             metadata: { status },
           })
-          .catch((e) => console.error('Failed to log email status activity', e));
+          .catch((e) => logger.error({ err: e }, 'Failed to log email status activity'));
       }
 
       return updated;

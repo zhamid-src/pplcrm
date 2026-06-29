@@ -4,6 +4,7 @@ import { isBlankAddress, isIncompleteAddress } from '../address-normalize';
 import { env } from '../../../env';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { logger } from '../../logger';
 
 let boundariesCache: any = null;
 
@@ -15,7 +16,7 @@ export async function loadBoundaries(): Promise<any> {
     boundariesCache = JSON.parse(data);
     return boundariesCache;
   } catch (err) {
-    console.warn(`Failed to read boundaries GeoJSON from ${filePath}. Using empty collection.`, err);
+    logger.warn({ err }, `Failed to read boundaries GeoJSON from ${filePath}. Using empty collection.`);
     return { type: 'FeatureCollection', features: [] };
   }
 }
@@ -100,13 +101,13 @@ export async function geocodeAndMapHousehold(householdId: string, tenantId: stri
     .executeTakeFirst();
 
   if (!hh) {
-    console.warn(`Geocoding job skipped: Household ${householdId} not found.`);
+    logger.warn(`Geocoding job skipped: Household ${householdId} not found.`);
     return;
   }
 
   // 1. Check if the address is blank or incomplete
   if (isBlankAddress(hh) || isIncompleteAddress(hh)) {
-    console.log(`Geocoding job: Household ${householdId} has a blank or incomplete address. Marking as failed.`);
+    logger.info(`Geocoding job: Household ${householdId} has a blank or incomplete address. Marking as failed.`);
     await db
       .updateTable('households')
       .set({
@@ -155,7 +156,7 @@ export async function geocodeAndMapHousehold(householdId: string, tenantId: stri
         formattedAddress = result.formatted_address;
         addressType = result.geometry.location_type;
       } else if (data.status === 'ZERO_RESULTS') {
-        console.log(`Geocoding job: Address "${addressStr}" returned zero results. Marking as failed.`);
+        logger.info(`Geocoding job: Address "${addressStr}" returned zero results. Marking as failed.`);
         await db
           .updateTable('households')
           .set({
@@ -174,7 +175,7 @@ export async function geocodeAndMapHousehold(householdId: string, tenantId: stri
         throw new Error(`Google Maps Geocoding API error status: ${data.status}`);
       }
     } catch (err) {
-      console.error(`Geocoding API call failed for household ${householdId}:`, err);
+      logger.error({ err }, `Geocoding API call failed for household ${householdId}`);
       // Re-throw to trigger worker retry with backoff
       throw err;
     }
@@ -193,7 +194,7 @@ export async function geocodeAndMapHousehold(householdId: string, tenantId: stri
     lng = -87.69 + val * 0.08;
     formattedAddress = `${hh.street_num || '123'} ${hh.street1 || 'Main St'}, ${hh.city || 'Chicago'}, ${hh.state || 'IL'} ${hh.zip || '60601'}`;
     addressType = 'rooftop';
-    console.log(`Geocoding job simulated in dev/test for household ${householdId} at lat=${lat}, lng=${lng}`);
+    logger.info(`Geocoding job simulated in dev/test for household ${householdId} at lat=${lat}, lng=${lng}`);
   }
 
   // 4. Match against GIS Boundaries
@@ -226,5 +227,5 @@ export async function geocodeAndMapHousehold(householdId: string, tenantId: stri
     .where('tenant_id', '=', tenantId)
     .execute();
 
-  console.log(`Geocoding & GIS mapping completed successfully for household ${householdId}. Status set to success.`);
+  logger.info(`Geocoding & GIS mapping completed successfully for household ${householdId}. Status set to success.`);
 }

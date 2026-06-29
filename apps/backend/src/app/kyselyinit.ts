@@ -1,6 +1,7 @@
 import { sql } from 'kysely';
 import { BaseRepository } from './lib/base.repo';
 import '../env';
+import { logger } from './logger';
 
 async function ensureMigrationTableUpdated(): Promise<void> {
   try {
@@ -26,34 +27,34 @@ export async function migrateDown(): Promise<void> {
 
   results?.forEach((it) => {
     if (it.status === 'Success') {
-      console.log(`migration down"${it.migrationName}" successsful`);
+      logger.info(`migration down"${it.migrationName}" successful`);
     } else if (it.status === 'Error') {
-      console.error(`failed to execute migration down"${it.migrationName}"`);
+      logger.error(`failed to execute migration down"${it.migrationName}"`);
     }
   });
 
   if (error) {
-    console.error('failed to migrate down: ', error);
+    logger.error({ err: error }, 'failed to migrate down');
     process.exit(1);
   }
 }
 
 export async function migrateToLatest(): Promise<void> {
-  console.log('Migration starting');
+  logger.info('Migration starting');
 
   await ensureMigrationTableUpdated();
   const { error, results } = await BaseRepository.migrator.migrateToLatest();
 
   results?.forEach((it) => {
     if (it.status === 'Success') {
-      console.log(`migration up:"${it.migrationName}" successful`);
+      logger.info(`migration up:"${it.migrationName}" successful`);
     } else if (it.status === 'Error') {
-      console.error(`failed to execute migration up"${it.migrationName}"`);
+      logger.error(`failed to execute migration up"${it.migrationName}"`);
     }
   });
 
   if (error) {
-    console.error('failed to migrate up: ', error);
+    logger.error({ err: error }, 'failed to migrate up');
     process.exit(1);
   }
 }

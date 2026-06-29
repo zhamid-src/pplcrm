@@ -135,7 +135,6 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   }
 
   public async update(id: string, data: UpdatePersonsType, options?: any) {
-    console.log(id, data);
     return this.api.persons.update.mutate({ id: id, data }, options);
   }
 

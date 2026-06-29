@@ -4,6 +4,7 @@ import { PersonConnectionsRepo } from './repositories/person-connections.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import type { AddConnectionType } from '../../../../../../libs/common/src';
 import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../logger';
 
 export class PersonConnectionsController extends BaseController<'person_connections', PersonConnectionsRepo> {
   constructor() {
@@ -65,7 +66,7 @@ export class PersonConnectionsController extends BaseController<'person_connecti
         })
         .execute();
     } catch (e) {
-      console.error('Failed to log connection activity', e);
+      logger.error({ err: e }, 'Failed to log connection activity');
     }
 
     return result;
@@ -101,7 +102,7 @@ export class PersonConnectionsController extends BaseController<'person_connecti
         })
         .execute();
     } catch (e) {
-      console.error('Failed to log connection removal activity', e);
+      logger.error({ err: e }, 'Failed to log connection removal activity');
     }
 
     return { success: true };

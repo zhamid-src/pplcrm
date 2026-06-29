@@ -1,5 +1,6 @@
 import type { FastifyPluginCallback } from 'fastify';
 import { BillingController } from '../controller';
+import { logger } from '../../../logger';
 
 const controller = new BillingController();
 
@@ -12,7 +13,7 @@ const billingWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
       await controller.handleWebhook(payload, signature);
       return reply.code(200).send({ received: true });
     } catch (err: any) {
-      console.error(`❌ Webhook error: ${err.message}`);
+      logger.error(`Webhook error: ${err.message}`);
       return reply.code(400).send({ error: err.message });
     }
   });

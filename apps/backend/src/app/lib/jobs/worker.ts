@@ -2,6 +2,7 @@ import { sql } from 'kysely';
 import { Client } from 'pg';
 
 import { env } from '../../../env';
+import { logger } from '../../logger';
 import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
 import { executeJob } from './job-handlers';
 
@@ -20,45 +21,47 @@ export class BackgroundJobWorker {
   public start() {
     if (this.isRunning) return;
     this.isRunning = true;
-    console.log('Background Job Worker started.');
+    logger.info('Background Job Worker started.');
 
-    this.ensureCleanupJobScheduled().catch((err) => console.error('Failed to ensure cleanup job scheduled:', err));
+    this.ensureCleanupJobScheduled().catch((err) => logger.error({ err }, 'Failed to ensure cleanup job scheduled'));
     this.ensureSyncSchedulerJobScheduled().catch((err) =>
-      console.error('Failed to ensure sync scheduler job scheduled:', err),
+      logger.error({ err }, 'Failed to ensure sync scheduler job scheduled'),
     );
     this.ensureDuplicatesRecomputeJobScheduled().catch((err) =>
-      console.error('Failed to ensure duplicates recompute job scheduled:', err),
+      logger.error({ err }, 'Failed to ensure duplicates recompute job scheduled'),
     );
     this.ensureAddressFingerprintsJobScheduled().catch((err) =>
-      console.error('Failed to ensure address fingerprints job scheduled:', err),
+      logger.error({ err }, 'Failed to ensure address fingerprints job scheduled'),
     );
-    this.ensureWorkflowsJobScheduled().catch((err) => console.error('Failed to ensure workflows job scheduled:', err));
+    this.ensureWorkflowsJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure workflows job scheduled'),
+    );
     this.ensurePerformScheduledDeletionsJobScheduled().catch((err) =>
-      console.error('Failed to ensure perform scheduled deletions job scheduled:', err),
+      logger.error({ err }, 'Failed to ensure perform scheduled deletions job scheduled'),
     );
     this.ensureUsageLimitChecksScheduled().catch((err) =>
-      console.error('Failed to ensure usage limit checks scheduled:', err),
+      logger.error({ err }, 'Failed to ensure usage limit checks scheduled'),
     );
     this.ensureDueTasksCheckScheduled().catch((err) =>
-      console.error('Failed to ensure due tasks check scheduled:', err),
+      logger.error({ err }, 'Failed to ensure due tasks check scheduled'),
     );
     this.ensureCompaniesGoogleRefreshJobScheduled().catch((err) =>
-      console.error('Failed to ensure companies google refresh job scheduled:', err),
+      logger.error({ err }, 'Failed to ensure companies google refresh job scheduled'),
     );
     this.ensurePruneNewsletterEventsJobScheduled().catch((err) =>
-      console.error('Failed to ensure prune newsletter events job scheduled:', err),
+      logger.error({ err }, 'Failed to ensure prune newsletter events job scheduled'),
     );
 
     // Run stale job recovery on startup and then every 5 minutes
-    this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs on startup:', err));
+    this.recoverStaleJobs().catch((err) => logger.error({ err }, 'Failed to recover stale jobs on startup'));
     this.recoveryInterval = setInterval(
       () => {
-        this.recoverStaleJobs().catch((err) => console.error('Failed to recover stale jobs:', err));
+        this.recoverStaleJobs().catch((err) => logger.error({ err }, 'Failed to recover stale jobs'));
       },
       5 * 60 * 1000,
     );
 
-    this.setupListener();
+    void this.setupListener();
     this.poll();
   }
 
@@ -80,20 +83,20 @@ export class BackgroundJobWorker {
       try {
         await this.pgClient.end();
       } catch (err) {
-        console.error('Error closing Postgres listener client on shutdown:', err);
+        logger.error({ err }, 'Error closing Postgres listener client on shutdown');
       }
       this.pgClient = null;
     }
 
     if (this.activeJobsCount > 0) {
-      console.log(
+      logger.info(
         `Background Job Worker: Waiting for ${this.activeJobsCount} active jobs to complete before shutting down...`,
       );
       await new Promise<void>((resolve) => {
         this.shutdownResolver = resolve;
       });
     }
-    console.log('Background Job Worker stopped.');
+    logger.info('Background Job Worker stopped.');
   }
 
   private async ensureAddressFingerprintsJobScheduled(): Promise<void> {
@@ -107,7 +110,7 @@ export class BackgroundJobWorker {
           .forUpdate()
           .executeTakeFirst();
         if (!existing) {
-          console.log('Scheduling nightly address fingerprints recomputation background job…');
+          logger.info('Scheduling nightly address fingerprints recomputation background job…');
           await trx
             .insertInto('background_jobs')
             .values({
@@ -122,7 +125,7 @@ export class BackgroundJobWorker {
         }
       });
     } catch (err) {
-      console.error('Failed to ensure address fingerprints job scheduled:', err);
+      logger.error({ err }, 'Failed to ensure address fingerprints job scheduled');
     }
   }
 
@@ -137,7 +140,7 @@ export class BackgroundJobWorker {
           .forUpdate()
           .executeTakeFirst();
         if (!existing) {
-          console.log('Scheduling daily activity feed cleanup background job…');
+          logger.info('Scheduling daily activity feed cleanup background job…');
           await trx
             .insertInto('background_jobs')
             .values({
@@ -152,7 +155,7 @@ export class BackgroundJobWorker {
         }
       });
     } catch (err) {
-      console.error('Failed to ensure cleanup job scheduled:', err);
+      logger.error({ err }, 'Failed to ensure cleanup job scheduled');
     }
   }
 
@@ -167,7 +170,7 @@ export class BackgroundJobWorker {
           .forUpdate()
           .executeTakeFirst();
         if (!existing) {
-          console.log('Scheduling daily company google enrichment background job…');
+          logger.info('Scheduling daily company google enrichment background job…');
           await trx
             .insertInto('background_jobs')
             .values({
@@ -182,7 +185,7 @@ export class BackgroundJobWorker {
         }
       });
     } catch (err) {
-      console.error('Failed to ensure companies google refresh job scheduled:', err);
+      logger.error({ err }, 'Failed to ensure companies google refresh job scheduled');
     }
   }
 
@@ -197,7 +200,7 @@ export class BackgroundJobWorker {
           .forUpdate()
           .executeTakeFirst();
         if (!existing) {
-          console.log('Scheduling daily due tasks check background job…');
+          logger.info('Scheduling daily due tasks check background job…');
           await trx
             .insertInto('background_jobs')
             .values({
@@ -212,7 +215,7 @@ export class BackgroundJobWorker {
         }
       });
     } catch (err) {
-      console.error('Failed to ensure due tasks check scheduled:', err);
+      logger.error({ err }, 'Failed to ensure due tasks check scheduled');
     }
   }
 
@@ -227,7 +230,7 @@ export class BackgroundJobWorker {
           .forUpdate()
           .executeTakeFirst();
         if (!existing) {
-          console.log('Scheduling nightly duplicates recomputation background job…');
+          logger.info('Scheduling nightly duplicates recomputation background job…');
           await trx
             .insertInto('background_jobs')
             .values({
@@ -242,7 +245,7 @@ export class BackgroundJobWorker {
         }
       });
     } catch (err) {
-      console.error('Failed to ensure duplicates recompute job scheduled:', err);
+      logger.error({ err }, 'Failed to ensure duplicates recompute job scheduled');
     }
   }
 
@@ -257,7 +260,7 @@ export class BackgroundJobWorker {
           .forUpdate()
           .executeTakeFirst();
         if (!existing) {
-          console.log('Scheduling daily scheduled deletions background job…');
+          logger.info('Scheduling daily scheduled deletions background job…');
           await trx
             .insertInto('background_jobs')
             .values({
@@ -272,7 +275,7 @@ export class BackgroundJobWorker {
         }
       });
     } catch (err) {
-      console.error('Failed to ensure perform scheduled deletions job scheduled:', err);
+      logger.error({ err }, 'Failed to ensure perform scheduled deletions job scheduled');
     }
   }
 
@@ -287,7 +290,7 @@ export class BackgroundJobWorker {
           .forUpdate()
           .executeTakeFirst();
         if (!existing) {
-          console.log('Scheduling daily newsletter events pruning background job…');
+          logger.info('Scheduling daily newsletter events pruning background job…');
           await trx
             .insertInto('background_jobs')
             .values({
@@ -302,7 +305,7 @@ export class BackgroundJobWorker {
         }
       });
     } catch (err) {
-      console.error('Failed to ensure prune newsletter events job scheduled:', err);
+      logger.error({ err }, 'Failed to ensure prune newsletter events job scheduled');
     }
   }
 
@@ -317,7 +320,7 @@ export class BackgroundJobWorker {
           .forUpdate()
           .executeTakeFirst();
         if (!existing) {
-          console.log('Scheduling sync scheduler background job…');
+          logger.info('Scheduling sync scheduler background job…');
           await trx
             .insertInto('background_jobs')
             .values({
@@ -332,7 +335,7 @@ export class BackgroundJobWorker {
         }
       });
     } catch (err) {
-      console.error('Failed to ensure sync scheduler job scheduled:', err);
+      logger.error({ err }, 'Failed to ensure sync scheduler job scheduled');
     }
   }
 
@@ -347,7 +350,7 @@ export class BackgroundJobWorker {
           .forUpdate()
           .executeTakeFirst();
         if (!existing) {
-          console.log('Scheduling daily usage limits check background job…');
+          logger.info('Scheduling daily usage limits check background job…');
           await trx
             .insertInto('background_jobs')
             .values({
@@ -362,7 +365,7 @@ export class BackgroundJobWorker {
         }
       });
     } catch (err) {
-      console.error('Failed to ensure usage limit checks scheduled:', err);
+      logger.error({ err }, 'Failed to ensure usage limit checks scheduled');
     }
   }
 
@@ -377,7 +380,7 @@ export class BackgroundJobWorker {
           .forUpdate()
           .executeTakeFirst();
         if (!existing) {
-          console.log('Scheduling periodic drip workflows processing background job…');
+          logger.info('Scheduling periodic drip workflows processing background job…');
           await trx
             .insertInto('background_jobs')
             .values({
@@ -392,34 +395,37 @@ export class BackgroundJobWorker {
         }
       });
     } catch (err) {
-      console.error('Failed to ensure workflows job scheduled:', err);
+      logger.error({ err }, 'Failed to ensure workflows job scheduled');
     }
   }
 
   private poll() {
     if (!this.isRunning) return;
-
-    this.timer = setTimeout(async () => {
-      let processedAJob = false;
-      try {
-        this.activeJobsCount++;
-        processedAJob = await this.processNextJob();
-      } catch (err) {
-        console.error('Error in background job worker poll cycle:', err);
-      } finally {
-        this.activeJobsCount--;
-
-        // If shutdown was requested and no active jobs remain, resolve the stop() promise
-        if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
-          this.shutdownResolver();
-        } else {
-          // Poll again immediately (10ms) if we processed a job (to drain the queue),
-          // or back off to 30 seconds if no jobs were found.
-          const delay = processedAJob ? 10 : 30000;
-          this.pollWithDelay(delay);
-        }
-      }
+    this.timer = setTimeout(() => {
+      void this.runPollCycle();
     }, 0);
+  }
+
+  private async runPollCycle(): Promise<void> {
+    let processedAJob = false;
+    try {
+      this.activeJobsCount++;
+      processedAJob = await this.processNextJob();
+    } catch (err) {
+      logger.error({ err }, 'Error in background job worker poll cycle');
+    } finally {
+      this.activeJobsCount--;
+
+      // If shutdown was requested and no active jobs remain, resolve the stop() promise
+      if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
+        this.shutdownResolver();
+      } else {
+        // Poll again immediately (10ms) if we processed a job (to drain the queue),
+        // or back off to 30 seconds if no jobs were found.
+        const delay = processedAJob ? 10 : 30000;
+        this.pollWithDelay(delay);
+      }
+    }
   }
 
   private pollWithDelay(ms: number) {
@@ -463,7 +469,7 @@ export class BackgroundJobWorker {
 
     if (!job) return false;
 
-    console.log(`Processing job ${job.id} (Queue: ${job.queue}, Status: ${job.status})`);
+    logger.info({ jobId: job.id, queue: job.queue }, 'Processing job');
 
     const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
 
@@ -482,10 +488,10 @@ export class BackgroundJobWorker {
         .where('id', '=', job.id)
         .execute();
 
-      console.log(`Job ${job.id} completed successfully.`);
-    } catch (err: any) {
-      const errorMsg = err?.message || String(err);
-      console.error(`Failed to process background job ${job.id}:`, err);
+      logger.info({ jobId: job.id }, 'Job completed successfully');
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.error({ err, jobId: job.id }, 'Failed to process background job');
 
       try {
         // If it was an import job, mark the import as failed and store the error message
@@ -502,7 +508,7 @@ export class BackgroundJobWorker {
           });
         }
       } catch (dbErr) {
-        console.error('Failed to mark data_imports as failed:', dbErr);
+        logger.error({ err: dbErr }, 'Failed to mark data_imports as failed');
       }
 
       const attempts = Number(job.attempts || 0);
@@ -518,7 +524,7 @@ export class BackgroundJobWorker {
           payload.type === 'send-newsletter';
         const delaySeconds = isMail ? Math.pow(2, attempts) * 30 : attempts * 30;
         const runAt = new Date(Date.now() + delaySeconds * 1000);
-        console.log(`Rescheduling job ${job.id} to run at ${runAt.toISOString()} (Attempt ${attempts}/${maxAttempts})`);
+        logger.info({ jobId: job.id, runAt: runAt.toISOString(), attempt: attempts, maxAttempts }, 'Rescheduling job');
 
         await this.db
           .updateTable('background_jobs')
@@ -533,7 +539,7 @@ export class BackgroundJobWorker {
           .where('id', '=', job.id)
           .execute();
       } else {
-        console.error(`Job ${job.id} exceeded maximum attempts (${maxAttempts}). Marking as failed.`);
+        logger.error({ jobId: job.id, maxAttempts }, 'Job exceeded maximum attempts, marking as failed');
         await this.db
           .updateTable('background_jobs')
           .set({
@@ -554,13 +560,13 @@ export class BackgroundJobWorker {
               error: `Export failed after all retries. Last error: ${errorMsg.substring(0, 400)}`,
             });
           } catch (exportErr) {
-            console.error('Failed to update export status on job permanent failure:', exportErr);
+            logger.error({ err: exportErr }, 'Failed to update export status on job permanent failure');
           }
         }
 
         if (payload.type === 'ms_sync' && payload.userId) {
           const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
-          console.error(`[sync-error][${correlationId}] MS sync permanently failed for user ${payload.userId}:`, err);
+          logger.error({ err, correlationId, userId: payload.userId }, 'MS sync permanently failed');
           try {
             const { MsOAuthService } = await import('../../modules/ms-sync/ms-oauth.service');
             const { env } = await import('../../../env');
@@ -572,16 +578,13 @@ export class BackgroundJobWorker {
             });
             await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
           } catch (recordErr) {
-            console.error('Failed to record MS sync error on token:', recordErr);
+            logger.error({ err: recordErr }, 'Failed to record MS sync error on token');
           }
         }
 
         if (payload.type === 'google_sync' && payload.userId) {
           const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
-          console.error(
-            `[sync-error][${correlationId}] Google sync permanently failed for user ${payload.userId}:`,
-            err,
-          );
+          logger.error({ err, correlationId, userId: payload.userId }, 'Google sync permanently failed');
           try {
             const { GoogleOAuthService } = await import('../../modules/google-sync/google-oauth.service');
             const { env } = await import('../../../env');
@@ -592,7 +595,7 @@ export class BackgroundJobWorker {
             });
             await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
           } catch (recordErr) {
-            console.error('Failed to record Google sync error on token:', recordErr);
+            logger.error({ err: recordErr }, 'Failed to record Google sync error on token');
           }
         }
 
@@ -606,13 +609,15 @@ export class BackgroundJobWorker {
 
   private reconnectListener() {
     if (this.pgClient) {
-      this.pgClient.end().catch();
+      void this.pgClient.end().catch(() => {
+        /* noop */
+      });
       this.pgClient = null;
     }
     if (!this.isRunning) return;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = setTimeout(() => {
-      this.setupListener();
+      void this.setupListener();
     }, 5000);
   }
 
@@ -663,7 +668,7 @@ export class BackgroundJobWorker {
         }
       }
     } catch (err) {
-      console.error('Failed to recover stale background jobs:', err);
+      logger.error({ err }, 'Failed to recover stale background jobs');
     }
   }
 
@@ -703,7 +708,7 @@ export class BackgroundJobWorker {
           })
           .execute();
       } catch (schedErr) {
-        console.error(`Failed to reschedule failed cron job (${type}):`, schedErr);
+        logger.error({ err: schedErr, type }, 'Failed to reschedule failed cron job');
       }
     }
   }
@@ -716,25 +721,25 @@ export class BackgroundJobWorker {
 
       this.pgClient.on('notification', (msg) => {
         if (msg.channel === 'background_jobs_channel') {
-          console.log('Background Job Worker received notify, waking up...');
+          logger.debug('Background Job Worker received notify, waking up...');
           this.wakeUp();
         }
       });
 
       this.pgClient.on('error', (err) => {
-        console.error('Postgres listener client error:', err);
+        logger.error({ err }, 'Postgres listener client error');
         this.reconnectListener();
       });
 
       this.pgClient.on('end', () => {
-        console.warn('Postgres listener connection closed.');
+        logger.warn('Postgres listener connection closed');
         this.reconnectListener();
       });
 
       await this.pgClient.query('LISTEN background_jobs_channel');
-      console.log('Listening for background_jobs notifications...');
+      logger.info('Listening for background_jobs notifications');
     } catch (err) {
-      console.error('Failed to setup Postgres listener:', err);
+      logger.error({ err }, 'Failed to setup Postgres listener');
       this.reconnectListener();
     }
   }

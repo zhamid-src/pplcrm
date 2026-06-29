@@ -14,6 +14,16 @@ import { UserService } from '@frontend/services/user.service';
 import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
 import { NotificationsService } from '../../services/api/notifications-service';
 
+type NotificationItem = {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  link: string | null;
+  created_at: string | Date;
+};
+
 @Component({
   selector: 'pc-navbar',
   imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink],
@@ -40,7 +50,7 @@ export class Navbar implements OnDestroy {
 
   private pollInterval?: ReturnType<typeof setInterval>;
 
-  public readonly notifications = signal<any[]>([]);
+  public readonly notifications = signal<NotificationItem[]>([]);
   public readonly unreadCount = signal<number>(0);
   public readonly isLoadingMore = signal<boolean>(false);
   public readonly hasMore = signal<boolean>(true);
@@ -147,7 +157,7 @@ export class Navbar implements OnDestroy {
       }
       if (nextBatch && nextBatch.length > 0) {
         const existingIds = new Set(this.notifications().map((n) => n.id));
-        const uniqueNext = nextBatch.filter((n: any) => !existingIds.has(n.id));
+        const uniqueNext = nextBatch.filter((n: NotificationItem) => !existingIds.has(n.id));
         if (uniqueNext.length > 0) {
           this.notifications.set([...this.notifications(), ...uniqueNext]);
         }
@@ -159,7 +169,7 @@ export class Navbar implements OnDestroy {
     }
   }
 
-  protected async clickNotification(notif: any) {
+  protected async clickNotification(notif: NotificationItem) {
     if (!notif.read) {
       try {
         await this.notificationsSvc.markRead(notif.id);
@@ -170,7 +180,7 @@ export class Navbar implements OnDestroy {
       }
     }
     if (notif.link) {
-      this.router.navigateByUrl(notif.link);
+      void this.router.navigateByUrl(notif.link);
     }
     this.closeDropdown();
   }
@@ -186,7 +196,7 @@ export class Navbar implements OnDestroy {
     }
   }
 
-  protected formatTime(dateStr: any): string {
+  protected formatTime(dateStr: string | Date | null | undefined): string {
     if (!dateStr) return '';
     const date = new Date(dateStr);
     const now = new Date();
@@ -254,7 +264,7 @@ export class Navbar implements OnDestroy {
   }
 
   protected signOut(): void {
-    this.auth.signOut();
+    void this.auth.signOut();
   }
 
   protected closeDropdown(): void {
@@ -265,8 +275,7 @@ export class Navbar implements OnDestroy {
   }
 
   protected toggleFullScreen(): void {
-    console.log('Toggling fullscreen mode');
-    this.fullscreen.toggleFullScreen();
+    void this.fullscreen.toggleFullScreen();
   }
 
   protected toggleMobile(): void {

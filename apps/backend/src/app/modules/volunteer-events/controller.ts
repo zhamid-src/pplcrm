@@ -8,6 +8,7 @@ import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
 import { createHmac } from 'crypto';
 import { WorkflowsController } from '../workflows/controller';
+import { logger } from '../../logger';
 
 const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
@@ -126,7 +127,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           .where(sql`payload->>'eventId'`, '=', String(id))
           .execute();
       } catch (err) {
-        console.error('Failed to clean up pending reminders for disabled event reminders', err);
+        logger.error({ err }, 'Failed to clean up pending reminders for disabled event reminders');
       }
     } else if (payload.send_reminder === true) {
       try {
@@ -182,7 +183,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           }
         }
       } catch (err) {
-        console.error('Failed to re-schedule shift reminders for event', err);
+        logger.error({ err }, 'Failed to re-schedule shift reminders for event');
       }
     }
 
@@ -239,7 +240,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           }
         }
       } catch (err) {
-        console.error('Failed to schedule shift reminder for volunteer', err);
+        logger.error({ err }, 'Failed to schedule shift reminder for volunteer');
       }
 
       // Trigger volunteer signup workflows
@@ -256,7 +257,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
             );
           });
       } catch (err) {
-        console.error('Failed to trigger volunteer signup workflows:', err);
+        logger.error({ err }, 'Failed to trigger volunteer signup workflows');
       }
     }
 
@@ -275,7 +276,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
             );
           });
       } catch (err) {
-        console.error('Failed to trigger volunteer_shift_status workflow in signupVolunteer:', err);
+        logger.error({ err }, 'Failed to trigger volunteer_shift_status workflow in signupVolunteer');
       }
     }
 
@@ -290,7 +291,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         metadata: { id: result?.id, event_id: payload.event_id, person_id: payload.person_id },
       });
     } catch (e) {
-      console.error('Failed to log shift signup activity', e);
+      logger.error({ err: e }, 'Failed to log shift signup activity');
     }
 
     return result;
@@ -321,7 +322,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
               );
             });
         } catch (err) {
-          console.error('Failed to trigger volunteer_shift_status workflows:', err);
+          logger.error({ err }, 'Failed to trigger volunteer_shift_status workflows');
         }
       }
 
@@ -377,7 +378,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           }
         }
       } catch (err) {
-        console.error('Failed to update shift reminder job status', err);
+        logger.error({ err }, 'Failed to update shift reminder job status');
       }
     }
 
@@ -392,7 +393,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         metadata: { id, status: payload.status },
       });
     } catch (e) {
-      console.error('Failed to log shift update activity', e);
+      logger.error({ err: e }, 'Failed to log shift update activity');
     }
 
     return result;
@@ -414,7 +415,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           .where(sql`payload->>'shiftId'`, '=', String(id))
           .execute();
       } catch (err) {
-        console.error('Failed to delete pending shift reminder job', err);
+        logger.error({ err }, 'Failed to delete pending shift reminder job');
       }
     }
 
@@ -429,7 +430,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         metadata: { id },
       });
     } catch (e) {
-      console.error('Failed to log shift delete activity', e);
+      logger.error({ err: e }, 'Failed to log shift delete activity');
     }
 
     return result;
@@ -585,7 +586,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
 
     // 3. Honeypot check
     if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      console.warn(`Spam bot detected from IP ${clientIp} for event ${eventId}`);
+      logger.warn(`Spam bot detected from IP ${clientIp} for event ${eventId}`);
       return { success: true }; // Silent mock success
     }
 
@@ -688,7 +689,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
             const workflowsController = new WorkflowsController();
             await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
           } catch (err) {
-            console.error('Failed to trigger contact_created workflow in signupVolunteerPublic:', err);
+            logger.error({ err }, 'Failed to trigger contact_created workflow in signupVolunteerPublic');
           }
         }
 
@@ -780,7 +781,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
               try {
                 await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
               } catch (err) {
-                console.error('Failed to trigger tag_added workflow in signupVolunteerPublic:', err);
+                logger.error({ err }, 'Failed to trigger tag_added workflow in signupVolunteerPublic');
               }
             }
           }
@@ -869,7 +870,7 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           const workflowsController = new WorkflowsController();
           await workflowsController.triggerVolunteerSignup(tenantId, personId, String(event.id), trx);
         } catch (err) {
-          console.error('Failed to trigger volunteer signup workflows in public form:', err);
+          logger.error({ err }, 'Failed to trigger volunteer signup workflows in public form');
         }
       });
 

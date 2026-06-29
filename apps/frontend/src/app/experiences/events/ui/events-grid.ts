@@ -23,7 +23,7 @@ import { EventsFrontendService } from '../services/events-frontend-service';
         [disableImport]="true"
         [allowFilter]="false"
         [addRoute]="'add'"
-        plusIcon="add-ticket"
+        plusIcon="plus"
         i18n-plusIcon
         [showArchiveIcon]="true"
         archiveIcon="archive-box-arrow-down"

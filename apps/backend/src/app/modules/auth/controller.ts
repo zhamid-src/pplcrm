@@ -48,6 +48,7 @@ import { seedOnboardingData } from './onboarding-seed';
 import { AuthUsersRepo } from './repositories/authusers.repo';
 import { SessionsRepo } from './repositories/sessions.repo';
 import { TenantsRepo } from './repositories/tenants.repo';
+import { logger } from '../../logger';
 
 export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private static readonly AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -377,7 +378,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             .where('id', '=', profile.avatar_file_id)
             .execute();
         } catch (err) {
-          console.error('Failed to clean up user avatar on delete', err);
+          logger.error({ err }, 'Failed to clean up user avatar on delete');
         }
       }
 
@@ -617,7 +618,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       const { queueUsageLimitCheck } = await import('../billing/usage-limits');
       await queueUsageLimitCheck(auth.tenant_id, db);
     } catch (err) {
-      console.error('Failed to trigger usage check in inviteUser:', err);
+      logger.error({ err }, 'Failed to trigger usage check in inviteUser');
     }
 
     return this.sanitizeUser({ ...created, last_name: input.last_name });
@@ -1572,7 +1573,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         },
       };
     } catch (err) {
-      console.error('Failed to build user stats', err);
+      logger.error({ err }, 'Failed to build user stats');
       return defaults;
     }
   }
@@ -1793,7 +1794,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           };
         }
       } catch (e) {
-        console.error('Failed to parse profile json for preferences', e);
+        logger.error({ err: e }, 'Failed to parse profile json for preferences');
       }
     }
 
@@ -1824,7 +1825,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       try {
         finalJson = typeof existingProfile.json === 'string' ? JSON.parse(existingProfile.json) : existingProfile.json;
       } catch (e) {
-        console.error('Failed to parse existing profile json', e);
+        logger.error({ err: e }, 'Failed to parse existing profile json');
       }
     }
 

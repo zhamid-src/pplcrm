@@ -11,7 +11,7 @@ export async function seedOnboardingData(
   trx: Transaction<Models>,
 ) {
   const { tenant_id, user_id } = params;
-  const campaign_id = params.campaign_id as any;
+  const campaign_id = String(params.campaign_id);
 
   // ── 1. Two sample households ─────────────────────────────────────────────
   const households = await trx
@@ -25,18 +25,18 @@ export async function seedOnboardingData(
         state: 'IL',
         zip: '62701',
         country: 'US',
-        address_fp_street: fingerprintStreet({ street1: '123 Sample Street' }) as any,
+        address_fp_street: fingerprintStreet({ street1: '123 Sample Street' }),
         address_fp_full: fingerprintFull({
           street1: '123 Sample Street',
           city: 'Springfield',
           state: 'IL',
           zip: '62701',
           country: 'US',
-        }) as any,
+        }),
         notes: '[SAMPLE] Sample household. Delete when you add your real contacts.',
         createdby_id: user_id,
         updatedby_id: user_id,
-      } as any,
+      },
       {
         tenant_id: tenant_id,
         campaign_id,
@@ -45,23 +45,23 @@ export async function seedOnboardingData(
         state: 'IL',
         zip: '62702',
         country: 'US',
-        address_fp_street: fingerprintStreet({ street1: '456 Demo Avenue' }) as any,
+        address_fp_street: fingerprintStreet({ street1: '456 Demo Avenue' }),
         address_fp_full: fingerprintFull({
           street1: '456 Demo Avenue',
           city: 'Springfield',
           state: 'IL',
           zip: '62702',
           country: 'US',
-        }) as any,
+        }),
         notes: '[SAMPLE] Sample household. Delete when you add your real contacts.',
         createdby_id: user_id,
         updatedby_id: user_id,
-      } as any,
+      },
     ])
     .returning('id')
     .execute();
 
-  const [hh1Id, hh2Id] = households.map((h) => h.id);
+  const [hh1Id, hh2Id] = households.map((h) => h.id) as [string, string];
 
   // ── 2. Three sample persons ───────────────────────────────────────────────
   const persons = await trx
@@ -70,7 +70,7 @@ export async function seedOnboardingData(
       {
         tenant_id: tenant_id,
         campaign_id,
-        household_id: hh1Id as any,
+        household_id: hh1Id,
         first_name: 'Alex',
         last_name: '[Sample]',
         email: 'alex.sample@example.com',
@@ -78,11 +78,11 @@ export async function seedOnboardingData(
         notes: '[SAMPLE] Tagged as Supporter. Delete when ready to use real contacts.',
         createdby_id: user_id,
         updatedby_id: user_id,
-      } as any,
+      },
       {
         tenant_id: tenant_id,
         campaign_id,
-        household_id: hh1Id as any,
+        household_id: hh1Id,
         first_name: 'Sam',
         last_name: '[Sample]',
         email: 'sam.sample@example.com',
@@ -90,11 +90,11 @@ export async function seedOnboardingData(
         notes: '[SAMPLE] Tagged as Volunteer. Delete when ready to use real contacts.',
         createdby_id: user_id,
         updatedby_id: user_id,
-      } as any,
+      },
       {
         tenant_id: tenant_id,
         campaign_id,
-        household_id: hh2Id as any,
+        household_id: hh2Id,
         first_name: 'Jordan',
         last_name: '[Sample]',
         email: 'jordan.sample@example.com',
@@ -102,7 +102,7 @@ export async function seedOnboardingData(
         notes: '[SAMPLE] Tagged as Non-Supporter. Delete when ready to use real contacts.',
         createdby_id: user_id,
         updatedby_id: user_id,
-      } as any,
+      },
     ])
     .returning('id')
     .execute();
@@ -127,7 +127,7 @@ export async function seedOnboardingData(
     supporterTagId ? { person_id: alexId, tag_id: supporterTagId } : null,
     volunteerTagId ? { person_id: samId, tag_id: volunteerTagId } : null,
     nonSupporterTagId ? { person_id: jordanId, tag_id: nonSupporterTagId } : null,
-  ].filter((m): m is { person_id: any; tag_id: any } => m !== null);
+  ].filter((m): m is { person_id: string; tag_id: string } => m !== null);
 
   if (tagMappings.length > 0) {
     await trx
@@ -153,34 +153,34 @@ export async function seedOnboardingData(
         name: 'Add your first real contact [SAMPLE]',
         details:
           'Go to People and add someone from your real list. You can delete the three sample contacts (Alex, Sam, Jordan) anytime.',
-        status: 'todo',
-        priority: 'low',
+        status: 'todo' as const,
+        priority: 'low' as const,
         position: 1,
         createdby_id: user_id,
         updatedby_id: user_id,
-      } as any,
+      },
       {
         tenant_id: tenant_id,
         name: 'Explore tags and lists to segment your contacts [SAMPLE]',
         details:
           'Tags like "supporter", "volunteer", and "donor" are already set up. Open a sample person and try adding a tag. Then visit Lists to group people automatically by criteria.',
-        status: 'todo',
-        priority: 'low',
+        status: 'todo' as const,
+        priority: 'low' as const,
         position: 2,
         createdby_id: user_id,
         updatedby_id: user_id,
-      } as any,
+      },
       {
         tenant_id: tenant_id,
         name: 'Share your sign-up form with supporters [SAMPLE]',
         details:
           'A sample web form called "Newsletter Sign-Up" has been created under Forms. Copy the public link and put it on your website so new contacts land directly in this CRM.',
-        status: 'todo',
-        priority: 'medium',
+        status: 'todo' as const,
+        priority: 'medium' as const,
         position: 3,
         createdby_id: user_id,
         updatedby_id: user_id,
-      } as any,
+      },
     ])
     .execute();
 
@@ -191,8 +191,8 @@ export async function seedOnboardingData(
       tenant_id: tenant_id,
       name: 'Newsletter Sign-Up [SAMPLE]',
       description: 'Sample sign-up form for your website. Customize the fields or delete and create your own.',
-      fields: JSON.stringify(['first_name', 'last_name', 'email:required', 'mobile', 'notes']) as any,
-      target_tags: JSON.stringify(['subscriber']) as any,
+      fields: JSON.stringify(['first_name', 'last_name', 'email:required', 'mobile', 'notes']),
+      target_tags: JSON.stringify(['subscriber']),
       status: 'active',
       send_confirmation: true,
       send_alert: false,

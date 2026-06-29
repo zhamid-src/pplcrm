@@ -9,6 +9,7 @@ import { SettingsRepo } from '../settings/repositories/settings.repo';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { WorkflowsController } from '../workflows/controller';
 import type { Selectable } from 'kysely';
+import { logger } from '../../logger';
 
 export class DonationsController extends BaseController<'donations', DonationsRepo> {
   private settingsRepo = new SettingsRepo();
@@ -125,7 +126,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
         try {
           await stripe.subscriptions.cancel(pledge.stripe_subscription_id);
         } catch (err) {
-          console.error('Stripe subscription cancel failed:', err);
+          logger.error({ err }, 'Stripe subscription cancel failed');
         }
       }
     }
@@ -642,7 +643,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
           const wc = new WorkflowsController();
           await wc.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
         } catch (err) {
-          console.error('Failed to trigger tag_added on pledge:', err);
+          logger.error({ err }, 'Failed to trigger tag_added on pledge');
         }
       }
 
@@ -753,7 +754,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
             const workflowsController = new WorkflowsController();
             await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), tagName, trx);
           } catch (err) {
-            console.error('Failed to trigger tag_added workflow in DonationsController:', err);
+            logger.error({ err }, 'Failed to trigger tag_added workflow in DonationsController');
           }
         }
 
@@ -772,7 +773,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
             })
             .execute();
         } catch (err) {
-          console.error('Failed to write audit activity log for donation:', err);
+          logger.error({ err }, 'Failed to write audit activity log for donation');
         }
 
         return inserted;
@@ -782,7 +783,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
       const workflowsController = new WorkflowsController();
       await workflowsController.triggerWorkflow(tenantId, personId, 'donation_received', String(amountCents / 100));
     } catch (workflowErr) {
-      console.error('Failed to trigger workflow on donation_received:', workflowErr);
+      logger.error({ err: workflowErr }, 'Failed to trigger workflow on donation_received');
     }
 
     return record;

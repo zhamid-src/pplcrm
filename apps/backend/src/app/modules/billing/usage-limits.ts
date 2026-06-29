@@ -4,6 +4,7 @@ import { sql } from 'kysely';
 import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
+import { logger } from '../../logger';
 
 export interface PlanLimits {
   price: string;
@@ -31,7 +32,7 @@ export async function checkTenantUsage(tenantId: string, db: Kysely<any>): Promi
   const tenant = await db.selectFrom('tenants').selectAll().where('id', '=', BigInt(tenantId)).executeTakeFirst();
 
   if (!tenant) {
-    console.error(`[checkTenantUsage] Tenant not found: ${tenantId}`);
+    logger.error(`[checkTenantUsage] Tenant not found: ${tenantId}`);
     return;
   }
 
@@ -254,7 +255,7 @@ The CampaignRaven Team`;
           html,
         });
       } catch (err) {
-        console.error(`Failed to send limit notification email to ${admin.email}:`, err);
+        logger.error({ err }, `Failed to send limit notification email to ${admin.email}`);
       }
     }
   }
@@ -266,7 +267,7 @@ export async function checkAllUsageLimits(db: Kysely<any>): Promise<void> {
     try {
       await checkTenantUsage(String(tenant['id']), db);
     } catch (err) {
-      console.error(`Failed to check usage limits for tenant ${tenant['id']}:`, err);
+      logger.error({ err }, `Failed to check usage limits for tenant ${tenant['id']}`);
     }
   }
 }

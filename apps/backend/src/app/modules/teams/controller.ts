@@ -1,7 +1,7 @@
 import type { AddTeamType, UpdateTeamType, getAllOptionsType } from '../../../../../../libs/common/src';
-import { type IAuthKeyPayload } from '../../../../../../libs/common/src';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src';
 
-import type { Transaction } from 'kysely';
+import type { Selectable, Transaction } from 'kysely';
 
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
 import { BaseController } from '../../lib/base.controller';
@@ -12,7 +12,8 @@ import { getCanonicalSystemTagName } from '../tags/system-tags';
 import { MapTeamsPersonsRepo } from './repositories/map-teams-persons.repo';
 import { MapTeamsListsRepo } from './repositories/map-teams-lists.repo';
 import { TeamsRepo } from './repositories/teams.repo';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { QueryParams } from '../../lib/base.repo';
 
 export class TeamsController extends BaseController<'teams', TeamsRepo> {
   private readonly mapRepo = new MapTeamsPersonsRepo();
@@ -59,7 +60,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
         await this.mapRepo.replaceVolunteers(
           {
             tenant_id: auth.tenant_id,
-            team_id: String((created as any).id),
+            team_id: String(created.id),
             person_ids: volunteers.map((person) => person.id),
             user_id: auth.user_id,
           },
@@ -71,7 +72,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
         await this.mapListsRepo.replaceLists(
           {
             tenant_id: auth.tenant_id,
-            team_id: String((created as any).id),
+            team_id: String(created.id),
             list_ids: input.list_ids,
             user_id: auth.user_id,
           },
@@ -119,11 +120,14 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
   public async deleteTeam(auth: IAuthKeyPayload, id: string) {
     await this.mapRepo.deleteByTeam({ tenant_id: auth.tenant_id, team_id: id });
     await this.mapListsRepo.deleteByTeam({ tenant_id: auth.tenant_id, team_id: id });
-    return this.delete(auth.tenant_id as any, id);
+    return this.delete(auth.tenant_id as TypeTenantId<'teams'>, id);
   }
 
   public getAllTeams(tenant: string, options?: getAllOptionsType) {
-    return this.getRepo().getAllWithCounts({ tenant_id: tenant, options: options as any });
+    return this.getRepo().getAllWithCounts({
+      tenant_id: tenant,
+      options: options as QueryParams<'teams' | 'persons' | 'map_teams_persons'>,
+    });
   }
 
   public async getTeamsForVolunteer(auth: IAuthKeyPayload, personId: string) {
@@ -156,7 +160,9 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
   }
 
   public async getById(auth: IAuthKeyPayload, id: string) {
-    const team = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: id });
+    const team = (await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: id })) as
+      | Selectable<Models['teams']>
+      | undefined;
     if (!team) throw new NotFoundError('Team not found');
 
     const volunteerIds = await this.mapRepo.getVolunteerIds({ tenant_id: auth.tenant_id, team_id: id });
@@ -164,7 +170,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     const captainName = this.resolveCaptainName(team, volunteers);
     const leadUserName = await this.resolveLeadUserName(
       auth.tenant_id,
-      (team as any).team_lead_user_id ? String((team as any).team_lead_user_id) : null,
+      team.team_lead_user_id ? String(team.team_lead_user_id) : null,
     );
     const teamWithUsers = await this.resolveCreatorAndUpdater(auth.tenant_id, team);
     const sanitized = this.sanitizeTeam(teamWithUsers, captainName ?? undefined, leadUserName ?? undefined);
@@ -205,7 +211,9 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
   }
 
   public async updateTeam(auth: IAuthKeyPayload, id: string, input: UpdateTeamType) {
-    const existing = await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: id });
+    const existing = (await this.getRepo().getOneBy('id', { tenant_id: auth.tenant_id, value: id })) as
+      | Selectable<Models['teams']>
+      | undefined;
     if (!existing) throw new NotFoundError('Team not found');
 
     const row: Record<string, unknown> = {};
@@ -236,8 +244,7 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
           ? this.normalizeVolunteerIds(input.volunteer_ids)
           : await this.mapRepo.getVolunteerIds({ tenant_id: auth.tenant_id, team_id: id }, trx);
 
-      const currentCaptainId =
-        (result as any)?.team_captain_id != null ? String((result as any).team_captain_id) : null;
+      const currentCaptainId = result?.team_captain_id != null ? String(result.team_captain_id) : null;
       const targetCaptainId =
         input.team_captain_id !== undefined
           ? input.team_captain_id
@@ -288,8 +295,8 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
           ? input.team_lead_user_id
             ? String(input.team_lead_user_id)
             : null
-          : (result as any).team_lead_user_id
-            ? String((result as any).team_lead_user_id)
+          : result?.team_lead_user_id
+            ? String(result.team_lead_user_id)
             : null;
       const leadUserName = await this.resolveLeadUserName(auth.tenant_id, targetLeadUserId, trx);
 

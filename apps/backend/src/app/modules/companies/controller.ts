@@ -5,6 +5,7 @@ import type { OperationDataType } from '../../../../../../libs/common/src/lib/ky
 import { ImportsRepo } from '../imports/repositories/imports.repo';
 import { StorageService } from '../../lib/storage.service';
 import { TRPCError } from '@trpc/server';
+import { logger } from '../../logger';
 
 export class CompaniesController extends BaseController<'companies', CompaniesRepo> {
   constructor() {
@@ -34,7 +35,7 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
             max_attempts: 3,
           })
           .execute()
-          .catch((err) => console.error('Failed to queue google enrichment job on getOneById:', err));
+          .catch((err) => logger.error({ err }, 'Failed to queue google enrichment job on getOneById'));
       }
     }
     return company;
@@ -142,7 +143,7 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
       const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
       await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
     } catch (err) {
-      console.error('Failed to upload import payload to storage', err);
+      logger.error({ err }, 'Failed to upload import payload to storage');
       await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',

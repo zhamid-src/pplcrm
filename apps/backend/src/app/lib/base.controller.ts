@@ -5,6 +5,7 @@ import type {
   getAllOptionsType,
 } from '../../../../../libs/common/src';
 import { env } from '../../env';
+import { logger } from '../logger';
 
 import type { ReferenceExpression, Transaction } from 'kysely';
 
@@ -75,7 +76,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         );
       }
     } catch (e) {
-      console.error('Failed to log create activity', e);
+      logger.error({ err: e }, 'Failed to log create activity');
     }
     return result;
   }
@@ -103,7 +104,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         }
       }
     } catch (e) {
-      console.error('Failed to log addMany activity', e);
+      logger.error({ err: e }, 'Failed to log addMany activity');
     }
     return result;
   }
@@ -126,7 +127,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         });
       }
     } catch (e) {
-      console.error('Failed to log delete activity', e);
+      logger.error({ err: e }, 'Failed to log delete activity');
     }
     return result;
   }
@@ -175,7 +176,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         | Record<string, unknown>
         | undefined;
     } catch (err) {
-      console.error('Failed to fetch original record for activity log', err);
+      logger.error({ err }, 'Failed to fetch original record for activity log');
     }
     const result = await this.repo.update({ id: input.id, tenant_id: input.tenant_id, row: input.row });
     try {
@@ -234,7 +235,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
                 metadata['assigned_to_name'] = `${assignee.first_name} ${assignee.last_name || ''}`.trim();
               }
             } catch (err) {
-              console.error('Failed to look up assignee name', err);
+              logger.error({ err }, 'Failed to look up assignee name');
             }
           }
         }
@@ -249,7 +250,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         });
       }
     } catch (e) {
-      console.error('Failed to log update activity', e);
+      logger.error({ err: e }, 'Failed to log update activity');
     }
     return result;
   }
@@ -303,7 +304,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
                 optedIn = false;
               }
             } catch (e) {
-              console.error('Failed to parse profile json in exportCsv', e);
+              logger.error({ err: e }, 'Failed to parse profile json in exportCsv');
             }
           }
 
@@ -319,7 +320,7 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         }
       } catch (err) {
         // Logging failures should never break export flow; swallow silently
-        console.error('Failed to log export activity or send email alert', err);
+        logger.error({ err }, 'Failed to log export activity or send email alert');
       }
     }
 

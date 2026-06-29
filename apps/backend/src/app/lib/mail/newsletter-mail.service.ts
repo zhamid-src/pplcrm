@@ -1,5 +1,6 @@
 import { env } from '../../../env';
 import { InternalError } from '../../errors/app-errors';
+import { logger } from '../../logger';
 
 export interface SendNewsletterOptions {
   fromName: string;
@@ -20,15 +21,15 @@ export class NewsletterEmailService {
     const apiKey = options.sendgridApiKey || env.sendgridApiKey;
 
     if (!apiKey) {
-      console.info(`[SENDGRID DEV MOCK] Newsletter Outbound:
-        From: "${options.fromName}" <${options.fromEmail}>
-        Reply-To: ${options.replyTo || '(none)'}
-        Recipients Count: ${options.recipients.length}
-        Recipients: ${options.recipients.join(', ')}
-        Subject: ${options.subject}
-        HTML Length: ${options.html.length} chars
-        HTML Tail: ${options.html.slice(-300)}
-      `);
+      logger.info(
+        {
+          from: `"${options.fromName}" <${options.fromEmail}>`,
+          replyTo: options.replyTo || null,
+          recipientCount: options.recipients.length,
+          subject: options.subject,
+        },
+        '[SENDGRID DEV MOCK] Newsletter Outbound',
+      );
       return options.recipients.length;
     }
 

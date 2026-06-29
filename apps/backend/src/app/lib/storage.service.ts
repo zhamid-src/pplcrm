@@ -1,6 +1,7 @@
 import { BlobServiceClient, BlobSASPermissions } from '@azure/storage-blob';
 import { env } from '../../env';
 import type { Readable } from 'stream';
+import { logger } from '../logger';
 
 export class StorageService {
   private serviceClient: BlobServiceClient;
@@ -45,7 +46,7 @@ export class StorageService {
         ],
       });
     } catch (err) {
-      console.warn('Failed to set storage service CORS properties:', err);
+      logger.warn({ err }, 'Failed to set storage service CORS properties');
     }
 
     const blockBlobClient = this.containerClient.getBlockBlobClient(key);

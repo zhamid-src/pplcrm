@@ -14,6 +14,7 @@ import { MapListsHouseholdsRepo } from './repositories/map-lists-households.repo
 import { MapListsPersonsRepo } from './repositories/map-lists-persons.repo';
 import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { WorkflowsController } from '../workflows/controller';
+import { logger } from '../../logger';
 
 export class ListsController extends BaseController<'lists', ListsRepo> {
   private householdsController = new HouseholdsController();
@@ -83,7 +84,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
             await workflowsController.triggerWorkflow(auth.tenant_id, person_id, 'list_joined', list.id);
           }
         } catch (err) {
-          console.error('Failed to trigger list_joined workflow in addList (explicit IDs):', err);
+          logger.error({ err }, 'Failed to trigger list_joined workflow in addList (explicit IDs)');
         }
       } else if (ids.length && payload.object === 'households') {
         const rows = ids.map((household_id) => ({
@@ -116,7 +117,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
                 await workflowsController.triggerWorkflow(auth.tenant_id, r.person_id, 'list_joined', list.id);
               }
             } catch (err) {
-              console.error('Failed to trigger list_joined workflow in addList (definition):', err);
+              logger.error({ err }, 'Failed to trigger list_joined workflow in addList (definition)');
             }
           }
         } else if (payload.object === 'households') {
@@ -500,7 +501,7 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
             session_id: 'lazy-refresh',
           };
           const promise = this.refreshList(mockAuth, input.id).catch((err) =>
-            console.error(`Failed to lazily queue refresh for list ${input.id}:`, err),
+            logger.error({ err }, `Failed to lazily queue refresh for list ${input.id}`),
           );
           (this as any)._lastLazyRefreshPromise = promise;
         }

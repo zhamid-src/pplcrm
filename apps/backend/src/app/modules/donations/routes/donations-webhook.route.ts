@@ -2,13 +2,14 @@ import type { FastifyPluginCallback } from 'fastify';
 import Stripe from 'stripe';
 import { BaseRepository } from '../../../lib/base.repo';
 import { env } from '../../../../env';
+import { logger } from '../../../logger';
 
 const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
   fastify.post('/webhook', async (req, reply) => {
     const query = req.query as { token?: string };
     const token = query.token;
     if (!token) {
-      console.error('❌ Webhook error: Missing token query parameter');
+      logger.error('Webhook error: Missing token query parameter');
       return reply.code(400).send({ error: 'Missing token parameter' });
     }
 
@@ -24,7 +25,7 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
         .executeTakeFirst();
 
       if (!tokenRow) {
-        console.error(`❌ Webhook error: Invalid webhook token: ${token}`);
+        logger.error(`Webhook error: Invalid webhook token: ${token}`);
         return reply.code(400).send({ error: 'Invalid webhook token' });
       }
 
@@ -67,9 +68,7 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
         event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
       }
 
-      console.log(
-        `💳 [DonationsWebhook] Persisting webhook event: ${event.id} (${event.type}) for Tenant: ${tenantId}`,
-      );
+      logger.info(`[DonationsWebhook] Persisting webhook event: ${event.id} (${event.type}) for Tenant: ${tenantId}`);
 
       // 2. Persist webhook event for background worker processing
       await BaseRepository.dbInstance
@@ -86,7 +85,7 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 
       return reply.code(200).send({ received: true });
     } catch (err: any) {
-      console.error(`❌ Donations Webhook error for Tenant ${tenantId}: ${err.message}`);
+      logger.error({ err: err.message }, `Donations Webhook error for Tenant ${tenantId}`);
       return reply.code(400).send({ error: err.message });
     }
   });
