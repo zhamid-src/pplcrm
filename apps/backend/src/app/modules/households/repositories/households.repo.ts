@@ -469,6 +469,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
   }
 
   public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // eslint-disable-next-line local/no-unscoped-db-query -- outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -492,6 +493,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const page = options?.page ?? 1;
     const pageSize = options?.pageSize ?? 20;
 
+    // eslint-disable-next-line local/no-unscoped-db-query -- outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
