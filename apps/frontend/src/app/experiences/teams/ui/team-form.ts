@@ -1,22 +1,22 @@
-import { Component, OnInit, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Component, computed, effect, inject, input, OnInit, signal, untracked } from '@angular/core';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
-import { AddTeamType, UpdateTeamType, IAuthUser, AddTeamObj } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
 import { Card as PcCard } from '@uxcommon/components/card/card';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AddTeamObj, AddTeamType, IAuthUser, UpdateTeamType } from '../../../../../../../libs/common/src';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
-import { PersonsService } from '../../persons/services/persons-service';
-import { TeamDetail, TeamsService } from '../services/teams-service';
-import { ListsService } from '../../lists/services/lists-service';
 import { UserService } from '../../../services/user.service';
+import { ListsService } from '../../lists/services/lists-service';
+import { PersonsService } from '../../persons/services/persons-service';
 import { TasksService } from '../../tasks/services/tasks-service';
+import { TeamDetail, TeamsService } from '../services/teams-service';
 
 interface PersonOption {
   email: string | null;
@@ -102,7 +102,10 @@ export class TeamFormComponent implements OnInit {
     });
   }
 
-  public async ngOnInit(): Promise<void> {
+  public ngOnInit(): void {
+    void this.initialize();
+  }
+  private async initialize(): Promise<void> {
     const end = this._loading.begin();
     try {
       await Promise.all([this.loadPeople(), this.loadUsers(), this.loadLists(), this.loadTeam()]);

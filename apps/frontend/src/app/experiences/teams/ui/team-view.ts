@@ -1,20 +1,20 @@
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { TeamsService } from '../services/teams-service';
-import { TasksService } from '../../tasks/services/tasks-service';
-import { UserService } from '../../../services/user.service';
-import { type IAuthUser } from '../../../../../../../libs/common/src';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { PcTabOption, TabPanel, Tabs } from '@uxcommon/components/tabs/tabs';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import type { IAuthUser } from '../../../../../../../libs/common/src';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { UserService } from '../../../services/user.service';
+import { TasksService } from '../../tasks/services/tasks-service';
+import { TeamsService } from '../services/teams-service';
 
 @Component({
   selector: 'pc-team-view',
@@ -83,7 +83,7 @@ export class TeamViewComponent {
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => this.loadAllData(currentId));
+      void untracked(() => this.loadAllData(currentId));
     });
 
     // Load users
@@ -117,7 +117,7 @@ export class TeamViewComponent {
   }
 
   protected editTeam() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteTeam() {

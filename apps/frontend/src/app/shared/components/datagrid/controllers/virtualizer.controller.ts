@@ -1,6 +1,6 @@
 import { Injectable, effect, signal } from '@angular/core';
-import { GridStoreService } from '../services/grid-store.service';
 import { Virtualizer, elementScroll, observeElementOffset, observeElementRect } from '@tanstack/virtual-core';
+import { GridStoreService } from '../services/grid-store.service';
 
 @Injectable()
 export class VirtualizerController {
@@ -72,7 +72,7 @@ export class VirtualizerController {
           const nearBottom = this.endIndex() > this.store.rows().length - 10;
           if (nearBottom) {
             this.fetchingNext = true;
-            this.nextPageFn().finally(() => (this.fetchingNext = false));
+            void this.nextPageFn().finally(() => (this.fetchingNext = false));
           }
         }
       }
@@ -81,7 +81,7 @@ export class VirtualizerController {
 
   startIndex(): number {
     const items = this.virtualizer?.getVirtualItems() ?? [];
-    if (items.length) return items[0].index;
+    if (items.length && items[0]) return items[0].index;
     // Fallback before virtualizer initializes
     const sc = this.scrollerEl;
     const top = sc?.scrollTop || 0;
@@ -90,7 +90,7 @@ export class VirtualizerController {
 
   endIndex(): number {
     const items = this.virtualizer?.getVirtualItems() ?? [];
-    if (items.length) return items[items.length - 1].index + 1;
+    if (items.length && items[items.length - 1]) return items[items.length - 1]!.index + 1;
     return Math.min(this.store.rows().length, this.startIndex() + this.visibleCount());
   }
 
@@ -98,7 +98,7 @@ export class VirtualizerController {
     const v = this.virtualizer;
     if (v) {
       const items = v.getVirtualItems();
-      if (items.length) return items[0].start;
+      if (items.length && items[0]) return items[0].start;
     }
     return this.startIndex() * this.rowHeight;
   }

@@ -1,14 +1,14 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
-import { form, required, email } from '@angular/forms/signals';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { email, form, required } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
 
-import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { SettingsService } from '../../settings/services/settings-service';
+import { UserAdminService } from '../services/useradmin-service';
 
 @Component({
   selector: 'pc-user-add',
@@ -42,7 +42,11 @@ export class UserAddComponent implements OnInit {
 
   protected readonly submitting = signal(false);
 
-  public async ngOnInit(): Promise<void> {
+  public ngOnInit() {
+    void this.initialize();
+  }
+
+  private async initialize() {
     const state = window.history.state;
     if (state && state.cloneData) {
       const data = state.cloneData;
