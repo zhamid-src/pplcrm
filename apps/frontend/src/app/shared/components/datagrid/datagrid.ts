@@ -675,11 +675,6 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     });
     // Virtualizer count sync handled by controller
     // Pin offsets recompute centralized in PinningController
-
-    effect(() => {
-      const tool = this.showToolbar();
-      console.log(tool, this.showToolbar(), this.title());
-    });
   }
 
   public getCountRowSelected() {

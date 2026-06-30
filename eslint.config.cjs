@@ -105,4 +105,16 @@ module.exports = [
       '@nx/enforce-module-boundaries': 'off',
     },
   },
+
+  /* 5️⃣  console allowed in CLI scripts and e2e specs */
+  {
+    files: ['scripts/**/*.ts', 'apps/frontend-e2e/**/*.ts'],
+    rules: { 'no-console': 'off' },
+  },
+
+  /* 6️⃣  internal ESLint plugin files are CommonJS */
+  {
+    files: ['tools/eslint-rules/**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs', globals: { ...globals.node } },
+  },
 ];
