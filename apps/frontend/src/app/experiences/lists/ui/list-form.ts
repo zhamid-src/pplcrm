@@ -391,7 +391,7 @@ export class ListForm implements OnInit {
   }
 
   protected save(done: (() => void) | Event) {
-    let doneFn: () => void = () => {};
+    let doneFn: () => void = () => { /* no-op default */ };
     if (done instanceof Event) {
       done.preventDefault();
     } else if (typeof done === 'function') {
