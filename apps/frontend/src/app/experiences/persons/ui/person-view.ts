@@ -229,7 +229,7 @@ export class PersonView implements OnInit {
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => this.loadAllData(currentId));
+      void untracked(() => this.loadAllData(currentId));
     });
   }
 
@@ -299,7 +299,7 @@ export class PersonView implements OnInit {
           this.donationStats.set(stats);
           const history = await this.donationsSvc.getHistory(id);
           this.donationHistory.set(history || []);
-          this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
         } catch (err) {
           console.error('Failed to confirm stripe checkout session:', err);
           this.alertSvc.showError('Finalizing payment verification...');
@@ -319,7 +319,7 @@ export class PersonView implements OnInit {
           this.donationStats.set(stats);
           const history = await this.donationsSvc.getHistory(id);
           this.donationHistory.set(history || []);
-          this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
         } catch (err) {
           console.error('Failed to record mock donation:', err);
         }
@@ -402,7 +402,7 @@ export class PersonView implements OnInit {
   }
 
   protected editPerson() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deletePerson() {
@@ -448,7 +448,7 @@ export class PersonView implements OnInit {
   protected navigateToHousehold() {
     const household_id = this.householdId();
     if (household_id) {
-      this.router.navigate(['households', household_id]);
+      void this.router.navigate(['households', household_id]);
     }
   }
 

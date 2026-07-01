@@ -96,9 +96,9 @@ export class AuthService extends TRPCService<'authusers'> {
 
     const user = await this.updateTokensAndGetCurrentUser(response);
     if (user?.tenant_deletion_scheduled_at) {
-      this.router.navigate(['/cancel-deletion']);
+      void this.router.navigate(['/cancel-deletion']);
     } else if (user?.tenant_paused_at) {
-      this.router.navigate(['/resume-account']);
+      void this.router.navigate(['/resume-account']);
     }
     return { requires2FA: false, user };
   }
@@ -109,9 +109,9 @@ export class AuthService extends TRPCService<'authusers'> {
     });
     const user = await this.updateTokensAndGetCurrentUser(token);
     if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
-      this.router.navigate(['/cancel-deletion']);
+      void this.router.navigate(['/cancel-deletion']);
     } else if ((user as IAuthUser | null)?.tenant_paused_at) {
-      this.router.navigate(['/resume-account']);
+      void this.router.navigate(['/resume-account']);
     }
     return user;
   }
@@ -126,7 +126,7 @@ export class AuthService extends TRPCService<'authusers'> {
 
     this.user.set(null);
     this.tokenService.clearAll();
-    this.router.navigate(['/signin']);
+    void this.router.navigate(['/signin']);
 
     return apiReturn;
   }
@@ -162,9 +162,9 @@ export class AuthService extends TRPCService<'authusers'> {
     )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
     const user = await this.updateTokensAndGetCurrentUser(token);
     if (user?.tenant_deletion_scheduled_at) {
-      this.router.navigate(['/cancel-deletion']);
+      void this.router.navigate(['/cancel-deletion']);
     } else if (user?.tenant_paused_at) {
-      this.router.navigate(['/resume-account']);
+      void this.router.navigate(['/resume-account']);
     }
     return { user, cancelled: false };
   }

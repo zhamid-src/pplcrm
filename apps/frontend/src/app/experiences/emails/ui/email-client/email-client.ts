@@ -55,7 +55,7 @@ export class EmailClient {
     effect(() => {
       const id = this.emailId();
       if (id) {
-        untracked(() => this.loadEmailData(id));
+        void untracked(() => this.loadEmailData(id));
       }
     });
   }

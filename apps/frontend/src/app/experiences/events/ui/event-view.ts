@@ -104,7 +104,7 @@ export class EventViewComponent {
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => this.loadAllData(currentId));
+      void untracked(() => this.loadAllData(currentId));
     });
   }
 
@@ -137,7 +137,7 @@ export class EventViewComponent {
   }
 
   protected editEvent() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteEvent() {

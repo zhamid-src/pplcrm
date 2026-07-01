@@ -61,7 +61,7 @@ export class Breadcrumb {
   public navigate(destination: string) {
     const route = this.sidebarSvc.getRoute(destination);
     if (route) {
-      this.router.navigateByUrl(route);
+      void this.router.navigateByUrl(route);
     }
   }
 

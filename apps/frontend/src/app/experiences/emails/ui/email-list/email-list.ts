@@ -308,7 +308,7 @@ export class EmailList {
     const email = this.contextMenuEmail();
     if (!email) return;
     this.closeContextMenu();
-    this.store.restoreFromTrash(email.id);
+    void this.store.restoreFromTrash(email.id);
   }
 
   protected async moveToInbox() {

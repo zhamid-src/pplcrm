@@ -32,7 +32,7 @@ export class EmailActivities {
     const wasExpanded = this.expanded();
     this.expanded.set(!wasExpanded);
     if (!wasExpanded && !this.loaded) {
-      this.loadActivities();
+      void this.loadActivities();
     }
   }
 

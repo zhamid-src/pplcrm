@@ -129,7 +129,7 @@ export class Tags implements OnInit {
       this.tags().unshift(tagName);
       this.tagAdded.emit(tagName);
       // Invalidate the options cache so the grid's inline dropdown reflects this new value
-      this.tagOptionsSvc.invalidate(this.type());
+      void this.tagOptionsSvc.invalidate(this.type());
     } else {
       // Bring tag that maches to the front.
       const [tag] = this.tags().splice(index, 1) as [string]; // remove it

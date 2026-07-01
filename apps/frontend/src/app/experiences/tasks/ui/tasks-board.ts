@@ -79,7 +79,7 @@ export class TasksBoard implements OnInit {
   }
 
   protected openTask(t: Task) {
-    this.router.navigate(['tasks', t.id]);
+    void this.router.navigate(['tasks', t.id]);
   }
 
   protected toLabel(s: string) {

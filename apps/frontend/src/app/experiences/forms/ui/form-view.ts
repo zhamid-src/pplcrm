@@ -191,7 +191,7 @@ ${
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => this.loadAllData(currentId));
+      void untracked(() => this.loadAllData(currentId));
     });
 
     // Load users
@@ -233,7 +233,7 @@ ${
   }
 
   protected editForm() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteForm() {

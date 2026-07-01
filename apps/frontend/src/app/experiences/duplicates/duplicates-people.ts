@@ -15,7 +15,7 @@ export class PeopleDuplicatesComponent extends BaseDuplicateManager<any> impleme
   private personsSvc = inject(PersonsService);
 
   ngOnInit() {
-    this.loadDuplicates();
+    void this.loadDuplicates();
   }
 
   protected getEntityName() {

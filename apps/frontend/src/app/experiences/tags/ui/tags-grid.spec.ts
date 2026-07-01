@@ -19,7 +19,7 @@ describe('TagsGridComponent', () => {
   beforeEach(() => {
     // We only test the unit-level methods of TagsGridComponent itself,
     // DataGrid is tested separately. So we can just instantiate it directly.
-    TestBed.configureTestingModule({
+    void TestBed.configureTestingModule({
       imports: [TagsGridComponent],
       providers: [
         provideRouter([]),

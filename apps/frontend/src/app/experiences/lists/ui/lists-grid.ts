@@ -44,7 +44,7 @@ export class ListsGridComponent implements OnDestroy {
     effect(() => {
       const count = this.refreshSvc.refreshCount();
       if (count > 0) {
-        untracked(() => this.grid()?.refresh());
+        void untracked(() => this.grid()?.refresh());
       }
     });
   }
@@ -179,7 +179,7 @@ export class ListsGridComponent implements OnDestroy {
             this.alerts.showSuccess('List refreshed successfully');
           }
           // Reload the full grid so all columns (size, last_refreshed_at, etc.) update.
-          this.grid()?.refresh();
+          void this.grid()?.refresh();
         }
       } catch {
         clearInterval(interval);

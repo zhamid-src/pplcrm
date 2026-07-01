@@ -132,9 +132,9 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
 
       if (updatedGroups.length === 0 && this.currentPage() > 1) {
         this.currentPage.update((p) => p - 1);
-        this.loadDuplicates();
+        void this.loadDuplicates();
       } else if (updatedGroups.length === 0 && this.totalGroups() > 0) {
-        this.loadDuplicates();
+        void this.loadDuplicates();
       }
     } catch (err: any) {
       this.alertSvc.showError(err?.message || 'Merge failed');
@@ -144,14 +144,14 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
   public nextPage() {
     if (this.currentPage() < this.totalPages()) {
       this.currentPage.update((p) => p + 1);
-      this.loadDuplicates();
+      void this.loadDuplicates();
     }
   }
 
   public prevPage() {
     if (this.currentPage() > 1) {
       this.currentPage.update((p) => p - 1);
-      this.loadDuplicates();
+      void this.loadDuplicates();
     }
   }
 }

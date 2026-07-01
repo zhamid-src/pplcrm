@@ -91,7 +91,7 @@ export class CompanyView {
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => this.loadAllData(currentId));
+      void untracked(() => this.loadAllData(currentId));
     });
   }
 
@@ -114,7 +114,7 @@ export class CompanyView {
   }
 
   protected editCompany() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteCompany() {
