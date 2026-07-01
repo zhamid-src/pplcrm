@@ -374,7 +374,7 @@ export class SettingsPage implements OnInit {
   }
 
   protected selectSection(sectionId: string) {
-    this.router.navigate(['/', this.currentMode, sectionId]);
+    void this.router.navigate(['/', this.currentMode, sectionId]);
   }
 
   protected async verifySenderEmail(email: string | null | undefined) {

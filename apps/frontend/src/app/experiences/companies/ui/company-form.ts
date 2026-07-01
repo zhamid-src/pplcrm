@@ -128,7 +128,7 @@ export class CompanyForm implements OnInit {
           if (typeof done === 'function') {
             done();
           } else {
-            this.router.navigate(['/companies', this.id()]);
+            void this.router.navigate(['/companies', this.id()]);
           }
         })
         .catch((err: any) => {
@@ -146,7 +146,7 @@ export class CompanyForm implements OnInit {
           if (typeof done === 'function') {
             done();
           } else {
-            this.router.navigate(['/companies']);
+            void this.router.navigate(['/companies']);
           }
         })
         .catch((err: any) => {

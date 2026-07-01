@@ -86,7 +86,7 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
       await this.api.auth.cancelTenantDeletion.mutate();
       // Refresh user so guard clears and we can navigate
       await this.auth.getCurrentUser();
-      this.router.navigate(['/']);
+      void this.router.navigate(['/']);
     } catch (err: any) {
       this.errorMessage.set(err.message || 'Failed to cancel deletion. Please try again.');
     } finally {

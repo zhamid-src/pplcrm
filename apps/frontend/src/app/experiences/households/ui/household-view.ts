@@ -101,7 +101,7 @@ export class HouseholdView {
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => this.loadAllData(currentId));
+      void untracked(() => this.loadAllData(currentId));
     });
 
     effect(() => {
@@ -148,7 +148,7 @@ export class HouseholdView {
   }
 
   protected editHousehold() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteHousehold() {

@@ -113,7 +113,7 @@ export class ActivityFeed implements OnInit {
   }
 
   public ngOnInit() {
-    this.loadUsers();
+    void this.loadUsers();
   }
 
   private async loadUsers() {

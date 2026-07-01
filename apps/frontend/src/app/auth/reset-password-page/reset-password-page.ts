@@ -59,7 +59,7 @@ export class ResetPasswordPage {
             "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
           );
           this.emailSent.set(true);
-          this.router.navigateByUrl('signin');
+          void this.router.navigateByUrl('signin');
         } catch (err: any) {
           this.alertSvc.showError(err.message || String(err));
         } finally {

@@ -24,7 +24,7 @@ export class ExportsPage extends TRPCService<any> {
 
   constructor() {
     super();
-    this.load();
+    void this.load();
   }
 
   protected refresh() {

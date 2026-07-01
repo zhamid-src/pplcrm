@@ -298,7 +298,7 @@ export class PersonForm implements OnInit {
   protected navigateToHousehold() {
     const household_id = this.householdId();
     if (household_id) {
-      this.router.navigate(['households', household_id]);
+      void this.router.navigate(['households', household_id]);
     }
   }
 

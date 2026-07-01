@@ -99,7 +99,7 @@ export class TaskView {
 
   constructor() {
     effect(() => {
-      untracked(() => this.load());
+      void untracked(() => this.load());
     });
   }
 
@@ -305,7 +305,7 @@ export class TaskView {
   protected assignToMe() {
     const me = this.auth.getUser();
     if (!me?.id) return;
-    this.update({ assigned_to: me.id });
+    void this.update({ assigned_to: me.id });
   }
 
   protected isArchived() {
@@ -384,7 +384,7 @@ export class TaskView {
     if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
       ev.preventDefault();
       ev.stopPropagation();
-      this.addComment();
+      void this.addComment();
       return;
     }
     this.mc.handleKeydown(ev, (u) => this.selectMention(u));

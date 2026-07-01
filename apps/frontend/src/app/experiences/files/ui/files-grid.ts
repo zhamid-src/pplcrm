@@ -34,7 +34,7 @@ export class FilesGrid implements OnInit {
   protected readonly searchQuery = signal('');
 
   public ngOnInit() {
-    this.loadFiles();
+    void this.loadFiles();
   }
 
   protected async onFileSelectedForUpload(event: Event) {

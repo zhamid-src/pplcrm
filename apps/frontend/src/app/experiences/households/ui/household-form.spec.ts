@@ -129,7 +129,7 @@ describe('HouseholdForm', () => {
       }));
 
       // Trigger save
-      component['save']();
+      void component['save']();
 
       // Wait for tRPC mock response
       await mockHouseholdsSvc.add.mock.results[0].value;
@@ -244,7 +244,7 @@ describe('HouseholdForm', () => {
       }));
 
       // Trigger save
-      component['save']();
+      void component['save']();
 
       // Wait for tRPC mock response
       await mockHouseholdsSvc.update.mock.results[0].value;
@@ -274,10 +274,10 @@ describe('HouseholdForm', () => {
       await component.ngOnInit();
       fixture.detectChanges();
 
-      component['tagAdded']('new-tag');
+      void component['tagAdded']('new-tag');
       expect(mockHouseholdsSvc.attachTag).toHaveBeenCalledWith('123', 'new-tag', 'tag');
 
-      component['tagRemoved']('old-tag');
+      void component['tagRemoved']('old-tag');
       expect(mockHouseholdsSvc.detachTag).toHaveBeenCalledWith('123', 'old-tag', 'tag');
     });
   });

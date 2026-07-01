@@ -120,7 +120,7 @@ export class ListView implements OnDestroy {
   }
 
   protected editList() {
-    this.router.navigate(['edit'], { relativeTo: this.route });
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteList() {

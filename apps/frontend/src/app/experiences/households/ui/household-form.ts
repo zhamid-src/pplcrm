@@ -336,7 +336,7 @@ export class HouseholdForm implements OnInit {
     }
 
     const end = this._loading.begin();
-    this.householdsSvc
+    void this.householdsSvc
       .update(this.id()!, data)
       .then(() => {
         this.alertSvc.showSuccess('Household updated successfully.');

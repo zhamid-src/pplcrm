@@ -174,7 +174,7 @@ export class EmailComments {
     if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
       ev.preventDefault();
       ev.stopPropagation();
-      this.addComment();
+      void this.addComment();
       return;
     }
     this.mc.handleKeydown(ev, (u) => this.selectMention(u));

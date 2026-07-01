@@ -111,7 +111,7 @@ describe('summary', () => {
     expect(component['isRefreshing']()).toBe(false);
 
     // Call load again after finishing
-    component['loadStats']();
+    void component['loadStats']();
     expect(mockDashboardSvc.getStats).toHaveBeenCalledTimes(2);
 
     await Promise.resolve();

@@ -71,7 +71,7 @@ export class PersonConnections implements OnInit {
   protected readonly showAddDrawer = signal(false);
 
   public ngOnInit() {
-    this.load();
+    void this.load();
   }
 
   private async load() {
@@ -88,7 +88,7 @@ export class PersonConnections implements OnInit {
   }
 
   protected onConnectionAdded() {
-    this.load();
+    void this.load();
   }
 
   protected async onRemove(id: string) {

@@ -34,7 +34,7 @@ export class ResumeAccountPage extends TRPCService<any> {
     try {
       await this.api.auth.resumeTenant.mutate();
       await this.auth.getCurrentUser();
-      this.router.navigate(['/']);
+      void this.router.navigate(['/']);
     } catch (err: any) {
       this.errorMessage.set(err.message || 'Failed to reactivate account. Please try again.');
     } finally {

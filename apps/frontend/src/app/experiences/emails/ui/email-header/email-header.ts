@@ -234,7 +234,7 @@ export class EmailHeader {
   }
 
   protected restoreFromTrash() {
-    this.store.restoreFromTrash(this.email().id);
+    void this.store.restoreFromTrash(this.email().id);
   }
 
   protected async toggleClosed() {
