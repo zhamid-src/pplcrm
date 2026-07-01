@@ -26,7 +26,14 @@ export class TasksBoard implements OnInit {
     return map;
   });
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     const res = await this.svc.getAll({
       limit: 1000,
       columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at'],

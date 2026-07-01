@@ -39,7 +39,14 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
   protected readonly isTokenFlow = signal(false);
   private sessionPollInterval: ReturnType<typeof setInterval> | null = null;
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     this.tenantId = this.route.snapshot.queryParamMap.get('tid');
     this.token = this.route.snapshot.queryParamMap.get('token');
 
@@ -50,18 +57,20 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
     } else if (this.auth.getUser()) {
       // Logged-in flow — poll every 5s so if the account is deleted while on this
       // page the session clears and the user is redirected to sign-in automatically
-      this.sessionPollInterval = setInterval(async () => {
-        const user = await this.auth.getCurrentUser().catch(() => null);
-        if (!user) {
-          await this.auth.signOut();
-        }
-      }, 5000);
+      this.sessionPollInterval = setInterval(() => void this.pollSession(), 5000);
     }
   }
 
   public ngOnDestroy() {
     if (this.sessionPollInterval) {
       clearInterval(this.sessionPollInterval);
+    }
+  }
+
+  private async pollSession(): Promise<void> {
+    const user = await this.auth.getCurrentUser().catch(() => null);
+    if (!user) {
+      await this.auth.signOut();
     }
   }
 

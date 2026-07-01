@@ -190,7 +190,14 @@ export class ListForm implements OnInit {
     { initialValue: this.form.get('is_dynamic')?.value === true },
   );
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     const id = this.route.snapshot.paramMap.get('id');
     const mode = this.route.snapshot.data['mode'] as 'new' | 'edit' | undefined;
     this.isNew.set(mode !== 'edit');

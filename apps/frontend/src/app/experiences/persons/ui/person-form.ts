@@ -142,7 +142,14 @@ export class PersonForm implements OnInit {
       .catch(() => void 0);
   }
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     await this.loadPerson();
     await this.loadCompanies();
     if (this.isNewMode()) {

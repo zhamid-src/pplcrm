@@ -57,17 +57,19 @@ export class ImportsPage {
   }
 
   private startPolling() {
-    this.pollInterval = setInterval(async () => {
-      const hasActiveJobs = this.items().some((item) => item.status === 'pending' || item.status === 'processing');
-      if (hasActiveJobs) {
-        try {
-          const list = await this.imports.list();
-          this.items.set(list ?? []);
-        } catch (err) {
-          console.error('Failed to poll imports status:', err);
-        }
+    this.pollInterval = setInterval(() => void this.pollStep(), 4000);
+  }
+
+  private async pollStep(): Promise<void> {
+    const hasActiveJobs = this.items().some((item) => item.status === 'pending' || item.status === 'processing');
+    if (hasActiveJobs) {
+      try {
+        const list = await this.imports.list();
+        this.items.set(list ?? []);
+      } catch (err) {
+        console.error('Failed to poll imports status:', err);
       }
-    }, 4000);
+    }
   }
 
   private stopPolling() {

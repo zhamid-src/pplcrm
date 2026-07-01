@@ -67,7 +67,14 @@ export class EmailFolderList implements OnInit {
     return (folder as any).email_count ?? 0;
   }
 
-  public async ngOnInit(): Promise<void> {
+  public ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     try {
       await this.store.loadAllFoldersWithCounts();
     } catch (e) {

@@ -219,7 +219,14 @@ export class HouseholdsGrid implements OnInit {
   protected importerOpen = signal(false);
   protected tagsInput = '';
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     await this.loadTagOptions();
     await this.loadIssueOptions();
   }

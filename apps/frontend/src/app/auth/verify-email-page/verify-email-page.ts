@@ -21,7 +21,14 @@ export class VerifyEmailPage implements OnInit {
   protected readonly status = signal<'idle' | 'success' | 'error'>('idle');
   protected readonly errorMessage = signal<string>('');
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     const code = this.route.snapshot.queryParamMap.get('code');
 
     if (!code) {

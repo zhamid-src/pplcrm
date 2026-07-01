@@ -166,29 +166,30 @@ export class ListsGridComponent implements OnDestroy {
     const existing = this.pollIntervals.get(id);
     if (existing) clearInterval(existing);
 
-    const interval = setInterval(async () => {
-      try {
-        const list = await this.listsSvc.getById(id);
-        if ((list as any)?.status !== 'refreshing') {
-          clearInterval(interval);
-          this.pollIntervals.delete(id);
-          this.refreshingIds.delete(id);
-          if ((list as any)?.status === 'failed') {
-            this.alerts.showError('List refresh failed in background');
-          } else {
-            this.alerts.showSuccess('List refreshed successfully');
-          }
-          // Reload the full grid so all columns (size, last_refreshed_at, etc.) update.
-          void this.grid()?.refresh();
-        }
-      } catch {
+    const interval = setInterval(() => void this.pollRefreshStep(id, interval), 1500);
+
+    this.pollIntervals.set(id, interval);
+  }
+
+  private async pollRefreshStep(id: string, interval: ReturnType<typeof setInterval>): Promise<void> {
+    try {
+      const list = await this.listsSvc.getById(id);
+      if ((list as any)?.status !== 'refreshing') {
         clearInterval(interval);
         this.pollIntervals.delete(id);
         this.refreshingIds.delete(id);
+        if ((list as any)?.status === 'failed') {
+          this.alerts.showError('List refresh failed in background');
+        } else {
+          this.alerts.showSuccess('List refreshed successfully');
+        }
+        void this.grid()?.refresh();
       }
-    }, 1500);
-
-    this.pollIntervals.set(id, interval);
+    } catch {
+      clearInterval(interval);
+      this.pollIntervals.delete(id);
+      this.refreshingIds.delete(id);
+    }
   }
 
   public ngOnDestroy() {
