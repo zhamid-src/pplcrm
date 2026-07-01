@@ -142,7 +142,7 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
           this.api.msSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
         )(undefined, { context: { skipErrorHandler: true } });
       }
-    } catch (e) {
+    } catch (_e) {
       console.error('MS sync failed:', e);
     }
 
@@ -155,7 +155,7 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
           this.api.googleSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
         )(undefined, { context: { skipErrorHandler: true } });
       }
-    } catch (e) {
+    } catch (_e) {
       console.error('Google sync failed:', e);
     }
 
@@ -175,13 +175,13 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
     try {
       const msStatus = await this.api.msSync.getConnectionStatus.query();
       if (msStatus?.syncing) isSyncing = true;
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
     try {
       const googleStatus = await this.api.googleSync.getConnectionStatus.query();
       if (googleStatus?.syncing) isSyncing = true;
-    } catch (e) {
+    } catch (_e) {
       // ignore
     }
     return isSyncing;

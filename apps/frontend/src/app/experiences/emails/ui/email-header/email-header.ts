@@ -247,7 +247,7 @@ export class EmailHeader {
 
     try {
       await this.store.updateEmailStatus(email.id, newStatus);
-    } catch (error) {
+    } catch (_error) {
       // Revert UI state on error
       this.isClosed.set(currentStatus === 'closed');
       this.alertSvc.showError('Failed to update email status');

@@ -373,7 +373,7 @@ describe('NewslettersController Asynchronous Sending', () => {
       })
       .execute();
 
-    const spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(2);
+    const _spy = vi.spyOn(NewsletterEmailService.prototype, 'sendNewsletter').mockResolvedValue(2);
 
     const job = await db.selectFrom('background_jobs').selectAll().where('id', '=', jobId).executeTakeFirst();
     const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;

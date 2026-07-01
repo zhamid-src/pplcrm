@@ -223,7 +223,7 @@ export class ListForm implements OnInit {
           }
         }
       }
-    } catch (err) {
+    } catch (_err) {
       this.alertSvc.showError('Failed to load list details');
     } finally {
       end();

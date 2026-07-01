@@ -38,7 +38,7 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
           }
         }
       });
-    } catch (e) {
+    } catch (_e) {
       // Reset flag if router couldn't be resolved yet
       this.isSubscribedToRouterEvents = false;
     }

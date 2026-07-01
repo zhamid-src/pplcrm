@@ -133,7 +133,7 @@ export class SidebarService {
   }
 
   private cloneForFavourite(item: ISidebarItem, parent: ISidebarItem): ISidebarItem {
-    const { children, parent: _originalParent, ...rest } = item;
+    const { children: _children, parent: _originalParent, ...rest } = item;
 
     return {
       ...rest,

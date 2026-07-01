@@ -18,7 +18,7 @@ export class TagPaletteService {
           const res = await this.tagsSvc.getAll({ limit: 1000 });
           return res?.rows || [];
         }
-      } catch (err) {
+      } catch (_err) {
         // Best-effort cache; swallow errors to avoid breaking tag rendering in specs/runtime.
       }
       return [];

@@ -235,7 +235,7 @@ describe('EmailsController Integration', () => {
     expect(trashRows[0].email_id).toBe(emailId);
     expect(trashRows[0].from_folder_id).toBe('11'); // Original folder
 
-    const trashRowId = trashRows[0].id; // The primary key (id) of the email_trash record
+    const _trashRowId = trashRows[0].id; // The primary key (id) of the email_trash record
 
     // 2. Restore from trash using restoreFromTrash.
     // This internally calls emailTrashRepo.deleteByEmailIds passing emailIds as IDs.

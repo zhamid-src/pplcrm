@@ -61,7 +61,7 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
         return { reason: g.reason, items, selectedTargetId, selectedSourceId };
       });
       this.groups.set(mappedGroups);
-    } catch (err) {
+    } catch (_err) {
       this.alertSvc.showError(`Failed to fetch ${this.getEntityName()} duplicates`);
     } finally {
       this.isLoading.set(false);

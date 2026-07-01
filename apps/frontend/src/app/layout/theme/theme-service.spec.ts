@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { ThemeService } from './theme-service';
 import { SettingsService } from '../../experiences/settings/services/settings-service';
-import { signal, effect } from '@angular/core';
+import { signal } from '@angular/core';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 describe('ThemeService', () => {

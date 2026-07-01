@@ -73,7 +73,7 @@ export class TasksBoard implements OnInit {
       const copy = list.slice();
       copy[idx] = { ...curr, status: String(next) };
       this.tasks.set(copy);
-    } catch (e) {
+    } catch (_e) {
       // ignore errors; could add toast
     }
   }

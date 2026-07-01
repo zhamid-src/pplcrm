@@ -172,7 +172,7 @@ describe('AuthController Integration', () => {
 
     const controller = new AuthController();
     const creatorEmail = `creator-${Date.now()}@example.com`;
-    const tokens = await controller.signUp({
+    const _tokens = await controller.signUp({
       organization: `Org-Invite-${Date.now()}`,
       email: creatorEmail,
       password: 'StrongPassword123!',
@@ -486,14 +486,14 @@ describe('AuthController Integration', () => {
 
   it('should enforce role rules and owner constraints', async () => {
     const { BaseRepository } = await import('../../lib/base.repo');
-    const { ForbiddenError, BadRequestError } = await import('../../errors/app-errors');
+    const { ForbiddenError, BadRequestError: _BadRequestError } = await import('../../errors/app-errors');
     const db = (BaseRepository as any)._db;
 
     const controller = new AuthController();
 
     // 1. Sign up Owner
     const emailOwner = `owner-${Date.now()}@example.com`;
-    const tokensOwner = await controller.signUp({
+    const _tokensOwner = await controller.signUp({
       organization: `RoleOrg-${Date.now()}`,
       email: emailOwner,
       password: 'StrongPassword123!',
