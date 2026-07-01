@@ -279,7 +279,14 @@ export class DonationsSettingsComponent implements OnInit {
     return lines;
   });
 
-  async ngOnInit() {
+  ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     await this.settingsSvc.load();
     this.loadValues();
     await this.loadPeriods();

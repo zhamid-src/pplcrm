@@ -90,27 +90,29 @@ export class ListView implements OnDestroy {
   private pollRefreshStatus() {
     if (this.pollInterval) clearInterval(this.pollInterval);
 
-    this.pollInterval = setInterval(async () => {
-      try {
-        const list = (await this.lists.getById(this.id())) as ListsType;
-        this.listData.set(list);
-        if (list.status !== 'refreshing') {
-          clearInterval(this.pollInterval);
-          this.pollInterval = null;
-          this.refreshing.set(false);
-          if (list.status === 'failed') {
-            this.alerts.showError('List refresh failed in background');
-          } else {
-            this.alerts.showSuccess('List refreshed successfully');
-          }
-          await this.loadListDetails();
-        }
-      } catch (_e) {
+    this.pollInterval = setInterval(() => void this.pollStep(), 1500);
+  }
+
+  private async pollStep(): Promise<void> {
+    try {
+      const list = (await this.lists.getById(this.id())) as ListsType;
+      this.listData.set(list);
+      if (list.status !== 'refreshing') {
         clearInterval(this.pollInterval);
         this.pollInterval = null;
         this.refreshing.set(false);
+        if (list.status === 'failed') {
+          this.alerts.showError('List refresh failed in background');
+        } else {
+          this.alerts.showSuccess('List refreshed successfully');
+        }
+        await this.loadListDetails();
       }
-    }, 1500);
+    } catch (_e) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+      this.refreshing.set(false);
+    }
   }
 
   public ngOnDestroy() {

@@ -21,7 +21,14 @@ export class ConfirmSubscriptionPage implements OnInit {
   protected readonly status = signal<'idle' | 'success' | 'error'>('idle');
   protected readonly errorMessage = signal<string>('');
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     const token = this.route.snapshot.queryParamMap.get('token');
 
     if (!token) {

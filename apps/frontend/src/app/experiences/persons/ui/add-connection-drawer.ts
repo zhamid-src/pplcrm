@@ -197,25 +197,23 @@ export class AddConnectionDrawer {
       return;
     }
     this.isSearching.set(true);
-    this.searchTimer = setTimeout(async () => {
-      try {
-        const result = await this.personsSvc.getAllWithAddress({
-          searchStr: value,
-          startRow: 0,
-          endRow: 10,
-        });
-        const currentPersonId = this.personId();
-        this.searchResults.set(
-          ((result as any).rows ?? [])
-            .filter((p: any) => String(p.id) !== String(currentPersonId))
-            .map((p: any) => ({ id: String(p.id), first_name: p.first_name, last_name: p.last_name, email: p.email })),
-        );
-      } catch {
-        this.searchResults.set([]);
-      } finally {
-        this.isSearching.set(false);
-      }
-    }, 250);
+    this.searchTimer = setTimeout(() => void this.executeSearch(value), 250);
+  }
+
+  private async executeSearch(value: string): Promise<void> {
+    try {
+      const result = await this.personsSvc.getAllWithAddress({ searchStr: value, startRow: 0, endRow: 10 });
+      const currentPersonId = this.personId();
+      this.searchResults.set(
+        ((result as any).rows ?? [])
+          .filter((p: any) => String(p.id) !== String(currentPersonId))
+          .map((p: any) => ({ id: String(p.id), first_name: p.first_name, last_name: p.last_name, email: p.email })),
+      );
+    } catch {
+      this.searchResults.set([]);
+    } finally {
+      this.isSearching.set(false);
+    }
   }
 
   protected selectPerson(p: PersonSearchResult) {

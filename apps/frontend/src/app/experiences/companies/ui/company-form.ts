@@ -46,7 +46,14 @@ export class CompanyForm implements OnInit {
   public mode = input<'new' | 'edit'>('edit');
   protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     await this.loadCompany();
     if (this.isNewMode()) {
       const state = window.history.state;

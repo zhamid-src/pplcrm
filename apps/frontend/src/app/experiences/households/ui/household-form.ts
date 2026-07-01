@@ -130,7 +130,14 @@ export class HouseholdForm implements OnInit {
     }
   }
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     await this.loadHousehold();
     if (this.isNewMode()) {
       const state = window.history.state;

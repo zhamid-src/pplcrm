@@ -31,7 +31,14 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
   protected readonly lastSyncResult = signal<{ inserted: number } | null>(null);
   private pollingTimer: ReturnType<typeof setInterval> | null = null;
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     // Handle OAuth redirect result (google_connected or google_error query params)
     const params = this.route.snapshot.queryParamMap;
     if (params.has('google_connected')) {
@@ -141,21 +148,23 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
 
   private startPollingStatus() {
     if (this.pollingTimer) return;
-    this.pollingTimer = setInterval(async () => {
-      try {
-        const s = await this.api.googleSync.getConnectionStatus.query();
-        this.status.set(s);
-        if (!s?.syncing) {
-          this.isSyncing.set(false);
-          this.stopPollingStatus();
-          this.alertSvc.showSuccess('Google Suite mailbox sync completed.');
-        }
-      } catch (err) {
-        console.error('Error polling sync status:', err);
-        this.stopPollingStatus();
-      }
-    }, 4000);
+    this.pollingTimer = setInterval(() => void this.pollStep(), 4000);
     this.destroyRef.onDestroy(() => this.stopPollingStatus());
+  }
+
+  private async pollStep(): Promise<void> {
+    try {
+      const s = await this.api.googleSync.getConnectionStatus.query();
+      this.status.set(s);
+      if (!s?.syncing) {
+        this.isSyncing.set(false);
+        this.stopPollingStatus();
+        this.alertSvc.showSuccess('Google Suite mailbox sync completed.');
+      }
+    } catch (err) {
+      console.error('Error polling sync status:', err);
+      this.stopPollingStatus();
+    }
   }
 
   private stopPollingStatus() {

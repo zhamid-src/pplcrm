@@ -175,7 +175,7 @@ export class EmailList {
           {
             label: `Mark as ${email.is_read ? 'unread' : 'read'}`,
             icon: 'envelope',
-            action: () => this.toggleReadStatus(),
+            action: () => void this.toggleReadStatus(),
           },
         ] as ContextMenuItem[],
       },
@@ -187,20 +187,20 @@ export class EmailList {
             label: email.is_favourite ? 'Unstar' : 'Star',
             icon: (email.is_favourite ? 'star-filled' : 'star') as PcIconNameType,
             iconClass: email.is_favourite ? 'text-amber-500' : 'text-base-content/60',
-            action: () => this.toggleFavourite(),
+            action: () => void this.toggleFavourite(),
           },
           {
             label: email.status === 'closed' ? 'Mark as Open' : 'Mark as Done',
             icon: 'check-circle',
             iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
-            action: () => this.toggleClosed(),
+            action: () => void this.toggleClosed(),
           },
           ...(this.isFolderTrash()
             ? [
                 {
                   label: 'Restore to Inbox',
                   icon: 'restore-from-trash',
-                  action: () => this.restoreFromTrash(),
+                  action: () => void this.restoreFromTrash(),
                 },
               ]
             : []),
@@ -208,7 +208,7 @@ export class EmailList {
             label: this.isFolderTrash() ? 'Delete Permanently' : 'Delete',
             icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
             iconClass: 'text-error',
-            action: () => this.deleteEmail(),
+            action: () => void this.deleteEmail(),
           },
         ] as ContextMenuItem[],
       },

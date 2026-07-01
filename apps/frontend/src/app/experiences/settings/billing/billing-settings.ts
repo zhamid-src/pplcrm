@@ -40,18 +40,7 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     await this.loadBilling();
 
     // Listen to query params for mock successes or redirect callbacks
-    this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(async (params) => {
-      if (params['mock_checkout_success'] && params['plan']) {
-        const plan = params['plan'] as 'grassroots' | 'representative';
-        await this.handleMockActivation(plan);
-      } else if (params['checkout_success']) {
-        this.alerts.showSuccess('Subscription activated successfully! Thank you for your purchase.');
-        this.clearQueryParams();
-      } else if (params['mock_portal_success']) {
-        this.alerts.showSuccess('Simulated Customer Portal: Retrieved successfully.');
-        this.clearQueryParams();
-      }
-    });
+    this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => void this.handleQueryParams(params));
   }
 
   protected async loadBilling() {
@@ -64,6 +53,19 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       this.alerts.showError(err.message || 'Failed to load subscription details.');
     } finally {
       end();
+    }
+  }
+
+  private async handleQueryParams(params: Record<string, string>): Promise<void> {
+    if (params['mock_checkout_success'] && params['plan']) {
+      const plan = params['plan'] as 'grassroots' | 'representative';
+      await this.handleMockActivation(plan);
+    } else if (params['checkout_success']) {
+      this.alerts.showSuccess('Subscription activated successfully! Thank you for your purchase.');
+      this.clearQueryParams();
+    } else if (params['mock_portal_success']) {
+      this.alerts.showSuccess('Simulated Customer Portal: Retrieved successfully.');
+      this.clearQueryParams();
     }
   }
 

@@ -148,7 +148,14 @@ export class SettingsPage implements OnInit {
     return [];
   }
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     await this.settingsSvc.load();
     this.hasLoaded.set(true);
     this.applySnapshot(this.settingsSvc.snapshot(), true);

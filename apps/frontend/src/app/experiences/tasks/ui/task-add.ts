@@ -51,7 +51,14 @@ export class TaskAddComponent implements OnInit {
     validateStandardSchema(p, AddTaskObj);
   });
 
-  public async ngOnInit() {
+  public ngOnInit(): void {
+
+    void this.loadOnInit();
+
+  }
+
+
+  private async loadOnInit(): Promise<void> {
     const end = this._loading.begin();
     try {
       const [us, ts] = await Promise.all([this.userService.getUsers(), this.teams.getAll({ limit: 1000 })]);
