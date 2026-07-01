@@ -47,7 +47,6 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
   public async getByStripeSubscriptionId(
     subscriptionId: string,
   ): Promise<Selectable<Models['donation_pledges']> | undefined> {
-    // eslint-disable-next-line local/no-unscoped-db-query
     return this.db
       .selectFrom('donation_pledges')
       .selectAll()

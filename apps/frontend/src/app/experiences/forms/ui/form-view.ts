@@ -7,7 +7,7 @@ import { RecordActivities } from '@experiences/activity/ui/record-activities/rec
 import { FormsService } from '../services/forms-service';
 import { ListsService } from '../../lists/services/lists-service';
 import { UserService } from '../../../services/user.service';
-import { type IAuthUser } from '../../../../../../../libs/common/src';
+import type { IAuthUser } from '@common';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';

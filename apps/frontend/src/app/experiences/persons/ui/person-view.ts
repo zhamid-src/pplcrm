@@ -2,7 +2,7 @@ import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, resource, signal, untracked, OnInit } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { type AddressType, type Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';

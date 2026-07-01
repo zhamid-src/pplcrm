@@ -1,7 +1,7 @@
 import { Component, ElementRef, viewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
-import { type IAuthUser } from '../../../../../../../libs/common/src';
+import type { IAuthUser } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';

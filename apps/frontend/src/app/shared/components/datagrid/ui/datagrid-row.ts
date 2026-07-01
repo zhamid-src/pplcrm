@@ -1,7 +1,6 @@
 import { Component, input } from '@angular/core';
 
 @Component({
-  // eslint-disable-next-line @angular-eslint/component-selector
   selector: 'tr[pc-dg-row]',
   template: '',
 })
