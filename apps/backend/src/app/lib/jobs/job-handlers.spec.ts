@@ -110,13 +110,13 @@ describe('process_drip_workflows Job Handler', () => {
         }),
       }),
       transaction: () => ({
-        execute: async () => {},
+        execute: async () => { /* mock: no-op */ },
       }),
       insertInto: () => ({
         values: (vals: any) => {
           insertedRunAt = vals.run_at;
           return {
-            execute: async () => {},
+            execute: async () => { /* mock: no-op */ },
           };
         },
       }),
@@ -146,13 +146,13 @@ describe('process_drip_workflows Job Handler', () => {
         }),
       }),
       transaction: () => ({
-        execute: async () => {},
+        execute: async () => { /* mock: no-op */ },
       }),
       insertInto: () => ({
         values: (vals: any) => {
           insertedRunAt = vals.run_at;
           return {
-            execute: async () => {},
+            execute: async () => { /* mock: no-op */ },
           };
         },
       }),
