@@ -16,7 +16,6 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
     let tenantId = 'unknown';
     try {
       // Look up tenant setting donations.webhook_token with matching value
-      // eslint-disable-next-line local/no-unscoped-db-query
       const tokenRow = await BaseRepository.dbInstance
         .selectFrom('settings')
         .select('tenant_id')

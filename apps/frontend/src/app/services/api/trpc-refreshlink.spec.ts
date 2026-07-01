@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { refreshLink } from './trpc-refreshlink';
-import { type Operation } from '@trpc/client';
-import { type Observer } from '@trpc/server/observable';
+import type { Operation } from '@trpc/client';
+import type { Observer } from '@trpc/server/observable';
 
 const expiredToken = 'header.' + btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 60 })) + '.signature';
 const validToken = 'header.' + btoa(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 120 })) + '.signature';

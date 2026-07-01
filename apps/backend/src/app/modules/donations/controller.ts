@@ -557,7 +557,6 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     country: string,
     userId: string,
   ): Promise<Selectable<Models['donation_pledges']>> {
-    // eslint-disable-next-line local/no-unscoped-db-query
     const existing = await this.pledgesRepo.db
       .selectFrom('donation_pledges')
       .selectAll()

@@ -144,7 +144,7 @@ export class ZapierService {
   }
 
   async lookupTenantByApiKey(apiKey: string): Promise<string | null> {
-    // eslint-disable-next-line local/no-unscoped-db-query -- resolving which tenant owns this API key; cross-tenant by design
+    // NOTE: unscoped by design — resolving which tenant owns this API key; cross-tenant by design
     const row = await this.db
       .selectFrom('settings')
       .select('tenant_id')

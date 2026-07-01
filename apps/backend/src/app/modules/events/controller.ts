@@ -68,7 +68,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
   }
 
   public async getEventBySlug(slug: string) {
-    // eslint-disable-next-line local/no-unscoped-db-query -- public registration page: tenant is unknown until the event is resolved by slug
+    // NOTE: unscoped by design — public registration page: tenant is unknown until the event is resolved by slug
     return this.getRepo()
       .db.selectFrom('events')
       .selectAll()
