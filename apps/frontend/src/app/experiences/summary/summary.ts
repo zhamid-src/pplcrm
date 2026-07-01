@@ -303,7 +303,7 @@ export class Summary implements OnInit {
           try {
             const dateObj = new Date(pt.date);
             dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-          } catch (e) {}
+          } catch (_e) {}
           xLabels.push({ x: pt.x, label: dateStr });
         }
       }
@@ -325,7 +325,7 @@ export class Summary implements OnInit {
       // Set raw data for Donut Chart (assignedRepSlices will compute reactively)
       this.rawEmailsAssigned.set(stats.emailsAssigned || []);
       this.rawUnassignedCount.set(stats.unassignedCount || 0);
-    } catch (err: any) {
+    } catch (_err: unknown) {
       this.alertSvc.showError('Failed to load dashboard metrics');
     } finally {
       end();
@@ -355,7 +355,7 @@ export class Summary implements OnInit {
     try {
       const d = new Date(dateStr);
       return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-    } catch (e) {
+    } catch (_e) {
       return dateStr;
     }
   }
@@ -381,7 +381,7 @@ export class Summary implements OnInit {
       }
       this.hasMoreEmails.set(res.hasMore);
       this.emailPage.update((p) => p + 1);
-    } catch (err) {
+    } catch (_err) {
       this.alertSvc.showError('Failed to load breached emails');
     } finally {
       this.isLoadingEmails.set(false);
@@ -400,7 +400,7 @@ export class Summary implements OnInit {
       }
       this.hasMoreTasks.set(res.hasMore);
       this.taskPage.update((p) => p + 1);
-    } catch (err) {
+    } catch (_err) {
       this.alertSvc.showError('Failed to load breached tasks');
     } finally {
       this.isLoadingTasks.set(false);

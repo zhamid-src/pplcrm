@@ -1,12 +1,12 @@
-import { Component, inject, signal, OnInit } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { FilesService } from '../services/files.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { TokenService } from '../../../services/api/token-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { environment } from '../../../../environments/environment';
+import { Component, inject, OnInit, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { environment } from '../../../../environments/environment';
+import { TokenService } from '../../../services/api/token-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { FilesService } from '../services/files.service';
 
 @Component({
   selector: 'pc-files-grid',
@@ -62,7 +62,7 @@ export class FilesGrid implements OnInit {
       const res = await this.filesSvc.getAll();
       this.files.set(res.rows || []);
       this.applyFilter();
-    } catch (err) {
+    } catch (_err) {
       this.alertSvc.showError('Failed to load files');
     } finally {
       this.isLoading.set(false);
@@ -119,7 +119,7 @@ export class FilesGrid implements OnInit {
       message: `Are you sure you want to permanently delete "${file.filename}"? This will clean up the database record and delete the file from cloud storage.`,
       variant: 'danger',
       confirmText: 'Delete',
-      cancelText: 'Cancel'
+      cancelText: 'Cancel',
     });
 
     if (!confirmed) return;
@@ -128,7 +128,7 @@ export class FilesGrid implements OnInit {
       await this.filesSvc.delete(file.id);
       this.alertSvc.showSuccess('File deleted successfully');
       await this.loadFiles();
-    } catch (err) {
+    } catch (_err) {
       this.alertSvc.showError('Failed to delete file');
     }
   }

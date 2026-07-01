@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { BaseRepository } from '../../lib/base.repo';
 import { DonationsController } from './controller';
 
-async function cleanTenant(db: any, tenantId: string, personId: string) {
+async function cleanTenant(db: any, tenantId: string, _personId: string) {
   await db
     .updateTable('tenants')
     .set({ admin_id: null, createdby_id: null, placeholder_household_id: null })

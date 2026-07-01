@@ -264,7 +264,7 @@ export class EmailList {
     this.closeContextMenu();
     try {
       await this.store.toggleEmailReadStatus(email.id, !email.is_read);
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Failed to update read status');
     }
   }
@@ -275,7 +275,7 @@ export class EmailList {
     this.closeContextMenu();
     try {
       await this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Failed to update favorite status');
     }
   }
@@ -288,7 +288,7 @@ export class EmailList {
     const newStatus = currentStatus === 'open' ? 'closed' : 'open';
     try {
       await this.store.updateEmailStatus(email.id, newStatus);
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Failed to update email status');
     }
   }
@@ -299,7 +299,7 @@ export class EmailList {
     this.closeContextMenu();
     try {
       await this.store.deleteEmail(email.id);
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Failed to delete email');
     }
   }
@@ -318,7 +318,7 @@ export class EmailList {
     try {
       await this.store.moveToFolder(email.id, ALL_FOLDERS.INBOX);
       this.alertSvc.showSuccess('Email moved to Inbox');
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Failed to move email to Inbox');
     }
   }
@@ -330,7 +330,7 @@ export class EmailList {
     try {
       await this.store.moveToFolder(email.id, ALL_FOLDERS.SPAM);
       this.alertSvc.showSuccess('Email marked as spam');
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Failed to mark email as spam');
     }
   }

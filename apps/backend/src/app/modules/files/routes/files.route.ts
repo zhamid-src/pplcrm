@@ -20,7 +20,7 @@ const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
     let payload: any = null;
     try {
       payload = await verifyAuthToken(token);
-    } catch (err) {
+    } catch (_err) {
       return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
     }
 
@@ -45,7 +45,7 @@ const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
       reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
       reply.header('Cache-Control', 'public, max-age=31536000, immutable');
       return reply.send(buffer);
-    } catch (err) {
+    } catch (_err) {
       fastify.log.error(err);
       return reply.status(500).send({ error: 'Failed to download file' });
     }

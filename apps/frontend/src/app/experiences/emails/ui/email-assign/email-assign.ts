@@ -61,7 +61,7 @@ export class EmailAssign {
     try {
       await this.store.assignEmailToUser(email.id, normalizedUserId, assigneeName);
       this.assignedTo.set(normalizedUserId);
-    } catch (e) {
+    } catch (_e) {
       this.alertSvc.showError('Something went wrong, please try again');
       this.assignedTo.set(null);
     }

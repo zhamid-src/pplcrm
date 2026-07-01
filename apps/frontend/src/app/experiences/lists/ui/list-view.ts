@@ -66,7 +66,7 @@ export class ListView implements OnDestroy {
       // Fetch campaign stats and history
       const statsData = await this.lists.getListStats(id);
       this.stats.set(statsData);
-    } catch (e) {
+    } catch (_e) {
       this.alerts.showError('Failed to load list details');
     } finally {
       this.loading.set(false);
@@ -105,7 +105,7 @@ export class ListView implements OnDestroy {
           }
           await this.loadListDetails();
         }
-      } catch (e) {
+      } catch (_e) {
         clearInterval(this.pollInterval);
         this.pollInterval = null;
         this.refreshing.set(false);
