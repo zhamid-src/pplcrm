@@ -73,7 +73,11 @@ export class BaseRepository<T extends keyof Models> {
 
   public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
     const results = await this.addMany({ rows: [input.row] }, trx);
-    return results[0]!;
+    const first = results[0];
+    if (!first) {
+      throw new Error(`Insert into "${this.table}" returned no rows`);
+    }
+    return first;
   }
 
   public async addMany(input: { rows: OperationDataType<T, 'insert'>[] }, trx?: Transaction<Models>) {

@@ -1,11 +1,11 @@
 import { Service } from '@angular/core';
 import { EmailStatus, JSend, jsend } from '../../../../../../../libs/common/src';
 
-import { TRPCService } from '../../../services/api/trpc-service';
-import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
 import { HasRow } from '../../../../../../../libs/common/src/lib/emails';
 import { EmailDraftType, EmailType } from '../../../../../../../libs/common/src/lib/models';
 import { environment } from '../../../../environments/environment';
+import { TRPCService } from '../../../services/api/trpc-service';
+import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
 
 @Service()
 export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'email_list'> {
@@ -142,7 +142,7 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
           this.api.msSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
         )(undefined, { context: { skipErrorHandler: true } });
       }
-    } catch (_e) {
+    } catch (e) {
       console.error('MS sync failed:', e);
     }
 
@@ -155,7 +155,7 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
           this.api.googleSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
         )(undefined, { context: { skipErrorHandler: true } });
       }
-    } catch (_e) {
+    } catch (e) {
       console.error('Google sync failed:', e);
     }
 

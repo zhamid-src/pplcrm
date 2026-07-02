@@ -346,29 +346,27 @@ describe('WebFormsController Integration', () => {
       .selectAll()
       .where('tenant_id', '=', tenantId)
       .where('email', '=', 'donor@example.com')
-      .executeTakeFirst();
+      .executeTakeFirstOrThrow();
 
-    expect(person).toBeDefined();
-    expect(person!.household_id).not.toBeNull();
+    expect(person.household_id).not.toBeNull();
 
     const hh = await db
       .selectFrom('households')
       .selectAll()
       .where('tenant_id', '=', tenantId)
-      .where('id', '=', person!.household_id as any)
-      .executeTakeFirst();
+      .where('id', '=', person.household_id as any)
+      .executeTakeFirstOrThrow();
 
-    expect(hh).toBeDefined();
-    expect(hh!.street1).toBe('123 Main St');
-    expect(hh!.city).toBe('Toronto');
-    expect(hh!.zip).toBe('M5V 2T6');
+    expect(hh.street1).toBe('123 Main St');
+    expect(hh.city).toBe('Toronto');
+    expect(hh.zip).toBe('M5V 2T6');
 
     const personTags = await db
       .selectFrom('map_peoples_tags')
       .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
       .select('tags.name')
       .where('map_peoples_tags.tenant_id', '=', tenantId)
-      .where('map_peoples_tags.person_id', '=', person!.id)
+      .where('map_peoples_tags.person_id', '=', person.id)
       .execute();
 
     const tagNames = personTags.map((t: any) => t.name);
@@ -419,9 +417,8 @@ describe('WebFormsController Integration', () => {
       .selectAll()
       .where('tenant_id', '=', tenantId)
       .where('email', '=', 'has-mobile@example.com')
-      .executeTakeFirst();
+      .executeTakeFirstOrThrow();
 
-    expect(person).toBeDefined();
-    expect(person!.mobile).toBe('555-0000');
+    expect(person.mobile).toBe('555-0000');
   });
 });

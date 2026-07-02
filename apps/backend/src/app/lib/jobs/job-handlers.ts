@@ -1423,8 +1423,9 @@ async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
         if (!ENGAGEMENT_EVENT_TYPES.has(ev.event_type)) continue;
 
         const key = `${ev.newsletter_id}::${ev.email}`;
-        if (!grouped.has(key)) {
-          grouped.set(key, {
+        let agg = grouped.get(key);
+        if (!agg) {
+          agg = {
             newsletter_id: ev.newsletter_id,
             email: ev.email,
             open_count: 0,
@@ -1438,10 +1439,9 @@ async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
             last_clicked_at: null,
             bounced_at: null,
             unsubscribed_at: null,
-          });
+          };
+          grouped.set(key, agg);
         }
-
-        const agg = grouped.get(key)!;
         const ts = new Date(ev.timestamp);
 
         if (ev.event_type === 'open') {
@@ -1734,10 +1734,12 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
     const userTasksMap = new Map<string, any[]>();
     for (const row of dueTasks) {
       const userId = String(row.user_id);
-      if (!userTasksMap.has(userId)) {
-        userTasksMap.set(userId, []);
+      let userTasks = userTasksMap.get(userId);
+      if (!userTasks) {
+        userTasks = [];
+        userTasksMap.set(userId, userTasks);
       }
-      userTasksMap.get(userId)!.push(row);
+      userTasks.push(row);
     }
 
     const mailService = new TransactionalEmailService();

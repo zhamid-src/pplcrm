@@ -110,13 +110,17 @@ describe('process_drip_workflows Job Handler', () => {
         }),
       }),
       transaction: () => ({
-        execute: async () => { /* mock: no-op */ },
+        execute: async () => {
+          /* mock: no-op */
+        },
       }),
       insertInto: () => ({
         values: (vals: any) => {
           insertedRunAt = vals.run_at;
           return {
-            execute: async () => { /* mock: no-op */ },
+            execute: async () => {
+              /* mock: no-op */
+            },
           };
         },
       }),
@@ -126,7 +130,8 @@ describe('process_drip_workflows Job Handler', () => {
 
     expect(limitValue).toBe(500);
     expect(insertedRunAt).toBeInstanceOf(Date);
-    const diff = Math.abs(insertedRunAt!.getTime() - Date.now());
+    if (!insertedRunAt) throw new Error('insertedRunAt was not captured');
+    const diff = Math.abs(insertedRunAt.getTime() - Date.now());
     expect(diff).toBeLessThan(5000); // within 5 seconds
   });
 
@@ -146,13 +151,17 @@ describe('process_drip_workflows Job Handler', () => {
         }),
       }),
       transaction: () => ({
-        execute: async () => { /* mock: no-op */ },
+        execute: async () => {
+          /* mock: no-op */
+        },
       }),
       insertInto: () => ({
         values: (vals: any) => {
           insertedRunAt = vals.run_at;
           return {
-            execute: async () => { /* mock: no-op */ },
+            execute: async () => {
+              /* mock: no-op */
+            },
           };
         },
       }),
@@ -161,8 +170,9 @@ describe('process_drip_workflows Job Handler', () => {
     await executeJob({ type: 'process_drip_workflows' }, mockDb);
 
     expect(insertedRunAt).toBeInstanceOf(Date);
+    if (!insertedRunAt) throw new Error('insertedRunAt was not captured');
     const targetTime = Date.now() + 10 * 60 * 1000;
-    const diff = Math.abs(insertedRunAt!.getTime() - targetTime);
+    const diff = Math.abs(insertedRunAt.getTime() - targetTime);
     expect(diff).toBeLessThan(5000); // within 5 seconds
   });
 });

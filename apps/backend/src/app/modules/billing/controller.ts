@@ -8,8 +8,17 @@ import { sql } from 'kysely';
 import { getPlanLimits } from './usage-limits';
 import { logger } from '../../logger';
 
-const isMockMode = !env.stripeSecretKey || env.stripeSecretKey.includes('MockKey');
-const stripe = isMockMode ? null : new Stripe(env.stripeSecretKey!);
+const stripeSecretKey = env.stripeSecretKey;
+const stripe = stripeSecretKey && !stripeSecretKey.includes('MockKey') ? new Stripe(stripeSecretKey) : null;
+const isMockMode = stripe === null;
+
+function getStripe(): Stripe {
+  if (!stripe) {
+    throw new Error('Stripe is not configured (running in mock mode)');
+  }
+  return stripe;
+}
+
 const tenantsRepo = new TenantsRepo();
 const webhookEventsRepo = new WebhookEventsRepo();
 
@@ -69,7 +78,7 @@ export class BillingController {
     // Live Stripe Mode
     let stripeCustomerId = tenant.stripe_customer_id as string | undefined;
     if (!stripeCustomerId) {
-      const customer = await stripe!.customers.create({
+      const customer = await getStripe().customers.create({
         email: (tenant.email as string) || undefined,
         name: tenant.name as string,
         metadata: {
@@ -93,7 +102,7 @@ export class BillingController {
       throw new Error(`Stripe Price ID is not configured for plan: ${plan}`);
     }
 
-    const session = await stripe!.checkout.sessions.create({
+    const session = await getStripe().checkout.sessions.create({
       customer: stripeCustomerId,
       payment_method_types: ['card'],
       line_items: [
@@ -139,7 +148,7 @@ export class BillingController {
       throw new Error('No active billing history found. Please subscribe to a plan first.');
     }
 
-    const session = await stripe!.billingPortal.sessions.create({
+    const session = await getStripe().billingPortal.sessions.create({
       customer: stripeCustomerId,
       return_url: `${frontendUrl}/settings?tab=billing`,
     });
@@ -191,7 +200,7 @@ export class BillingController {
         const customerId = session.customer as string;
 
         if (tenantId && subscriptionId) {
-          const subscription = await stripe!.subscriptions.retrieve(subscriptionId);
+          const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
           const priceId = subscription.items.data[0]?.price.id;
 
           let planName = 'free';

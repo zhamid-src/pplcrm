@@ -45,7 +45,7 @@ const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
       reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
       reply.header('Cache-Control', 'public, max-age=31536000, immutable');
       return reply.send(buffer);
-    } catch (_err) {
+    } catch (err) {
       fastify.log.error(err);
       return reply.status(500).send({ error: 'Failed to download file' });
     }

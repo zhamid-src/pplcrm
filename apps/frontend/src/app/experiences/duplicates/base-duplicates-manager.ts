@@ -47,15 +47,16 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
         let selectedSourceId: string | undefined = undefined;
         const items = this.getItemsFromRawGroup(g);
 
-        if (items.length === 2) {
-          const date0 = new Date(items[0]!.created_at).getTime();
-          const date1 = new Date(items[1]!.created_at).getTime();
+        const [firstItem, secondItem] = items;
+        if (items.length === 2 && firstItem && secondItem) {
+          const date0 = new Date(firstItem.created_at).getTime();
+          const date1 = new Date(secondItem.created_at).getTime();
           if (date0 <= date1) {
-            selectedTargetId = items[0]!.id;
-            selectedSourceId = items[1]!.id;
+            selectedTargetId = firstItem.id;
+            selectedSourceId = secondItem.id;
           } else {
-            selectedTargetId = items[1]!.id;
-            selectedSourceId = items[0]!.id;
+            selectedTargetId = secondItem.id;
+            selectedSourceId = firstItem.id;
           }
         }
         return { reason: g.reason, items, selectedTargetId, selectedSourceId };
@@ -73,7 +74,9 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
       const updated = [...current];
 
       // 1. Create a shallow copy of the group to avoid mutating the original reference
-      const updatedGroup = { ...updated[groupIndex]! };
+      const existingGroup = updated[groupIndex];
+      if (!existingGroup) return current;
+      const updatedGroup = { ...existingGroup };
 
       // 2. Apply your logic to the NEW object
       if (role === 'target') {
@@ -92,13 +95,15 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
   }
 
   public async mergeGroup(groupIndex: number) {
-    const group = this.groups()[groupIndex]!;
+    const group = this.groups()[groupIndex];
+    if (!group) return;
     const targetId = group.selectedTargetId;
     const sourceId = group.selectedSourceId;
     if (!targetId || !sourceId) return;
 
-    const targetItem = group.items.find((i) => i.id === targetId)!;
-    const sourceItem = group.items.find((i) => i.id === sourceId)!;
+    const targetItem = group.items.find((i) => i.id === targetId);
+    const sourceItem = group.items.find((i) => i.id === sourceId);
+    if (!targetItem || !sourceItem) return;
 
     const primaryName = this.getItemDisplayName(targetItem);
     const dupName = this.getItemDisplayName(sourceItem);
