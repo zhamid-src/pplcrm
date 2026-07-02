@@ -1,11 +1,10 @@
 import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
-import type { Models, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { HouseholdRepo } from '../../households/repositories/households.repo';
-import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 export class PersonsRepo extends BaseRepository<'persons'> {
   constructor() {
@@ -154,8 +153,8 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         .leftJoin('companies', 'persons.company_id', 'companies.id')
         .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
         .where('households.tenant_id', '=', tenantId)
-        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags!).where('tags.type', '=', 'tag'))
-        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues!).where('tags.type', '=', 'issue'))
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
+        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
         .$if(!!options.listId, (qb) =>
           qb.where('persons.id', 'in', (eb: any) =>
             eb
@@ -415,6 +414,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
 
   public async getDuplicateCount(tenant_id: string): Promise<number> {
     // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -439,6 +439,7 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     const pageSize = options?.pageSize ?? 20;
 
     // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb

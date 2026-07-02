@@ -133,7 +133,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly scrollerRef = viewChild<ElementRef<HTMLDivElement>>('scroller');
   private tsColumns: TSColumnDef<any, any>[] = [];
   private tsTable: any;
-  private readonly pctrl = inject(PinningController, { optional: true })!;
+  private readonly pctrl = inject(PinningController);
   private updateHeaderWidths = () => {
     const table = this.gridTable()?.nativeElement;
     if (!table) return;
@@ -160,12 +160,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly actionsSvc = inject(DataGridActionsService);
   private readonly navSvc = inject(DataGridNavService);
   private readonly utilsSvc = inject(DataGridUtilsService);
-  private readonly store = inject(GridStoreService, { optional: true })!;
-  private readonly rctrl = inject(ResizingController, { optional: true })!;
-  private readonly kctrl = inject(KeyboardController, { optional: true })!;
-  private readonly editingCtrl = inject(EditingController, { optional: true })!;
-  private readonly fetchCtrl = inject(FetchController, { optional: true })!;
-  private readonly reorder = inject(ReorderController, { optional: true })!;
+  private readonly store = inject(GridStoreService);
+  private readonly rctrl = inject(ResizingController);
+  private readonly kctrl = inject(KeyboardController);
+  private readonly editingCtrl = inject(EditingController);
+  private readonly fetchCtrl = inject(FetchController);
+  private readonly reorder = inject(ReorderController);
   public readonly searchTerm = this.searchSvc.searchSignal;
   private readonly hasEditableColumns = signal(false);
   private readonly headerMinWidths = signal<Record<string, number>>({});
@@ -509,7 +509,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.colDefsWithEdit
       .filter((c) => c.field && c.field !== 'actions' && c.field !== SELECTION_COLUMN.field)
       .map((c) => {
-        const fieldName = c.field!;
+        const fieldName = c.field ?? '';
         const isTagCol = fieldName === 'tags' || fieldName === 'issues' || c.tagColumn === true;
         const operators = [
           { value: 'contains', label: 'contains' },
@@ -737,9 +737,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         },
       });
 
-      if (this.showListFilter()) {
+      if (this.showListFilter() && this.dgListsSvc) {
         try {
-          const listsResult = await this.dgListsSvc!.getAll();
+          const listsResult = await this.dgListsSvc.getAll();
           const entity = this.config.messages.exportEntity;
           const expectedObject = entity === 'persons' ? 'people' : 'households';
           const rows = listsResult.rows ?? listsResult;
@@ -792,7 +792,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         },
         onStateChange: () => this.syncSignalsFromTable(),
         onSortingChange: (updater: Updater<SortingState>) => {
-          const next = typeof updater === 'function' ? updater(this.tsTable!.getState().sorting) : updater;
+          const next = typeof updater === 'function' ? updater(this.tsTable.getState().sorting) : updater;
           this.sorting.set(next);
           const first = next?.[0];
           this.sortCol.set(first?.id ?? null);
@@ -801,7 +801,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
           this.store.requestPersist();
         },
         onRowSelectionChange: (updater: Updater<Record<string, boolean>>) => {
-          const state = this.tsTable!.getState() as unknown as { rowSelection?: Record<string, boolean> };
+          const state = this.tsTable.getState() as unknown as { rowSelection?: Record<string, boolean> };
           const current: Record<string, boolean> = state?.rowSelection ?? {};
           const next = typeof updater === 'function' ? updater(current) : updater;
           const set = new Set(this.selectedIdSet());
@@ -819,11 +819,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
           this.selectedIdSet.set(set);
         },
         onColumnSizingChange: (updater: Updater<Record<string, number>>) => {
-          const state = this.tsTable!.getState() as unknown as { columnSizing?: Record<string, number> };
+          const state = this.tsTable.getState() as unknown as { columnSizing?: Record<string, number> };
           const current: Record<string, number> = state?.columnSizing || {};
           const next = typeof updater === 'function' ? updater(current) : updater;
           this.colWidths.set({ ...(next || {}) });
-          this.tsTable!.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: next || {} } }));
+          this.tsTable.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: next || {} } }));
           this.store.requestPersist();
         },
       });
@@ -1827,7 +1827,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Filter panel actions
   protected panelFields(): string[] {
-    return this.colDefsWithEdit.filter((c) => !!c.field).map((c) => c.field!) as string[];
+    return this.colDefsWithEdit.flatMap((c) => (c.field ? [c.field] : []));
   }
 
   protected panelLabelFor(field: string): string {
@@ -1929,12 +1929,12 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public resetColWidth(h: any) {
     const id = this.getFieldFromHeader(h);
     if (!id) return;
-    const state = this.tsTable!.getState() as unknown as { columnSizing?: Record<string, number> };
+    const state = this.tsTable.getState() as unknown as { columnSizing?: Record<string, number> };
     const sizing = { ...(state?.columnSizing || {}) };
     if (id in sizing) delete sizing[id];
     this.colWidths.update((m) => {
       const next = { ...(m || {}) };
-      delete next[id!];
+      delete next[id];
       return next;
     });
     this.tsTable?.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));

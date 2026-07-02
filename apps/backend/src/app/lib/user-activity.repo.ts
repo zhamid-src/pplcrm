@@ -163,11 +163,10 @@ export class UserActivityRepo extends BaseRepository<'user_activity'> {
       );
     }
 
-    query = query
-      .orderBy('user_activity.created_at', 'desc')
-      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow!).limit(options.endRow! - options.startRow!),
-      );
+    query = query.orderBy('user_activity.created_at', 'desc');
+    if (typeof options.startRow === 'number' && typeof options.endRow === 'number') {
+      query = query.offset(options.startRow).limit(options.endRow - options.startRow);
+    }
 
     let countQuery = this.getSelect()
       .select(({ fn }) => [fn.count('user_activity.id').as('total')])

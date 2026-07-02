@@ -104,22 +104,26 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
     const companyToPersons = new Map<string, any[]>();
     for (const p of persons) {
       const compId = String(p.company_id);
-      if (!companyToPersons.has(compId)) {
-        companyToPersons.set(compId, []);
+      let companyPersons = companyToPersons.get(compId);
+      if (!companyPersons) {
+        companyPersons = [];
+        companyToPersons.set(compId, companyPersons);
       }
-      companyToPersons.get(compId)!.push(p);
+      companyPersons.push(p);
     }
 
     const groupsMap = new Map<string, { reason: string; companies: any[] }>();
     for (const row of rows) {
       const groupKey = row.group_key;
-      if (!groupsMap.has(groupKey)) {
-        groupsMap.set(groupKey, {
+      let group = groupsMap.get(groupKey);
+      if (!group) {
+        group = {
           reason: row.reason,
           companies: [],
-        });
+        };
+        groupsMap.set(groupKey, group);
       }
-      groupsMap.get(groupKey)!.companies.push({
+      group.companies.push({
         ...row,
         id: String(row.id),
         persons: companyToPersons.get(String(row.id)) || [],

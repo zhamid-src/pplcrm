@@ -180,22 +180,17 @@ export class ListForm implements OnInit {
     is_dynamic: [false],
   });
 
-  protected readonly listType = toSignal(
-    this.form.get('object')!.valueChanges.pipe(map((v) => v || 'people')),
-    { initialValue: (this.form.get('object')?.value ?? 'people') as string },
-  );
+  protected readonly listType = toSignal(this.form.controls.object.valueChanges.pipe(map((v) => v || 'people')), {
+    initialValue: (this.form.controls.object.value ?? 'people') as string,
+  });
 
-  protected readonly isDynamic = toSignal(
-    this.form.get('is_dynamic')!.valueChanges.pipe(map((v) => v === true)),
-    { initialValue: this.form.get('is_dynamic')?.value === true },
-  );
+  protected readonly isDynamic = toSignal(this.form.controls.is_dynamic.valueChanges.pipe(map((v) => v === true)), {
+    initialValue: this.form.controls.is_dynamic.value === true,
+  });
 
   public ngOnInit(): void {
-
     void this.loadOnInit();
-
   }
-
 
   private async loadOnInit(): Promise<void> {
     const id = this.route.snapshot.paramMap.get('id');
@@ -398,7 +393,9 @@ export class ListForm implements OnInit {
   }
 
   protected save(done: (() => void) | Event) {
-    let doneFn: () => void = () => { /* no-op default */ };
+    let doneFn: () => void = () => {
+      /* no-op default */
+    };
     if (done instanceof Event) {
       done.preventDefault();
     } else if (typeof done === 'function') {
@@ -406,13 +403,15 @@ export class ListForm implements OnInit {
     }
 
     const formValue = this.form.getRawValue();
+    const listId = this.id();
+    if (!this.isNew() && !listId) return;
 
     const end = this._loading.begin();
     let savePromise;
 
     if (this.isNew()) {
       const payload: AddListType = {
-        name: formValue.name!,
+        name: formValue.name ?? '',
         description: formValue.description ?? null,
         object: formValue.object as 'people' | 'households',
         is_dynamic: formValue.is_dynamic ?? false,
@@ -447,10 +446,10 @@ export class ListForm implements OnInit {
       savePromise = this.listsSvc.add(payload);
     } else {
       const payload: UpdateListType = {
-        name: formValue.name!,
+        name: formValue.name ?? '',
         description: formValue.description ?? null,
       };
-      savePromise = this.listsSvc.update(this.id()!, payload);
+      savePromise = this.listsSvc.update(listId ?? '', payload);
     }
 
     savePromise
@@ -461,7 +460,7 @@ export class ListForm implements OnInit {
         if (this.isNew()) {
           await this.router.navigate(['/lists']);
         } else {
-          await this.router.navigate(['/lists', this.id()!]);
+          await this.router.navigate(['/lists', listId ?? '']);
         }
       })
       .catch((err: any) => {
@@ -474,7 +473,8 @@ export class ListForm implements OnInit {
   }
 
   protected async deleteList() {
-    if (this.isNew() || !this.id()) return;
+    const id = this.id();
+    if (this.isNew() || !id) return;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete List',
       message: 'Are you sure you want to delete this list? This action cannot be undone.',
@@ -485,7 +485,7 @@ export class ListForm implements OnInit {
 
     const end = this._loading.begin();
     try {
-      await this.listsSvc.delete(this.id()!);
+      await this.listsSvc.delete(id);
       this.listsRefresh.trigger();
       this.alertSvc.showSuccess('List deleted');
       await this.router.navigate(['/lists']);
@@ -587,7 +587,8 @@ export class ListForm implements OnInit {
   private hasAnyRule(group: QueryBuilderGroupNode): boolean {
     const stack: QueryBuilderNode[] = [...group.rules];
     while (stack.length) {
-      const item = stack.pop()!;
+      const item = stack.pop();
+      if (!item) break;
       if (item.kind === 'rule') return true;
       if (item.kind === 'group') stack.push(...item.rules);
     }

@@ -1,6 +1,6 @@
 import { createVerifier } from 'fast-jwt';
-import { env } from '../../env';
 import type { IAuthKeyPayload } from '../../../../../libs/common/src';
+import { env } from '../../env';
 import { UnauthorizedError } from '../errors/app-errors';
 
 const verifier = createVerifier({
@@ -9,7 +9,10 @@ const verifier = createVerifier({
   ignoreExpiration: false,
 });
 
-export async function verifyAuthToken(token: string): Promise<IAuthKeyPayload> {
+export async function verifyAuthToken(token: string | null): Promise<IAuthKeyPayload> {
+  if (!token) {
+    throw new Error('Invalid token payload');
+  }
   try {
     // fast-jwt verify returns the payload or throws
     const verifierResult = await verifier(token);

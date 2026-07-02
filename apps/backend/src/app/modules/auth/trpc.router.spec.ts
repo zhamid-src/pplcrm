@@ -1,8 +1,8 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest';
-import { AuthRouter } from './trpc.router';
-import { AuthController } from './controller';
-import { generateToken, hashToken } from '../../lib/token-hash';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BaseRepository } from '../../lib/base.repo';
+import { generateToken, hashToken } from '../../lib/token-hash';
+import { AuthController } from './controller';
+import { AuthRouter } from './trpc.router';
 
 vi.mock('../../lib/hibp', () => ({
   getPwnedCount: vi.fn().mockResolvedValue(0),
@@ -172,7 +172,7 @@ describe('AuthController Integration', () => {
 
     const controller = new AuthController();
     const creatorEmail = `creator-${Date.now()}@example.com`;
-    const _tokens = await controller.signUp({
+    await controller.signUp({
       organization: `Org-Invite-${Date.now()}`,
       email: creatorEmail,
       password: 'StrongPassword123!',
@@ -475,9 +475,10 @@ describe('AuthController Integration', () => {
       .executeTakeFirstOrThrow();
     expect(userWithOtp.two_factor_code).toBeTypeOf('string');
     expect(userWithOtp.two_factor_code).toHaveLength(6);
+    if (!userWithOtp.two_factor_code) throw new Error('two_factor_code was not set');
 
     // Verify OTP
-    const verifyResult = await controller.verify2FA(email, userWithOtp.two_factor_code!, '127.0.0.1', 'Vitest');
+    const verifyResult = await controller.verify2FA(email, userWithOtp.two_factor_code, '127.0.0.1', 'Vitest');
     expect(verifyResult.auth_token).toBeTypeOf('string');
     expect(verifyResult.refresh_token).toBeTypeOf('string');
 
@@ -493,7 +494,7 @@ describe('AuthController Integration', () => {
 
     // 1. Sign up Owner
     const emailOwner = `owner-${Date.now()}@example.com`;
-    const _tokensOwner = await controller.signUp({
+    await controller.signUp({
       organization: `RoleOrg-${Date.now()}`,
       email: emailOwner,
       password: 'StrongPassword123!',
@@ -774,7 +775,8 @@ describe('AuthController Integration', () => {
     spy.mockRestore();
 
     expect(plaintextCode).toBeDefined();
-    const code = plaintextCode!;
+    if (!plaintextCode) throw new Error('plaintext reset code was not captured');
+    const code = plaintextCode;
 
     // Verify code
     const verifyResult = await controller.verifyEmail(code);

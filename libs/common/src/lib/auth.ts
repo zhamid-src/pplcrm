@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export interface IAuthKeyPayload {
-  name: string;
+  name?: string;
 
   session_id: string;
 

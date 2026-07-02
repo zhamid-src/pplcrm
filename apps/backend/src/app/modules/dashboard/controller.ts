@@ -175,8 +175,7 @@ export class DashboardController {
     const nowMs = Date.now();
 
     for (const email of inboxEmails) {
-      const isAssigned = !!email.assigned_to && userStatsMap[email.assigned_to];
-      const assignedUser = isAssigned ? userStatsMap[email.assigned_to!] : null;
+      const assignedUser = (email.assigned_to && userStatsMap[email.assigned_to]) || null;
 
       // Determine who closed the email (with fallback to assignee)
       const closerId =
@@ -290,8 +289,7 @@ export class DashboardController {
           workingHoursEnd,
         );
         if (workingTimeMs > taskSlaMs) {
-          const isAssigned = !!task.assigned_to && userStatsMap[task.assigned_to];
-          const assignedUser = isAssigned ? userStatsMap[task.assigned_to!] : null;
+          const assignedUser = (task.assigned_to && userStatsMap[task.assigned_to]) || null;
           if (assignedUser) {
             assignedUser.taskSlaBreaches++;
           } else {

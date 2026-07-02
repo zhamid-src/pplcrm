@@ -24,10 +24,9 @@ export async function loadBoundaries(): Promise<any> {
 function isPointInRing(lng: number, lat: number, ring: number[][]): boolean {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i]![0]!;
-    const yi = ring[i]![1]!;
-    const xj = ring[j]![0]!;
-    const yj = ring[j]![1]!;
+    const [xi, yi] = ring[i] ?? [];
+    const [xj, yj] = ring[j] ?? [];
+    if (xi === undefined || yi === undefined || xj === undefined || yj === undefined) continue;
     const intersect = yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
     if (intersect) inside = !inside;
   }
@@ -40,8 +39,8 @@ export function isPointInPolygon(lng: number, lat: number, polygon: number[][][]
     return false;
   }
   // If it's inside any inner rings (holes), it is NOT in the polygon
-  for (let i = 1; i < polygon.length; i++) {
-    if (isPointInRing(lng, lat, polygon[i]!)) {
+  for (const innerRing of polygon.slice(1)) {
+    if (isPointInRing(lng, lat, innerRing)) {
       return false;
     }
   }
