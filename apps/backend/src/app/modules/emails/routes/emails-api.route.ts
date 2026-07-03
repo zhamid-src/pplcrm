@@ -10,6 +10,7 @@ import { MsSyncService } from '../../ms-sync/ms-sync.service';
 import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
 import { GoogleSyncService } from '../../google-sync/google-sync.service';
 import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+import { attachmentDisposition } from '../../../lib/download-headers';
 
 function buildRawMime(options: {
   fromName: string;
@@ -684,7 +685,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     try {
       const buffer = await storageService.download(file.storage_key);
       reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
+      reply.header('Content-Disposition', attachmentDisposition(file.filename));
       return reply.send(buffer);
     } catch (_err) {
       fastify.log.error(_err);
@@ -742,7 +743,8 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     try {
       const buffer = await storageService.download(file.storage_key);
       reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Cache-Control', 'public, max-age=31536000');
+      // Private: inline attachments are tenant-scoped and token-gated.
+      reply.header('Cache-Control', 'private, max-age=31536000');
       return reply.send(buffer);
     } catch (_err) {
       fastify.log.error(_err);

@@ -428,7 +428,12 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 
   fastify.get('/success', async (req: any, reply) => {
     const { checkout_session_id, is_mock, person_id, amount_cents, province, country, tenant_id, user_id } = req.query;
-    if (is_mock === 'true' && checkout_session_id && person_id && tenant_id) {
+    // Mock-donation confirmation is a local/dev convenience only. This endpoint is
+    // unauthenticated and every parameter (tenant_id, person_id, amount) is
+    // attacker-controlled, so it must NEVER record donations in production — real
+    // payments are confirmed via the signed Stripe webhook / authenticated tRPC path.
+    const isProduction = process.env['NODE_ENV'] === 'production';
+    if (!isProduction && is_mock === 'true' && checkout_session_id && person_id && tenant_id) {
       try {
         const { DonationsController } = await import('../../donations/controller');
         const donationsController = new DonationsController();
