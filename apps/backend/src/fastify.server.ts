@@ -34,8 +34,11 @@ export class FastifyServer {
       JSON.stringify(payload, (_, value) => (typeof value === 'bigint' ? value.toString() : value)),
     );
 
-    // Register core Fastify plugins
-    this.server.register(cors, { ...opts });
+    // Register core Fastify plugins.
+    // Restrict cross-origin requests to the SPA origin by default (callers may
+    // override via opts). A wildcard origin would let any site drive the API on
+    // behalf of a user whose bearer token it has obtained.
+    this.server.register(cors, { origin: env.appUrl, ...opts });
     this.server.register(sensible);
     this.server.register(multipart, {
       limits: {

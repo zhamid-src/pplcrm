@@ -364,6 +364,11 @@ export class BaseRepository<T extends keyof Models> {
         if (typeof col === 'string' && col.includes('.') && !col.startsWith(`${String(this.table)}.`)) {
           return acc;
         }
+        // Defense-in-depth: only a safe SQL identifier (optionally table.column)
+        // may reach orderBy. Anything else from the client sortModel is dropped.
+        if (typeof col !== 'string' || !/^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/i.test(col)) {
+          return acc;
+        }
         return acc.orderBy(col as ReferenceExpression<Models, T>, direction);
       }, query);
     }
