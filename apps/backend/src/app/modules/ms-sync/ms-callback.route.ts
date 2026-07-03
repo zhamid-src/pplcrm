@@ -54,9 +54,11 @@ const msSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
       const oauthSvc = getOAuthService();
       await oauthSvc.handleCallback(code, userId, tenantId);
       return reply.redirect(`${returnBase}${sep(returnBase)}ms_connected=1`);
-    } catch (err: any) {
-      const msg = err?.message ?? 'unknown_error';
-      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=${encodeURIComponent(msg)}`);
+    } catch (err) {
+      // Log the real cause server-side; never reflect internal error text back
+      // into a user-facing redirect URL.
+      fastify.log.error(err, 'Microsoft OAuth callback failed');
+      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=connection_failed`);
     }
   });
 

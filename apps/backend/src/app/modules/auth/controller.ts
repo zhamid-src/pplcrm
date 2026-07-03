@@ -1770,7 +1770,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   private async isNewDeviceOrLocation(userId: string, ipAddress?: string, userAgent?: string): Promise<boolean> {
-    if (!ipAddress) return false;
+    // Fail closed: if the client IP can't be determined, treat it as a new
+    // device so the 2FA challenge is issued rather than silently skipped.
+    if (!ipAddress) return true;
     const existing = await this.sessions.db
       .selectFrom('sessions')
       .select('id')

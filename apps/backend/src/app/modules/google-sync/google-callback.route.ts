@@ -53,9 +53,11 @@ const googleSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) =>
       const oauthSvc = getOAuthService();
       await oauthSvc.handleCallback(code, userId, tenantId);
       return reply.redirect(`${returnBase}${sep(returnBase)}google_connected=1`);
-    } catch (err: any) {
-      const msg = err?.message ?? 'unknown_error';
-      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=${encodeURIComponent(msg)}`);
+    } catch (err) {
+      // Log the real cause server-side; never reflect internal error text back
+      // into a user-facing redirect URL.
+      fastify.log.error(err, 'Google OAuth callback failed');
+      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=connection_failed`);
     }
   });
 
