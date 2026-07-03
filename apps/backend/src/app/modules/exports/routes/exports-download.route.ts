@@ -2,6 +2,7 @@ import type { FastifyPluginCallback } from 'fastify';
 import { StorageService } from '../../../lib/storage.service';
 import { ExportsRepo } from '../repositories/exports.repo';
 import { verifyAuthToken } from '../../../lib/auth-util';
+import { attachmentDisposition } from '../../../lib/download-headers';
 
 const storageService = new StorageService();
 const exportsRepo = new ExportsRepo();
@@ -40,7 +41,7 @@ const exportsDownloadRoute: FastifyPluginCallback = (fastify, _, done) => {
     try {
       const buffer = await storageService.download((exportRecord as any).storage_key);
       reply.type('text/csv; charset=utf-8');
-      reply.header('Content-Disposition', `attachment; filename="${(exportRecord as any).file_name}"`);
+      reply.header('Content-Disposition', attachmentDisposition((exportRecord as any).file_name));
       return reply.send(buffer);
     } catch (err) {
       fastify.log.error(err);

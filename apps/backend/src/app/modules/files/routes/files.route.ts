@@ -2,6 +2,7 @@ import type { FastifyPluginCallback } from 'fastify';
 import { StorageService } from '../../../lib/storage.service';
 import { BaseRepository } from '../../../lib/base.repo';
 import { verifyAuthToken } from '../../../lib/auth-util';
+import { attachmentDisposition } from '../../../lib/download-headers';
 
 const storageService = new StorageService();
 
@@ -42,8 +43,9 @@ const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
     try {
       const buffer = await storageService.download(file.storage_key);
       reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
-      reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+      reply.header('Content-Disposition', attachmentDisposition(file.filename));
+      // Private: these files are tenant-scoped and token-gated — never allow shared caches.
+      reply.header('Cache-Control', 'private, max-age=31536000, immutable');
       return reply.send(buffer);
     } catch (err) {
       fastify.log.error(err);
