@@ -7,6 +7,7 @@ import {
   type ColumnDef as TSColumnDef,
 } from '@tanstack/table-core';
 import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { GridRow } from '../types';
 
 @Injectable({ providedIn: 'root' })
 export class DataGridTableService {
@@ -82,15 +83,15 @@ export class DataGridTableService {
     });
   }
 
-  buildTsColumns(colDefs: ColDef[]): TSColumnDef<any, any>[] {
+  buildTsColumns(colDefs: ColDef[]): TSColumnDef<GridRow, unknown>[] {
     return colDefs
       .filter((c) => !!c.field)
       .map((c) => ({
         id: c.field as string,
         header: c.headerName || (c.field as string),
-        accessorFn: (row: any) => row?.[c.field as string],
+        accessorFn: (row: GridRow) => row?.[c.field as string],
         enableSorting: true,
         enableResizing: true,
-      })) as unknown as TSColumnDef<any, any>[];
+      })) as unknown as TSColumnDef<GridRow, unknown>[];
   }
 }

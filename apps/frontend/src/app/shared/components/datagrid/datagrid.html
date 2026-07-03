@@ -57,7 +57,7 @@
           <th
             role="columnheader"
             class="cursor-grab border-r border-base-300 pl-2 relative"
-            [attr.data-col-id]="h.column?.id"
+            [attr.data-col-id]="h.column.id"
             [attr.aria-sort]="ariaSortHeader(h)"
             [draggable]="true"
             (dragstart)="onHeaderDragStart(h, $event)"
@@ -68,7 +68,7 @@
           >
             <div class="flex items-center gap-2" data-header-content>
               <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
-                {{ h.column?.columnDef?.header || h.column?.id }}
+                {{ h.column.columnDef.header || h.column.id }}
               </span>
               <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
               <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
