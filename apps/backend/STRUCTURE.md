@@ -64,7 +64,19 @@ apps/
             boundaries.geojson
             geocoding.ts
           jobs/
+            handlers/
+              billing.handlers.ts
+              deletions.handlers.ts
+              export.handlers.ts
+              import.handlers.ts
+              maintenance.handlers.ts
+              newsletter.handlers.ts
+              notifications.handlers.ts
+              sync.handlers.ts
+              workflows.handlers.ts
             job-handlers.ts
+            job-payloads.ts
+            reschedule.ts
             webhook-worker.ts
             worker.ts
           mail/
@@ -396,6 +408,2097 @@ apps/
 }
 ```
 
+## File: apps/backend/src/app/lib/jobs/handlers/billing.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+export async function handleZapierTrigger(payload: JobPayloadOf<'zapier_trigger'>): Promise<void> {
+  const { ZapierService } = await import('../../../modules/zapier/zapier.service');
+  const zapierService = new ZapierService();
+  await zapierService.fireTrigger(payload.tenant_id, payload.event_type, payload.data);
+}
+
+export async function handleCheckUsageLimits(
+  payload: JobPayloadOf<'check_usage_limits'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const { checkTenantUsage } = await import('../../../modules/billing/usage-limits');
+  await checkTenantUsage(payload.tenant_id, db);
+}
+
+export async function handleCheckAllUsageLimits(db: Kysely<Models>): Promise<void> {
+  const { checkAllUsageLimits } = await import('../../../modules/billing/usage-limits');
+  await checkAllUsageLimits(db);
+  await scheduleNextRun(db, 'check_all_usage_limits', DAY_MS);
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/deletions.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+const mailService = new TransactionalEmailService();
+
+const COMPLETED_JOB_RETENTION_DAYS = 7;
+
+export async function handlePerformScheduledDeletions(db: Kysely<Models>): Promise<void> {
+  const now = new Date();
+
+  const expiredUsers = await db
+    .selectFrom('authusers')
+    .select('id')
+    .where('deletion_scheduled_at', '<=', now)
+    .execute();
+
+  for (const user of expiredUsers) {
+    const userId = String(user.id);
+    await db.transaction().execute(async (trx) => {
+      await trx.deleteFrom('sessions').where('user_id', '=', userId).execute();
+      await trx.deleteFrom('profiles').where('auth_id', '=', userId).execute();
+      await trx.deleteFrom('authusers').where('id', '=', userId).execute();
+    });
+  }
+
+  const expiredTenants = await db
+    .selectFrom('tenants')
+    .select('id')
+    .where('deletion_scheduled_at', '<=', now)
+    .execute();
+
+  for (const tenant of expiredTenants) {
+    const tenantId = String(tenant.id);
+
+    // Capture owner emails before deletion — background_jobs is wiped inside the transaction
+    const ownerUsers = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', tenantId)
+      .where('role', '=', 'owner')
+      .execute();
+
+    logger.info(`Hard-deleting tenant ${tenantId} (deletion_scheduled_at <= now)…`);
+    await db.transaction().execute(async (trx) => {
+      const tid = tenantId;
+
+      // ── Collaboration ─────────────────────────────────────────────────
+      await trx.deleteFrom('task_attachments').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('task_comments').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('task_subtasks').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('tasks').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_teams_lists').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_teams_persons').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('teams').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_lists_persons').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_lists_households').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('lists').where('tenant_id', '=', tid).execute();
+
+      // ── Email & Marketing ──────────────────────────────────────────────
+      await trx.deleteFrom('workflow_enrollments').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('workflow_steps').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('workflows').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('newsletter_events').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('newsletters').where('tenant_id', '=', tid).execute();
+
+      // ── Ops & Platform ─────────────────────────────────────────────────
+      await trx.deleteFrom('notifications').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('user_activity').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('potential_duplicates').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('data_imports').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('data_exports').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('web_forms').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('background_jobs').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('webhook_events').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('zapier_subscriptions').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('volunteer_shifts').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('volunteer_events').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('event_registrations').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('event_ticket_types').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('events').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('files').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('ms_oauth_tokens').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tid).execute();
+
+      // ── Email inbox ────────────────────────────────────────────────────
+      await trx.deleteFrom('email_read_states').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('email_comments').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('email_trash').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('email_drafts').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('emails').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('email_folders').where('tenant_id', '=', tid).execute();
+
+      // ── CRM Core ───────────────────────────────────────────────────────
+      await trx.deleteFrom('map_campaigns_users').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_peoples_tags').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_households_tags').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('companies').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('persons').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('households').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('campaigns').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('tags').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('settings').where('tenant_id', '=', tid).execute();
+
+      // ── Auth & Identity (last) ─────────────────────────────────────────
+      // Null out FK references on tenants before deleting authusers
+      await trx.updateTable('tenants').set({ admin_id: null }).where('id', '=', tid).execute();
+      await trx.deleteFrom('sessions').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('profiles').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('authusers').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('tenants').where('id', '=', tid).execute();
+
+      logger.info(`Tenant ${tenantId} fully hard-deleted.`);
+    });
+
+    // Send confirmation emails after the transaction commits (outside the wiped tenant scope)
+    for (const owner of ownerUsers) {
+      if (owner.email) {
+        await mailService.sendMail({
+          to: owner.email,
+          subject: 'Your account data has been permanently deleted',
+          text: `Hi ${owner.first_name},\n\nAll data associated with your PeopleCRM account has been permanently and securely deleted as requested. You will not be billed going forward.\n\nThank you for using PeopleCRM.`,
+          html: `<h2>Account Data Deleted</h2>
+<p>Hi ${owner.first_name},</p>
+<p>All data associated with your PeopleCRM account has been permanently and securely deleted as requested. You will not be billed going forward.</p>
+<p>Thank you for using PeopleCRM. If you ever wish to return, you are always welcome to create a new account.</p>`,
+        });
+      }
+    }
+  }
+
+  // Permanently delete completed background jobs older than 7 days to prevent unbounded table growth
+  const retentionCutoff = new Date(Date.now() - COMPLETED_JOB_RETENTION_DAYS * DAY_MS);
+  await db
+    .deleteFrom('background_jobs')
+    .where('status', '=', 'completed')
+    .where('updated_at', '<=', retentionCutoff)
+    .execute();
+
+  await scheduleNextRun(db, 'perform_scheduled_deletions', DAY_MS);
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/export.handlers.ts
+
+```typescript
+import type { ExpressionBuilder, Kysely } from 'kysely';
+import { sql } from 'kysely';
+import { Readable } from 'stream';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { ExportsRepo } from '../../../modules/exports/repositories/exports.repo';
+import { CsvTransformStream } from '../../csv-stream';
+import { StorageService } from '../../storage.service';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import type { JobPayloadOf } from '../job-payloads';
+
+const storageService = new StorageService();
+const mailService = new TransactionalEmailService();
+
+const ALLOWED_EXPORT_TABLES = [
+  'persons',
+  'households',
+  'companies',
+  'forms',
+  'workflows',
+  'teams',
+  'events',
+  'newsletters',
+  'tasks',
+  'tags',
+  'issues',
+  'users',
+  'user_activity',
+];
+
+export async function handleExportCsv(payload: JobPayloadOf<'export_csv'>, db: Kysely<Models>): Promise<void> {
+  const exportsRepo = new ExportsRepo();
+  const exportId = payload.export_id;
+  const tenantId = payload.tenant_id;
+  try {
+    // Make sure we're exporting one of the allowed tables
+    const table = payload.table || payload.entity || '';
+    if (!ALLOWED_EXPORT_TABLES.includes(table)) throw new Error('Invalid export entity');
+
+    // Mark as processing
+    await exportsRepo.updateStatus(exportId, tenantId, 'processing');
+
+    // Fetch all rows for the entity
+    const opts = payload.options;
+    // The export query is assembled dynamically across heterogeneous tables and joins,
+    // which Kysely cannot express statically — the builder is intentionally untyped here.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query: any;
+
+    if (table === 'user_activity') {
+      query = db
+        .selectFrom('user_activity')
+        .innerJoin('authusers', 'authusers.id', 'user_activity.user_id')
+        .select([
+          'user_activity.id',
+          'user_activity.created_at',
+          sql`TRIM(CONCAT(authusers.first_name, ' ', COALESCE(authusers.last_name, '')))::text`.as('user'),
+          'authusers.email',
+          'user_activity.activity',
+          'user_activity.entity',
+          'user_activity.entity_id',
+          'user_activity.quantity',
+          'user_activity.metadata',
+        ])
+        .where('user_activity.tenant_id', '=', tenantId);
+
+      if (opts.userId) {
+        query = query.where('user_activity.user_id', '=', opts.userId);
+      }
+      if (opts.entity) {
+        query = query.where('user_activity.entity', 'in', getEntityFilterValues(opts.entity));
+      }
+      if (opts.activity) {
+        query = query.where('user_activity.activity', '=', opts.activity);
+      }
+      if (opts.searchStr) {
+        const search = `%${opts.searchStr.trim().toLowerCase()}%`;
+        query = query.where((eb: ExpressionBuilder<Models, 'user_activity' | 'authusers'>) =>
+          eb.or([
+            eb('authusers.first_name', 'ilike', search),
+            eb('authusers.last_name', 'ilike', search),
+            eb('user_activity.entity', 'ilike', search),
+            eb('user_activity.activity', 'ilike', search),
+          ]),
+        );
+      }
+    } else {
+      query = db
+        .selectFrom(table as keyof Models)
+        .selectAll()
+        .where('tenant_id', '=', tenantId);
+
+      // Issues are tags with type='issue'
+      if (payload.entity === 'issues') {
+        query = query.where('type', '=', 'issue');
+      }
+
+      // Apply search string if provided
+      if (opts.searchStr) {
+        const like = `%${opts.searchStr}%`;
+        // Best-effort: try name, first_name/last_name depending on table
+        if (table === 'persons') {
+          query = query.where((eb: ExpressionBuilder<Models, 'persons'>) =>
+            eb.or([eb('first_name', 'ilike', like), eb('last_name', 'ilike', like), eb('email', 'ilike', like)]),
+          );
+        } else if (table === 'households') {
+          query = query.where((eb: ExpressionBuilder<Models, 'households'>) =>
+            eb.or([eb('street1', 'ilike', like), eb('city', 'ilike', like)]),
+          );
+        } else {
+          query = query.where('name', 'ilike', like);
+        }
+      }
+    }
+
+    // Apply sort
+    if (opts.sortModel?.length) {
+      for (const s of opts.sortModel) {
+        if (s?.colId) {
+          query = query.orderBy(s.colId, s.sort === 'desc' ? 'desc' : 'asc');
+        }
+      }
+    } else {
+      const sortCol = table === 'user_activity' ? 'user_activity.created_at' : 'created_at';
+      query = query.orderBy(sortCol, 'desc');
+    }
+
+    // Determine columns
+    const requestedCols: string[] = payload.columns?.length ? payload.columns : [];
+
+    const storageKey = `exports/${tenantId}/${exportId}.csv`;
+
+    // Stream the query results using query.stream()
+    const dbStream = Readable.from(query.stream());
+    const csvStream = new CsvTransformStream(requestedCols);
+
+    await storageService.uploadStream(storageKey, dbStream.pipe(csvStream), 'text/csv');
+
+    const count = csvStream.rowCount;
+
+    // If no rows were processed, clean up by deleting the empty file if created
+    if (count === 0) {
+      await storageService.delete(storageKey);
+    }
+
+    await exportsRepo.updateStatus(exportId, tenantId, 'completed', {
+      rowCount: count,
+      storageKey: count > 0 ? storageKey : undefined,
+    });
+
+    logger.info(`Export job ${exportId} completed: ${count} rows exported.`);
+
+    // Notify the user who requested the export
+    if (payload.user_id) {
+      try {
+        const user = await db
+          .selectFrom('authusers')
+          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+          .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+          .where('authusers.id', '=', payload.user_id)
+          .executeTakeFirst();
+
+        if (user) {
+          let emailOptedIn = true;
+          let inAppOptedIn = true;
+          const profileJson = user.profile_json;
+          if (profileJson) {
+            try {
+              const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+              if (json?.notifications?.export_ready === false) {
+                emailOptedIn = false;
+              }
+              if (json?.notifications?.export_ready_in_app === false) {
+                inAppOptedIn = false;
+              }
+            } catch (e) {
+              logger.error({ err: e }, 'Failed to parse profile json for export notifications');
+            }
+          }
+
+          const entityLabel = table === 'user_activity' ? 'Activity Feed' : table;
+          const displayLabel = entityLabel.charAt(0).toUpperCase() + entityLabel.slice(1);
+
+          if (inAppOptedIn) {
+            const { NotificationsRepo } =
+              await import('../../../modules/notifications/repositories/notifications.repo');
+            const notificationsRepo = new NotificationsRepo();
+            await notificationsRepo.pushNotification({
+              tenant_id: tenantId,
+              user_id: payload.user_id,
+              title: 'Export Ready',
+              message: `Your export of ${count} records from ${displayLabel} is complete.`,
+              type: 'export',
+              link: '/exports',
+            });
+          }
+
+          if (emailOptedIn && user.email) {
+            await mailService.sendMail({
+              to: user.email,
+              subject: `Your Export is Ready: ${payload.file_name || 'export.csv'}`,
+              text: `Hi ${user.first_name || 'there'},\n\nYour export of ${count} records from the ${displayLabel} table is ready.\n\nFile Name: ${payload.file_name || 'export.csv'}\nDownload from the Exports page: ${env.appUrl}/exports`,
+              html: `<p>Hi ${user.first_name || 'there'},</p><p>Your export of <strong>${count}</strong> records from the <strong>${displayLabel}</strong> table is ready.</p><p><strong>File Name:</strong> ${payload.file_name || 'export.csv'}<br><strong>Download Link:</strong> <a href="${env.appUrl}/exports">Go to Exports Page</a></p>`,
+            });
+          }
+        }
+      } catch (notifErr) {
+        logger.error({ err: notifErr }, `Failed to send notifications for export job ${exportId}`);
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, `Export job ${exportId} failed`);
+    const message = err instanceof Error ? err.message : String(err);
+    await exportsRepo.updateStatus(exportId, tenantId, 'failed', {
+      error: message.substring(0, 500),
+    });
+    throw err;
+  }
+}
+
+function getEntityFilterValues(entityFilter: string): string[] {
+  const ent = entityFilter.toLowerCase();
+  if (ent === 'persons' || ent === 'person' || ent === 'people') {
+    return ['person', 'persons'];
+  }
+  if (ent === 'households' || ent === 'household') {
+    return ['household', 'households'];
+  }
+  if (ent === 'companies' || ent === 'company') {
+    return ['company', 'companies'];
+  }
+  if (ent === 'tasks' || ent === 'task') {
+    return ['task', 'tasks', 'tasks_archived'];
+  }
+  if (ent === 'emails' || ent === 'email') {
+    return ['email', 'emails'];
+  }
+  if (ent === 'volunteer_events' || ent === 'volunteer_event') {
+    return ['volunteer_event', 'volunteer_events'];
+  }
+  if (ent === 'volunteer_shifts' || ent === 'volunteer_shift') {
+    return ['volunteer_shift', 'volunteer_shifts'];
+  }
+  if (ent === 'web_forms' || ent === 'web_form' || ent === 'forms' || ent === 'form') {
+    return ['web_form', 'web_forms', 'form', 'forms'];
+  }
+  if (ent === 'tags' || ent === 'tag') {
+    return ['tag', 'tags'];
+  }
+  return [ent];
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/import.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { CompaniesController } from '../../../modules/companies/controller';
+import { ImportsRepo } from '../../../modules/imports/repositories/imports.repo';
+import { PersonsService } from '../../../modules/persons/services/persons.service';
+import { TasksController } from '../../../modules/tasks/controller';
+import { StorageService } from '../../storage.service';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import type { LegacyImportJobPayload } from '../job-payloads';
+
+const storageService = new StorageService();
+const importsRepo = new ImportsRepo();
+const mailService = new TransactionalEmailService();
+
+export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysely<Models>): Promise<void> {
+  // 1. Mark import status as 'processing' in data_imports
+  await importsRepo.update({
+    tenant_id: payload.tenant_id,
+    id: payload.import_id,
+    row: {
+      status: 'processing',
+      updated_at: new Date(),
+    },
+  });
+
+  // 2. Download mapping payload from storage
+  const buffer = await storageService.download(payload.storage_key);
+  const rows = JSON.parse(buffer.toString('utf8'));
+
+  // 3. Process the import rows in chunks
+  if (payload.source === 'companies') {
+    const companiesController = new CompaniesController();
+    await companiesController.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      Number(payload.skipped || 0),
+      rows,
+    );
+  } else if (payload.source === 'tasks') {
+    const tasksController = new TasksController();
+    await tasksController.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      Number(payload.skipped || 0),
+      rows,
+    );
+  } else {
+    const personsService = new PersonsService();
+    await personsService.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      payload.campaign_id ?? '',
+      payload.tags ?? [],
+      Number(payload.skipped || 0),
+      rows,
+    );
+  }
+
+  // 4. Update import status to 'completed'
+  await importsRepo.update({
+    tenant_id: payload.tenant_id,
+    id: payload.import_id,
+    row: {
+      status: 'completed',
+      processed_at: new Date(),
+      updated_at: new Date(),
+    },
+  });
+
+  try {
+    await storageService.delete(payload.storage_key);
+  } catch (storageErr) {
+    logger.error({ err: storageErr }, `Failed to clean up storage key ${payload.storage_key}`);
+  }
+
+  try {
+    const user = await db
+      .selectFrom('authusers')
+      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+      .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+      .where('authusers.id', '=', payload.user_id)
+      .executeTakeFirst();
+
+    if (user && user.email) {
+      let optedIn = true;
+      if (user.profile_json) {
+        try {
+          const json = typeof user.profile_json === 'string' ? JSON.parse(user.profile_json) : user.profile_json;
+          if (json?.notifications?.import_summary === false) {
+            optedIn = false;
+          }
+        } catch (e) {
+          logger.error({ err: e }, 'Failed to parse profile json for import summary check');
+        }
+      }
+
+      if (optedIn) {
+        const importRecord = await db
+          .selectFrom('data_imports')
+          .select(['inserted_count', 'error_count', 'skipped_count'])
+          .where('id', '=', payload.import_id)
+          .where('tenant_id', '=', payload.tenant_id)
+          .executeTakeFirst();
+
+        if (importRecord) {
+          const inserted = importRecord.inserted_count || 0;
+          const errors = importRecord.error_count || 0;
+          const skipped = importRecord.skipped_count || 0;
+
+          await mailService.sendMail({
+            to: user.email,
+            subject: `Spreadsheet Import Complete: ${payload.file_name || 'import.csv'}`,
+            text: `Hi ${user.first_name || 'there'},\n\nYour contact spreadsheet import has completed.\n\nStatistics:\n- Inserted: ${inserted}\n- Errors: ${errors}\n- Skipped: ${skipped}\n\nView imported rows: ${env.appUrl}/imports/${payload.import_id}`,
+            html: `<p>Hi ${user.first_name || 'there'},</p><p>Your contact spreadsheet import has completed.</p><p><strong>Import Statistics:</strong><br>• Inserted: <strong>${inserted}</strong><br>• Errors: <strong>${errors}</strong><br>• Skipped: <strong>${skipped}</strong></p><p><a href="${env.appUrl}/imports/${payload.import_id}">View Imported Rows</a></p>`,
+          });
+        }
+      }
+    }
+  } catch (mailErr) {
+    logger.error({ err: mailErr }, 'Failed to send import completion summary email');
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/maintenance.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { fingerprintFull, fingerprintStreet } from '../../address-normalize';
+import { geocodeAndMapHousehold } from '../../gis/geocoding';
+import { logger } from '../../../logger';
+import { ActivityController } from '../../../modules/activity/controller';
+import { ListsController } from '../../../modules/lists/controller';
+import { DuplicateMaintenanceService } from '../../../modules/persons/services/duplicate-maintenance.service';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+export async function handleRefreshList(payload: JobPayloadOf<'refresh_list'>): Promise<void> {
+  const listsController = new ListsController();
+  await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
+}
+
+export async function handleEnrichCompanyGoogle(
+  payload: JobPayloadOf<'enrich_company_google'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const { CompaniesEnrichmentService } =
+    await import('../../../modules/companies/services/companies-enrichment.service');
+  const enrichmentSvc = new CompaniesEnrichmentService(db);
+  await enrichmentSvc.enrichCompany(payload.company_id, payload.tenant_id);
+}
+
+export async function handleRefreshCompaniesGoogle(
+  payload: JobPayloadOf<'refresh_companies_google'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const { CompaniesEnrichmentService } =
+    await import('../../../modules/companies/services/companies-enrichment.service');
+  const enrichmentSvc = new CompaniesEnrichmentService(db);
+  await enrichmentSvc.queueUnenrichedCompanies(payload.tenant_id ?? undefined);
+
+  // Only the global (cron-style) run reschedules itself.
+  if (!payload.tenant_id) {
+    await scheduleNextRun(db, 'refresh_companies_google', DAY_MS);
+  }
+}
+
+export async function handleCleanupActivities(db: Kysely<Models>): Promise<void> {
+  const activityController = new ActivityController();
+  await activityController.deleteOldActivities();
+
+  await scheduleNextRun(db, 'cleanup_activities', DAY_MS);
+}
+
+export async function handleRecomputeAllDuplicates(db: Kysely<Models>): Promise<void> {
+  const lastJob = await db
+    .selectFrom('background_jobs')
+    .select(['updated_at'])
+    .where('status', '=', 'completed')
+    .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
+    .orderBy('updated_at', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+
+  const tenants = await db.selectFrom('tenants').select('id').execute();
+  const maintenanceSvc = new DuplicateMaintenanceService();
+  const lastRunTime = lastJob?.updated_at ? new Date(lastJob.updated_at) : null;
+
+  for (const tenant of tenants) {
+    try {
+      let shouldRecompute = true;
+
+      if (lastRunTime) {
+        const personChanged = await db
+          .selectFrom('persons')
+          .select('id')
+          .where('tenant_id', '=', String(tenant.id))
+          .where('updated_at', '>', lastRunTime)
+          .limit(1)
+          .executeTakeFirst();
+
+        const householdChanged = await db
+          .selectFrom('households')
+          .select('id')
+          .where('tenant_id', '=', String(tenant.id))
+          .where('updated_at', '>', lastRunTime)
+          .limit(1)
+          .executeTakeFirst();
+
+        const companyChanged = await db
+          .selectFrom('companies')
+          .select('id')
+          .where('tenant_id', '=', String(tenant.id))
+          .where('updated_at', '>', lastRunTime)
+          .limit(1)
+          .executeTakeFirst();
+
+        if (!personChanged && !householdChanged && !companyChanged) {
+          shouldRecompute = false;
+        }
+      }
+
+      if (shouldRecompute) {
+        await maintenanceSvc.recomputeAllDuplicates(String(tenant.id));
+      }
+    } catch (tenantErr) {
+      logger.error({ err: tenantErr }, `Failed to recompute duplicates for tenant ${tenant.id}`);
+    }
+  }
+
+  await scheduleNextRun(db, 'recompute_all_duplicates', DAY_MS);
+}
+
+export async function handleRecomputeAddressFingerprints(
+  payload: JobPayloadOf<'recompute_address_fingerprints'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const tenantIds: string[] = [];
+  if (payload.tenant_id) {
+    tenantIds.push(payload.tenant_id);
+  } else {
+    const tenants = await db.selectFrom('tenants').select('id').execute();
+    for (const tenant of tenants) {
+      tenantIds.push(String(tenant.id));
+    }
+  }
+
+  for (const tenantId of tenantIds) {
+    try {
+      await recomputeTenantAddressFingerprints(tenantId, db);
+    } catch (tenantErr) {
+      logger.error({ err: tenantErr }, `Failed to recompute address fingerprints for tenant ${tenantId}`);
+    }
+  }
+
+  // Schedule next run 24 hours later if periodic/cron-like (no tenant_id)
+  if (!payload.tenant_id) {
+    await scheduleNextRun(db, 'recompute_address_fingerprints', DAY_MS);
+  }
+}
+
+export async function handleGeocodeHousehold(
+  payload: JobPayloadOf<'geocode_household'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  await geocodeAndMapHousehold(payload.household_id, payload.tenant_id, db);
+}
+
+async function recomputeTenantAddressFingerprints(tenantId: string, db: Kysely<Models>): Promise<void> {
+  const households = await db.selectFrom('households').selectAll().where('tenant_id', '=', tenantId).execute();
+
+  for (const hh of households) {
+    const fp_street = fingerprintStreet({
+      street_num: hh.street_num,
+      street1: hh.street1,
+      street2: hh.street2,
+    });
+    const fp_full = fingerprintFull({
+      apt: hh.apt,
+      street_num: hh.street_num,
+      street1: hh.street1,
+      street2: hh.street2,
+      city: hh.city,
+      state: hh.state,
+      zip: hh.zip,
+      country: hh.country,
+    });
+
+    if (hh.address_fp_street !== fp_street || hh.address_fp_full !== fp_full) {
+      await db
+        .updateTable('households')
+        .set({
+          address_fp_street: fp_street,
+          address_fp_full: fp_full,
+          updated_at: new Date(),
+        })
+        .where('id', '=', hh.id)
+        .where('tenant_id', '=', tenantId)
+        .execute();
+    }
+  }
+
+  const maintenanceSvc = new DuplicateMaintenanceService();
+  await maintenanceSvc.recomputeAllDuplicates(tenantId);
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/newsletter.handlers.ts
+
+```typescript
+import type { ExpressionBuilder, Kysely } from 'kysely';
+import { sql } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { NewsletterEmailService } from '../../mail/newsletter-mail.service';
+import { UserActivityRepo } from '../../user-activity.repo';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+const NEWSLETTER_BATCH_SIZE = 500;
+const BATCH_DELAY_MS = 1000;
+
+export async function handleSendNewsletter(
+  payload: JobPayloadOf<'send-newsletter'>,
+  db: Kysely<Models>,
+  jobId?: string,
+): Promise<void> {
+  const newsletterMailSvc = new NewsletterEmailService();
+  const { tenantId, newsletterId, userId } = payload;
+
+  // 1. Fetch newsletter to get settings, targets, segments, and content
+  const newsletter = await db
+    .selectFrom('newsletters')
+    .selectAll()
+    .where('tenant_id', '=', tenantId)
+    .where('id', '=', newsletterId)
+    .executeTakeFirst();
+
+  if (!newsletter) {
+    logger.warn(`Newsletter ${newsletterId} not found.`);
+    return;
+  }
+
+  // 2. Build the recipient query using NewslettersController
+  const { NewslettersController } = await import('../../../modules/newsletters/controller');
+  const controller = new NewslettersController();
+  const baseQuery = controller.buildRecipientQuery(tenantId, newsletter);
+
+  // 3. Count total recipients
+  let offset = payload.offset ?? 0;
+  let deliveredCount = payload.deliveredCount ?? 0;
+
+  const countResult = await baseQuery
+    .select(({ fn }: ExpressionBuilder<Models, 'persons'>) => fn.count(sql`DISTINCT persons.email`).as('count'))
+    .executeTakeFirst();
+  const totalRecipients = Number(countResult?.count || 0);
+
+  if (offset === 0) {
+    await db
+      .updateTable('newsletters')
+      .set({
+        status: 'sending',
+        total_recipients: totalRecipients,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', newsletterId)
+      .execute();
+  }
+
+  // Load communications/settings from database
+  const settingsRows = await db
+    .selectFrom('settings')
+    .select(['key', 'value'])
+    .where('tenant_id', '=', tenantId)
+    .where('key', 'in', [
+      'communications.sendgrid_api_key',
+      'communications.sendgrid_subuser_username',
+      'communications.default_from_name',
+      'communications.default_from_email',
+      'communications.reply_to',
+      'communications.footer_disclaimer',
+      'communications.verified_emails',
+      'organization.address',
+    ])
+    .execute();
+
+  const settingsMap: Record<string, string> = {};
+  let verifiedEmails: string[] = [];
+  for (const row of settingsRows) {
+    if (typeof row.value === 'string') {
+      settingsMap[row.key] = row.value;
+    } else if (row.key === 'communications.verified_emails' && Array.isArray(row.value)) {
+      verifiedEmails = (row.value as unknown[]).map((e) => String(e).toLowerCase().trim());
+    }
+  }
+
+  const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
+  const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
+  const fromName = settingsMap['communications.default_from_name'] || 'PeopleCRM Team';
+  const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
+
+  // Reply-to is only honored when it has been verified (mirrors settings save-time validation).
+  const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
+  const replyTo = replyToRaw && verifiedEmails.includes(replyToRaw) ? replyToRaw : undefined;
+
+  // Mandatory footer appended server-side so it cannot be removed from the editor: org address,
+  // tenant disclaimer, and a SendGrid-substituted unsubscribe link.
+  const footer = buildNewsletterFooter(
+    settingsMap['organization.address'],
+    settingsMap['communications.footer_disclaimer'],
+  );
+
+  while (offset < totalRecipients) {
+    // Query a chunk of recipients dynamically using LIMIT and OFFSET
+    // We order by persons.email asc to ensure consistent pagination ordering
+    const chunkRows = await baseQuery
+      .select(['persons.email'])
+      .distinct()
+      .orderBy('persons.email', 'asc')
+      .limit(NEWSLETTER_BATCH_SIZE)
+      .offset(offset)
+      .execute();
+
+    const chunk: string[] = Array.from(
+      new Set(chunkRows.map((r: { email: string | null }) => r.email?.trim()).filter(Boolean)),
+    );
+
+    if (chunk.length === 0) {
+      break;
+    }
+
+    const batchDelivered = await newsletterMailSvc.sendNewsletter({
+      fromName,
+      fromEmail,
+      replyTo,
+      recipients: chunk,
+      subject: newsletter.subject || 'Newsletter',
+      html: (newsletter.html_content || '') + footer.html,
+      text: newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined,
+      sendgridApiKey,
+      subuserUsername,
+      newsletterId,
+      tenantId,
+    });
+
+    deliveredCount += batchDelivered;
+    offset += chunkRows.length;
+
+    // Update progress in the background job payload (no recipients array!)
+    if (jobId) {
+      await db
+        .updateTable('background_jobs')
+        .set({
+          payload: JSON.stringify({
+            type: 'send-newsletter',
+            newsletterId,
+            tenantId,
+            userId,
+            offset,
+            deliveredCount,
+          }),
+          updated_at: new Date(),
+        })
+        .where('id', '=', jobId)
+        .execute();
+    }
+
+    // Add a small delay between batches to respect rate limits
+    if (offset < totalRecipients) {
+      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
+    }
+  }
+
+  // Update newsletter status to 'sent'
+  await db
+    .updateTable('newsletters')
+    .set({
+      status: 'sent',
+      delivered_count: deliveredCount,
+      send_date: new Date(),
+      updatedby_id: userId,
+      updated_at: new Date(),
+    })
+    .where('tenant_id', '=', tenantId)
+    .where('id', '=', newsletterId)
+    .execute();
+
+  // Log user activity
+  const userActivity = new UserActivityRepo();
+  await userActivity.log({
+    tenant_id: tenantId,
+    user_id: userId,
+    activity: 'send',
+    entity: 'newsletters',
+    entity_id: newsletterId,
+    quantity: totalRecipients,
+    metadata: { recipientsCount: totalRecipients, deliveredCount },
+  });
+
+  const { queueUsageLimitCheck } = await import('../../../modules/billing/usage-limits');
+  await queueUsageLimitCheck(tenantId, db);
+}
+
+export async function handlePruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
+  await pruneNewsletterEvents(db);
+  await scheduleNextRun(db, 'prune_newsletter_events', DAY_MS);
+}
+
+// Event types that warrant keeping a per-newsletter engagement record.
+// Delivery-only events (delivered, deferred, processed) are not stored.
+const ENGAGEMENT_EVENT_TYPES = new Set(['open', 'click', 'unsubscribe', 'group_unsubscribe', 'bounce', 'spamreport']);
+
+async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
+  const tenants: { id: string; subscription_plan: string | null }[] = await db
+    .selectFrom('tenants')
+    .select(['id', 'subscription_plan'])
+    .execute();
+
+  for (const tenant of tenants) {
+    try {
+      const plan = tenant.subscription_plan ?? 'free';
+      const retentionDays =
+        plan.toLowerCase() === 'representative' ? 90 : plan.toLowerCase() === 'grassroots' ? 30 : 15;
+
+      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+      const tenantId = String(tenant.id);
+
+      // Fetch events older than the retention window that are engagement events.
+      const expiringEvents: {
+        newsletter_id: string;
+        email: string;
+        event_type: string;
+        timestamp: Date;
+      }[] = await db
+        .selectFrom('newsletter_events')
+        .select(['newsletter_id', 'email', 'event_type', 'timestamp'])
+        .where('tenant_id', '=', tenantId)
+        .where('created_at', '<', cutoff)
+        .execute();
+
+      // Group by (newsletter_id, email) to produce one upsert per recipient.
+      const grouped = new Map<
+        string,
+        {
+          newsletter_id: string;
+          email: string;
+          open_count: number;
+          click_count: number;
+          has_unsubscribed: boolean;
+          hard_bounced: boolean;
+          soft_bounced: boolean;
+          first_opened_at: Date | null;
+          last_opened_at: Date | null;
+          first_clicked_at: Date | null;
+          last_clicked_at: Date | null;
+          bounced_at: Date | null;
+          unsubscribed_at: Date | null;
+        }
+      >();
+
+      for (const ev of expiringEvents) {
+        if (!ENGAGEMENT_EVENT_TYPES.has(ev.event_type)) continue;
+
+        const key = `${ev.newsletter_id}::${ev.email}`;
+        let agg = grouped.get(key);
+        if (!agg) {
+          agg = {
+            newsletter_id: ev.newsletter_id,
+            email: ev.email,
+            open_count: 0,
+            click_count: 0,
+            has_unsubscribed: false,
+            hard_bounced: false,
+            soft_bounced: false,
+            first_opened_at: null,
+            last_opened_at: null,
+            first_clicked_at: null,
+            last_clicked_at: null,
+            bounced_at: null,
+            unsubscribed_at: null,
+          };
+          grouped.set(key, agg);
+        }
+        const ts = new Date(ev.timestamp);
+
+        if (ev.event_type === 'open') {
+          agg.open_count++;
+          if (!agg.first_opened_at || ts < agg.first_opened_at) agg.first_opened_at = ts;
+          if (!agg.last_opened_at || ts > agg.last_opened_at) agg.last_opened_at = ts;
+        } else if (ev.event_type === 'click') {
+          agg.click_count++;
+          if (!agg.first_clicked_at || ts < agg.first_clicked_at) agg.first_clicked_at = ts;
+          if (!agg.last_clicked_at || ts > agg.last_clicked_at) agg.last_clicked_at = ts;
+        } else if (ev.event_type === 'unsubscribe' || ev.event_type === 'group_unsubscribe') {
+          agg.has_unsubscribed = true;
+          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
+        } else if (ev.event_type === 'bounce') {
+          // SendGrid bounce events don't carry a sub-type in this table;
+          // treat all as hard bounce (the webhook handler can refine this).
+          agg.hard_bounced = true;
+          if (!agg.bounced_at) agg.bounced_at = ts;
+        } else if (ev.event_type === 'spamreport') {
+          agg.has_unsubscribed = true;
+          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
+        }
+      }
+
+      // Upsert aggregated rows, then delete the raw events.
+      if (grouped.size > 0) {
+        await db.transaction().execute(async (trx) => {
+          for (const row of grouped.values()) {
+            await trx
+              .insertInto('person_newsletter_engagements')
+              .values({
+                tenant_id: tenantId,
+                newsletter_id: row.newsletter_id,
+                email: row.email,
+                open_count: row.open_count,
+                click_count: row.click_count,
+                has_unsubscribed: row.has_unsubscribed,
+                hard_bounced: row.hard_bounced,
+                soft_bounced: row.soft_bounced,
+                first_opened_at: row.first_opened_at,
+                last_opened_at: row.last_opened_at,
+                first_clicked_at: row.first_clicked_at,
+                last_clicked_at: row.last_clicked_at,
+                bounced_at: row.bounced_at,
+                unsubscribed_at: row.unsubscribed_at,
+              })
+              .onConflict((oc) =>
+                oc.columns(['tenant_id', 'newsletter_id', 'email']).doUpdateSet((eb) => ({
+                  open_count: sql`person_newsletter_engagements.open_count + ${eb.ref('excluded.open_count')}`,
+                  click_count: sql`person_newsletter_engagements.click_count + ${eb.ref('excluded.click_count')}`,
+                  has_unsubscribed: sql`person_newsletter_engagements.has_unsubscribed OR excluded.has_unsubscribed`,
+                  hard_bounced: sql`person_newsletter_engagements.hard_bounced OR excluded.hard_bounced`,
+                  soft_bounced: sql`person_newsletter_engagements.soft_bounced OR excluded.soft_bounced`,
+                  first_opened_at: sql`LEAST(person_newsletter_engagements.first_opened_at, excluded.first_opened_at)`,
+                  last_opened_at: sql`GREATEST(person_newsletter_engagements.last_opened_at, excluded.last_opened_at)`,
+                  first_clicked_at: sql`LEAST(person_newsletter_engagements.first_clicked_at, excluded.first_clicked_at)`,
+                  last_clicked_at: sql`GREATEST(person_newsletter_engagements.last_clicked_at, excluded.last_clicked_at)`,
+                  bounced_at: sql`COALESCE(person_newsletter_engagements.bounced_at, excluded.bounced_at)`,
+                  unsubscribed_at: sql`COALESCE(person_newsletter_engagements.unsubscribed_at, excluded.unsubscribed_at)`,
+                })),
+              )
+              .execute();
+          }
+
+          await trx
+            .deleteFrom('newsletter_events')
+            .where('tenant_id', '=', tenantId)
+            .where('created_at', '<', cutoff)
+            .execute();
+        });
+      } else {
+        // No engagement events to aggregate — still prune non-engagement events.
+        await db
+          .deleteFrom('newsletter_events')
+          .where('tenant_id', '=', tenantId)
+          .where('created_at', '<', cutoff)
+          .execute();
+      }
+    } catch (err) {
+      logger.error({ err }, `[prune_newsletter_events] Failed for tenant ${tenant.id}`);
+    }
+  }
+}
+
+/**
+ * Builds the mandatory newsletter footer appended server-side at send time (so it cannot be removed
+ * from the editor). Contains the organization address, the tenant footer disclaimer, and a SendGrid
+ * substitution tag (`<% unsubscribe %>`) that SendGrid replaces with a working unsubscribe link when
+ * subscription tracking is enabled.
+ */
+function buildNewsletterFooter(address?: string, disclaimer?: string): { html: string; text: string } {
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const htmlParts: string[] = [];
+  const textParts: string[] = [];
+
+  const addr = (address || '').trim();
+  if (addr) {
+    htmlParts.push(`<div>${esc(addr).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(addr);
+  }
+
+  const disc = (disclaimer || '').trim();
+  if (disc) {
+    htmlParts.push(`<div>${esc(disc).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(disc);
+  }
+
+  // SendGrid substitution tag — replaced with the recipient's unsubscribe URL.
+  htmlParts.push('<div><a href="<% unsubscribe %>">Unsubscribe</a></div>');
+  textParts.push('Unsubscribe: <% unsubscribe %>');
+
+  const html = `<hr style="margin-top:24px"><div style="font-size:12px;color:#888;margin-top:8px">${htmlParts.join('')}</div>`;
+  const text = `\n\n----\n${textParts.join('\n')}`;
+
+  return { html, text };
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/notifications.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+const mailService = new TransactionalEmailService();
+
+export async function handleSendFormNotifications(
+  payload: JobPayloadOf<'send-form-notifications'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const event = await db
+    .selectFrom('volunteer_events')
+    .select([
+      'name',
+      'start_time',
+      'end_time',
+      'location_address',
+      'contact_email',
+      'contact_phone',
+      'send_signup_confirmation',
+      'send_volunteer_alert',
+    ])
+    .where('id', '=', payload.eventId)
+    .executeTakeFirst();
+
+  if (!event) {
+    logger.info(`Skipping volunteer signup notifications: event ${payload.eventId} not found.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+
+  // 1. Send Confirmation Email to the Constituent (if enabled)
+  if (event.send_signup_confirmation !== false) {
+    const coordEmailLine = event.contact_email ? `Email: ${event.contact_email}` : '';
+    const coordPhoneLine = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
+    const coordinatorDetails = [coordEmailLine, coordPhoneLine].filter(Boolean).join('\n');
+
+    const coordEmailHtml = event.contact_email
+      ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>`
+      : '';
+    const coordPhoneHtml = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
+    const coordinatorDetailsHtml = [coordEmailHtml, coordPhoneHtml].filter(Boolean).join('<br>');
+
+    await mailService.sendMail({
+      to: payload.email,
+      subject: `Volunteer Signup Confirmation: ${event.name}`,
+      text: `Hi ${payload.firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nEvent Coordinator Details:\n${coordinatorDetails || 'N/A'}\n\nWe look forward to seeing you there!`,
+      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p><strong>Event Coordinator Details:</strong><br>${coordinatorDetailsHtml || 'N/A'}</p><p>We look forward to seeing you there!</p>`,
+    });
+  }
+
+  // 2. Send Alert Email to the Event Coordinator / Tenant Admin (if enabled)
+  if (event.send_volunteer_alert !== false) {
+    let alertRecipient = event.contact_email || null;
+
+    if (!alertRecipient) {
+      const admin = await db
+        .selectFrom('authusers')
+        .select('email')
+        .where('tenant_id', '=', payload.tenantId)
+        .limit(1)
+        .executeTakeFirst();
+      if (admin && admin.email) {
+        alertRecipient = admin.email;
+      }
+    }
+
+    if (alertRecipient) {
+      await mailService.sendMail({
+        to: alertRecipient,
+        subject: `[ALERT] New Volunteer Signup for ${event.name}`,
+        text: `Hi,\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}\nPhone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}`,
+        html: `<p>Hi,</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}<br>Email: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}<br>Notes: ${payload.notes || 'None'}</p>`,
+      });
+    }
+  }
+}
+
+export async function handleSendShiftReminder(
+  payload: JobPayloadOf<'send-shift-reminder'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const shift = await db
+    .selectFrom('volunteer_shifts')
+    .select(['id', 'status', 'event_id', 'person_id'])
+    .where('id', '=', payload.shiftId)
+    .executeTakeFirst();
+
+  if (!shift) {
+    logger.info(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
+    return;
+  }
+
+  // Covers cancelled and no-show shifts as well.
+  if (shift.status !== 'signed_up') {
+    logger.info(`Skipping shift reminder: shift ${payload.shiftId} status is ${shift.status} instead of signed_up.`);
+    return;
+  }
+
+  const event = await db.selectFrom('volunteer_events').selectAll().where('id', '=', shift.event_id).executeTakeFirst();
+
+  if (!event) {
+    logger.info(`Skipping shift reminder: event ${shift.event_id} not found.`);
+    return;
+  }
+
+  if (event.send_reminder === false) {
+    logger.info(`Skipping shift reminder: reminders disabled for event ${event.id}.`);
+    return;
+  }
+
+  const person = await db.selectFrom('persons').selectAll().where('id', '=', shift.person_id).executeTakeFirst();
+
+  if (!person) {
+    logger.info(`Skipping shift reminder: person ${shift.person_id} not found.`);
+    return;
+  }
+
+  if (!person.email) {
+    logger.info(`Skipping shift reminder: person ${shift.person_id} has no email address.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+
+  const mapsUrl = event.location_address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
+    : null;
+
+  const mapsLinkText = mapsUrl ? `\nDirections & Maps: View on Google Maps (${mapsUrl})` : '';
+
+  const subject = `Volunteer Shift Reminder: ${event.name}`;
+  const text = `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you have an upcoming volunteer shift for "${event.name}".\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsLinkText}\n\nThank you for volunteering, and we look forward to seeing you there!`;
+
+  const html = `
+<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+  <h2 style="color: #0284c7; margin-top: 0;">Volunteer Shift Reminder</h2>
+  <p>Hi ${person.first_name || 'there'},</p>
+  <p>This is a reminder that you have an upcoming volunteer shift for <strong>"${event.name}"</strong>.</p>
+  <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 16px; margin: 20px 0; border-radius: 8px;">
+    <h3 style="margin: 0 0 8px 0; font-size: 16px;">Shift Details</h3>
+    <p style="margin: 4px 0;"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p>
+    <p style="margin: 4px 0;"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>
+    ${mapsUrl ? `<p style="margin: 12px 0 4px 0;"><strong>Directions & Map:</strong><br><a href="${mapsUrl}" target="_blank" style="color: #0284c7; font-weight: 600; text-decoration: underline;">Open in Google Maps</a></p>` : ''}
+  </div>
+  <p>Thank you for volunteering, and we look forward to seeing you there!</p>
+</div>`;
+
+  await mailService.sendMail({
+    to: person.email,
+    subject,
+    text,
+    html,
+  });
+
+  logger.info(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
+}
+
+export async function handleSendWebformNotifications(
+  payload: JobPayloadOf<'send-webform-notifications'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const form = await db
+    .selectFrom('web_forms')
+    .select(['name', 'send_confirmation', 'send_alert', 'tenant_id'])
+    .where('id', '=', payload.formId)
+    .executeTakeFirst();
+
+  if (!form) {
+    logger.info(`Skipping web form notifications: form ${payload.formId} not found.`);
+    return;
+  }
+
+  // 1. Send Confirmation Email to the Constituent (if enabled)
+  if (form.send_confirmation !== false) {
+    await mailService.sendMail({
+      to: payload.email,
+      subject: `Thank you for your submission to ${form.name}`,
+      text: `Hi ${payload.firstName || 'there'},\n\nThank you for submitting our form "${form.name}". We have received your request and our team will follow up with you soon.`,
+      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for submitting our form <strong>"${form.name}"</strong>. We have received your request and our team will follow up with you soon.</p>`,
+    });
+  }
+
+  // 2. Send Alert Email to the Tenant Admin (if enabled)
+  if (form.send_alert !== false) {
+    const admin = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', form.tenant_id)
+      .limit(1)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      await mailService.sendMail({
+        to: admin.email,
+        subject: `[ALERT] New Lead Submission on ${form.name}`,
+        text: `Hi ${admin.first_name || 'Admin'},\n\nYou have received a new submission on form "${form.name}" from ${payload.firstName || ''} ${payload.lastName || ''} (${payload.email}).\n\nNotes:\n${payload.notes || 'None'}`,
+        html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>You have received a new submission on form <strong>"${form.name}"</strong> from <strong>${payload.firstName || ''} ${payload.lastName || ''}</strong> (${payload.email}).</p><p><strong>Notes:</strong><br>${payload.notes || 'None'}</p>`,
+      });
+    }
+  }
+}
+
+export async function handleSendEventRegistrationConfirmation(
+  payload: JobPayloadOf<'send-event-registration-confirmation'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const registration = await db
+    .selectFrom('event_registrations')
+    .select(['id', 'status', 'event_id', 'person_id', 'ticket_type_id'])
+    .where('id', '=', payload.registrationId)
+    .executeTakeFirst();
+
+  if (!registration || registration.status === 'cancelled') {
+    logger.info(`Skipping event confirmation: registration ${payload.registrationId} not found or cancelled.`);
+    return;
+  }
+
+  const event = await db
+    .selectFrom('events')
+    .select([
+      'name',
+      'start_time',
+      'end_time',
+      'location_address',
+      'contact_email',
+      'contact_phone',
+      'send_registration_confirmation',
+    ])
+    .where('id', '=', registration.event_id)
+    .executeTakeFirst();
+
+  if (!event || event.send_registration_confirmation === false) {
+    logger.info(`Skipping event confirmation: event ${registration.event_id} not found or confirmations disabled.`);
+    return;
+  }
+
+  const person = await db
+    .selectFrom('persons')
+    .select(['first_name', 'email'])
+    .where('id', '=', registration.person_id)
+    .executeTakeFirst();
+
+  if (!person || !person.email) {
+    logger.info(`Skipping event confirmation: person ${registration.person_id} has no email.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+  const coordLine = [
+    event.contact_email ? `Email: ${event.contact_email}` : '',
+    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const coordHtml = [
+    event.contact_email ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
+    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
+  ]
+    .filter(Boolean)
+    .join('<br>');
+
+  await mailService.sendMail({
+    to: person.email,
+    subject: `Registration Confirmed: ${event.name}`,
+    text: `Hi ${person.first_name || 'there'},\n\nYou're registered for "${event.name}"!\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${coordLine ? `\n\nContact:\n${coordLine}` : ''}\n\nWe look forward to seeing you there!`,
+    html: `<p>Hi ${person.first_name || 'there'},</p><p>You're registered for <strong>"${event.name}"</strong>!</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${coordHtml ? `<p style="margin:12px 0 4px 0"><strong>Contact:</strong><br>${coordHtml}</p>` : ''}</div><p>We look forward to seeing you there!</p>`,
+  });
+
+  logger.info(`Sent registration confirmation to ${person.email} for event ${registration.event_id}`);
+}
+
+export async function handleSendEventReminder(
+  payload: JobPayloadOf<'send-event-reminder'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const registration = await db
+    .selectFrom('event_registrations')
+    .select(['id', 'status', 'event_id', 'person_id'])
+    .where('id', '=', payload.registrationId)
+    .executeTakeFirst();
+
+  if (!registration || registration.status !== 'registered') {
+    logger.info(
+      `Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`,
+    );
+    return;
+  }
+
+  const event = await db.selectFrom('events').selectAll().where('id', '=', registration.event_id).executeTakeFirst();
+
+  if (!event || event.send_reminder === false) {
+    logger.info(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
+    return;
+  }
+
+  const person = await db
+    .selectFrom('persons')
+    .select(['first_name', 'email'])
+    .where('id', '=', registration.person_id)
+    .executeTakeFirst();
+
+  if (!person || !person.email) {
+    logger.info(`Skipping event reminder: person ${registration.person_id} has no email.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+  const mapsUrl = event.location_address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
+    : null;
+
+  await mailService.sendMail({
+    to: person.email,
+    subject: `Reminder: ${event.name} is tomorrow`,
+    text: `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you're registered for "${event.name}" tomorrow.\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsUrl ? `\nDirections: ${mapsUrl}` : ''}\n\nWe look forward to seeing you there!`,
+    html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;padding:24px;"><h2 style="color:#0284c7;margin-top:0;">Event Reminder</h2><p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you're registered for <strong>"${event.name}"</strong> tomorrow.</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${mapsUrl ? `<p style="margin:12px 0 4px 0"><a href="${mapsUrl}" target="_blank" style="color:#0284c7;font-weight:600;">Open in Google Maps</a></p>` : ''}</div><p>We look forward to seeing you there!</p></div>`,
+  });
+
+  logger.info(`Sent event reminder to ${person.email} for event ${registration.event_id}`);
+}
+
+export async function handleSendTransactionalEmail(payload: JobPayloadOf<'send-transactional-email'>): Promise<void> {
+  await mailService.sendMail({
+    to: payload.to,
+    subject: payload.subject ?? '',
+    text: payload.text ?? '',
+    html: payload.html ?? '',
+  });
+}
+
+export async function handleSendSubscriptionConfirmation(
+  payload: JobPayloadOf<'send-subscription-confirmation'>,
+): Promise<void> {
+  await mailService.sendMail({
+    to: payload.email,
+    subject: 'Please confirm your subscription',
+    text: `Hi ${payload.firstName || 'there'},\n\nPlease confirm your subscription by visiting the link below:\n\n${payload.confirmUrl}\n\nIf you did not request this, you can safely ignore this email.`,
+    html: `<p>Hi ${payload.firstName || 'there'},</p><p>Please confirm your subscription by clicking the button below.</p><p><a href="${payload.confirmUrl}" class="btn">Confirm subscription</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
+  });
+}
+
+export async function handleCheckDueTasks(db: Kysely<Models>): Promise<void> {
+  await checkDueTasks(db);
+
+  await scheduleNextRun(db, 'check_due_tasks', DAY_MS);
+}
+
+export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
+  const now = new Date();
+  try {
+    const dueTasks = await db
+      .selectFrom('tasks')
+      .innerJoin('authusers', 'authusers.id', 'tasks.assigned_to')
+      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+      .select([
+        'tasks.id as task_id',
+        'tasks.name as task_name',
+        'tasks.due_at',
+        'tasks.details',
+        'authusers.id as user_id',
+        'authusers.email as user_email',
+        'authusers.first_name',
+        'profiles.json as profile_json',
+      ])
+      .where('tasks.status', 'not in', ['done', 'canceled', 'archived'])
+      .where('tasks.due_at', '<=', now)
+      .orderBy('tasks.due_at', 'asc')
+      .execute();
+
+    if (dueTasks.length === 0) return;
+
+    const userTasksMap = new Map<string, typeof dueTasks>();
+    for (const row of dueTasks) {
+      const userId = String(row.user_id);
+      let userTasks = userTasksMap.get(userId);
+      if (!userTasks) {
+        userTasks = [];
+        userTasksMap.set(userId, userTasks);
+      }
+      userTasks.push(row);
+    }
+
+    for (const [, tasks] of userTasksMap.entries()) {
+      const firstRow = tasks[0];
+      if (!firstRow) continue;
+      const userEmail = firstRow.user_email;
+      const firstName = firstRow.first_name;
+      const profileJson = firstRow.profile_json;
+
+      let optedIn = true;
+      if (profileJson) {
+        try {
+          const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+          if (json?.notifications?.task_due === false) {
+            optedIn = false;
+          }
+        } catch (e) {
+          logger.error({ err: e }, 'Failed to parse profile json in checkDueTasks');
+        }
+      }
+
+      if (optedIn && userEmail) {
+        let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;
+        let htmlContent = `<p>Hi ${firstName || 'there'},</p><p>Here are your active tasks needing attention today:</p><ul>`;
+
+        for (const t of tasks) {
+          const dueDateStr = t.due_at ? new Date(t.due_at).toLocaleDateString() : 'No due date';
+          textContent += `- ${t.task_name} (Due: ${dueDateStr})\n  Link: ${env.appUrl}/tasks/${t.task_id}\n\n`;
+          htmlContent += `<li><strong>${t.task_name}</strong> (Due: ${dueDateStr}) - <a href="${env.appUrl}/tasks/${t.task_id}">Resolve</a></li>`;
+        }
+
+        htmlContent += `</ul>`;
+
+        await mailService.sendMail({
+          to: userEmail,
+          subject: `Daily Task Attention Needed: ${tasks.length} Task(s) Due or Overdue`,
+          text: textContent,
+          html: htmlContent,
+        });
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, 'Failed to check and notify due tasks');
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/sync.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { GoogleOAuthService } from '../../../modules/google-sync/google-oauth.service';
+import { GoogleSyncService } from '../../../modules/google-sync/google-sync.service';
+import { MsOAuthService } from '../../../modules/ms-sync/ms-oauth.service';
+import { MsSyncService } from '../../../modules/ms-sync/ms-sync.service';
+import type { JobPayloadOf } from '../job-payloads';
+import { scheduleNextRun, TEN_MINUTES_MS } from '../reschedule';
+
+export async function handleScheduleSyncJobs(db: Kysely<Models>): Promise<void> {
+  await queueUserSyncJobs(db);
+
+  await scheduleNextRun(db, 'schedule_sync_jobs', TEN_MINUTES_MS);
+}
+
+export async function handleGoogleSync(payload: JobPayloadOf<'google_sync'>, db: Kysely<Models>): Promise<void> {
+  const oauthSvc = new GoogleOAuthService(db, {
+    clientId: env.googleClientId ?? '',
+    clientSecret: env.googleClientSecret ?? '',
+    redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+  });
+  const syncSvc = new GoogleSyncService(db, oauthSvc);
+  await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
+}
+
+export async function handleMsSync(payload: JobPayloadOf<'ms_sync'>, db: Kysely<Models>): Promise<void> {
+  const oauthSvc = new MsOAuthService(db, {
+    clientId: env.msClientId ?? '',
+    clientSecret: env.msClientSecret ?? '',
+    tenantId: env.msTenantId ?? 'common',
+    redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+  });
+  const syncSvc = new MsSyncService(db, oauthSvc);
+  await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
+}
+
+async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
+  try {
+    // Find all tenants with a connected Google account
+    const googleTokens = await db.selectFrom('google_oauth_tokens').select('tenant_id').execute();
+
+    for (const token of googleTokens) {
+      const tenantId = String(token.tenant_id);
+
+      // Check if there is already a pending or processing sync job for this tenant
+      const existing = await db
+        .selectFrom('background_jobs')
+        .select('id')
+        .where('status', 'in', ['pending', 'processing'])
+        .where(sql`payload->>'type'`, '=', 'google_sync')
+        .where(sql`payload->>'tenantId'`, '=', tenantId)
+        .executeTakeFirst();
+
+      if (!existing) {
+        logger.info(`Auto-scheduling Google sync job for tenant ${tenantId}`);
+        await db
+          .insertInto('background_jobs')
+          .values({
+            tenant_id: tenantId,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'google_sync',
+              tenantId,
+              requestedBy: 'system',
+            }),
+            run_at: new Date(),
+            max_attempts: 3,
+          })
+          .execute();
+      }
+    }
+
+    // Find all tenants with a connected Microsoft account
+    const msTokens = await db.selectFrom('ms_oauth_tokens').select('tenant_id').execute();
+
+    for (const token of msTokens) {
+      const tenantId = String(token.tenant_id);
+
+      // Check if there is already a pending or processing sync job for this tenant
+      const existing = await db
+        .selectFrom('background_jobs')
+        .select('id')
+        .where('status', 'in', ['pending', 'processing'])
+        .where(sql`payload->>'type'`, '=', 'ms_sync')
+        .where(sql`payload->>'tenantId'`, '=', tenantId)
+        .executeTakeFirst();
+
+      if (!existing) {
+        logger.info(`Auto-scheduling MS sync job for tenant ${tenantId}`);
+        await db
+          .insertInto('background_jobs')
+          .values({
+            tenant_id: tenantId,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'ms_sync',
+              tenantId,
+              requestedBy: 'system',
+            }),
+            run_at: new Date(),
+            max_attempts: 3,
+          })
+          .execute();
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, 'Failed to queue tenant sync jobs');
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/workflows.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { scheduleNextRun, TEN_MINUTES_MS } from '../reschedule';
+
+const ENROLLMENT_BATCH_SIZE = 500;
+
+export async function handleProcessDripWorkflows(db: Kysely<Models>): Promise<void> {
+  const now = new Date();
+  const pendingEnrollments = await db
+    .selectFrom('workflow_enrollments')
+    .selectAll()
+    .where('status', '=', 'active')
+    .where('next_run_at', '<=', now)
+    .limit(ENROLLMENT_BATCH_SIZE)
+    .execute();
+
+  for (const enrollment of pendingEnrollments) {
+    try {
+      await db.transaction().execute(async (trx) => {
+        const lockedEnrollment = await trx
+          .selectFrom('workflow_enrollments')
+          .selectAll()
+          .where('id', '=', enrollment.id)
+          .where('status', '=', 'active')
+          .where('next_run_at', '<=', now)
+          .forUpdate()
+          .skipLocked()
+          .executeTakeFirst();
+
+        if (!lockedEnrollment) return;
+
+        const step = await trx
+          .selectFrom('workflow_steps')
+          .selectAll()
+          .where('workflow_id', '=', lockedEnrollment.workflow_id)
+          .where('step_number', '=', lockedEnrollment.current_step_number)
+          .executeTakeFirst();
+
+        if (!step) {
+          await trx
+            .updateTable('workflow_enrollments')
+            .set({
+              status: 'completed',
+              next_run_at: null,
+              updated_at: new Date(),
+            })
+            .where('id', '=', lockedEnrollment.id)
+            .execute();
+          return;
+        }
+
+        const person = await trx
+          .selectFrom('persons')
+          .select(['id', 'email', 'first_name', 'last_name'])
+          .where('id', '=', lockedEnrollment.person_id)
+          .executeTakeFirst();
+
+        if (person && person.email) {
+          const textContent =
+            step.plain_text_content || `Hello ${person.first_name || 'there'},\n\nThis is an automated message.`;
+          const htmlContent =
+            step.html_content || `<p>Hello ${person.first_name || 'there'},</p><p>This is an automated message.</p>`;
+
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: lockedEnrollment.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'send-transactional-email',
+                to: person.email,
+                subject: step.subject,
+                text: textContent,
+                html: htmlContent,
+              }),
+              run_at: new Date(),
+              max_attempts: 5,
+            })
+            .execute();
+
+          const workflow = await trx
+            .selectFrom('workflows')
+            .select(['name', 'createdby_id'])
+            .where('id', '=', lockedEnrollment.workflow_id)
+            .executeTakeFirst();
+
+          // Only log activity if the workflow (and its creator) still exist;
+          // skip the log rather than writing a row referencing a phantom user.
+          if (workflow?.createdby_id) {
+            const actorId = String(workflow.createdby_id);
+            await trx
+              .insertInto('user_activity')
+              .values({
+                tenant_id: lockedEnrollment.tenant_id,
+                user_id: actorId,
+                activity: 'send',
+                entity: 'workflows',
+                entity_id: String(lockedEnrollment.workflow_id),
+                quantity: 1,
+                metadata: JSON.stringify({
+                  person_id: String(person.id),
+                  person_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
+                  email: person.email,
+                  subject: step.subject,
+                  step_number: step.step_number,
+                }),
+                createdby_id: actorId,
+                updatedby_id: actorId,
+              })
+              .execute();
+          }
+        }
+
+        const nextStep = await trx
+          .selectFrom('workflow_steps')
+          .selectAll()
+          .where('workflow_id', '=', lockedEnrollment.workflow_id)
+          .where('step_number', '>', lockedEnrollment.current_step_number)
+          .orderBy('step_number', 'asc')
+          .limit(1)
+          .executeTakeFirst();
+
+        if (nextStep) {
+          const delayMs =
+            nextStep.delay_unit === 'hours'
+              ? nextStep.delay_days * 60 * 60 * 1000
+              : nextStep.delay_days * 24 * 60 * 60 * 1000;
+          const nextRunAt = new Date(Date.now() + delayMs);
+          await trx
+            .updateTable('workflow_enrollments')
+            .set({
+              current_step_number: nextStep.step_number,
+              next_run_at: nextRunAt,
+              updated_at: new Date(),
+            })
+            .where('id', '=', lockedEnrollment.id)
+            .execute();
+        } else {
+          await trx
+            .updateTable('workflow_enrollments')
+            .set({
+              status: 'completed',
+              next_run_at: null,
+              updated_at: new Date(),
+            })
+            .where('id', '=', lockedEnrollment.id)
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, `Failed to process drip workflow enrollment ${enrollment.id}`);
+    }
+  }
+
+  // A full batch means there is likely more work waiting — requeue immediately.
+  const delayMs = pendingEnrollments.length === ENROLLMENT_BATCH_SIZE ? 0 : TEN_MINUTES_MS;
+  await scheduleNextRun(db, 'process_drip_workflows', delayMs);
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/job-payloads.ts
+
+```typescript
+import { z } from 'zod';
+import type { ZapierEventType } from '../../modules/zapier/zapier.service';
+
+/**
+ * IDs are strings in the database, but historical job payloads may carry them
+ * as numbers (JSON round-trip of bigint columns). Normalize to string.
+ */
+const idSchema = z.union([z.string(), z.number()]).transform(String);
+
+/** Must stay in sync with ZapierEventType in modules/zapier/zapier.service.ts (enforced by `satisfies`). */
+const ZAPIER_EVENT_TYPES = [
+  'person_created',
+  'person_updated',
+  'person_deleted',
+  'person_tag_added',
+  'person_tag_removed',
+] as const satisfies readonly ZapierEventType[];
+
+const exportSortSchema = z.object({
+  colId: z.string().nullish(),
+  sort: z.string().nullish(),
+});
+
+const exportOptionsSchema = z.object({
+  userId: idSchema.nullish(),
+  entity: z.string().nullish(),
+  activity: z.string().nullish(),
+  searchStr: z.string().nullish(),
+  sortModel: z.array(exportSortSchema).nullish(),
+});
+
+export const jobPayloadSchema = z.discriminatedUnion('type', [
+  // ── Lists / companies / maintenance ─────────────────────────────────────
+  z.object({
+    type: z.literal('refresh_list'),
+    tenant_id: idSchema,
+    list_id: idSchema,
+    user_id: idSchema,
+  }),
+  z.object({
+    type: z.literal('enrich_company_google'),
+    company_id: idSchema,
+    tenant_id: idSchema,
+  }),
+  z.object({
+    type: z.literal('refresh_companies_google'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({ type: z.literal('cleanup_activities') }),
+  z.object({ type: z.literal('recompute_all_duplicates') }),
+  z.object({
+    type: z.literal('recompute_address_fingerprints'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({
+    type: z.literal('geocode_household'),
+    household_id: idSchema,
+    tenant_id: idSchema,
+  }),
+
+  // ── External account sync ───────────────────────────────────────────────
+  z.object({ type: z.literal('schedule_sync_jobs') }),
+  z.object({
+    type: z.literal('google_sync'),
+    tenantId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
+  z.object({
+    type: z.literal('ms_sync'),
+    tenantId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
+
+  // ── Notifications & transactional email ─────────────────────────────────
+  z.object({
+    type: z.literal('send-form-notifications'),
+    eventId: idSchema,
+    tenantId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    mobile: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-shift-reminder'),
+    shiftId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-webform-notifications'),
+    formId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-event-registration-confirmation'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-event-reminder'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-transactional-email'),
+    to: z.string(),
+    subject: z.string().nullish(),
+    text: z.string().nullish(),
+    html: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-subscription-confirmation'),
+    email: z.string(),
+    firstName: z.string().nullish(),
+    confirmUrl: z.string(),
+  }),
+  z.object({ type: z.literal('check_due_tasks') }),
+
+  // ── Newsletters ──────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('send-newsletter'),
+    tenantId: idSchema,
+    newsletterId: idSchema,
+    userId: idSchema,
+    offset: z.number().nullish(),
+    deliveredCount: z.number().nullish(),
+  }),
+  z.object({ type: z.literal('prune_newsletter_events') }),
+
+  // ── Workflows & deletions ────────────────────────────────────────────────
+  z.object({ type: z.literal('process_drip_workflows') }),
+  z.object({ type: z.literal('perform_scheduled_deletions') }),
+
+  // ── Billing & integrations ───────────────────────────────────────────────
+  z.object({
+    type: z.literal('zapier_trigger'),
+    tenant_id: idSchema,
+    event_type: z.enum(ZAPIER_EVENT_TYPES),
+    data: z.record(z.string(), z.unknown()).default({}),
+  }),
+  z.object({
+    type: z.literal('check_usage_limits'),
+    tenant_id: idSchema,
+  }),
+  z.object({ type: z.literal('check_all_usage_limits') }),
+
+  // ── Exports ──────────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('export_csv'),
+    export_id: idSchema,
+    tenant_id: idSchema,
+    table: z.string().nullish(),
+    entity: z.string().nullish(),
+    options: exportOptionsSchema.default({}),
+    columns: z.array(z.string()).nullish(),
+    user_id: idSchema.nullish(),
+    file_name: z.string().nullish(),
+  }),
+]);
+
+export type JobPayload = z.infer<typeof jobPayloadSchema>;
+export type JobType = JobPayload['type'];
+export type JobPayloadOf<K extends JobType> = Extract<JobPayload, { type: K }>;
+
+/**
+ * CSV imports are queued without a `type` discriminator (legacy shape) and are
+ * matched by the presence of `import_id` + `storage_key` instead.
+ */
+export const legacyImportJobSchema = z.object({
+  import_id: idSchema,
+  storage_key: z.string(),
+  tenant_id: idSchema,
+  user_id: idSchema,
+  source: z.string().nullish(),
+  skipped: z.union([z.string(), z.number()]).nullish(),
+  campaign_id: idSchema.nullish(),
+  tags: z.array(z.string()).nullish(),
+  file_name: z.string().nullish(),
+});
+
+export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
+```
+
+## File: apps/backend/src/app/lib/jobs/reschedule.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { JobType } from './job-payloads';
+
+const MINUTE_MS = 60 * 1000;
+export const TEN_MINUTES_MS = 10 * MINUTE_MS;
+export const DAY_MS = 24 * 60 * MINUTE_MS;
+
+const DEFAULT_MAX_ATTEMPTS = 3;
+
+/**
+ * Re-queues a parameterless periodic job to run again after `delayMs`.
+ * Used by the self-rescheduling cron-style jobs (cleanup, dedupe, sync scheduling, …).
+ */
+export async function scheduleNextRun(db: Kysely<Models>, type: JobType, delayMs: number): Promise<void> {
+  await db
+    .insertInto('background_jobs')
+    .values({
+      tenant_id: null,
+      queue: 'default',
+      status: 'pending',
+      payload: JSON.stringify({ type }),
+      run_at: new Date(Date.now() + delayMs),
+      max_attempts: DEFAULT_MAX_ATTEMPTS,
+    })
+    .execute();
+}
+```
+
 ## File: apps/backend/src/app/lib/address-normalize.ts
 
 ```typescript
@@ -504,56 +2607,6 @@ export function isIncompleteAddress(input: {
   const zip = (input.zip ?? '').trim();
 
   return !street1 || (!city && !zip);
-}
-```
-
-## File: apps/backend/src/app/lib/signed-download.ts
-
-```typescript
-import { createSigner, createVerifier } from 'fast-jwt';
-import { env } from '../../env';
-import { UnauthorizedError } from '../errors/app-errors';
-
-const DOWNLOAD_SCOPE = 'file-download';
-// Long enough that cached user lists keep rendering avatars, short enough
-// that a URL leaked from history or logs goes stale quickly.
-const DOWNLOAD_URL_TTL = '24h';
-
-interface SignedDownloadPayload {
-  scope: typeof DOWNLOAD_SCOPE;
-  file_id: string;
-  tenant_id: string;
-}
-
-const signer = createSigner({ algorithm: 'HS256', key: env.sharedSecret, expiresIn: DOWNLOAD_URL_TTL });
-const verifier = createVerifier({ algorithms: ['HS256'], key: env.sharedSecret, ignoreExpiration: false });
-
-/**
- * Build a relative download URL carrying a short-lived token scoped to a
- * single file. Safe to embed in <img> tags: unlike a session JWT it cannot
- * be replayed against other endpoints and it expires quickly.
- */
-export function signedFileDownloadUrl(fileId: string, tenantId: string): string {
-  const st = signer({ scope: DOWNLOAD_SCOPE, file_id: String(fileId), tenant_id: String(tenantId) });
-  return `/api/files/download/${fileId}?st=${encodeURIComponent(st)}`;
-}
-
-/**
- * Verify a signed download token and confirm it was minted for the file
- * being requested. Throws UnauthorizedError on any mismatch.
- */
-export function verifyFileDownloadToken(st: string, fileId: string): SignedDownloadPayload {
-  let payload: unknown;
-  try {
-    payload = verifier(st);
-  } catch (err) {
-    throw new UnauthorizedError('Unauthorized: Invalid or expired download token', undefined, { cause: err });
-  }
-  const parsed = payload as Partial<SignedDownloadPayload> | null;
-  if (!parsed || parsed.scope !== DOWNLOAD_SCOPE || !parsed.tenant_id || String(parsed.file_id) !== String(fileId)) {
-    throw new UnauthorizedError('Unauthorized: Invalid download token');
-  }
-  return parsed as SignedDownloadPayload;
 }
 ```
 
@@ -2657,6 +4710,56 @@ export function decodeOAuthState(raw: string | undefined | null): OAuthStatePayl
   if (!parsed.userId || !parsed.tenantId) return null;
 
   return { userId: parsed.userId, tenantId: parsed.tenantId, returnTo: parsed.returnTo };
+}
+```
+
+## File: apps/backend/src/app/lib/signed-download.ts
+
+```typescript
+import { createSigner, createVerifier } from 'fast-jwt';
+import { env } from '../../env';
+import { UnauthorizedError } from '../errors/app-errors';
+
+const DOWNLOAD_SCOPE = 'file-download';
+// Long enough that cached user lists keep rendering avatars, short enough
+// that a URL leaked from history or logs goes stale quickly.
+const DOWNLOAD_URL_TTL = '24h';
+
+interface SignedDownloadPayload {
+  scope: typeof DOWNLOAD_SCOPE;
+  file_id: string;
+  tenant_id: string;
+}
+
+const signer = createSigner({ algorithm: 'HS256', key: env.sharedSecret, expiresIn: DOWNLOAD_URL_TTL });
+const verifier = createVerifier({ algorithms: ['HS256'], key: env.sharedSecret, ignoreExpiration: false });
+
+/**
+ * Build a relative download URL carrying a short-lived token scoped to a
+ * single file. Safe to embed in <img> tags: unlike a session JWT it cannot
+ * be replayed against other endpoints and it expires quickly.
+ */
+export function signedFileDownloadUrl(fileId: string, tenantId: string): string {
+  const st = signer({ scope: DOWNLOAD_SCOPE, file_id: String(fileId), tenant_id: String(tenantId) });
+  return `/api/files/download/${fileId}?st=${encodeURIComponent(st)}`;
+}
+
+/**
+ * Verify a signed download token and confirm it was minted for the file
+ * being requested. Throws UnauthorizedError on any mismatch.
+ */
+export function verifyFileDownloadToken(st: string, fileId: string): SignedDownloadPayload {
+  let payload: unknown;
+  try {
+    payload = verifier(st);
+  } catch (err) {
+    throw new UnauthorizedError('Unauthorized: Invalid or expired download token', undefined, { cause: err });
+  }
+  const parsed = payload as Partial<SignedDownloadPayload> | null;
+  if (!parsed || parsed.scope !== DOWNLOAD_SCOPE || !parsed.tenant_id || String(parsed.file_id) !== String(fileId)) {
+    throw new UnauthorizedError('Unauthorized: Invalid download token');
+  }
+  return parsed as SignedDownloadPayload;
 }
 ```
 
@@ -11074,43 +13177,6 @@ export function sanitizeHtml(html: string | null | undefined): string {
 }
 ```
 
-## File: apps/backend/src/app/lib/auth-util.ts
-
-```typescript
-import { createVerifier } from 'fast-jwt';
-import type { IAuthKeyPayload } from '../../../../../libs/common/src';
-import { env } from '../../env';
-import { UnauthorizedError } from '../errors/app-errors';
-
-const verifier = createVerifier({
-  algorithms: ['HS256'],
-  key: env.sharedSecret,
-  ignoreExpiration: false,
-});
-
-export async function verifyAuthToken(token: string | null): Promise<IAuthKeyPayload> {
-  if (!token) {
-    throw new Error('Invalid token payload');
-  }
-  try {
-    // fast-jwt verify returns the payload or throws
-    const verifierResult = await verifier(token);
-    // Explicitly check that we got a valid payload object with required fields
-    if (!verifierResult || typeof verifierResult !== 'object') {
-      throw new Error('Invalid token payload');
-    }
-    // Scoped tokens (e.g. signed download URLs) share the signing key but
-    // must never be accepted as session tokens.
-    if ('scope' in verifierResult) {
-      throw new Error('Invalid token payload');
-    }
-    return verifierResult as IAuthKeyPayload;
-  } catch (err) {
-    throw new UnauthorizedError('Unauthorized: Invalid or expired token', undefined, { cause: err });
-  }
-}
-```
-
 ## File: apps/backend/src/app/lib/base.controller.ts
 
 ```typescript
@@ -12639,62 +14705,525 @@ export class EmailRepo extends BaseRepository<'emails'> {
 }
 ```
 
-## File: apps/backend/src/app/modules/exports/routes/exports-download.route.ts
+## File: apps/backend/src/app/modules/events/routes/events-public.route.ts
 
 ```typescript
 import type { FastifyPluginCallback } from 'fastify';
-import { StorageService } from '../../../lib/storage.service';
-import { ExportsRepo } from '../repositories/exports.repo';
-import { verifyAuthToken } from '../../../lib/auth-util';
-import { attachmentDisposition } from '../../../lib/download-headers';
+import formBody from '@fastify/formbody';
+import { TRPCError } from '@trpc/server';
+import { EventsController } from '../controller';
 
-const storageService = new StorageService();
-const exportsRepo = new ExportsRepo();
+const ctrl = new EventsController();
 
-const exportsDownloadRoute: FastifyPluginCallback = (fastify, _, done) => {
-  fastify.get('/download/:id', async (req: any, reply) => {
-    // Authorization header only — session JWTs in the query string are
-    // deliberately not accepted because URLs leak into history and logs.
-    const token = req.headers.authorization ? req.headers.authorization.split(' ')[1] : null;
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
+const STYLES = `
+  :root {
+    --bg: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+    --accent: #0ea5e9;
+    --accent-hover: #0284c7;
+    --accent-glow: rgba(14,165,233,0.15);
+    --card-bg: rgba(255,255,255,0.85);
+    --card-border: #cbd5e1;
+    --card-shadow: 0 10px 30px -10px rgba(0,0,0,0.08), 0 20px 40px -15px rgba(0,0,0,0.05);
+    --text: #1f2937;
+    --text-muted: #6b7280;
+    --input-bg: #ffffff;
+    --input-border: #cbd5e1;
+    --input-focus-border: #0ea5e9;
+    --input-focus-ring: rgba(14,165,233,0.15);
+    --label-color: #374151;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --error: #ef4444;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: linear-gradient(135deg,#0b1220 0%,#0e1726 50%,#060a12 100%);
+      --card-bg: rgba(19,30,49,0.85);
+      --card-border: #1a2b45;
+      --card-shadow: 0 20px 40px -15px rgba(0,0,0,0.5);
+      --text: #f8fafc;
+      --text-muted: #c7d1e5;
+      --input-bg: #0b1220;
+      --input-border: #1a2b45;
+      --input-focus-border: #3ea6ff;
+      --input-focus-ring: rgba(62,166,255,0.25);
+      --label-color: #cbd5e1;
+      --accent: #3ea6ff;
     }
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-weight: 300;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 40px 24px;
+  }
+  body::before, body::after {
+    content: "";
+    position: fixed;
+    width: 400px; height: 400px;
+    border-radius: 50%;
+    background: var(--accent);
+    filter: blur(150px);
+    opacity: 0.06;
+    z-index: 0;
+    pointer-events: none;
+  }
+  body::before { top: 15%; left: 10%; }
+  body::after { bottom: 15%; right: 10%; }
+  .container { max-width: 860px; margin: 0 auto; position: relative; z-index: 1; }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 20px;
+    padding: 32px;
+    box-shadow: var(--card-shadow);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    animation: slideUp 0.5s cubic-bezier(0.16,1,0.3,1) forwards;
+  }
+  .card::before {
+    content: "";
+    display: block;
+    height: 3px;
+    margin: -32px -32px 32px;
+    border-radius: 20px 20px 0 0;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  }
+  @keyframes slideUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+  h1 { font-size: 26px; font-weight: 700; line-height: 1.2; margin-bottom: 6px; }
+  h3 { font-size: 17px; font-weight: 600; margin-bottom: 16px; }
+  .subtitle { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin-top: 4px; }
+  .layout { display: grid; grid-template-columns: 1fr; gap: 24px; margin-top: 24px; }
+  @media (min-width: 680px) { .layout { grid-template-columns: 1.2fr 1fr; } }
+  .meta-list { display: flex; flex-direction: column; gap: 14px; }
+  .meta-row { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; }
+  .meta-row svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; stroke: var(--accent); fill: none; stroke-width: 2; }
+  .meta-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: 2px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing:.05em; margin-bottom: 16px; }
+  .badge-upcoming { background: rgba(14,165,233,.12); color: var(--accent); }
+  .badge-past { background: rgba(107,114,128,.12); color: var(--text-muted); }
+  .divider { border: none; border-top: 1px solid var(--card-border); margin: 20px 0; }
+  .tickets { display: flex; flex-direction: column; gap: 10px; }
+  .ticket-row { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border:1px solid var(--card-border); border-radius:12px; }
+  .ticket-name { font-weight:600; font-size:14px; }
+  .ticket-price { font-size:14px; font-weight:700; color:var(--accent); }
+  .spots-alert { padding:10px 14px; border-radius:10px; font-size:13px; font-weight:500; margin-bottom:18px; display:flex; align-items:center; gap:8px; }
+  .spots-warn { background:rgba(239,68,68,.1); color:var(--error); border:1px solid rgba(239,68,68,.2); }
+  .spots-info { background:var(--accent-glow); color:var(--accent); border:1px solid rgba(14,165,233,.2); }
+  .spots-ok { background:rgba(16,185,129,.1); color:var(--success); border:1px solid rgba(16,185,129,.2); }
+  label { display:block; font-size:13px; font-weight:500; margin-bottom:7px; color:var(--label-color); }
+  input, textarea, select {
+    width:100%; padding:11px 14px;
+    background:var(--input-bg); border:1px solid var(--input-border);
+    border-radius:10px; color:var(--text); font-size:14px; font-family:inherit;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  input:focus, textarea:focus, select:focus { outline:none; border-color:var(--input-focus-border); box-shadow:0 0 0 4px var(--input-focus-ring); }
+  textarea { resize:vertical; min-height:80px; }
+  .hp-field { display:none !important; }
+  .form-group { margin-bottom:18px; }
+  .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:18px; }
+  button[type=submit] {
+    width:100%; padding:13px 24px;
+    background:var(--accent); color:#fff;
+    font-size:15px; font-weight:600;
+    border:none; border-radius:12px; cursor:pointer;
+    transition: background .2s, transform .2s, box-shadow .2s;
+    box-shadow:0 4px 12px var(--accent-glow); margin-top:6px;
+  }
+  button[type=submit]:hover:not(:disabled) { background:var(--accent-hover); transform:translateY(-1px); box-shadow:0 6px 18px var(--accent-glow); }
+  button[type=submit]:disabled { background:var(--card-border); color:var(--text-muted); cursor:not-allowed; box-shadow:none; }
+  .not-found { text-align:center; padding:60px 20px; }
+`;
 
-    let auth: any = null;
+function esc(str: string): string {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function page(title: string, body: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>${esc(title)}</title>
+  <style>${STYLES}</style>
+</head>
+<body>
+  <div class="container">${body}</div>
+</body>
+</html>`;
+}
+
+function getStatusFromError(err: any): number {
+  if (err instanceof TRPCError) {
+    switch (err.code) {
+      case 'BAD_REQUEST':
+        return 400;
+      case 'NOT_FOUND':
+        return 404;
+      case 'CONFLICT':
+        return 409;
+      case 'TOO_MANY_REQUESTS':
+        return 429;
+      default:
+        return 500;
+    }
+  }
+  return err.statusCode || 500;
+}
+
+function buildRsvpFormFields(fields: string[], disabled: boolean): string {
+  const fieldSet = new Set(fields);
+  const isEnabled = (f: string) => fieldSet.has(f) || fieldSet.has(`${f}:required`);
+  const isRequired = (f: string) => fieldSet.has(`${f}:required`);
+
+  const html: string[] = [];
+
+  html.push(`<input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />`);
+
+  if (isEnabled('first_name') && isEnabled('last_name')) {
+    html.push(`<div class="form-row">
+      <div>
+        <label for="first_name">First Name${isRequired('first_name') ? ' *' : ''}</label>
+        <input type="text" id="first_name" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>
+      <div>
+        <label for="last_name">Last Name${isRequired('last_name') ? ' *' : ''}</label>
+        <input type="text" id="last_name" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>
+    </div>`);
+  } else {
+    if (isEnabled('first_name')) {
+      html.push(`<div class="form-group">
+        <label for="first_name">First Name${isRequired('first_name') ? ' *' : ''}</label>
+        <input type="text" id="first_name" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>`);
+    }
+    if (isEnabled('last_name')) {
+      html.push(`<div class="form-group">
+        <label for="last_name">Last Name${isRequired('last_name') ? ' *' : ''}</label>
+        <input type="text" id="last_name" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>`);
+    }
+  }
+
+  // Email is always required
+  html.push(`<div class="form-group">
+    <label for="email">Email Address *</label>
+    <input type="email" id="email" name="email" placeholder="you@example.com" required ${disabled ? 'disabled' : ''} />
+  </div>`);
+
+  if (isEnabled('mobile')) {
+    html.push(`<div class="form-group">
+      <label for="mobile">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label>
+      <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isRequired('mobile') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+    </div>`);
+  }
+
+  if (isEnabled('street1')) {
+    html.push(`<div class="form-group">
+      <label for="street1">Street Address${isRequired('street1') ? ' *' : ''}</label>
+      <input type="text" id="street1" name="street1" placeholder="E.g. 123 Main St" ${isRequired('street1') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+    </div>`);
+  }
+
+  if (isEnabled('city') && isEnabled('zip')) {
+    html.push(`<div class="form-row">
+      <div>
+        <label for="city">City${isRequired('city') ? ' *' : ''}</label>
+        <input type="text" id="city" name="city" placeholder="City" ${isRequired('city') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>
+      <div>
+        <label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label>
+        <input type="text" id="zip" name="zip" placeholder="E.g. M5V 2T6" ${isRequired('zip') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>
+    </div>`);
+  } else {
+    if (isEnabled('city')) {
+      html.push(
+        `<div class="form-group"><label for="city">City${isRequired('city') ? ' *' : ''}</label><input type="text" id="city" name="city" ${isRequired('city') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
+      );
+    }
+    if (isEnabled('zip')) {
+      html.push(
+        `<div class="form-group"><label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label><input type="text" id="zip" name="zip" ${isRequired('zip') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
+      );
+    }
+  }
+
+  if (isEnabled('state') && isEnabled('country')) {
+    html.push(`<div class="form-row">
+      <div>
+        <label for="state">State / Province${isRequired('state') ? ' *' : ''}</label>
+        <input type="text" id="state" name="state" placeholder="E.g. ON" ${isRequired('state') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>
+      <div>
+        <label for="country">Country${isRequired('country') ? ' *' : ''}</label>
+        <select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${disabled ? 'disabled' : ''}>
+          <option value="">Select…</option>
+          <option value="CA">Canada</option>
+          <option value="US">United States</option>
+          <option value="GB">United Kingdom</option>
+          <option value="AU">Australia</option>
+        </select>
+      </div>
+    </div>`);
+  } else {
+    if (isEnabled('state')) {
+      html.push(
+        `<div class="form-group"><label for="state">State / Province${isRequired('state') ? ' *' : ''}</label><input type="text" id="state" name="state" ${isRequired('state') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
+      );
+    }
+    if (isEnabled('country')) {
+      html.push(
+        `<div class="form-group"><label for="country">Country${isRequired('country') ? ' *' : ''}</label><select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${disabled ? 'disabled' : ''}><option value="">Select…</option><option value="CA">Canada</option><option value="US">United States</option><option value="GB">United Kingdom</option><option value="AU">Australia</option></select></div>`,
+      );
+    }
+  }
+
+  if (isEnabled('notes')) {
+    html.push(`<div class="form-group">
+      <label for="notes">Notes / Message${isRequired('notes') ? ' *' : ''}</label>
+      <textarea id="notes" name="notes" placeholder="Any notes or questions…" ${isRequired('notes') ? 'required' : ''} ${disabled ? 'disabled' : ''}></textarea>
+    </div>`);
+  }
+
+  return html.join('\n');
+}
+
+const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
+  fastify.register(formBody);
+
+  // Success page
+  fastify.get('/rsvp-success', async (_req: any, reply) => {
+    reply.type('text/html');
+    return reply.send(
+      page(
+        'RSVP Confirmed',
+        `
+      <div class="card" style="max-width:440px;margin:40px auto;text-align:center;">
+        <div style="width:72px;height:72px;background:rgba(16,185,129,.1);border:2px solid #10b981;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;">
+          <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <h1>You're Registered!</h1>
+        <p class="subtitle" style="margin-top:10px;">Thank you! A confirmation email with event details has been sent to you.</p>
+      </div>`,
+      ),
+    );
+  });
+
+  // Event detail + RSVP form
+  fastify.get('/view/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+
+    let event: any;
     try {
-      auth = await verifyAuthToken(token);
-    } catch {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const { id } = req.params as { id: string };
-    const exportRecord = await exportsRepo.getById(id, auth.tenant_id);
-
-    if (!exportRecord) {
-      return reply.status(404).send({ error: 'Export not found' });
-    }
-    if ((exportRecord as any).status !== 'completed') {
-      return reply.status(409).send({ error: 'Export is not ready yet' });
-    }
-    if (!(exportRecord as any).storage_key) {
-      return reply.status(404).send({ error: 'Export file not available' });
-    }
-
-    try {
-      const buffer = await storageService.download((exportRecord as any).storage_key);
-      reply.type('text/csv; charset=utf-8');
-      reply.header('Content-Disposition', attachmentDisposition((exportRecord as any).file_name));
-      return reply.send(buffer);
+      event = await ctrl.getEventBySlug(slug);
     } catch (err) {
       fastify.log.error(err);
-      return reply.status(500).send({ error: 'Failed to stream export file' });
+      reply.status(500).type('text/html');
+      return reply.send(page('Error', `<div class="not-found"><h1>Something went wrong.</h1></div>`));
+    }
+
+    if (!event) {
+      reply.status(404).type('text/html');
+      return reply.send(
+        page(
+          'Event Not Found',
+          `<div class="not-found"><h1>Event not found</h1><p class="subtitle">This event page doesn't exist or hasn't been published yet.</p></div>`,
+        ),
+      );
+    }
+
+    let ticketTypes: any[] = [];
+    try {
+      ticketTypes = await ctrl.getTicketTypesByEventId(String(event.id), String(event.tenant_id));
+    } catch {
+      /* ignore */
+    }
+
+    // Count current registrations for capacity display
+    let regCount = 0;
+    try {
+      regCount = await ctrl.getRegistrationCountForEvent(String(event.id), String(event.tenant_id));
+    } catch {
+      /* ignore */
+    }
+
+    const now = new Date();
+    const start = new Date(event.start_time);
+    const end = new Date(event.end_time);
+    const isPast = end < now;
+    const isFull = event.capacity !== null && regCount >= event.capacity;
+    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
+
+    const fields: string[] = Array.isArray(event.fields)
+      ? event.fields
+      : typeof event.fields === 'string'
+        ? JSON.parse(event.fields)
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+    const dateStr = start.toLocaleDateString(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+
+    const badge = isPast
+      ? `<span class="badge badge-past">Past Event</span>`
+      : `<span class="badge badge-upcoming">Upcoming</span>`;
+
+    const ticketsHtml =
+      ticketTypes.length === 0
+        ? ''
+        : `
+      <hr class="divider" />
+      <h3>Tickets</h3>
+      <div class="tickets">
+        ${ticketTypes
+          .map(
+            (t) => `
+          <div class="ticket-row">
+            <div>
+              <div class="ticket-name">${esc(t.name)}</div>
+              ${t.description ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${esc(t.description)}</div>` : ''}
+            </div>
+            <div class="ticket-price">${t.price_cents ? `$${(t.price_cents / 100).toFixed(2)}` : 'Free'}${t.capacity ? ` <span style="font-size:11px;font-weight:400;color:var(--text-muted);">· ${t.capacity} spots</span>` : ''}</div>
+          </div>`,
+          )
+          .join('')}
+      </div>`;
+
+    const contactHtml =
+      event.contact_email || event.contact_phone
+        ? `
+      <hr class="divider" />
+      <div style="font-size:13px;color:var(--text-muted);">
+        <strong style="color:var(--text);">Questions?</strong>
+        ${event.contact_email ? ` <a href="mailto:${esc(event.contact_email)}" style="color:var(--accent);">${esc(event.contact_email)}</a>` : ''}
+        ${event.contact_email && event.contact_phone ? ' · ' : ''}
+        ${event.contact_phone ? esc(event.contact_phone) : ''}
+      </div>`
+        : '';
+
+    // Capacity alert for RSVP form panel
+    let spotsAlert = '';
+    if (isPast) {
+      spotsAlert = `<div class="spots-alert spots-warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>This event has passed.</div>`;
+    } else if (isFull) {
+      spotsAlert = `<div class="spots-alert spots-warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>This event is fully booked.</div>`;
+    } else if (remaining !== null && remaining <= 5) {
+      spotsAlert = `<div class="spots-alert spots-info"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>Hurry! Only ${remaining} spot(s) remaining.</div>`;
+    } else {
+      spotsAlert = `<div class="spots-alert spots-ok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>${remaining === null ? 'Unlimited spots available. Register below!' : `${remaining} spot(s) available. Register below!`}</div>`;
+    }
+
+    const disabled = isPast || isFull;
+    const formFieldsHtml = buildRsvpFormFields(fields, disabled);
+
+    const body = `
+      <div class="card">
+        ${badge}
+        <h1>${esc(event.name)}</h1>
+        ${event.description ? `<p class="subtitle">${esc(event.description)}</p>` : ''}
+
+        <hr class="divider" />
+
+        <div class="layout">
+          <!-- Left: Event info -->
+          <div>
+            <div class="meta-list">
+              <div class="meta-row">
+                <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <div><div class="meta-label">Date & Time</div>${dateStr}<br/><span style="font-size:13px;opacity:.7;">${timeStr}</span></div>
+              </div>
+              ${
+                event.location_address
+                  ? `
+              <div class="meta-row">
+                <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                <div><div class="meta-label">Location</div>${esc(event.location_address)}</div>
+              </div>`
+                  : ''
+              }
+              ${
+                event.capacity
+                  ? `
+              <div class="meta-row">
+                <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+                <div><div class="meta-label">Capacity</div>${remaining !== null ? `${remaining} of ${event.capacity} spots left` : `${event.capacity} total`}</div>
+              </div>`
+                  : ''
+              }
+            </div>
+            ${ticketsHtml}
+            ${contactHtml}
+          </div>
+
+          <!-- Right: RSVP form -->
+          <div>
+            <h3>RSVP for this Event</h3>
+            ${spotsAlert}
+            <form action="/api/event-pages/rsvp/${esc(event.slug)}" method="POST">
+              ${formFieldsHtml}
+              <button type="submit" ${disabled ? 'disabled' : ''}>${isPast ? 'Registration Closed' : isFull ? 'Fully Booked' : 'Confirm RSVP'}</button>
+            </form>
+          </div>
+        </div>
+      </div>`;
+
+    reply.type('text/html');
+    return reply.send(page(event.name, body));
+  });
+
+  // Handle RSVP form POST
+  fastify.post('/rsvp/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    const isJson =
+      req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
+
+    try {
+      await ctrl.rsvpPublic(slug, req.body || {}, clientIp);
+
+      if (isJson) return reply.status(200).send({ success: true });
+      return reply.redirect('/api/event-pages/rsvp-success');
+    } catch (err: any) {
+      fastify.log.error(err);
+      const status = getStatusFromError(err);
+      const message = err.message || 'An unexpected error occurred.';
+
+      if (isJson) return reply.status(status).send({ error: message });
+
+      reply.status(status).type('text/html');
+      return reply.send(
+        page(
+          'Error',
+          `
+        <div class="card" style="max-width:440px;margin:40px auto;text-align:center;">
+          <h1 style="color:var(--error);">Error</h1>
+          <p class="subtitle" style="margin-top:10px;">${esc(message)}</p>
+          <div style="margin-top:20px;"><a href="javascript:history.back()" style="color:var(--accent);font-size:14px;">← Go back</a></div>
+        </div>`,
+        ),
+      );
     }
   });
 
   done();
 };
 
-export default exportsDownloadRoute;
+export default eventsPublicRoute;
 ```
 
 ## File: apps/backend/src/app/modules/households/repositories/map-households-tags.repo.ts
@@ -15436,6 +17965,43 @@ export class TransactionalEmailService {
 }
 ```
 
+## File: apps/backend/src/app/lib/auth-util.ts
+
+```typescript
+import { createVerifier } from 'fast-jwt';
+import type { IAuthKeyPayload } from '../../../../../libs/common/src';
+import { env } from '../../env';
+import { UnauthorizedError } from '../errors/app-errors';
+
+const verifier = createVerifier({
+  algorithms: ['HS256'],
+  key: env.sharedSecret,
+  ignoreExpiration: false,
+});
+
+export async function verifyAuthToken(token: string | null): Promise<IAuthKeyPayload> {
+  if (!token) {
+    throw new Error('Invalid token payload');
+  }
+  try {
+    // fast-jwt verify returns the payload or throws
+    const verifierResult = await verifier(token);
+    // Explicitly check that we got a valid payload object with required fields
+    if (!verifierResult || typeof verifierResult !== 'object') {
+      throw new Error('Invalid token payload');
+    }
+    // Scoped tokens (e.g. signed download URLs) share the signing key but
+    // must never be accepted as session tokens.
+    if ('scope' in verifierResult) {
+      throw new Error('Invalid token payload');
+    }
+    return verifierResult as IAuthKeyPayload;
+  } catch (err) {
+    throw new UnauthorizedError('Unauthorized: Invalid or expired token', undefined, { cause: err });
+  }
+}
+```
+
 ## File: apps/backend/src/app/lib/user-activity.repo.ts
 
 ```typescript
@@ -17309,525 +19875,62 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
 }
 ```
 
-## File: apps/backend/src/app/modules/events/routes/events-public.route.ts
+## File: apps/backend/src/app/modules/exports/routes/exports-download.route.ts
 
 ```typescript
 import type { FastifyPluginCallback } from 'fastify';
-import formBody from '@fastify/formbody';
-import { TRPCError } from '@trpc/server';
-import { EventsController } from '../controller';
+import { StorageService } from '../../../lib/storage.service';
+import { ExportsRepo } from '../repositories/exports.repo';
+import { verifyAuthToken } from '../../../lib/auth-util';
+import { attachmentDisposition } from '../../../lib/download-headers';
 
-const ctrl = new EventsController();
+const storageService = new StorageService();
+const exportsRepo = new ExportsRepo();
 
-const STYLES = `
-  :root {
-    --bg: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-    --accent: #0ea5e9;
-    --accent-hover: #0284c7;
-    --accent-glow: rgba(14,165,233,0.15);
-    --card-bg: rgba(255,255,255,0.85);
-    --card-border: #cbd5e1;
-    --card-shadow: 0 10px 30px -10px rgba(0,0,0,0.08), 0 20px 40px -15px rgba(0,0,0,0.05);
-    --text: #1f2937;
-    --text-muted: #6b7280;
-    --input-bg: #ffffff;
-    --input-border: #cbd5e1;
-    --input-focus-border: #0ea5e9;
-    --input-focus-ring: rgba(14,165,233,0.15);
-    --label-color: #374151;
-    --success: #10b981;
-    --warning: #f59e0b;
-    --error: #ef4444;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: linear-gradient(135deg,#0b1220 0%,#0e1726 50%,#060a12 100%);
-      --card-bg: rgba(19,30,49,0.85);
-      --card-border: #1a2b45;
-      --card-shadow: 0 20px 40px -15px rgba(0,0,0,0.5);
-      --text: #f8fafc;
-      --text-muted: #c7d1e5;
-      --input-bg: #0b1220;
-      --input-border: #1a2b45;
-      --input-focus-border: #3ea6ff;
-      --input-focus-ring: rgba(62,166,255,0.25);
-      --label-color: #cbd5e1;
-      --accent: #3ea6ff;
+const exportsDownloadRoute: FastifyPluginCallback = (fastify, _, done) => {
+  fastify.get('/download/:id', async (req: any, reply) => {
+    // Authorization header only — session JWTs in the query string are
+    // deliberately not accepted because URLs leak into history and logs.
+    const token = req.headers.authorization ? req.headers.authorization.split(' ')[1] : null;
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
     }
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-weight: 300;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    padding: 40px 24px;
-  }
-  body::before, body::after {
-    content: "";
-    position: fixed;
-    width: 400px; height: 400px;
-    border-radius: 50%;
-    background: var(--accent);
-    filter: blur(150px);
-    opacity: 0.06;
-    z-index: 0;
-    pointer-events: none;
-  }
-  body::before { top: 15%; left: 10%; }
-  body::after { bottom: 15%; right: 10%; }
-  .container { max-width: 860px; margin: 0 auto; position: relative; z-index: 1; }
-  .card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 20px;
-    padding: 32px;
-    box-shadow: var(--card-shadow);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    animation: slideUp 0.5s cubic-bezier(0.16,1,0.3,1) forwards;
-  }
-  .card::before {
-    content: "";
-    display: block;
-    height: 3px;
-    margin: -32px -32px 32px;
-    border-radius: 20px 20px 0 0;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  }
-  @keyframes slideUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
-  h1 { font-size: 26px; font-weight: 700; line-height: 1.2; margin-bottom: 6px; }
-  h3 { font-size: 17px; font-weight: 600; margin-bottom: 16px; }
-  .subtitle { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin-top: 4px; }
-  .layout { display: grid; grid-template-columns: 1fr; gap: 24px; margin-top: 24px; }
-  @media (min-width: 680px) { .layout { grid-template-columns: 1.2fr 1fr; } }
-  .meta-list { display: flex; flex-direction: column; gap: 14px; }
-  .meta-row { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; }
-  .meta-row svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; stroke: var(--accent); fill: none; stroke-width: 2; }
-  .meta-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: 2px; }
-  .badge { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing:.05em; margin-bottom: 16px; }
-  .badge-upcoming { background: rgba(14,165,233,.12); color: var(--accent); }
-  .badge-past { background: rgba(107,114,128,.12); color: var(--text-muted); }
-  .divider { border: none; border-top: 1px solid var(--card-border); margin: 20px 0; }
-  .tickets { display: flex; flex-direction: column; gap: 10px; }
-  .ticket-row { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border:1px solid var(--card-border); border-radius:12px; }
-  .ticket-name { font-weight:600; font-size:14px; }
-  .ticket-price { font-size:14px; font-weight:700; color:var(--accent); }
-  .spots-alert { padding:10px 14px; border-radius:10px; font-size:13px; font-weight:500; margin-bottom:18px; display:flex; align-items:center; gap:8px; }
-  .spots-warn { background:rgba(239,68,68,.1); color:var(--error); border:1px solid rgba(239,68,68,.2); }
-  .spots-info { background:var(--accent-glow); color:var(--accent); border:1px solid rgba(14,165,233,.2); }
-  .spots-ok { background:rgba(16,185,129,.1); color:var(--success); border:1px solid rgba(16,185,129,.2); }
-  label { display:block; font-size:13px; font-weight:500; margin-bottom:7px; color:var(--label-color); }
-  input, textarea, select {
-    width:100%; padding:11px 14px;
-    background:var(--input-bg); border:1px solid var(--input-border);
-    border-radius:10px; color:var(--text); font-size:14px; font-family:inherit;
-    transition: border-color .2s, box-shadow .2s;
-  }
-  input:focus, textarea:focus, select:focus { outline:none; border-color:var(--input-focus-border); box-shadow:0 0 0 4px var(--input-focus-ring); }
-  textarea { resize:vertical; min-height:80px; }
-  .hp-field { display:none !important; }
-  .form-group { margin-bottom:18px; }
-  .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:18px; }
-  button[type=submit] {
-    width:100%; padding:13px 24px;
-    background:var(--accent); color:#fff;
-    font-size:15px; font-weight:600;
-    border:none; border-radius:12px; cursor:pointer;
-    transition: background .2s, transform .2s, box-shadow .2s;
-    box-shadow:0 4px 12px var(--accent-glow); margin-top:6px;
-  }
-  button[type=submit]:hover:not(:disabled) { background:var(--accent-hover); transform:translateY(-1px); box-shadow:0 6px 18px var(--accent-glow); }
-  button[type=submit]:disabled { background:var(--card-border); color:var(--text-muted); cursor:not-allowed; box-shadow:none; }
-  .not-found { text-align:center; padding:60px 20px; }
-`;
 
-function esc(str: string): string {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function page(title: string, body: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>${esc(title)}</title>
-  <style>${STYLES}</style>
-</head>
-<body>
-  <div class="container">${body}</div>
-</body>
-</html>`;
-}
-
-function getStatusFromError(err: any): number {
-  if (err instanceof TRPCError) {
-    switch (err.code) {
-      case 'BAD_REQUEST':
-        return 400;
-      case 'NOT_FOUND':
-        return 404;
-      case 'CONFLICT':
-        return 409;
-      case 'TOO_MANY_REQUESTS':
-        return 429;
-      default:
-        return 500;
-    }
-  }
-  return err.statusCode || 500;
-}
-
-function buildRsvpFormFields(fields: string[], disabled: boolean): string {
-  const fieldSet = new Set(fields);
-  const isEnabled = (f: string) => fieldSet.has(f) || fieldSet.has(`${f}:required`);
-  const isRequired = (f: string) => fieldSet.has(`${f}:required`);
-
-  const html: string[] = [];
-
-  html.push(`<input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />`);
-
-  if (isEnabled('first_name') && isEnabled('last_name')) {
-    html.push(`<div class="form-row">
-      <div>
-        <label for="first_name">First Name${isRequired('first_name') ? ' *' : ''}</label>
-        <input type="text" id="first_name" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>
-      <div>
-        <label for="last_name">Last Name${isRequired('last_name') ? ' *' : ''}</label>
-        <input type="text" id="last_name" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>
-    </div>`);
-  } else {
-    if (isEnabled('first_name')) {
-      html.push(`<div class="form-group">
-        <label for="first_name">First Name${isRequired('first_name') ? ' *' : ''}</label>
-        <input type="text" id="first_name" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>`);
-    }
-    if (isEnabled('last_name')) {
-      html.push(`<div class="form-group">
-        <label for="last_name">Last Name${isRequired('last_name') ? ' *' : ''}</label>
-        <input type="text" id="last_name" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>`);
-    }
-  }
-
-  // Email is always required
-  html.push(`<div class="form-group">
-    <label for="email">Email Address *</label>
-    <input type="email" id="email" name="email" placeholder="you@example.com" required ${disabled ? 'disabled' : ''} />
-  </div>`);
-
-  if (isEnabled('mobile')) {
-    html.push(`<div class="form-group">
-      <label for="mobile">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label>
-      <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isRequired('mobile') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-    </div>`);
-  }
-
-  if (isEnabled('street1')) {
-    html.push(`<div class="form-group">
-      <label for="street1">Street Address${isRequired('street1') ? ' *' : ''}</label>
-      <input type="text" id="street1" name="street1" placeholder="E.g. 123 Main St" ${isRequired('street1') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-    </div>`);
-  }
-
-  if (isEnabled('city') && isEnabled('zip')) {
-    html.push(`<div class="form-row">
-      <div>
-        <label for="city">City${isRequired('city') ? ' *' : ''}</label>
-        <input type="text" id="city" name="city" placeholder="City" ${isRequired('city') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>
-      <div>
-        <label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label>
-        <input type="text" id="zip" name="zip" placeholder="E.g. M5V 2T6" ${isRequired('zip') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>
-    </div>`);
-  } else {
-    if (isEnabled('city')) {
-      html.push(
-        `<div class="form-group"><label for="city">City${isRequired('city') ? ' *' : ''}</label><input type="text" id="city" name="city" ${isRequired('city') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
-      );
-    }
-    if (isEnabled('zip')) {
-      html.push(
-        `<div class="form-group"><label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label><input type="text" id="zip" name="zip" ${isRequired('zip') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
-      );
-    }
-  }
-
-  if (isEnabled('state') && isEnabled('country')) {
-    html.push(`<div class="form-row">
-      <div>
-        <label for="state">State / Province${isRequired('state') ? ' *' : ''}</label>
-        <input type="text" id="state" name="state" placeholder="E.g. ON" ${isRequired('state') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>
-      <div>
-        <label for="country">Country${isRequired('country') ? ' *' : ''}</label>
-        <select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${disabled ? 'disabled' : ''}>
-          <option value="">Select…</option>
-          <option value="CA">Canada</option>
-          <option value="US">United States</option>
-          <option value="GB">United Kingdom</option>
-          <option value="AU">Australia</option>
-        </select>
-      </div>
-    </div>`);
-  } else {
-    if (isEnabled('state')) {
-      html.push(
-        `<div class="form-group"><label for="state">State / Province${isRequired('state') ? ' *' : ''}</label><input type="text" id="state" name="state" ${isRequired('state') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
-      );
-    }
-    if (isEnabled('country')) {
-      html.push(
-        `<div class="form-group"><label for="country">Country${isRequired('country') ? ' *' : ''}</label><select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${disabled ? 'disabled' : ''}><option value="">Select…</option><option value="CA">Canada</option><option value="US">United States</option><option value="GB">United Kingdom</option><option value="AU">Australia</option></select></div>`,
-      );
-    }
-  }
-
-  if (isEnabled('notes')) {
-    html.push(`<div class="form-group">
-      <label for="notes">Notes / Message${isRequired('notes') ? ' *' : ''}</label>
-      <textarea id="notes" name="notes" placeholder="Any notes or questions…" ${isRequired('notes') ? 'required' : ''} ${disabled ? 'disabled' : ''}></textarea>
-    </div>`);
-  }
-
-  return html.join('\n');
-}
-
-const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
-  fastify.register(formBody);
-
-  // Success page
-  fastify.get('/rsvp-success', async (_req: any, reply) => {
-    reply.type('text/html');
-    return reply.send(
-      page(
-        'RSVP Confirmed',
-        `
-      <div class="card" style="max-width:440px;margin:40px auto;text-align:center;">
-        <div style="width:72px;height:72px;background:rgba(16,185,129,.1);border:2px solid #10b981;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;">
-          <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-        </div>
-        <h1>You're Registered!</h1>
-        <p class="subtitle" style="margin-top:10px;">Thank you! A confirmation email with event details has been sent to you.</p>
-      </div>`,
-      ),
-    );
-  });
-
-  // Event detail + RSVP form
-  fastify.get('/view/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-
-    let event: any;
+    let auth: any = null;
     try {
-      event = await ctrl.getEventBySlug(slug);
+      auth = await verifyAuthToken(token);
+    } catch {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+    }
+
+    const { id } = req.params as { id: string };
+    const exportRecord = await exportsRepo.getById(id, auth.tenant_id);
+
+    if (!exportRecord) {
+      return reply.status(404).send({ error: 'Export not found' });
+    }
+    if ((exportRecord as any).status !== 'completed') {
+      return reply.status(409).send({ error: 'Export is not ready yet' });
+    }
+    if (!(exportRecord as any).storage_key) {
+      return reply.status(404).send({ error: 'Export file not available' });
+    }
+
+    try {
+      const buffer = await storageService.download((exportRecord as any).storage_key);
+      reply.type('text/csv; charset=utf-8');
+      reply.header('Content-Disposition', attachmentDisposition((exportRecord as any).file_name));
+      return reply.send(buffer);
     } catch (err) {
       fastify.log.error(err);
-      reply.status(500).type('text/html');
-      return reply.send(page('Error', `<div class="not-found"><h1>Something went wrong.</h1></div>`));
-    }
-
-    if (!event) {
-      reply.status(404).type('text/html');
-      return reply.send(
-        page(
-          'Event Not Found',
-          `<div class="not-found"><h1>Event not found</h1><p class="subtitle">This event page doesn't exist or hasn't been published yet.</p></div>`,
-        ),
-      );
-    }
-
-    let ticketTypes: any[] = [];
-    try {
-      ticketTypes = await ctrl.getTicketTypesByEventId(String(event.id), String(event.tenant_id));
-    } catch {
-      /* ignore */
-    }
-
-    // Count current registrations for capacity display
-    let regCount = 0;
-    try {
-      regCount = await ctrl.getRegistrationCountForEvent(String(event.id), String(event.tenant_id));
-    } catch {
-      /* ignore */
-    }
-
-    const now = new Date();
-    const start = new Date(event.start_time);
-    const end = new Date(event.end_time);
-    const isPast = end < now;
-    const isFull = event.capacity !== null && regCount >= event.capacity;
-    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
-
-    const fields: string[] = Array.isArray(event.fields)
-      ? event.fields
-      : typeof event.fields === 'string'
-        ? JSON.parse(event.fields)
-        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-    const dateStr = start.toLocaleDateString(undefined, {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    });
-    const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
-
-    const badge = isPast
-      ? `<span class="badge badge-past">Past Event</span>`
-      : `<span class="badge badge-upcoming">Upcoming</span>`;
-
-    const ticketsHtml =
-      ticketTypes.length === 0
-        ? ''
-        : `
-      <hr class="divider" />
-      <h3>Tickets</h3>
-      <div class="tickets">
-        ${ticketTypes
-          .map(
-            (t) => `
-          <div class="ticket-row">
-            <div>
-              <div class="ticket-name">${esc(t.name)}</div>
-              ${t.description ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${esc(t.description)}</div>` : ''}
-            </div>
-            <div class="ticket-price">${t.price_cents ? `$${(t.price_cents / 100).toFixed(2)}` : 'Free'}${t.capacity ? ` <span style="font-size:11px;font-weight:400;color:var(--text-muted);">· ${t.capacity} spots</span>` : ''}</div>
-          </div>`,
-          )
-          .join('')}
-      </div>`;
-
-    const contactHtml =
-      event.contact_email || event.contact_phone
-        ? `
-      <hr class="divider" />
-      <div style="font-size:13px;color:var(--text-muted);">
-        <strong style="color:var(--text);">Questions?</strong>
-        ${event.contact_email ? ` <a href="mailto:${esc(event.contact_email)}" style="color:var(--accent);">${esc(event.contact_email)}</a>` : ''}
-        ${event.contact_email && event.contact_phone ? ' · ' : ''}
-        ${event.contact_phone ? esc(event.contact_phone) : ''}
-      </div>`
-        : '';
-
-    // Capacity alert for RSVP form panel
-    let spotsAlert = '';
-    if (isPast) {
-      spotsAlert = `<div class="spots-alert spots-warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>This event has passed.</div>`;
-    } else if (isFull) {
-      spotsAlert = `<div class="spots-alert spots-warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>This event is fully booked.</div>`;
-    } else if (remaining !== null && remaining <= 5) {
-      spotsAlert = `<div class="spots-alert spots-info"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>Hurry! Only ${remaining} spot(s) remaining.</div>`;
-    } else {
-      spotsAlert = `<div class="spots-alert spots-ok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>${remaining === null ? 'Unlimited spots available. Register below!' : `${remaining} spot(s) available. Register below!`}</div>`;
-    }
-
-    const disabled = isPast || isFull;
-    const formFieldsHtml = buildRsvpFormFields(fields, disabled);
-
-    const body = `
-      <div class="card">
-        ${badge}
-        <h1>${esc(event.name)}</h1>
-        ${event.description ? `<p class="subtitle">${esc(event.description)}</p>` : ''}
-
-        <hr class="divider" />
-
-        <div class="layout">
-          <!-- Left: Event info -->
-          <div>
-            <div class="meta-list">
-              <div class="meta-row">
-                <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                <div><div class="meta-label">Date & Time</div>${dateStr}<br/><span style="font-size:13px;opacity:.7;">${timeStr}</span></div>
-              </div>
-              ${
-                event.location_address
-                  ? `
-              <div class="meta-row">
-                <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                <div><div class="meta-label">Location</div>${esc(event.location_address)}</div>
-              </div>`
-                  : ''
-              }
-              ${
-                event.capacity
-                  ? `
-              <div class="meta-row">
-                <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
-                <div><div class="meta-label">Capacity</div>${remaining !== null ? `${remaining} of ${event.capacity} spots left` : `${event.capacity} total`}</div>
-              </div>`
-                  : ''
-              }
-            </div>
-            ${ticketsHtml}
-            ${contactHtml}
-          </div>
-
-          <!-- Right: RSVP form -->
-          <div>
-            <h3>RSVP for this Event</h3>
-            ${spotsAlert}
-            <form action="/api/event-pages/rsvp/${esc(event.slug)}" method="POST">
-              ${formFieldsHtml}
-              <button type="submit" ${disabled ? 'disabled' : ''}>${isPast ? 'Registration Closed' : isFull ? 'Fully Booked' : 'Confirm RSVP'}</button>
-            </form>
-          </div>
-        </div>
-      </div>`;
-
-    reply.type('text/html');
-    return reply.send(page(event.name, body));
-  });
-
-  // Handle RSVP form POST
-  fastify.post('/rsvp/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-    const isJson =
-      req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
-
-    try {
-      await ctrl.rsvpPublic(slug, req.body || {}, clientIp);
-
-      if (isJson) return reply.status(200).send({ success: true });
-      return reply.redirect('/api/event-pages/rsvp-success');
-    } catch (err: any) {
-      fastify.log.error(err);
-      const status = getStatusFromError(err);
-      const message = err.message || 'An unexpected error occurred.';
-
-      if (isJson) return reply.status(status).send({ error: message });
-
-      reply.status(status).type('text/html');
-      return reply.send(
-        page(
-          'Error',
-          `
-        <div class="card" style="max-width:440px;margin:40px auto;text-align:center;">
-          <h1 style="color:var(--error);">Error</h1>
-          <p class="subtitle" style="margin-top:10px;">${esc(message)}</p>
-          <div style="margin-top:20px;"><a href="javascript:history.back()" style="color:var(--accent);font-size:14px;">← Go back</a></div>
-        </div>`,
-        ),
-      );
+      return reply.status(500).send({ error: 'Failed to stream export file' });
     }
   });
 
   done();
 };
 
-export default eventsPublicRoute;
+export default exportsDownloadRoute;
 ```
 
 ## File: apps/backend/src/app/modules/settings/controller.ts
@@ -19383,6 +21486,1186 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     };
   }
 }
+```
+
+## File: apps/backend/src/app/modules/volunteer-events/routes/volunteer-events-public.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { VolunteerEventsController } from '../controller';
+import formBody from '@fastify/formbody';
+import { TRPCError } from '@trpc/server';
+
+const ctrl = new VolunteerEventsController();
+
+function getStatusFromError(err: any): number {
+  if (err instanceof TRPCError) {
+    switch (err.code) {
+      case 'BAD_REQUEST':
+        return 400;
+      case 'UNAUTHORIZED':
+        return 401;
+      case 'FORBIDDEN':
+        return 403;
+      case 'NOT_FOUND':
+        return 404;
+      case 'CONFLICT':
+        return 409;
+      case 'PRECONDITION_FAILED':
+        return 412;
+      case 'PAYLOAD_TOO_LARGE':
+        return 413;
+      case 'TOO_MANY_REQUESTS':
+        return 429;
+      case 'INTERNAL_SERVER_ERROR':
+      default:
+        return 500;
+    }
+  }
+  return err.statusCode || 500;
+}
+
+// Shared CSS/Design Tokens block
+const SHARED_STYLES = `
+  :root {
+    --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+    --accent: #0ea5e9;
+    --accent-hover: #0284c7;
+    --accent-glow: rgba(14, 165, 233, 0.15);
+    --card-bg: rgba(255, 255, 255, 0.8);
+    --card-border: #cbd5e1;
+    --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+    --text-primary: #1f2937;
+    --text-secondary: #6b7280;
+    --input-bg: #ffffff;
+    --input-border: #cbd5e1;
+    --input-focus-border: #0ea5e9;
+    --input-focus-ring: rgba(14, 165, 233, 0.15);
+    --label-color: #374151;
+    --placeholder-color: #9ca3af;
+    --success: #2dd4bf;
+    --success-glow: rgba(45, 212, 191, 0.15);
+    --error: #f37373;
+    --error-glow: rgba(243, 115, 115, 0.15);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+      --accent: #3ea6ff;
+      --accent-hover: #1a8cff;
+      --accent-glow: rgba(62, 166, 255, 0.2);
+      --card-bg: rgba(19, 30, 49, 0.85);
+      --card-border: #1a2b45;
+      --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+      --text-primary: #f8fafc;
+      --text-secondary: #c7d1e5;
+      --input-bg: #0b1220;
+      --input-border: #1a2b45;
+      --input-focus-border: #3ea6ff;
+      --input-focus-ring: rgba(62, 166, 255, 0.25);
+      --label-color: #cbd5e1;
+      --placeholder-color: #4b5563;
+      --error: #ef4444;
+      --error-glow: rgba(239, 68, 68, 0.15);
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-weight: 300;
+    background: var(--bg-gradient);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 40px 24px;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  body::before, body::after {
+    content: "";
+    position: absolute;
+    width: 400px;
+    height: 400px;
+    border-radius: 50%;
+    background: var(--accent);
+    filter: blur(150px);
+    opacity: 0.06;
+    z-index: 0;
+    pointer-events: none;
+  }
+  body::before { top: 15%; left: 10%; }
+  body::after { bottom: 15%; right: 10%; }
+
+  .container {
+    width: 100%;
+    max-width: 800px;
+    z-index: 10;
+  }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-radius: 24px;
+    padding: 40px;
+    width: 100%;
+    box-shadow: var(--card-shadow);
+    position: relative;
+    overflow: hidden;
+    animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    color: var(--text-secondary);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 24px;
+    transition: all 0.2s ease;
+  }
+
+  .back-link:hover {
+    color: var(--accent-hover);
+    transform: translateX(-4px);
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+`;
+
+const renderErrorHtml = (message: string) => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Error</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    ${SHARED_STYLES}
+    
+    .card-error::before {
+      background: linear-gradient(90deg, transparent, var(--error), transparent);
+    }
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      background: var(--error-glow);
+      border: 2px solid var(--error);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .icon-container svg {
+      width: 38px;
+      height: 38px;
+      stroke: var(--error);
+      stroke-width: 3px;
+      fill: none;
+    }
+
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 12px;
+      text-align: center;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+      margin-top: 24px;
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+  </style>
+</head>
+<body>
+  <div class="card card-error" style="max-width: 440px; text-align: center; margin-top: 40px;">
+    <div class="icon-container">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1>Operation Failed</h1>
+    <p class="subtitle" style="margin-top: 12px;">${message}</p>
+    <a href="javascript:history.back()" class="btn">Go Back</a>
+  </div>
+</body>
+</html>
+`;
+
+function buildSignupFormFields(fields: string[], disabled: boolean): string {
+  const fieldSet = new Set(fields);
+  const isEnabled = (f: string) => fieldSet.has(f) || fieldSet.has(`${f}:required`);
+  const isRequired = (f: string) => fieldSet.has(`${f}:required`);
+  const dis = disabled ? 'disabled' : '';
+  const html: string[] = [];
+
+  html.push(`<input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />`);
+
+  if (isEnabled('first_name') || isEnabled('last_name')) {
+    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
+    if (isEnabled('first_name')) {
+      html.push(
+        `<div class="form-group"><label for="first_name">First Name${isRequired('first_name') ? ' *' : ''}</label><input type="text" id="first_name" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} ${dis} /></div>`,
+      );
+    } else {
+      html.push(`<div></div>`);
+    }
+    if (isEnabled('last_name')) {
+      html.push(
+        `<div class="form-group"><label for="last_name">Last Name${isRequired('last_name') ? ' *' : ''}</label><input type="text" id="last_name" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} ${dis} /></div>`,
+      );
+    } else {
+      html.push(`<div></div>`);
+    }
+    html.push(`</div>`);
+  }
+
+  html.push(
+    `<div class="form-group"><label for="email">Email Address *</label><input type="email" id="email" name="email" placeholder="you@example.com" required ${dis} /></div>`,
+  );
+
+  if (isEnabled('mobile')) {
+    html.push(
+      `<div class="form-group"><label for="mobile">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label><input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isRequired('mobile') ? 'required' : ''} ${dis} /></div>`,
+    );
+  }
+  if (isEnabled('street1')) {
+    html.push(
+      `<div class="form-group"><label for="street1">Street Address${isRequired('street1') ? ' *' : ''}</label><input type="text" id="street1" name="street1" placeholder="123 Main St" ${isRequired('street1') ? 'required' : ''} ${dis} /></div>`,
+    );
+  }
+  if (isEnabled('city') || isEnabled('zip')) {
+    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
+    html.push(
+      isEnabled('city')
+        ? `<div class="form-group"><label for="city">City${isRequired('city') ? ' *' : ''}</label><input type="text" id="city" name="city" ${isRequired('city') ? 'required' : ''} ${dis} /></div>`
+        : `<div></div>`,
+    );
+    html.push(
+      isEnabled('zip')
+        ? `<div class="form-group"><label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label><input type="text" id="zip" name="zip" ${isRequired('zip') ? 'required' : ''} ${dis} /></div>`
+        : `<div></div>`,
+    );
+    html.push(`</div>`);
+  }
+  if (isEnabled('state') || isEnabled('country')) {
+    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
+    html.push(
+      isEnabled('state')
+        ? `<div class="form-group"><label for="state">State / Province${isRequired('state') ? ' *' : ''}</label><input type="text" id="state" name="state" ${isRequired('state') ? 'required' : ''} ${dis} /></div>`
+        : `<div></div>`,
+    );
+    if (isEnabled('country')) {
+      html.push(
+        `<div class="form-group"><label for="country">Country${isRequired('country') ? ' *' : ''}</label><select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${dis}><option value="">Select…</option><option value="CA">Canada</option><option value="US">United States</option><option value="GB">United Kingdom</option><option value="AU">Australia</option></select></div>`,
+      );
+    } else {
+      html.push(`<div></div>`);
+    }
+    html.push(`</div>`);
+  }
+  if (isEnabled('notes')) {
+    html.push(
+      `<div class="form-group"><label for="notes">Notes / Special Requirements${isRequired('notes') ? ' *' : ''}</label><textarea id="notes" name="notes" placeholder="Optional. Any notes or scheduling preferences…" ${isRequired('notes') ? 'required' : ''} ${dis}></textarea></div>`,
+    );
+  }
+
+  return html.join('\n');
+}
+
+const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
+  fastify.register(formBody);
+
+  // Success view
+  fastify.get('/success', async (req: any, reply) => {
+    const { tenantSlug } = req.query;
+    const backUrl = tenantSlug ? `/api/events/org/${tenantSlug}` : '#';
+
+    reply.type('text/html');
+    return reply.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signup Successful</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    ${SHARED_STYLES}
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      background: var(--success-glow);
+      border: 2px solid var(--success);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      position: relative;
+    }
+
+    .icon-container svg {
+      width: 38px;
+      height: 38px;
+      stroke: var(--success);
+      stroke-dasharray: 100;
+      stroke-dashoffset: 100;
+      stroke-width: 3px;
+      fill: none;
+      animation: drawCheck 0.6s 0.3s ease-out forwards;
+    }
+
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 12px;
+      text-align: center;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+      margin-top: 24px;
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    @keyframes drawCheck {
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card" style="max-width: 440px; text-align: center; margin-top: 40px;">
+    <div class="icon-container">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20 6L9 17L4 12" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1>You're Signed Up!</h1>
+    <p class="subtitle" style="margin-top: 12px;">Thank you for volunteering! A confirmation email has been sent to you with the event details.</p>
+    <a href="${backUrl}" class="btn">View Other Events</a>
+  </div>
+</body>
+</html>
+    `);
+  });
+
+  // Events list view for a specific organization/tenant (secure slug lookup)
+  fastify.get('/org/:tenantSlug', async (req: any, reply) => {
+    const { tenantSlug } = req.params;
+
+    try {
+      // Resolve Tenant ID from Secure Slug
+      const matchedTenant = await ctrl.getTenantFromSlug(tenantSlug);
+
+      if (!matchedTenant) {
+        reply.status(404).type('text/html');
+        return reply.send(renderErrorHtml('Organization not found.'));
+      }
+
+      const tenantId = String(matchedTenant.id);
+      const tenantName = matchedTenant.name;
+
+      const events = await ctrl.getUpcomingEventsPublic(tenantId);
+
+      const eventsListHtml =
+        events.length === 0
+          ? `<div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <p>No upcoming volunteer events scheduled at the moment.</p>
+            <p style="font-size: 13px; margin-top: 4px; opacity: 0.7;">Please check back later or contact us directly.</p>
+           </div>`
+          : events
+              .map((ev) => {
+                const start = new Date(ev.start_time);
+                const end = new Date(ev.end_time);
+
+                // Format dates
+                const dateStr = start.toLocaleDateString(undefined, {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                });
+                const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+
+                // Roster spots remaining
+                const isFull = ev.capacity !== null && Number(ev.volunteers_count || 0) >= ev.capacity;
+                const remainingSpots = ev.capacity !== null ? ev.capacity - Number(ev.volunteers_count || 0) : null;
+                const capacityBadge =
+                  ev.capacity === null
+                    ? `<span class="badge badge-open">Unlimited Spots Available</span>`
+                    : isFull
+                      ? `<span class="badge badge-full">Event Full</span>`
+                      : `<span class="badge badge-spots">${remainingSpots} Spots Left</span>`;
+
+                return `
+              <div class="event-card">
+                <div class="event-card-body">
+                  <div class="event-card-main">
+                    <h3 class="event-name">${ev.name}</h3>
+                    <p class="event-desc">${ev.description || 'No description provided.'}</p>
+                    
+                    <div class="event-meta">
+                      <div class="meta-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                          <line x1="16" y1="2" x2="16" y2="6"/>
+                          <line x1="8" y1="2" x2="8" y2="6"/>
+                          <line x1="3" y1="10" x2="21" y2="10"/>
+                        </svg>
+                        <span>${dateStr} @ ${timeStr}</span>
+                      </div>
+                      ${
+                        ev.location_address
+                          ? `
+                      <div class="meta-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+                          <circle cx="12" cy="10" r="3"/>
+                        </svg>
+                        <span>${ev.location_address}</span>
+                      </div>`
+                          : ''
+                      }
+                    </div>
+                  </div>
+                  
+                  <div class="event-card-footer">
+                    ${capacityBadge}
+                    ${
+                      isFull
+                        ? `<button class="btn btn-disabled" disabled>Event Full</button>`
+                        : `<a href="/api/events/view/${ev.slug}" class="btn">View Details & Sign Up</a>`
+                    }
+                  </div>
+                </div>
+              </div>
+            `;
+              })
+              .join('');
+
+      reply.type('text/html');
+      return reply.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Volunteer Opportunities - ${tenantName}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    ${SHARED_STYLES}
+
+    .event-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      margin-top: 24px;
+    }
+
+    .event-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .event-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 20px -8px rgba(0, 0, 0, 0.1);
+      border-color: var(--accent);
+    }
+
+    .event-card-body {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    @media (min-width: 768px) {
+      .event-card-body {
+        flex-direction: row;
+        align-items: center;
+      }
+    }
+
+    .event-card-main {
+      flex: 1;
+    }
+
+    .event-name {
+      font-size: 20px;
+      font-weight: 500;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .event-desc {
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 16px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .event-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .meta-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .meta-item svg {
+      width: 16px;
+      height: 16px;
+      opacity: 0.8;
+    }
+
+    .event-card-footer {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: stretch;
+      min-width: 200px;
+    }
+
+    @media (min-width: 768px) {
+      .event-card-footer {
+        align-items: flex-end;
+      }
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 20px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 14px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 8px var(--accent-glow);
+      text-align: center;
+    }
+
+    .btn:hover:not(.btn-disabled) {
+      background: var(--accent-hover);
+      box-shadow: 0 6px 14px var(--accent-glow);
+    }
+
+    .btn-disabled {
+      background: var(--card-border);
+      color: var(--text-secondary);
+      cursor: not-allowed;
+      box-shadow: none;
+      opacity: 0.6;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .badge-open {
+      background: rgba(45, 212, 191, 0.1);
+      color: var(--success);
+    }
+
+    .badge-spots {
+      background: var(--accent-glow);
+      color: var(--accent);
+    }
+
+    .badge-full {
+      background: rgba(243, 115, 115, 0.1);
+      color: var(--error);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      background: var(--card-bg);
+      border: 1px dashed var(--card-border);
+      border-radius: 16px;
+      color: var(--text-secondary);
+    }
+
+    .empty-state svg {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Volunteer Events</h1>
+      <p class="subtitle">Join us and make a difference in our community. Select an upcoming shift below.</p>
+    </div>
+
+    <div class="event-grid">
+      ${eventsListHtml}
+    </div>
+  </div>
+</body>
+</html>
+      `);
+    } catch (err: any) {
+      const statusCode = getStatusFromError(err);
+      reply.status(statusCode).type('text/html');
+      return reply.send(renderErrorHtml(err.message || 'Failed to load volunteer events.'));
+    }
+  });
+
+  fastify.get('/view/:eventId', async (req: any, reply) => {
+    const { eventId } = req.params;
+
+    if (/^\d+$/.test(eventId)) {
+      reply.status(404).type('text/html');
+      return reply.send(renderErrorHtml('Event not found.'));
+    }
+
+    try {
+      const event = await ctrl.getEventPublic(eventId);
+      if (!event) {
+        reply.status(404).type('text/html');
+        return reply.send(renderErrorHtml('Event not found.'));
+      }
+
+      const slug = ctrl.getTenantSlug(String(event.tenant_id));
+      const start = new Date(event.start_time);
+      const end = new Date(event.end_time);
+      const hasPassed = end < new Date();
+
+      const dateStr = start.toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      });
+      const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+
+      // Calculate availability
+      const isFull = event.capacity !== null && Number(event.volunteers_count || 0) >= event.capacity;
+      const remainingSpots = event.capacity !== null ? event.capacity - Number(event.volunteers_count || 0) : null;
+
+      reply.type('text/html');
+      return reply.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign Up: ${event.name}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    ${SHARED_STYLES}
+
+    .grid-layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 32px;
+      margin-top: 20px;
+    }
+
+    @media (min-width: 768px) {
+      .grid-layout {
+        grid-template-columns: 1.2fr 1fr;
+      }
+    }
+
+    .event-info-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .info-group {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      padding: 24px;
+    }
+
+    .info-title {
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      color: var(--text-primary);
+    }
+
+    .info-desc {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      white-space: pre-line;
+    }
+
+    .meta-details {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .meta-detail-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 14px;
+    }
+
+    .meta-detail-row svg {
+      width: 20px;
+      height: 20px;
+      color: var(--accent);
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .meta-detail-content h4 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 2px;
+    }
+
+    .meta-detail-content p {
+      color: var(--text-primary);
+    }
+
+    .signup-form-panel {
+      position: relative;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: var(--label-color);
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 12px;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s ease;
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: var(--placeholder-color);
+    }
+
+    input:hover, textarea:hover {
+      border-color: var(--accent);
+      opacity: 0.95;
+    }
+
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: var(--input-focus-border);
+      box-shadow: 0 0 0 4px var(--input-focus-ring);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 90px;
+    }
+
+    .hp-field {
+      display: none !important;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+      margin-top: 8px;
+      min-height: 48px;
+    }
+
+    button:hover:not(:disabled) {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    button:disabled {
+      background: var(--card-border);
+      color: var(--text-secondary);
+      cursor: not-allowed;
+      opacity: 0.6;
+      box-shadow: none;
+    }
+
+    .spots-alert {
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .spots-alert-warning {
+      background: rgba(243, 115, 115, 0.1);
+      color: var(--error);
+      border: 1px solid rgba(243, 115, 115, 0.2);
+    }
+
+    .spots-alert-info {
+      background: var(--accent-glow);
+      color: var(--accent);
+      border: 1px solid rgba(14, 165, 233, 0.2);
+    }
+
+    .spots-alert-success {
+      background: rgba(45, 212, 191, 0.1);
+      color: var(--success);
+      border: 1px solid rgba(45, 212, 191, 0.2);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    ${
+      !event.is_private
+        ? `
+    <a href="/api/events/org/${slug}" class="back-link">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="19" y1="12" x2="5" y2="12"/>
+        <polyline points="12 19 5 12 12 5"/>
+      </svg>
+      Back to Upcoming Events
+    </a>`
+        : ''
+    }
+
+    <div class="header" style="text-align: left; margin-bottom: 24px;">
+      <h1>${event.name}</h1>
+    </div>
+
+    <div class="grid-layout">
+      <!-- Left Panel: Event Details -->
+      <div class="event-info-panel">
+        <div class="info-group meta-details">
+          <div class="meta-detail-row">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <div class="meta-detail-content">
+              <h4>Date & Time</h4>
+              <p>${dateStr}</p>
+              <p style="font-size: 13px; opacity: 0.8; margin-top: 2px;">${timeStr}</p>
+            </div>
+          </div>
+
+          ${
+            event.location_address
+              ? `
+          <div class="meta-detail-row">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+            <div class="meta-detail-content">
+              <h4>Location</h4>
+              <p>${event.location_address}</p>
+            </div>
+          </div>`
+              : ''
+          }
+
+          <div class="meta-detail-row">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 00-3-3.87"/>
+              <path d="M16 3.13a4 4 0 010 7.75"/>
+            </svg>
+            <div class="meta-detail-content">
+              <h4>Capacity & Spots</h4>
+              <p>${event.capacity === null ? 'Open Signup (No Capacity Limit)' : `${event.capacity} total slots`}</p>
+              <p style="font-size: 13px; opacity: 0.8; margin-top: 2px;">${event.volunteers_count || 0} volunteer(s) currently signed up</p>
+            </div>
+          </div>
+
+          ${
+            event.contact_email || event.contact_phone
+              ? `
+          <div class="meta-detail-row">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
+            </svg>
+            <div class="meta-detail-content">
+              <h4>Questions / Contact</h4>
+              ${event.contact_email ? `<p><a href="mailto:${event.contact_email}" style="color: var(--accent); text-decoration: none;">${event.contact_email}</a></p>` : ''}
+              ${event.contact_phone ? `<p style="margin-top: 2px;">${event.contact_phone}</p>` : ''}
+            </div>
+          </div>`
+              : ''
+          }
+        </div>
+
+        ${
+          event.description
+            ? `
+        <div class="info-group">
+          <h3 class="info-title">Description</h3>
+          <p class="info-desc">${event.description}</p>
+        </div>`
+            : ''
+        }
+      </div>
+
+      <!-- Right Panel: Registration Form -->
+      <div class="signup-form-panel">
+        <div class="card">
+          <h3 class="info-title" style="margin-bottom: 20px;">Volunteer Signup</h3>
+
+          ${
+            hasPassed
+              ? `<div class="spots-alert spots-alert-warning">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>
+                This event has passed and registration is closed.
+               </div>`
+              : isFull
+                ? `<div class="spots-alert spots-alert-warning">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>
+                  This shift is currently fully booked.
+                 </div>`
+                : remainingSpots !== null && remainingSpots <= 5
+                  ? `<div class="spots-alert spots-alert-info">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    Hurry! Only ${remainingSpots} spot(s) remaining.
+                   </div>`
+                  : `<div class="spots-alert spots-alert-success">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    Spots are available. Sign up below!
+                   </div>`
+          }
+
+          <form action="/api/events/signup/${event.slug || event.id}" method="POST">
+            ${buildSignupFormFields(Array.isArray(event.fields) ? event.fields : typeof event.fields === 'string' ? JSON.parse(event.fields) : ['first_name', 'last_name', 'email', 'mobile', 'notes'], isFull || hasPassed)}
+            <button type="submit" ${isFull || hasPassed ? 'disabled' : ''}>${hasPassed ? 'Registration Closed' : 'Sign Up for Shift'}</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+      `);
+    } catch (err: any) {
+      const statusCode = getStatusFromError(err);
+      reply.status(statusCode).type('text/html');
+      return reply.send(renderErrorHtml(err.message || 'Failed to load event details.'));
+    }
+  });
+
+  // Handle volunteer signup POST
+  fastify.post('/signup/:eventId', async (req: any, reply) => {
+    const { eventId } = req.params;
+    const isJsonExpected =
+      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
+
+    if (/^\d+$/.test(eventId)) {
+      if (isJsonExpected) {
+        return reply.status(404).send({ error: 'Event not found' });
+      }
+      reply.status(404).type('text/html');
+      return reply.send(renderErrorHtml('Event not found.'));
+    }
+
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
+
+    try {
+      const body = req.body || {};
+
+      // Fetch event first to get its tenant_id for the redirect
+      const event = await ctrl.getEventPublic(eventId);
+      if (!event) {
+        throw new Error('Event not found');
+      }
+
+      if (new Date(event.end_time) < new Date()) {
+        throw new Error('This event has passed and registration is closed.');
+      }
+
+      await ctrl.signupVolunteerPublic(eventId, body, clientIp);
+
+      const slug = ctrl.getTenantSlug(String(event.tenant_id));
+
+      if (isJsonExpected) {
+        return reply.status(200).send({ success: true, redirect_url: `/api/events/success?tenantSlug=${slug}` });
+      }
+
+      return reply.redirect(`/api/events/success?tenantSlug=${slug}`);
+    } catch (err: any) {
+      fastify.log.error(err);
+      const statusCode = getStatusFromError(err);
+      const message = err.message || 'An unexpected error occurred during signup.';
+
+      if (isJsonExpected) {
+        return reply.status(statusCode).send({ error: message });
+      }
+
+      reply.status(statusCode).type('text/html');
+      return reply.send(renderErrorHtml(message));
+    }
+  });
+
+  done();
+};
+
+export default volunteerEventsPublicRoute;
 ```
 
 ## File: apps/backend/src/app/modules/web-forms/routes/web-forms-public.route.ts
@@ -23204,74 +26487,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 }
 ```
 
-## File: apps/backend/src/app/modules/files/routes/files.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { StorageService } from '../../../lib/storage.service';
-import { BaseRepository } from '../../../lib/base.repo';
-import { verifyAuthToken } from '../../../lib/auth-util';
-import { verifyFileDownloadToken } from '../../../lib/signed-download';
-import { attachmentDisposition } from '../../../lib/download-headers';
-
-const storageService = new StorageService();
-
-const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
-  fastify.get('/download/:id', async (req: any, reply) => {
-    const { id } = req.params;
-
-    // Authenticate via the Authorization header (app-initiated downloads) or
-    // a short-lived token scoped to this one file (avatar <img> URLs).
-    // Session JWTs in the query string are deliberately not accepted — URLs
-    // leak into browser history, proxies, and logs.
-    let tenantId: string | null = null;
-    try {
-      if (req.query.st) {
-        tenantId = verifyFileDownloadToken(req.query.st, String(id)).tenant_id;
-      } else if (req.headers.authorization) {
-        const payload = await verifyAuthToken(req.headers.authorization.split(' ')[1]);
-        tenantId = payload.tenant_id;
-      }
-    } catch (_err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    if (!tenantId) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    const db = (BaseRepository as any)['_db'];
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Content-Disposition', attachmentDisposition(file.filename));
-      // Private: these files are tenant-scoped and token-gated — never allow shared caches.
-      reply.header('Cache-Control', 'private, max-age=31536000, immutable');
-      return reply.send(buffer);
-    } catch (err) {
-      fastify.log.error(err);
-      return reply.status(500).send({ error: 'Failed to download file' });
-    }
-  });
-
-  done();
-};
-
-export default filesRoute;
-```
-
 ## File: apps/backend/src/app/modules/google-sync/google-oauth.service.ts
 
 ```typescript
@@ -26960,1186 +30175,6 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
 }
 ```
 
-## File: apps/backend/src/app/modules/volunteer-events/routes/volunteer-events-public.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { VolunteerEventsController } from '../controller';
-import formBody from '@fastify/formbody';
-import { TRPCError } from '@trpc/server';
-
-const ctrl = new VolunteerEventsController();
-
-function getStatusFromError(err: any): number {
-  if (err instanceof TRPCError) {
-    switch (err.code) {
-      case 'BAD_REQUEST':
-        return 400;
-      case 'UNAUTHORIZED':
-        return 401;
-      case 'FORBIDDEN':
-        return 403;
-      case 'NOT_FOUND':
-        return 404;
-      case 'CONFLICT':
-        return 409;
-      case 'PRECONDITION_FAILED':
-        return 412;
-      case 'PAYLOAD_TOO_LARGE':
-        return 413;
-      case 'TOO_MANY_REQUESTS':
-        return 429;
-      case 'INTERNAL_SERVER_ERROR':
-      default:
-        return 500;
-    }
-  }
-  return err.statusCode || 500;
-}
-
-// Shared CSS/Design Tokens block
-const SHARED_STYLES = `
-  :root {
-    --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-    --accent: #0ea5e9;
-    --accent-hover: #0284c7;
-    --accent-glow: rgba(14, 165, 233, 0.15);
-    --card-bg: rgba(255, 255, 255, 0.8);
-    --card-border: #cbd5e1;
-    --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-    --text-primary: #1f2937;
-    --text-secondary: #6b7280;
-    --input-bg: #ffffff;
-    --input-border: #cbd5e1;
-    --input-focus-border: #0ea5e9;
-    --input-focus-ring: rgba(14, 165, 233, 0.15);
-    --label-color: #374151;
-    --placeholder-color: #9ca3af;
-    --success: #2dd4bf;
-    --success-glow: rgba(45, 212, 191, 0.15);
-    --error: #f37373;
-    --error-glow: rgba(243, 115, 115, 0.15);
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-      --accent: #3ea6ff;
-      --accent-hover: #1a8cff;
-      --accent-glow: rgba(62, 166, 255, 0.2);
-      --card-bg: rgba(19, 30, 49, 0.85);
-      --card-border: #1a2b45;
-      --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-      --text-primary: #f8fafc;
-      --text-secondary: #c7d1e5;
-      --input-bg: #0b1220;
-      --input-border: #1a2b45;
-      --input-focus-border: #3ea6ff;
-      --input-focus-ring: rgba(62, 166, 255, 0.25);
-      --label-color: #cbd5e1;
-      --placeholder-color: #4b5563;
-      --error: #ef4444;
-      --error-glow: rgba(239, 68, 68, 0.15);
-    }
-  }
-
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
-
-  body {
-    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-weight: 300;
-    background: var(--bg-gradient);
-    color: var(--text-primary);
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    padding: 40px 24px;
-    position: relative;
-    overflow-x: hidden;
-  }
-
-  body::before, body::after {
-    content: "";
-    position: absolute;
-    width: 400px;
-    height: 400px;
-    border-radius: 50%;
-    background: var(--accent);
-    filter: blur(150px);
-    opacity: 0.06;
-    z-index: 0;
-    pointer-events: none;
-  }
-  body::before { top: 15%; left: 10%; }
-  body::after { bottom: 15%; right: 10%; }
-
-  .container {
-    width: 100%;
-    max-width: 800px;
-    z-index: 10;
-  }
-
-  .card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border-radius: 24px;
-    padding: 40px;
-    width: 100%;
-    box-shadow: var(--card-shadow);
-    position: relative;
-    overflow: hidden;
-    animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
-
-  .card::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  }
-
-  .header {
-    text-align: center;
-    margin-bottom: 32px;
-  }
-
-  h1 {
-    font-size: 28px;
-    font-weight: 500;
-    letter-spacing: -0.015em;
-    margin-bottom: 8px;
-    background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .subtitle {
-    color: var(--text-secondary);
-    font-size: 15px;
-    line-height: 1.5;
-  }
-
-  .back-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--accent);
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-    margin-bottom: 24px;
-    transition: all 0.2s ease;
-  }
-
-  .back-link:hover {
-    color: var(--accent-hover);
-    transform: translateX(-4px);
-  }
-
-  @keyframes slideUp {
-    from {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-`;
-
-const renderErrorHtml = (message: string) => `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Error</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    ${SHARED_STYLES}
-    
-    .card-error::before {
-      background: linear-gradient(90deg, transparent, var(--error), transparent);
-    }
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      background: var(--error-glow);
-      border: 2px solid var(--error);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 28px;
-      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    }
-
-    .icon-container svg {
-      width: 38px;
-      height: 38px;
-      stroke: var(--error);
-      stroke-width: 3px;
-      fill: none;
-    }
-
-    .btn {
-      display: inline-block;
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 12px;
-      text-align: center;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-      margin-top: 24px;
-    }
-
-    .btn:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-  </style>
-</head>
-<body>
-  <div class="card card-error" style="max-width: 440px; text-align: center; margin-top: 40px;">
-    <div class="icon-container">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </div>
-    <h1>Operation Failed</h1>
-    <p class="subtitle" style="margin-top: 12px;">${message}</p>
-    <a href="javascript:history.back()" class="btn">Go Back</a>
-  </div>
-</body>
-</html>
-`;
-
-function buildSignupFormFields(fields: string[], disabled: boolean): string {
-  const fieldSet = new Set(fields);
-  const isEnabled = (f: string) => fieldSet.has(f) || fieldSet.has(`${f}:required`);
-  const isRequired = (f: string) => fieldSet.has(`${f}:required`);
-  const dis = disabled ? 'disabled' : '';
-  const html: string[] = [];
-
-  html.push(`<input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />`);
-
-  if (isEnabled('first_name') || isEnabled('last_name')) {
-    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
-    if (isEnabled('first_name')) {
-      html.push(
-        `<div class="form-group"><label for="first_name">First Name${isRequired('first_name') ? ' *' : ''}</label><input type="text" id="first_name" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} ${dis} /></div>`,
-      );
-    } else {
-      html.push(`<div></div>`);
-    }
-    if (isEnabled('last_name')) {
-      html.push(
-        `<div class="form-group"><label for="last_name">Last Name${isRequired('last_name') ? ' *' : ''}</label><input type="text" id="last_name" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} ${dis} /></div>`,
-      );
-    } else {
-      html.push(`<div></div>`);
-    }
-    html.push(`</div>`);
-  }
-
-  html.push(
-    `<div class="form-group"><label for="email">Email Address *</label><input type="email" id="email" name="email" placeholder="you@example.com" required ${dis} /></div>`,
-  );
-
-  if (isEnabled('mobile')) {
-    html.push(
-      `<div class="form-group"><label for="mobile">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label><input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isRequired('mobile') ? 'required' : ''} ${dis} /></div>`,
-    );
-  }
-  if (isEnabled('street1')) {
-    html.push(
-      `<div class="form-group"><label for="street1">Street Address${isRequired('street1') ? ' *' : ''}</label><input type="text" id="street1" name="street1" placeholder="123 Main St" ${isRequired('street1') ? 'required' : ''} ${dis} /></div>`,
-    );
-  }
-  if (isEnabled('city') || isEnabled('zip')) {
-    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
-    html.push(
-      isEnabled('city')
-        ? `<div class="form-group"><label for="city">City${isRequired('city') ? ' *' : ''}</label><input type="text" id="city" name="city" ${isRequired('city') ? 'required' : ''} ${dis} /></div>`
-        : `<div></div>`,
-    );
-    html.push(
-      isEnabled('zip')
-        ? `<div class="form-group"><label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label><input type="text" id="zip" name="zip" ${isRequired('zip') ? 'required' : ''} ${dis} /></div>`
-        : `<div></div>`,
-    );
-    html.push(`</div>`);
-  }
-  if (isEnabled('state') || isEnabled('country')) {
-    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
-    html.push(
-      isEnabled('state')
-        ? `<div class="form-group"><label for="state">State / Province${isRequired('state') ? ' *' : ''}</label><input type="text" id="state" name="state" ${isRequired('state') ? 'required' : ''} ${dis} /></div>`
-        : `<div></div>`,
-    );
-    if (isEnabled('country')) {
-      html.push(
-        `<div class="form-group"><label for="country">Country${isRequired('country') ? ' *' : ''}</label><select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${dis}><option value="">Select…</option><option value="CA">Canada</option><option value="US">United States</option><option value="GB">United Kingdom</option><option value="AU">Australia</option></select></div>`,
-      );
-    } else {
-      html.push(`<div></div>`);
-    }
-    html.push(`</div>`);
-  }
-  if (isEnabled('notes')) {
-    html.push(
-      `<div class="form-group"><label for="notes">Notes / Special Requirements${isRequired('notes') ? ' *' : ''}</label><textarea id="notes" name="notes" placeholder="Optional. Any notes or scheduling preferences…" ${isRequired('notes') ? 'required' : ''} ${dis}></textarea></div>`,
-    );
-  }
-
-  return html.join('\n');
-}
-
-const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
-  fastify.register(formBody);
-
-  // Success view
-  fastify.get('/success', async (req: any, reply) => {
-    const { tenantSlug } = req.query;
-    const backUrl = tenantSlug ? `/api/events/org/${tenantSlug}` : '#';
-
-    reply.type('text/html');
-    return reply.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Signup Successful</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    ${SHARED_STYLES}
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      background: var(--success-glow);
-      border: 2px solid var(--success);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 28px;
-      position: relative;
-    }
-
-    .icon-container svg {
-      width: 38px;
-      height: 38px;
-      stroke: var(--success);
-      stroke-dasharray: 100;
-      stroke-dashoffset: 100;
-      stroke-width: 3px;
-      fill: none;
-      animation: drawCheck 0.6s 0.3s ease-out forwards;
-    }
-
-    .btn {
-      display: inline-block;
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 12px;
-      text-align: center;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-      margin-top: 24px;
-    }
-
-    .btn:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    @keyframes drawCheck {
-      to {
-        stroke-dashoffset: 0;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card" style="max-width: 440px; text-align: center; margin-top: 40px;">
-    <div class="icon-container">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M20 6L9 17L4 12" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </div>
-    <h1>You're Signed Up!</h1>
-    <p class="subtitle" style="margin-top: 12px;">Thank you for volunteering! A confirmation email has been sent to you with the event details.</p>
-    <a href="${backUrl}" class="btn">View Other Events</a>
-  </div>
-</body>
-</html>
-    `);
-  });
-
-  // Events list view for a specific organization/tenant (secure slug lookup)
-  fastify.get('/org/:tenantSlug', async (req: any, reply) => {
-    const { tenantSlug } = req.params;
-
-    try {
-      // Resolve Tenant ID from Secure Slug
-      const matchedTenant = await ctrl.getTenantFromSlug(tenantSlug);
-
-      if (!matchedTenant) {
-        reply.status(404).type('text/html');
-        return reply.send(renderErrorHtml('Organization not found.'));
-      }
-
-      const tenantId = String(matchedTenant.id);
-      const tenantName = matchedTenant.name;
-
-      const events = await ctrl.getUpcomingEventsPublic(tenantId);
-
-      const eventsListHtml =
-        events.length === 0
-          ? `<div class="empty-state">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-            </svg>
-            <p>No upcoming volunteer events scheduled at the moment.</p>
-            <p style="font-size: 13px; margin-top: 4px; opacity: 0.7;">Please check back later or contact us directly.</p>
-           </div>`
-          : events
-              .map((ev) => {
-                const start = new Date(ev.start_time);
-                const end = new Date(ev.end_time);
-
-                // Format dates
-                const dateStr = start.toLocaleDateString(undefined, {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric',
-                });
-                const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
-
-                // Roster spots remaining
-                const isFull = ev.capacity !== null && Number(ev.volunteers_count || 0) >= ev.capacity;
-                const remainingSpots = ev.capacity !== null ? ev.capacity - Number(ev.volunteers_count || 0) : null;
-                const capacityBadge =
-                  ev.capacity === null
-                    ? `<span class="badge badge-open">Unlimited Spots Available</span>`
-                    : isFull
-                      ? `<span class="badge badge-full">Event Full</span>`
-                      : `<span class="badge badge-spots">${remainingSpots} Spots Left</span>`;
-
-                return `
-              <div class="event-card">
-                <div class="event-card-body">
-                  <div class="event-card-main">
-                    <h3 class="event-name">${ev.name}</h3>
-                    <p class="event-desc">${ev.description || 'No description provided.'}</p>
-                    
-                    <div class="event-meta">
-                      <div class="meta-item">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                          <line x1="16" y1="2" x2="16" y2="6"/>
-                          <line x1="8" y1="2" x2="8" y2="6"/>
-                          <line x1="3" y1="10" x2="21" y2="10"/>
-                        </svg>
-                        <span>${dateStr} @ ${timeStr}</span>
-                      </div>
-                      ${
-                        ev.location_address
-                          ? `
-                      <div class="meta-item">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
-                          <circle cx="12" cy="10" r="3"/>
-                        </svg>
-                        <span>${ev.location_address}</span>
-                      </div>`
-                          : ''
-                      }
-                    </div>
-                  </div>
-                  
-                  <div class="event-card-footer">
-                    ${capacityBadge}
-                    ${
-                      isFull
-                        ? `<button class="btn btn-disabled" disabled>Event Full</button>`
-                        : `<a href="/api/events/view/${ev.slug}" class="btn">View Details & Sign Up</a>`
-                    }
-                  </div>
-                </div>
-              </div>
-            `;
-              })
-              .join('');
-
-      reply.type('text/html');
-      return reply.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Volunteer Opportunities - ${tenantName}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    ${SHARED_STYLES}
-
-    .event-grid {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      margin-top: 24px;
-    }
-
-    .event-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .event-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 12px 20px -8px rgba(0, 0, 0, 0.1);
-      border-color: var(--accent);
-    }
-
-    .event-card-body {
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      gap: 20px;
-    }
-
-    @media (min-width: 768px) {
-      .event-card-body {
-        flex-direction: row;
-        align-items: center;
-      }
-    }
-
-    .event-card-main {
-      flex: 1;
-    }
-
-    .event-name {
-      font-size: 20px;
-      font-weight: 500;
-      color: var(--text-primary);
-      margin-bottom: 6px;
-    }
-
-    .event-desc {
-      color: var(--text-secondary);
-      font-size: 14px;
-      line-height: 1.5;
-      margin-bottom: 16px;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-
-    .event-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 16px;
-    }
-
-    .meta-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 13px;
-      color: var(--text-secondary);
-    }
-
-    .meta-item svg {
-      width: 16px;
-      height: 16px;
-      opacity: 0.8;
-    }
-
-    .event-card-footer {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      align-items: stretch;
-      min-width: 200px;
-    }
-
-    @media (min-width: 768px) {
-      .event-card-footer {
-        align-items: flex-end;
-      }
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 10px 20px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 14px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 8px;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 8px var(--accent-glow);
-      text-align: center;
-    }
-
-    .btn:hover:not(.btn-disabled) {
-      background: var(--accent-hover);
-      box-shadow: 0 6px 14px var(--accent-glow);
-    }
-
-    .btn-disabled {
-      background: var(--card-border);
-      color: var(--text-secondary);
-      cursor: not-allowed;
-      box-shadow: none;
-      opacity: 0.6;
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 9999px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .badge-open {
-      background: rgba(45, 212, 191, 0.1);
-      color: var(--success);
-    }
-
-    .badge-spots {
-      background: var(--accent-glow);
-      color: var(--accent);
-    }
-
-    .badge-full {
-      background: rgba(243, 115, 115, 0.1);
-      color: var(--error);
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 60px 20px;
-      background: var(--card-bg);
-      border: 1px dashed var(--card-border);
-      border-radius: 16px;
-      color: var(--text-secondary);
-    }
-
-    .empty-state svg {
-      width: 48px;
-      height: 48px;
-      margin-bottom: 16px;
-      opacity: 0.5;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>Volunteer Events</h1>
-      <p class="subtitle">Join us and make a difference in our community. Select an upcoming shift below.</p>
-    </div>
-
-    <div class="event-grid">
-      ${eventsListHtml}
-    </div>
-  </div>
-</body>
-</html>
-      `);
-    } catch (err: any) {
-      const statusCode = getStatusFromError(err);
-      reply.status(statusCode).type('text/html');
-      return reply.send(renderErrorHtml(err.message || 'Failed to load volunteer events.'));
-    }
-  });
-
-  fastify.get('/view/:eventId', async (req: any, reply) => {
-    const { eventId } = req.params;
-
-    if (/^\d+$/.test(eventId)) {
-      reply.status(404).type('text/html');
-      return reply.send(renderErrorHtml('Event not found.'));
-    }
-
-    try {
-      const event = await ctrl.getEventPublic(eventId);
-      if (!event) {
-        reply.status(404).type('text/html');
-        return reply.send(renderErrorHtml('Event not found.'));
-      }
-
-      const slug = ctrl.getTenantSlug(String(event.tenant_id));
-      const start = new Date(event.start_time);
-      const end = new Date(event.end_time);
-      const hasPassed = end < new Date();
-
-      const dateStr = start.toLocaleDateString(undefined, {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-      });
-      const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
-
-      // Calculate availability
-      const isFull = event.capacity !== null && Number(event.volunteers_count || 0) >= event.capacity;
-      const remainingSpots = event.capacity !== null ? event.capacity - Number(event.volunteers_count || 0) : null;
-
-      reply.type('text/html');
-      return reply.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign Up: ${event.name}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    ${SHARED_STYLES}
-
-    .grid-layout {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 32px;
-      margin-top: 20px;
-    }
-
-    @media (min-width: 768px) {
-      .grid-layout {
-        grid-template-columns: 1.2fr 1fr;
-      }
-    }
-
-    .event-info-panel {
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-    }
-
-    .info-group {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 16px;
-      padding: 24px;
-    }
-
-    .info-title {
-      font-size: 18px;
-      font-weight: 500;
-      margin-bottom: 12px;
-      color: var(--text-primary);
-    }
-
-    .info-desc {
-      font-size: 14px;
-      line-height: 1.6;
-      color: var(--text-secondary);
-      white-space: pre-line;
-    }
-
-    .meta-details {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .meta-detail-row {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      font-size: 14px;
-    }
-
-    .meta-detail-row svg {
-      width: 20px;
-      height: 20px;
-      color: var(--accent);
-      flex-shrink: 0;
-      margin-top: 2px;
-    }
-
-    .meta-detail-content h4 {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 2px;
-    }
-
-    .meta-detail-content p {
-      color: var(--text-primary);
-    }
-
-    .signup-form-panel {
-      position: relative;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-    }
-
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 8px;
-      color: var(--label-color);
-    }
-
-    input, textarea {
-      width: 100%;
-      padding: 12px 16px;
-      background: var(--input-bg);
-      border: 1px solid var(--input-border);
-      border-radius: 12px;
-      color: var(--text-primary);
-      font-size: 14px;
-      font-family: inherit;
-      transition: all 0.2s ease;
-    }
-
-    input::placeholder, textarea::placeholder {
-      color: var(--placeholder-color);
-    }
-
-    input:hover, textarea:hover {
-      border-color: var(--accent);
-      opacity: 0.95;
-    }
-
-    input:focus, textarea:focus {
-      outline: none;
-      border-color: var(--input-focus-border);
-      box-shadow: 0 0 0 4px var(--input-focus-ring);
-    }
-
-    textarea {
-      resize: vertical;
-      min-height: 90px;
-    }
-
-    .hp-field {
-      display: none !important;
-    }
-
-    button {
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 600;
-      border: none;
-      border-radius: 12px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-      margin-top: 8px;
-      min-height: 48px;
-    }
-
-    button:hover:not(:disabled) {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    button:disabled {
-      background: var(--card-border);
-      color: var(--text-secondary);
-      cursor: not-allowed;
-      opacity: 0.6;
-      box-shadow: none;
-    }
-
-    .spots-alert {
-      padding: 12px 16px;
-      border-radius: 12px;
-      font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 20px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .spots-alert-warning {
-      background: rgba(243, 115, 115, 0.1);
-      color: var(--error);
-      border: 1px solid rgba(243, 115, 115, 0.2);
-    }
-
-    .spots-alert-info {
-      background: var(--accent-glow);
-      color: var(--accent);
-      border: 1px solid rgba(14, 165, 233, 0.2);
-    }
-
-    .spots-alert-success {
-      background: rgba(45, 212, 191, 0.1);
-      color: var(--success);
-      border: 1px solid rgba(45, 212, 191, 0.2);
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    ${
-      !event.is_private
-        ? `
-    <a href="/api/events/org/${slug}" class="back-link">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="19" y1="12" x2="5" y2="12"/>
-        <polyline points="12 19 5 12 12 5"/>
-      </svg>
-      Back to Upcoming Events
-    </a>`
-        : ''
-    }
-
-    <div class="header" style="text-align: left; margin-bottom: 24px;">
-      <h1>${event.name}</h1>
-    </div>
-
-    <div class="grid-layout">
-      <!-- Left Panel: Event Details -->
-      <div class="event-info-panel">
-        <div class="info-group meta-details">
-          <div class="meta-detail-row">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-            </svg>
-            <div class="meta-detail-content">
-              <h4>Date & Time</h4>
-              <p>${dateStr}</p>
-              <p style="font-size: 13px; opacity: 0.8; margin-top: 2px;">${timeStr}</p>
-            </div>
-          </div>
-
-          ${
-            event.location_address
-              ? `
-          <div class="meta-detail-row">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
-              <circle cx="12" cy="10" r="3"/>
-            </svg>
-            <div class="meta-detail-content">
-              <h4>Location</h4>
-              <p>${event.location_address}</p>
-            </div>
-          </div>`
-              : ''
-          }
-
-          <div class="meta-detail-row">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-              <circle cx="9" cy="7" r="4"/>
-              <path d="M23 21v-2a4 4 0 00-3-3.87"/>
-              <path d="M16 3.13a4 4 0 010 7.75"/>
-            </svg>
-            <div class="meta-detail-content">
-              <h4>Capacity & Spots</h4>
-              <p>${event.capacity === null ? 'Open Signup (No Capacity Limit)' : `${event.capacity} total slots`}</p>
-              <p style="font-size: 13px; opacity: 0.8; margin-top: 2px;">${event.volunteers_count || 0} volunteer(s) currently signed up</p>
-            </div>
-          </div>
-
-          ${
-            event.contact_email || event.contact_phone
-              ? `
-          <div class="meta-detail-row">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
-            </svg>
-            <div class="meta-detail-content">
-              <h4>Questions / Contact</h4>
-              ${event.contact_email ? `<p><a href="mailto:${event.contact_email}" style="color: var(--accent); text-decoration: none;">${event.contact_email}</a></p>` : ''}
-              ${event.contact_phone ? `<p style="margin-top: 2px;">${event.contact_phone}</p>` : ''}
-            </div>
-          </div>`
-              : ''
-          }
-        </div>
-
-        ${
-          event.description
-            ? `
-        <div class="info-group">
-          <h3 class="info-title">Description</h3>
-          <p class="info-desc">${event.description}</p>
-        </div>`
-            : ''
-        }
-      </div>
-
-      <!-- Right Panel: Registration Form -->
-      <div class="signup-form-panel">
-        <div class="card">
-          <h3 class="info-title" style="margin-bottom: 20px;">Volunteer Signup</h3>
-
-          ${
-            hasPassed
-              ? `<div class="spots-alert spots-alert-warning">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>
-                This event has passed and registration is closed.
-               </div>`
-              : isFull
-                ? `<div class="spots-alert spots-alert-warning">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>
-                  This shift is currently fully booked.
-                 </div>`
-                : remainingSpots !== null && remainingSpots <= 5
-                  ? `<div class="spots-alert spots-alert-info">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                    Hurry! Only ${remainingSpots} spot(s) remaining.
-                   </div>`
-                  : `<div class="spots-alert spots-alert-success">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    Spots are available. Sign up below!
-                   </div>`
-          }
-
-          <form action="/api/events/signup/${event.slug || event.id}" method="POST">
-            ${buildSignupFormFields(Array.isArray(event.fields) ? event.fields : typeof event.fields === 'string' ? JSON.parse(event.fields) : ['first_name', 'last_name', 'email', 'mobile', 'notes'], isFull || hasPassed)}
-            <button type="submit" ${isFull || hasPassed ? 'disabled' : ''}>${hasPassed ? 'Registration Closed' : 'Sign Up for Shift'}</button>
-          </form>
-        </div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
-      `);
-    } catch (err: any) {
-      const statusCode = getStatusFromError(err);
-      reply.status(statusCode).type('text/html');
-      return reply.send(renderErrorHtml(err.message || 'Failed to load event details.'));
-    }
-  });
-
-  // Handle volunteer signup POST
-  fastify.post('/signup/:eventId', async (req: any, reply) => {
-    const { eventId } = req.params;
-    const isJsonExpected =
-      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
-
-    if (/^\d+$/.test(eventId)) {
-      if (isJsonExpected) {
-        return reply.status(404).send({ error: 'Event not found' });
-      }
-      reply.status(404).type('text/html');
-      return reply.send(renderErrorHtml('Event not found.'));
-    }
-
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
-
-    try {
-      const body = req.body || {};
-
-      // Fetch event first to get its tenant_id for the redirect
-      const event = await ctrl.getEventPublic(eventId);
-      if (!event) {
-        throw new Error('Event not found');
-      }
-
-      if (new Date(event.end_time) < new Date()) {
-        throw new Error('This event has passed and registration is closed.');
-      }
-
-      await ctrl.signupVolunteerPublic(eventId, body, clientIp);
-
-      const slug = ctrl.getTenantSlug(String(event.tenant_id));
-
-      if (isJsonExpected) {
-        return reply.status(200).send({ success: true, redirect_url: `/api/events/success?tenantSlug=${slug}` });
-      }
-
-      return reply.redirect(`/api/events/success?tenantSlug=${slug}`);
-    } catch (err: any) {
-      fastify.log.error(err);
-      const statusCode = getStatusFromError(err);
-      const message = err.message || 'An unexpected error occurred during signup.';
-
-      if (isJsonExpected) {
-        return reply.status(statusCode).send({ error: message });
-      }
-
-      reply.status(statusCode).type('text/html');
-      return reply.send(renderErrorHtml(message));
-    }
-  });
-
-  done();
-};
-
-export default volunteerEventsPublicRoute;
-```
-
 ## File: apps/backend/src/app/modules/web-forms/repositories/web-forms.repo.ts
 
 ```typescript
@@ -30392,6 +32427,74 @@ export class EventsRepo extends BaseRepository<'events'> {
 }
 ```
 
+## File: apps/backend/src/app/modules/files/routes/files.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { StorageService } from '../../../lib/storage.service';
+import { BaseRepository } from '../../../lib/base.repo';
+import { verifyAuthToken } from '../../../lib/auth-util';
+import { verifyFileDownloadToken } from '../../../lib/signed-download';
+import { attachmentDisposition } from '../../../lib/download-headers';
+
+const storageService = new StorageService();
+
+const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
+  fastify.get('/download/:id', async (req: any, reply) => {
+    const { id } = req.params;
+
+    // Authenticate via the Authorization header (app-initiated downloads) or
+    // a short-lived token scoped to this one file (avatar <img> URLs).
+    // Session JWTs in the query string are deliberately not accepted — URLs
+    // leak into browser history, proxies, and logs.
+    let tenantId: string | null = null;
+    try {
+      if (req.query.st) {
+        tenantId = verifyFileDownloadToken(req.query.st, String(id)).tenant_id;
+      } else if (req.headers.authorization) {
+        const payload = await verifyAuthToken(req.headers.authorization.split(' ')[1]);
+        tenantId = payload.tenant_id;
+      }
+    } catch (_err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+    }
+
+    if (!tenantId) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
+    }
+
+    const db = (BaseRepository as any)['_db'];
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      reply.header('Content-Disposition', attachmentDisposition(file.filename));
+      // Private: these files are tenant-scoped and token-gated — never allow shared caches.
+      reply.header('Cache-Control', 'private, max-age=31536000, immutable');
+      return reply.send(buffer);
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Failed to download file' });
+    }
+  });
+
+  done();
+};
+
+export default filesRoute;
+```
+
 ## File: apps/backend/src/app/modules/google-sync/google-callback.route.ts
 
 ```typescript
@@ -30668,6 +32771,925 @@ const msSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 
 export default msSyncCallbackRoute;
+```
+
+## File: apps/backend/src/app/modules/volunteer-events/controller.ts
+
+```typescript
+import { BaseController } from '../../lib/base.controller';
+import { VolunteerEventsRepo } from './repositories/volunteer-events.repo';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
+import { TRPCError } from '@trpc/server';
+import { env } from '../../../env';
+import { createHmac } from 'crypto';
+import { WorkflowsController } from '../workflows/controller';
+import { logger } from '../../logger';
+
+const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+const ipSignupTimestamps = new Map<string, number[]>();
+const SIGNUP_RATE_LIMIT_MAX = 5;
+const SIGNUP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+
+// Cache for tenant slug lookups to avoid fetching all tenants on every public request
+const TENANT_SLUG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let tenantSlugCache: { tenants: { id: string; name: string }[]; expiresAt: number } | null = null;
+
+export class VolunteerEventsController extends BaseController<'volunteer_events', VolunteerEventsRepo> {
+  constructor() {
+    super(new VolunteerEventsRepo());
+  }
+
+  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
+    return this.getRepo().getAllEventsWithCount({
+      tenant_id: auth.tenant_id,
+      options,
+    });
+  }
+
+  public async addEvent(payload: any, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo()
+      .db.selectFrom('volunteer_events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', payload.slug)
+      .executeTakeFirst();
+    if (existing) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This URL slug is already in use. Please choose a different one.',
+      });
+    }
+
+    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+    }
+
+    const row = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      location_address: payload.location_address ?? null,
+      start_time: payload.start_time,
+      end_time: payload.end_time,
+      capacity: payload.capacity ?? null,
+      contact_email: payload.contact_email ?? null,
+      contact_phone: payload.contact_phone ?? null,
+      is_private: payload.is_private ?? false,
+      send_reminder: payload.send_reminder ?? true,
+      send_signup_confirmation: payload.send_signup_confirmation ?? true,
+      send_volunteer_alert: payload.send_volunteer_alert ?? true,
+      slug: payload.slug,
+      fields: payload.fields ?? DEFAULT_FIELDS,
+    } as OperationDataType<'volunteer_events', 'insert'>;
+    return this.add(row);
+  }
+
+  public async checkSlugUnique(slug: string, excludeId: string | null, _auth: IAuthKeyPayload) {
+    if (!slug) return { unique: true };
+    let query = this.getRepo()
+      .db.selectFrom('volunteer_events')
+      .select('id')
+      .where('tenant_id', '=', _auth.tenant_id)
+      .where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const existing = await query.executeTakeFirst();
+    return { unique: !existing };
+  }
+
+  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
+    if (payload.slug) {
+      const existing = await this.getRepo()
+        .db.selectFrom('volunteer_events')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('slug', '=', payload.slug)
+        .where('id', '!=', id)
+        .executeTakeFirst();
+      if (existing) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This URL slug is already in use. Please choose a different one.',
+        });
+      }
+    }
+
+    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+    }
+
+    const row = {
+      ...payload,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'volunteer_events', 'update'>;
+    const result = await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row,
+    });
+
+    if (payload.send_reminder === false) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+          .where(sql`payload->>'eventId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to clean up pending reminders for disabled event reminders');
+      }
+    } else if (payload.send_reminder === true) {
+      try {
+        // Fetch all signed up shifts for this event
+        const shifts = await this.getRepo()
+          .db.selectFrom('volunteer_shifts')
+          .select(['id', 'person_id'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('event_id', '=', id)
+          .where('status', '=', 'signed_up')
+          .execute();
+
+        // Fetch event start time
+        const event = await this.getRepo()
+          .db.selectFrom('volunteer_events')
+          .select(['start_time'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', id)
+          .executeTakeFirst();
+
+        if (event) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            for (const shift of shifts) {
+              // Delete existing pending reminder for safety
+              await this.getRepo()
+                .db.deleteFrom('background_jobs')
+                .where('tenant_id', '=', auth.tenant_id)
+                .where('status', '=', 'pending')
+                .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+                .where(sql`payload->>'shiftId'`, '=', String(shift.id))
+                .execute();
+
+              // Queue new reminder
+              await this.getRepo()
+                .db.insertInto('background_jobs')
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-shift-reminder',
+                    shiftId: String(shift.id),
+                    eventId: String(id),
+                    personId: String(shift.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Failed to re-schedule shift reminders for event');
+      }
+    }
+
+    return result;
+  }
+
+  public async getShiftsForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getShiftsForEvent({
+      tenant_id: auth.tenant_id,
+      event_id,
+    });
+  }
+
+  public async signupVolunteer(payload: any, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().signupVolunteer({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      person_id: payload.person_id,
+      status: payload.status,
+      hours_worked: payload.hours_worked,
+      notes: payload.notes,
+      user_id: auth.user_id,
+    });
+
+    if (result && result.status === 'signed_up') {
+      try {
+        const event = await this.getRepo()
+          .db.selectFrom('volunteer_events')
+          .select(['start_time', 'send_reminder'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', payload.event_id)
+          .executeTakeFirst();
+
+        if (event && event.send_reminder !== false) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            await this.getRepo()
+              .db.insertInto('background_jobs')
+              .values({
+                tenant_id: auth.tenant_id,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-shift-reminder',
+                  shiftId: String(result.id),
+                  eventId: String(payload.event_id),
+                  personId: String(payload.person_id),
+                }),
+                run_at: runAt,
+              })
+              .execute();
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Failed to schedule shift reminder for volunteer');
+      }
+
+      // Trigger volunteer signup workflows
+      try {
+        const workflowsController = new WorkflowsController();
+        await this.getRepo()
+          .transaction()
+          .execute(async (trx) => {
+            await workflowsController.triggerVolunteerSignup(
+              auth.tenant_id,
+              String(payload.person_id),
+              String(payload.event_id),
+              trx,
+            );
+          });
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger volunteer signup workflows');
+      }
+    }
+
+    if (result && result.status) {
+      try {
+        const workflowsController = new WorkflowsController();
+        await this.getRepo()
+          .transaction()
+          .execute(async (trx) => {
+            await workflowsController.triggerWorkflow(
+              auth.tenant_id,
+              String(payload.person_id),
+              'volunteer_shift_status',
+              result.status,
+              trx,
+            );
+          });
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger volunteer_shift_status workflow in signupVolunteer');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'assign',
+        entity: 'volunteer_shifts',
+        entity_id: result?.id ? String(result.id) : null,
+        quantity: 1,
+        metadata: { id: result?.id, event_id: payload.event_id, person_id: payload.person_id },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log shift signup activity');
+    }
+
+    return result;
+  }
+
+  public async updateShift(id: string, payload: any, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateShift({
+      tenant_id: auth.tenant_id,
+      id,
+      row: payload,
+      user_id: auth.user_id,
+    });
+
+    if (result) {
+      // Trigger volunteer shift status workflows
+      if (payload.status) {
+        try {
+          const workflowsController = new WorkflowsController();
+          await this.getRepo()
+            .transaction()
+            .execute(async (trx) => {
+              await workflowsController.triggerWorkflow(
+                auth.tenant_id,
+                String(result.person_id),
+                'volunteer_shift_status',
+                payload.status,
+                trx,
+              );
+            });
+        } catch (err) {
+          logger.error({ err }, 'Failed to trigger volunteer_shift_status workflows');
+        }
+      }
+
+      try {
+        if (payload.status && payload.status !== 'signed_up') {
+          // Cancel/remove pending reminder
+          await this.getRepo()
+            .db.deleteFrom('background_jobs')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('status', '=', 'pending')
+            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+            .where(sql`payload->>'shiftId'`, '=', String(id))
+            .execute();
+        } else if (payload.status === 'signed_up') {
+          // Remove existing pending reminders first
+          await this.getRepo()
+            .db.deleteFrom('background_jobs')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('status', '=', 'pending')
+            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+            .where(sql`payload->>'shiftId'`, '=', String(id))
+            .execute();
+
+          // Fetch event to check if we should schedule a new reminder
+          const event = await this.getRepo()
+            .db.selectFrom('volunteer_events')
+            .select(['start_time', 'send_reminder'])
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', result.event_id)
+            .executeTakeFirst();
+
+          if (event && event.send_reminder !== false) {
+            const startMs = new Date(event.start_time).getTime();
+            const nowMs = Date.now();
+            if (startMs > nowMs) {
+              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+              await this.getRepo()
+                .db.insertInto('background_jobs')
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-shift-reminder',
+                    shiftId: String(id),
+                    eventId: String(result.event_id),
+                    personId: String(result.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Failed to update shift reminder job status');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'volunteer_shifts',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: payload.status },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log shift update activity');
+    }
+
+    return result;
+  }
+
+  public async deleteShift(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().deleteShift({
+      tenant_id: auth.tenant_id,
+      id,
+    });
+
+    if (result) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+          .where(sql`payload->>'shiftId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to delete pending shift reminder job');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'delete',
+        entity: 'volunteer_shifts',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log shift delete activity');
+    }
+
+    return result;
+  }
+
+  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getHistoryForPerson({
+      tenant_id: auth.tenant_id,
+      person_id,
+    });
+  }
+
+  public async getVolunteerStats(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getVolunteerStats({
+      tenant_id: auth.tenant_id,
+      person_id,
+    });
+  }
+
+  public async getTenantPublic(tenantId: string) {
+    return this.getRepo().db.selectFrom('tenants').select(['name']).where('id', '=', tenantId).executeTakeFirst();
+  }
+
+  public async getUpcomingEventsPublic(tenantId: string) {
+    return this.getRepo()
+      .db.selectFrom('volunteer_events')
+      .select([
+        'volunteer_events.id',
+        'volunteer_events.tenant_id',
+        'volunteer_events.name',
+        'volunteer_events.description',
+        'volunteer_events.location_address',
+        'volunteer_events.start_time',
+        'volunteer_events.end_time',
+        'volunteer_events.capacity',
+        'volunteer_events.contact_email',
+        'volunteer_events.contact_phone',
+        'volunteer_events.is_private',
+        'volunteer_events.send_reminder',
+        'volunteer_events.slug',
+      ])
+      .select((eb) => [
+        eb
+          .selectFrom('volunteer_shifts')
+          .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
+          .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
+          .as('volunteers_count'),
+      ])
+      .where('volunteer_events.tenant_id', '=', tenantId)
+      .where('volunteer_events.end_time', '>=', new Date())
+      .where('volunteer_events.is_private', '=', false)
+      .orderBy('volunteer_events.start_time', 'asc')
+      .execute();
+  }
+
+  public async getEventPublic(eventId: string) {
+    const isNumeric = /^\d+$/.test(eventId);
+    let query = this.getRepo()
+      .db.selectFrom('volunteer_events')
+      .select([
+        'volunteer_events.id',
+        'volunteer_events.tenant_id',
+        'volunteer_events.name',
+        'volunteer_events.description',
+        'volunteer_events.location_address',
+        'volunteer_events.start_time',
+        'volunteer_events.end_time',
+        'volunteer_events.capacity',
+        'volunteer_events.contact_email',
+        'volunteer_events.contact_phone',
+        'volunteer_events.is_private',
+        'volunteer_events.send_reminder',
+        'volunteer_events.slug',
+        'volunteer_events.fields',
+      ])
+      .select((eb) => [
+        eb
+          .selectFrom('volunteer_shifts')
+          .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
+          .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
+          .as('volunteers_count'),
+      ]);
+
+    if (isNumeric) {
+      query = query.where((eb) =>
+        eb.or([eb('volunteer_events.id', '=', eventId as any), eb('volunteer_events.slug', '=', eventId)]),
+      );
+    } else {
+      query = query.where('volunteer_events.slug', '=', eventId);
+    }
+
+    return query.executeTakeFirst();
+  }
+
+  public getTenantSlug(tenantId: string): string {
+    return createHmac('sha256', env.sharedSecret).update(tenantId).digest('hex').slice(0, 16);
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const event = (await super.getOneById(input)) as any;
+    if (event) {
+      const slug = this.getTenantSlug(input.tenant_id);
+      return {
+        ...event,
+        public_url: `/api/events/view/${event.slug || event.id}`,
+        tenant_public_url: `/api/events/org/${slug}`,
+      } as any;
+    }
+    return event;
+  }
+
+  public async getTenantFromSlug(slug: string) {
+    const now = Date.now();
+    if (!tenantSlugCache || now > tenantSlugCache.expiresAt) {
+      const tenants = await this.getRepo().db.selectFrom('tenants').select(['id', 'name']).execute();
+      tenantSlugCache = {
+        tenants: tenants.map((t) => ({ id: String(t.id), name: String(t.name) })),
+        expiresAt: now + TENANT_SLUG_CACHE_TTL_MS,
+      };
+    }
+    return tenantSlugCache.tenants.find((t) => this.getTenantSlug(t.id) === slug);
+  }
+
+  public async signupVolunteerPublic(eventId: string, payload: Record<string, string>, clientIp: string) {
+    // 1. Rate limiting check
+    const now = Date.now();
+    let timestamps = ipSignupTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < SIGNUP_RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= SIGNUP_RATE_LIMIT_MAX) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: 'Rate limit exceeded. Please try again in a minute.',
+      });
+    }
+    timestamps.push(now);
+    // Prune the key if empty to prevent unbounded Map growth across long-lived processes
+    if (timestamps.length > 0) {
+      ipSignupTimestamps.set(clientIp, timestamps);
+    } else {
+      ipSignupTimestamps.delete(clientIp);
+    }
+
+    // 2. Fetch Event by ID
+    const event = await this.getEventPublic(eventId);
+    if (!event) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Event not found.',
+      });
+    }
+
+    const tenantId = String(event.tenant_id);
+
+    // 3. Honeypot check
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      logger.warn(`Spam bot detected from IP ${clientIp} for event ${eventId}`);
+      return { success: true }; // Silent mock success
+    }
+
+    // 4. Validate email
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Email address is required.',
+      });
+    }
+
+    // 5. Check capacity limit
+    const currentCount = Number(event.volunteers_count || 0);
+    if (event.capacity !== null && currentCount >= event.capacity) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This event is already at full capacity.',
+      });
+    }
+
+    const firstName = payload['first_name'] || payload['firstName'] || null;
+    const lastName = payload['last_name'] || payload['lastName'] || null;
+    const mobile = payload['mobile'] || payload['phone'] || null;
+    const notes = payload['notes'] || payload['message'] || null;
+
+    // 6. Transaction to find/create person, tags, and shift
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id', 'admin_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        const creatorId = tenantRow?.admin_id;
+
+        if (!householdId) {
+          throw new Error('Tenant placeholder household is not configured.');
+        }
+        if (!creatorId) {
+          throw new Error('Tenant admin_id is not configured.');
+        }
+
+        const campaignId = await this.getCampaignId(tenantId, trx);
+
+        // Check if email already exists
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = {
+            updatedby_id: creatorId,
+            updated_at: sql`now()`,
+          };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (!existing.notes && notes) {
+            updateRow.notes = notes;
+          } else if (existing.notes && notes) {
+            updateRow.notes = `${existing.notes}\n\nVolunteer Signup notes: ${notes}`;
+          }
+
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', existing.id)
+              .execute();
+          }
+        } else {
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: householdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            mobile: mobile,
+            notes: notes,
+          };
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
+
+          // Trigger contact created workflow
+          try {
+            const workflowsController = new WorkflowsController();
+            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in signupVolunteerPublic');
+          }
+        }
+
+        // Check if shift already exists
+        const existingShift = await trx
+          .selectFrom('volunteer_shifts')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('event_id', '=', event.id)
+          .where('person_id', '=', personId)
+          .executeTakeFirst();
+
+        if (existingShift) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'You are already signed up for this event.',
+          });
+        }
+
+        const workflowsController = new WorkflowsController();
+
+        // Add tag "volunteer" and "event: <event name>"
+        const allTagsToApply = ['volunteer', `event: ${event.name}`];
+        for (const tagName of allTagsToApply) {
+          const normalizedTagName = tagName.trim().toLowerCase();
+          if (!normalizedTagName) continue;
+
+          let tag = await trx
+            .selectFrom('tags')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('name', '=', normalizedTagName)
+            .where('type', '=', 'tag')
+            .executeTakeFirst();
+
+          if (!tag) {
+            try {
+              const insertTagRes = await trx
+                .insertInto('tags')
+                .values({
+                  tenant_id: tenantId,
+                  name: normalizedTagName,
+                  type: 'tag',
+                  deletable: true,
+                  createdby_id: creatorId,
+                  updatedby_id: creatorId,
+                })
+                .returning('id')
+                .executeTakeFirst();
+              if (insertTagRes) {
+                tag = { id: insertTagRes.id };
+              }
+            } catch (insertErr) {
+              // Concurrent insert fallback: fetch the tag that was just inserted
+              tag = await trx
+                .selectFrom('tags')
+                .select('id')
+                .where('tenant_id', '=', tenantId)
+                .where('name', '=', normalizedTagName)
+                .where('type', '=', 'tag')
+                .executeTakeFirst();
+              if (!tag) throw insertErr;
+            }
+          }
+
+          if (tag) {
+            const mapExists = await trx
+              .selectFrom('map_peoples_tags')
+              .select('person_id')
+              .where('tenant_id', '=', tenantId)
+              .where('person_id', '=', personId)
+              .where('tag_id', '=', tag.id)
+              .executeTakeFirst();
+
+            if (!mapExists) {
+              await trx
+                .insertInto('map_peoples_tags')
+                .values({
+                  tenant_id: tenantId,
+                  person_id: personId,
+                  tag_id: tag.id,
+                  createdby_id: creatorId,
+                  updatedby_id: creatorId,
+                })
+                .onConflict((oc) => oc.columns(['tenant_id', 'person_id', 'tag_id']).doNothing())
+                .execute();
+
+              // Trigger tag_added and specialized subscriber workflows
+              try {
+                await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
+              } catch (err) {
+                logger.error({ err }, 'Failed to trigger tag_added workflow in signupVolunteerPublic');
+              }
+            }
+          }
+        }
+
+        // Insert Shift
+        const shiftResult = await trx
+          .insertInto('volunteer_shifts')
+          .values({
+            tenant_id: tenantId,
+            event_id: event.id,
+            person_id: personId,
+            status: 'signed_up',
+            notes: notes,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        const shiftId = shiftResult.id;
+
+        // Log user activity
+        await trx
+          .insertInto('user_activity')
+          .values({
+            tenant_id: tenantId,
+            user_id: creatorId,
+            activity: 'signup',
+            entity: 'volunteer_events',
+            entity_id: String(event.id),
+            quantity: 1,
+            metadata: JSON.stringify({ person_id: personId, email }),
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .execute();
+
+        // Queue email notification job in background
+        await trx
+          .insertInto('background_jobs')
+          .values({
+            tenant_id: tenantId,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'send-form-notifications',
+              eventId: String(event.id),
+              tenantId,
+              email,
+              firstName,
+              lastName,
+              mobile,
+              notes,
+            }),
+            run_at: new Date(),
+          })
+          .execute();
+
+        // Queue shift reminder email if enabled
+        if (event.send_reminder !== false) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            await trx
+              .insertInto('background_jobs')
+              .values({
+                tenant_id: tenantId,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-shift-reminder',
+                  shiftId: String(shiftId),
+                  eventId: String(event.id),
+                  personId: String(personId),
+                }),
+                run_at: runAt,
+              })
+              .execute();
+          }
+        }
+
+        // Trigger volunteer signup workflows
+        try {
+          const workflowsController = new WorkflowsController();
+          await workflowsController.triggerVolunteerSignup(tenantId, personId, String(event.id), trx);
+        } catch (err) {
+          logger.error({ err }, 'Failed to trigger volunteer signup workflows in public form');
+        }
+      });
+
+    return { success: true };
+  }
+
+  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'current_campaign')
+      .executeTakeFirst();
+
+    if (row) {
+      const value = row.value;
+      if (typeof value === 'number' || typeof value === 'string') {
+        return String(value);
+      }
+      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
+        const id = (value as Record<string, unknown>)['id'];
+        if (typeof id === 'number' || typeof id === 'string') {
+          return String(id);
+        }
+      }
+    }
+
+    const campaignRow = await trx
+      .selectFrom('campaigns')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .limit(1)
+      .executeTakeFirst();
+
+    if (campaignRow) {
+      return String(campaignRow.id);
+    }
+
+    throw new Error('No campaign found for this tenant.');
+  }
+}
 ```
 
 ## File: apps/backend/src/app/modules/web-forms/controller.ts
@@ -33426,59 +36448,193 @@ export class PersonsService {
 }
 ```
 
-## File: apps/backend/src/app/modules/volunteer-events/controller.ts
+## File: apps/backend/src/app/lib/jobs/job-handlers.ts
 
 ```typescript
-import { BaseController } from '../../lib/base.controller';
-import { VolunteerEventsRepo } from './repositories/volunteer-events.repo';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Kysely } from 'kysely';
+import { z } from 'zod';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { jobPayloadSchema, legacyImportJobSchema } from './job-payloads';
+import { handleCheckAllUsageLimits, handleCheckUsageLimits, handleZapierTrigger } from './handlers/billing.handlers';
+import { handlePerformScheduledDeletions } from './handlers/deletions.handlers';
+import { handleExportCsv } from './handlers/export.handlers';
+import { handleImportJob } from './handlers/import.handlers';
+import {
+  handleCleanupActivities,
+  handleEnrichCompanyGoogle,
+  handleGeocodeHousehold,
+  handleRecomputeAddressFingerprints,
+  handleRecomputeAllDuplicates,
+  handleRefreshCompaniesGoogle,
+  handleRefreshList,
+} from './handlers/maintenance.handlers';
+import { handlePruneNewsletterEvents, handleSendNewsletter } from './handlers/newsletter.handlers';
+import {
+  handleCheckDueTasks,
+  handleSendEventRegistrationConfirmation,
+  handleSendEventReminder,
+  handleSendFormNotifications,
+  handleSendShiftReminder,
+  handleSendSubscriptionConfirmation,
+  handleSendTransactionalEmail,
+  handleSendWebformNotifications,
+} from './handlers/notifications.handlers';
+import { handleGoogleSync, handleMsSync, handleScheduleSyncJobs } from './handlers/sync.handlers';
+import { handleProcessDripWorkflows } from './handlers/workflows.handlers';
+
+export { checkDueTasks } from './handlers/notifications.handlers';
+
+const typeProbeSchema = z.looseObject({ type: z.unknown() });
+
+/**
+ * Background job dispatcher. Parses the raw queue payload against the typed
+ * job schemas and routes it to the matching domain handler in `./handlers/`.
+ */
+export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: string): Promise<void> {
+  const typed = jobPayloadSchema.safeParse(payload);
+
+  if (!typed.success) {
+    // CSV imports are queued without a `type` discriminator (legacy shape).
+    const legacyImport = legacyImportJobSchema.safeParse(payload);
+    if (legacyImport.success) {
+      await handleImportJob(legacyImport.data, db);
+      return;
+    }
+
+    const probe = typeProbeSchema.safeParse(payload);
+    const typeLabel = probe.success && probe.data.type !== undefined ? String(probe.data.type) : 'unknown';
+    throw new Error(`Unsupported background job type: ${typeLabel}`);
+  }
+
+  const job = typed.data;
+  switch (job.type) {
+    case 'refresh_list':
+      await handleRefreshList(job);
+      break;
+    case 'enrich_company_google':
+      await handleEnrichCompanyGoogle(job, db);
+      break;
+    case 'refresh_companies_google':
+      await handleRefreshCompaniesGoogle(job, db);
+      break;
+    case 'cleanup_activities':
+      await handleCleanupActivities(db);
+      break;
+    case 'recompute_all_duplicates':
+      await handleRecomputeAllDuplicates(db);
+      break;
+    case 'recompute_address_fingerprints':
+      await handleRecomputeAddressFingerprints(job, db);
+      break;
+    case 'geocode_household':
+      await handleGeocodeHousehold(job, db);
+      break;
+    case 'schedule_sync_jobs':
+      await handleScheduleSyncJobs(db);
+      break;
+    case 'google_sync':
+      await handleGoogleSync(job, db);
+      break;
+    case 'ms_sync':
+      await handleMsSync(job, db);
+      break;
+    case 'send-form-notifications':
+      await handleSendFormNotifications(job, db);
+      break;
+    case 'send-shift-reminder':
+      await handleSendShiftReminder(job, db);
+      break;
+    case 'send-webform-notifications':
+      await handleSendWebformNotifications(job, db);
+      break;
+    case 'send-event-registration-confirmation':
+      await handleSendEventRegistrationConfirmation(job, db);
+      break;
+    case 'send-event-reminder':
+      await handleSendEventReminder(job, db);
+      break;
+    case 'send-transactional-email':
+      await handleSendTransactionalEmail(job);
+      break;
+    case 'send-subscription-confirmation':
+      await handleSendSubscriptionConfirmation(job);
+      break;
+    case 'check_due_tasks':
+      await handleCheckDueTasks(db);
+      break;
+    case 'send-newsletter':
+      await handleSendNewsletter(job, db, jobId);
+      break;
+    case 'prune_newsletter_events':
+      await handlePruneNewsletterEvents(db);
+      break;
+    case 'process_drip_workflows':
+      await handleProcessDripWorkflows(db);
+      break;
+    case 'perform_scheduled_deletions':
+      await handlePerformScheduledDeletions(db);
+      break;
+    case 'zapier_trigger':
+      await handleZapierTrigger(job);
+      break;
+    case 'check_usage_limits':
+      await handleCheckUsageLimits(job, db);
+      break;
+    case 'check_all_usage_limits':
+      await handleCheckAllUsageLimits(db);
+      break;
+    case 'export_csv':
+      await handleExportCsv(job, db);
+      break;
+    default: {
+      const _exhaustive: never = job;
+      throw new Error(`Unsupported background job type: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/events/controller.ts
+
+```typescript
+import { TRPCError } from '@trpc/server';
 import type { Transaction } from 'kysely';
 import { sql } from 'kysely';
-import { TRPCError } from '@trpc/server';
-import { env } from '../../../env';
-import { createHmac } from 'crypto';
+import { BaseController } from '../../lib/base.controller';
+import { EventsRepo } from './repositories/events.repo';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { WorkflowsController } from '../workflows/controller';
 import { logger } from '../../logger';
 
 const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
-const ipSignupTimestamps = new Map<string, number[]>();
-const SIGNUP_RATE_LIMIT_MAX = 5;
-const SIGNUP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const ipRsvpTimestamps = new Map<string, number[]>();
+const RSVP_RATE_LIMIT_MAX = 5;
+const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 
-// Cache for tenant slug lookups to avoid fetching all tenants on every public request
-const TENANT_SLUG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-let tenantSlugCache: { tenants: { id: string; name: string }[]; expiresAt: number } | null = null;
-
-export class VolunteerEventsController extends BaseController<'volunteer_events', VolunteerEventsRepo> {
+export class EventsController extends BaseController<'events', EventsRepo> {
   constructor() {
-    super(new VolunteerEventsRepo());
+    super(new EventsRepo());
   }
 
   public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
-    return this.getRepo().getAllEventsWithCount({
-      tenant_id: auth.tenant_id,
-      options,
-    });
+    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
   }
 
   public async addEvent(payload: any, auth: IAuthKeyPayload) {
     const existing = await this.getRepo()
-      .db.selectFrom('volunteer_events')
+      .db.selectFrom('events')
       .select('id')
       .where('tenant_id', '=', auth.tenant_id)
       .where('slug', '=', payload.slug)
       .executeTakeFirst();
+
     if (existing) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
         message: 'This URL slug is already in use. Please choose a different one.',
       });
-    }
-
-    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
     }
 
     const row = {
@@ -33493,22 +36649,60 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       capacity: payload.capacity ?? null,
       contact_email: payload.contact_email ?? null,
       contact_phone: payload.contact_phone ?? null,
-      is_private: payload.is_private ?? false,
-      send_reminder: payload.send_reminder ?? true,
-      send_signup_confirmation: payload.send_signup_confirmation ?? true,
-      send_volunteer_alert: payload.send_volunteer_alert ?? true,
       slug: payload.slug,
+      is_published: payload.is_published ?? false,
+      send_reminder: payload.send_reminder ?? true,
+      send_registration_confirmation: payload.send_registration_confirmation ?? true,
       fields: payload.fields ?? DEFAULT_FIELDS,
-    } as OperationDataType<'volunteer_events', 'insert'>;
-    return this.add(row);
+    } as OperationDataType<'events', 'insert'>;
+
+    try {
+      return await this.add(row);
+    } catch (err: any) {
+      if (err?.message?.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
   }
 
-  public async checkSlugUnique(slug: string, excludeId: string | null, _auth: IAuthKeyPayload) {
+  public async getEventBySlug(slug: string) {
+    // NOTE: unscoped by design — public registration page: tenant is unknown until the event is resolved by slug
+    return this.getRepo()
+      .db.selectFrom('events')
+      .selectAll()
+      .where('slug', '=', slug)
+      .where('is_published', '=', true)
+      .executeTakeFirst();
+  }
+
+  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
+    const row = await this.getRepo()
+      .db.selectFrom('event_registrations')
+      .select(({ fn }) => [fn.count('id').as('cnt')])
+      .where('tenant_id', '=', tenantId)
+      .where('event_id', '=', eventId)
+      .where('status', '!=', 'cancelled')
+      .executeTakeFirst();
+    return Number(row?.cnt ?? 0);
+  }
+
+  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
+    return this.getRepo()
+      .db.selectFrom('event_ticket_types')
+      .selectAll()
+      .where('event_id', '=', eventId)
+      .where('tenant_id', '=', tenantId)
+      .orderBy('sort_order', 'asc')
+      .execute();
+  }
+
+  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
     if (!slug) return { unique: true };
     let query = this.getRepo()
-      .db.selectFrom('volunteer_events')
+      .db.selectFrom('events')
       .select('id')
-      .where('tenant_id', '=', _auth.tenant_id)
+      .where('tenant_id', '=', auth.tenant_id)
       .where('slug', '=', slug);
     if (excludeId) {
       query = query.where('id', '!=', excludeId);
@@ -33520,12 +36714,13 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
   public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
     if (payload.slug) {
       const existing = await this.getRepo()
-        .db.selectFrom('volunteer_events')
+        .db.selectFrom('events')
         .select('id')
         .where('tenant_id', '=', auth.tenant_id)
         .where('slug', '=', payload.slug)
         .where('id', '!=', id)
         .executeTakeFirst();
+
       if (existing) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -33534,46 +36729,38 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       }
     }
 
-    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-    }
-
     const row = {
       ...payload,
+      ...(payload.fields !== undefined ? { fields: payload.fields } : {}),
       updatedby_id: auth.user_id,
-    } as OperationDataType<'volunteer_events', 'update'>;
-    const result = await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row,
-    });
+    } as OperationDataType<'events', 'update'>;
+    let result;
+    try {
+      result = await this.update({ tenant_id: auth.tenant_id, id, row });
+    } catch (err: any) {
+      if (err?.message?.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
 
+    // Manage pending reminder jobs when the toggle changes
     if (payload.send_reminder === false) {
       try {
         await this.getRepo()
           .db.deleteFrom('background_jobs')
           .where('tenant_id', '=', auth.tenant_id)
           .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
           .where(sql`payload->>'eventId'`, '=', String(id))
           .execute();
       } catch (err) {
-        logger.error({ err }, 'Failed to clean up pending reminders for disabled event reminders');
+        logger.error({ err }, 'Failed to clean up pending event reminders');
       }
     } else if (payload.send_reminder === true) {
       try {
-        // Fetch all signed up shifts for this event
-        const shifts = await this.getRepo()
-          .db.selectFrom('volunteer_shifts')
-          .select(['id', 'person_id'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('event_id', '=', id)
-          .where('status', '=', 'signed_up')
-          .execute();
-
-        // Fetch event start time
         const event = await this.getRepo()
-          .db.selectFrom('volunteer_events')
+          .db.selectFrom('events')
           .select(['start_time'])
           .where('tenant_id', '=', auth.tenant_id)
           .where('id', '=', id)
@@ -33584,17 +36771,23 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           const nowMs = Date.now();
           if (startMs > nowMs) {
             const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            for (const shift of shifts) {
-              // Delete existing pending reminder for safety
+            const registrations = await this.getRepo()
+              .db.selectFrom('event_registrations')
+              .select(['id', 'person_id'])
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('event_id', '=', id)
+              .where('status', '=', 'registered')
+              .execute();
+
+            for (const reg of registrations) {
               await this.getRepo()
                 .db.deleteFrom('background_jobs')
                 .where('tenant_id', '=', auth.tenant_id)
                 .where('status', '=', 'pending')
-                .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-                .where(sql`payload->>'shiftId'`, '=', String(shift.id))
+                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
                 .execute();
 
-              // Queue new reminder
               await this.getRepo()
                 .db.insertInto('background_jobs')
                 .values({
@@ -33602,10 +36795,10 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
                   queue: 'default',
                   status: 'pending',
                   payload: JSON.stringify({
-                    type: 'send-shift-reminder',
-                    shiftId: String(shift.id),
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
                     eventId: String(id),
-                    personId: String(shift.person_id),
+                    personId: String(reg.person_id),
                   }),
                   run_at: runAt,
                 })
@@ -33614,41 +36807,132 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           }
         }
       } catch (err) {
-        logger.error({ err }, 'Failed to re-schedule shift reminders for event');
+        logger.error({ err }, 'Failed to re-schedule event reminders');
       }
     }
 
     return result;
   }
 
-  public async getShiftsForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getShiftsForEvent({
+  // Ticket types
+
+  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().addTicketType({
       tenant_id: auth.tenant_id,
-      event_id,
+      event_id: payload.event_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      price_cents: payload.price_cents ?? 0,
+      capacity: payload.capacity ?? null,
+      sort_order: payload.sort_order ?? 0,
+      user_id: auth.user_id,
     });
   }
 
-  public async signupVolunteer(payload: any, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().signupVolunteer({
+  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
+  }
+
+  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
+  }
+
+  // Registrations
+
+  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
+    // Capacity check across the whole event
+    const event = await this.getRepo()
+      .db.selectFrom('events')
+      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', payload.event_id)
+      .executeTakeFirst();
+
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    if (event.capacity !== null) {
+      const countRow = await this.getRepo()
+        .db.selectFrom('event_registrations')
+        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('event_id', '=', payload.event_id)
+        .where('status', '!=', 'cancelled')
+        .executeTakeFirst();
+      if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+      }
+    }
+
+    // Per-ticket-type capacity check
+    if (payload.ticket_type_id) {
+      const ticketType = await this.getRepo()
+        .db.selectFrom('event_ticket_types')
+        .select(['capacity'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', payload.ticket_type_id)
+        .executeTakeFirst();
+
+      if (ticketType && ticketType.capacity !== null) {
+        const ticketCountRow = await this.getRepo()
+          .db.selectFrom('event_registrations')
+          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('ticket_type_id', '=', payload.ticket_type_id)
+          .where('status', '!=', 'cancelled')
+          .executeTakeFirst();
+        if (Number((ticketCountRow as any)?.cnt || 0) >= ticketType.capacity) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
+        }
+      }
+    }
+
+    const result = await this.getRepo().addRegistration({
       tenant_id: auth.tenant_id,
       event_id: payload.event_id,
       person_id: payload.person_id,
-      status: payload.status,
-      hours_worked: payload.hours_worked,
-      notes: payload.notes,
+      ticket_type_id: payload.ticket_type_id ?? null,
+      status: payload.status ?? 'registered',
+      notes: payload.notes ?? null,
       user_id: auth.user_id,
     });
 
-    if (result && result.status === 'signed_up') {
-      try {
-        const event = await this.getRepo()
-          .db.selectFrom('volunteer_events')
-          .select(['start_time', 'send_reminder'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', payload.event_id)
-          .executeTakeFirst();
+    if (result) {
+      // Queue registration confirmation email
+      if (event.send_registration_confirmation !== false) {
+        try {
+          await this.getRepo()
+            .db.insertInto('background_jobs')
+            .values({
+              tenant_id: auth.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'send-event-registration-confirmation',
+                registrationId: String(result.id),
+                eventId: String(payload.event_id),
+                personId: String(payload.person_id),
+              }),
+              run_at: new Date(),
+            })
+            .execute();
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue registration confirmation');
+        }
+      }
 
-        if (event && event.send_reminder !== false) {
+      // Queue 24h reminder
+      if (event.send_reminder !== false) {
+        try {
           const startMs = new Date(event.start_time).getTime();
           const nowMs = Date.now();
           if (startMs > nowMs) {
@@ -33660,8 +36944,8 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
                 queue: 'default',
                 status: 'pending',
                 payload: JSON.stringify({
-                  type: 'send-shift-reminder',
-                  shiftId: String(result.id),
+                  type: 'send-event-reminder',
+                  registrationId: String(result.id),
                   eventId: String(payload.event_id),
                   personId: String(payload.person_id),
                 }),
@@ -33669,147 +36953,87 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
               })
               .execute();
           }
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue event reminder');
         }
-      } catch (err) {
-        logger.error({ err }, 'Failed to schedule shift reminder for volunteer');
       }
 
-      // Trigger volunteer signup workflows
       try {
-        const workflowsController = new WorkflowsController();
-        await this.getRepo()
-          .transaction()
-          .execute(async (trx) => {
-            await workflowsController.triggerVolunteerSignup(
-              auth.tenant_id,
-              String(payload.person_id),
-              String(payload.event_id),
-              trx,
-            );
-          });
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger volunteer signup workflows');
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'assign',
+          entity: 'event_registrations',
+          entity_id: String(result.id),
+          quantity: 1,
+          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration activity');
       }
     }
 
-    if (result && result.status) {
-      try {
-        const workflowsController = new WorkflowsController();
-        await this.getRepo()
-          .transaction()
-          .execute(async (trx) => {
-            await workflowsController.triggerWorkflow(
-              auth.tenant_id,
-              String(payload.person_id),
-              'volunteer_shift_status',
-              result.status,
-              trx,
-            );
-          });
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger volunteer_shift_status workflow in signupVolunteer');
-      }
+    return result;
+  }
+
+  public async checkIn(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { status: 'attended', checked_in_at: new Date() },
+      user_id: auth.user_id,
+    });
+
+    // Cancel pending reminder — they've already arrived
+    try {
+      await this.getRepo()
+        .db.deleteFrom('background_jobs')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('status', '=', 'pending')
+        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+        .where(sql`payload->>'registrationId'`, '=', String(id))
+        .execute();
+    } catch (err) {
+      logger.error({ err }, 'Failed to cancel event reminder on check-in');
     }
 
     try {
       await this.userActivity.log({
         tenant_id: auth.tenant_id,
         user_id: auth.user_id,
-        activity: 'assign',
-        entity: 'volunteer_shifts',
-        entity_id: result?.id ? String(result.id) : null,
+        activity: 'update',
+        entity: 'event_registrations',
+        entity_id: id,
         quantity: 1,
-        metadata: { id: result?.id, event_id: payload.event_id, person_id: payload.person_id },
+        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
       });
     } catch (e) {
-      logger.error({ err: e }, 'Failed to log shift signup activity');
+      logger.error({ err: e }, 'Failed to log check-in activity');
     }
 
     return result;
   }
 
-  public async updateShift(id: string, payload: any, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateShift({
+  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
       tenant_id: auth.tenant_id,
       id,
       row: payload,
       user_id: auth.user_id,
     });
 
-    if (result) {
-      // Trigger volunteer shift status workflows
-      if (payload.status) {
-        try {
-          const workflowsController = new WorkflowsController();
-          await this.getRepo()
-            .transaction()
-            .execute(async (trx) => {
-              await workflowsController.triggerWorkflow(
-                auth.tenant_id,
-                String(result.person_id),
-                'volunteer_shift_status',
-                payload.status,
-                trx,
-              );
-            });
-        } catch (err) {
-          logger.error({ err }, 'Failed to trigger volunteer_shift_status workflows');
-        }
-      }
-
+    // Cancel reminder if status moves away from 'registered'
+    if (payload.status && payload.status !== 'registered') {
       try {
-        if (payload.status && payload.status !== 'signed_up') {
-          // Cancel/remove pending reminder
-          await this.getRepo()
-            .db.deleteFrom('background_jobs')
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('status', '=', 'pending')
-            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-            .where(sql`payload->>'shiftId'`, '=', String(id))
-            .execute();
-        } else if (payload.status === 'signed_up') {
-          // Remove existing pending reminders first
-          await this.getRepo()
-            .db.deleteFrom('background_jobs')
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('status', '=', 'pending')
-            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-            .where(sql`payload->>'shiftId'`, '=', String(id))
-            .execute();
-
-          // Fetch event to check if we should schedule a new reminder
-          const event = await this.getRepo()
-            .db.selectFrom('volunteer_events')
-            .select(['start_time', 'send_reminder'])
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('id', '=', result.event_id)
-            .executeTakeFirst();
-
-          if (event && event.send_reminder !== false) {
-            const startMs = new Date(event.start_time).getTime();
-            const nowMs = Date.now();
-            if (startMs > nowMs) {
-              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-              await this.getRepo()
-                .db.insertInto('background_jobs')
-                .values({
-                  tenant_id: auth.tenant_id,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-shift-reminder',
-                    shiftId: String(id),
-                    eventId: String(result.event_id),
-                    personId: String(result.person_id),
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          }
-        }
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
+          .execute();
       } catch (err) {
-        logger.error({ err }, 'Failed to update shift reminder job status');
+        logger.error({ err }, 'Failed to cancel event reminder on status change');
       }
     }
 
@@ -33818,23 +37042,20 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         tenant_id: auth.tenant_id,
         user_id: auth.user_id,
         activity: 'update',
-        entity: 'volunteer_shifts',
+        entity: 'event_registrations',
         entity_id: id,
         quantity: 1,
         metadata: { id, status: payload.status },
       });
     } catch (e) {
-      logger.error({ err: e }, 'Failed to log shift update activity');
+      logger.error({ err: e }, 'Failed to log registration update activity');
     }
 
     return result;
   }
 
-  public async deleteShift(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().deleteShift({
-      tenant_id: auth.tenant_id,
-      id,
-    });
+  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
 
     if (result) {
       try {
@@ -33842,209 +37063,80 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
           .db.deleteFrom('background_jobs')
           .where('tenant_id', '=', auth.tenant_id)
           .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-          .where(sql`payload->>'shiftId'`, '=', String(id))
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
           .execute();
       } catch (err) {
-        logger.error({ err }, 'Failed to delete pending shift reminder job');
+        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
       }
-    }
 
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'delete',
-        entity: 'volunteer_shifts',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log shift delete activity');
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'delete',
+          entity: 'event_registrations',
+          entity_id: id,
+          quantity: 1,
+          metadata: { id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration delete activity');
+      }
     }
 
     return result;
   }
 
   public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getHistoryForPerson({
-      tenant_id: auth.tenant_id,
-      person_id,
-    });
+    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
   }
 
-  public async getVolunteerStats(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getVolunteerStats({
-      tenant_id: auth.tenant_id,
-      person_id,
-    });
+  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
   }
 
-  public async getTenantPublic(tenantId: string) {
-    return this.getRepo().db.selectFrom('tenants').select(['name']).where('id', '=', tenantId).executeTakeFirst();
-  }
-
-  public async getUpcomingEventsPublic(tenantId: string) {
-    return this.getRepo()
-      .db.selectFrom('volunteer_events')
-      .select([
-        'volunteer_events.id',
-        'volunteer_events.tenant_id',
-        'volunteer_events.name',
-        'volunteer_events.description',
-        'volunteer_events.location_address',
-        'volunteer_events.start_time',
-        'volunteer_events.end_time',
-        'volunteer_events.capacity',
-        'volunteer_events.contact_email',
-        'volunteer_events.contact_phone',
-        'volunteer_events.is_private',
-        'volunteer_events.send_reminder',
-        'volunteer_events.slug',
-      ])
-      .select((eb) => [
-        eb
-          .selectFrom('volunteer_shifts')
-          .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
-          .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
-          .as('volunteers_count'),
-      ])
-      .where('volunteer_events.tenant_id', '=', tenantId)
-      .where('volunteer_events.end_time', '>=', new Date())
-      .where('volunteer_events.is_private', '=', false)
-      .orderBy('volunteer_events.start_time', 'asc')
-      .execute();
-  }
-
-  public async getEventPublic(eventId: string) {
-    const isNumeric = /^\d+$/.test(eventId);
-    let query = this.getRepo()
-      .db.selectFrom('volunteer_events')
-      .select([
-        'volunteer_events.id',
-        'volunteer_events.tenant_id',
-        'volunteer_events.name',
-        'volunteer_events.description',
-        'volunteer_events.location_address',
-        'volunteer_events.start_time',
-        'volunteer_events.end_time',
-        'volunteer_events.capacity',
-        'volunteer_events.contact_email',
-        'volunteer_events.contact_phone',
-        'volunteer_events.is_private',
-        'volunteer_events.send_reminder',
-        'volunteer_events.slug',
-        'volunteer_events.fields',
-      ])
-      .select((eb) => [
-        eb
-          .selectFrom('volunteer_shifts')
-          .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
-          .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
-          .as('volunteers_count'),
-      ]);
-
-    if (isNumeric) {
-      query = query.where((eb) =>
-        eb.or([eb('volunteer_events.id', '=', eventId as any), eb('volunteer_events.slug', '=', eventId)]),
-      );
-    } else {
-      query = query.where('volunteer_events.slug', '=', eventId);
-    }
-
-    return query.executeTakeFirst();
-  }
-
-  public getTenantSlug(tenantId: string): string {
-    return createHmac('sha256', env.sharedSecret).update(tenantId).digest('hex').slice(0, 16);
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const event = (await super.getOneById(input)) as any;
-    if (event) {
-      const slug = this.getTenantSlug(input.tenant_id);
-      return {
-        ...event,
-        public_url: `/api/events/view/${event.slug || event.id}`,
-        tenant_public_url: `/api/events/org/${slug}`,
-      } as any;
-    }
-    return event;
-  }
-
-  public async getTenantFromSlug(slug: string) {
+  public async rsvpPublic(slug: string, payload: Record<string, string>, clientIp: string) {
+    // Rate limiting
     const now = Date.now();
-    if (!tenantSlugCache || now > tenantSlugCache.expiresAt) {
-      const tenants = await this.getRepo().db.selectFrom('tenants').select(['id', 'name']).execute();
-      tenantSlugCache = {
-        tenants: tenants.map((t) => ({ id: String(t.id), name: String(t.name) })),
-        expiresAt: now + TENANT_SLUG_CACHE_TTL_MS,
-      };
-    }
-    return tenantSlugCache.tenants.find((t) => this.getTenantSlug(t.id) === slug);
-  }
-
-  public async signupVolunteerPublic(eventId: string, payload: Record<string, string>, clientIp: string) {
-    // 1. Rate limiting check
-    const now = Date.now();
-    let timestamps = ipSignupTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < SIGNUP_RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= SIGNUP_RATE_LIMIT_MAX) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: 'Rate limit exceeded. Please try again in a minute.',
-      });
+    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
+      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
     }
     timestamps.push(now);
-    // Prune the key if empty to prevent unbounded Map growth across long-lived processes
-    if (timestamps.length > 0) {
-      ipSignupTimestamps.set(clientIp, timestamps);
-    } else {
-      ipSignupTimestamps.delete(clientIp);
+    ipRsvpTimestamps.set(clientIp, timestamps);
+
+    const event = await this.getEventBySlug(slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
     }
 
-    // 2. Fetch Event by ID
-    const event = await this.getEventPublic(eventId);
-    if (!event) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Event not found.',
-      });
+    // Honeypot
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      return { success: true };
+    }
+
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
+    }
+
+    if (new Date(event.end_time) < new Date()) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
     }
 
     const tenantId = String(event.tenant_id);
+    const firstName = payload['first_name']?.trim() || null;
+    const lastName = payload['last_name']?.trim() || null;
+    const mobile = payload['mobile']?.trim() || null;
+    const notes = payload['notes']?.trim() || null;
+    const street1 = payload['street1']?.trim() || null;
+    const city = payload['city']?.trim() || null;
+    const state = payload['state']?.trim() || null;
+    const zip = payload['zip']?.trim() || null;
+    const country = payload['country']?.trim() || null;
 
-    // 3. Honeypot check
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      logger.warn(`Spam bot detected from IP ${clientIp} for event ${eventId}`);
-      return { success: true }; // Silent mock success
-    }
-
-    // 4. Validate email
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Email address is required.',
-      });
-    }
-
-    // 5. Check capacity limit
-    const currentCount = Number(event.volunteers_count || 0);
-    if (event.capacity !== null && currentCount >= event.capacity) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This event is already at full capacity.',
-      });
-    }
-
-    const firstName = payload['first_name'] || payload['firstName'] || null;
-    const lastName = payload['last_name'] || payload['lastName'] || null;
-    const mobile = payload['mobile'] || payload['phone'] || null;
-    const notes = payload['notes'] || payload['message'] || null;
-
-    // 6. Transaction to find/create person, tags, and shift
     await this.getRepo()
       .transaction()
       .execute(async (trx: Transaction<Models>) => {
@@ -34057,16 +37149,25 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
         const householdId = tenantRow?.placeholder_household_id;
         const creatorId = tenantRow?.admin_id;
 
-        if (!householdId) {
-          throw new Error('Tenant placeholder household is not configured.');
-        }
-        if (!creatorId) {
-          throw new Error('Tenant admin_id is not configured.');
+        if (!householdId || !creatorId) {
+          throw new Error('Tenant configuration is incomplete.');
         }
 
-        const campaignId = await this.getCampaignId(tenantId, trx);
+        // Check overall capacity
+        if (event.capacity !== null) {
+          const countRow = await trx
+            .selectFrom('event_registrations')
+            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+            .where('tenant_id', '=', tenantId)
+            .where('event_id', '=', String(event.id))
+            .where('status', '!=', 'cancelled')
+            .executeTakeFirst();
+          if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+          }
+        }
 
-        // Check if email already exists
+        // Find or create person
         const existing = await trx
           .selectFrom('persons')
           .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
@@ -34078,19 +37179,13 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
 
         if (existing) {
           personId = String(existing.id);
-          const updateRow: any = {
-            updatedby_id: creatorId,
-            updated_at: sql`now()`,
-          };
+          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
           if (!existing.first_name && firstName) updateRow.first_name = firstName;
           if (!existing.last_name && lastName) updateRow.last_name = lastName;
           if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (!existing.notes && notes) {
-            updateRow.notes = notes;
-          } else if (existing.notes && notes) {
-            updateRow.notes = `${existing.notes}\n\nVolunteer Signup notes: ${notes}`;
+          if (notes) {
+            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
           }
-
           if (Object.keys(updateRow).length > 2) {
             await trx
               .updateTable('persons')
@@ -34100,184 +37195,82 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
               .execute();
           }
         } else {
-          const insertRow = {
+          let campaignId: string | null = null;
+          try {
+            const campaignRow = await trx
+              .selectFrom('campaigns')
+              .select('id')
+              .where('tenant_id', '=', tenantId)
+              .orderBy('created_at', 'asc')
+              .limit(1)
+              .executeTakeFirst();
+            campaignId = campaignRow ? String(campaignRow.id) : null;
+          } catch {
+            /* ignore */
+          }
+
+          const insertRow: any = {
             tenant_id: tenantId,
-            campaign_id: campaignId,
             household_id: householdId,
             createdby_id: creatorId,
             updatedby_id: creatorId,
             first_name: firstName,
             last_name: lastName,
-            email: email,
-            mobile: mobile,
-            notes: notes,
+            email,
+            mobile,
+            notes,
+            street1,
+            city,
+            state,
+            zip,
+            country,
           };
+          if (campaignId) insertRow.campaign_id = campaignId as any;
+
           const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
           personId = String(insertRes.id);
 
-          // Trigger contact created workflow
           try {
-            const workflowsController = new WorkflowsController();
-            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+            const workflowsCtrl = new WorkflowsController();
+            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
           } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in signupVolunteerPublic');
+            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
           }
         }
 
-        // Check if shift already exists
-        const existingShift = await trx
-          .selectFrom('volunteer_shifts')
+        // Check duplicate registration
+        const existingReg = await trx
+          .selectFrom('event_registrations')
           .select('id')
           .where('tenant_id', '=', tenantId)
-          .where('event_id', '=', event.id)
+          .where('event_id', '=', String(event.id))
           .where('person_id', '=', personId)
+          .where('status', '!=', 'cancelled')
           .executeTakeFirst();
 
-        if (existingShift) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'You are already signed up for this event.',
-          });
+        if (existingReg) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
         }
 
-        const workflowsController = new WorkflowsController();
-
-        // Add tag "volunteer" and "event: <event name>"
-        const allTagsToApply = ['volunteer', `event: ${event.name}`];
-        for (const tagName of allTagsToApply) {
-          const normalizedTagName = tagName.trim().toLowerCase();
-          if (!normalizedTagName) continue;
-
-          let tag = await trx
-            .selectFrom('tags')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('name', '=', normalizedTagName)
-            .where('type', '=', 'tag')
-            .executeTakeFirst();
-
-          if (!tag) {
-            try {
-              const insertTagRes = await trx
-                .insertInto('tags')
-                .values({
-                  tenant_id: tenantId,
-                  name: normalizedTagName,
-                  type: 'tag',
-                  deletable: true,
-                  createdby_id: creatorId,
-                  updatedby_id: creatorId,
-                })
-                .returning('id')
-                .executeTakeFirst();
-              if (insertTagRes) {
-                tag = { id: insertTagRes.id };
-              }
-            } catch (insertErr) {
-              // Concurrent insert fallback: fetch the tag that was just inserted
-              tag = await trx
-                .selectFrom('tags')
-                .select('id')
-                .where('tenant_id', '=', tenantId)
-                .where('name', '=', normalizedTagName)
-                .where('type', '=', 'tag')
-                .executeTakeFirst();
-              if (!tag) throw insertErr;
-            }
-          }
-
-          if (tag) {
-            const mapExists = await trx
-              .selectFrom('map_peoples_tags')
-              .select('person_id')
-              .where('tenant_id', '=', tenantId)
-              .where('person_id', '=', personId)
-              .where('tag_id', '=', tag.id)
-              .executeTakeFirst();
-
-            if (!mapExists) {
-              await trx
-                .insertInto('map_peoples_tags')
-                .values({
-                  tenant_id: tenantId,
-                  person_id: personId,
-                  tag_id: tag.id,
-                  createdby_id: creatorId,
-                  updatedby_id: creatorId,
-                })
-                .onConflict((oc) => oc.columns(['tenant_id', 'person_id', 'tag_id']).doNothing())
-                .execute();
-
-              // Trigger tag_added and specialized subscriber workflows
-              try {
-                await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
-              } catch (err) {
-                logger.error({ err }, 'Failed to trigger tag_added workflow in signupVolunteerPublic');
-              }
-            }
-          }
-        }
-
-        // Insert Shift
-        const shiftResult = await trx
-          .insertInto('volunteer_shifts')
+        // Insert registration
+        const reg = await trx
+          .insertInto('event_registrations')
           .values({
             tenant_id: tenantId,
-            event_id: event.id,
+            event_id: String(event.id) as any,
             person_id: personId,
-            status: 'signed_up',
-            notes: notes,
+            ticket_type_id: null,
+            status: 'registered',
+            notes: notes ?? null,
             createdby_id: creatorId,
             updatedby_id: creatorId,
           })
           .returning('id')
           .executeTakeFirstOrThrow();
 
-        const shiftId = shiftResult.id;
-
-        // Log user activity
-        await trx
-          .insertInto('user_activity')
-          .values({
-            tenant_id: tenantId,
-            user_id: creatorId,
-            activity: 'signup',
-            entity: 'volunteer_events',
-            entity_id: String(event.id),
-            quantity: 1,
-            metadata: JSON.stringify({ person_id: personId, email }),
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .execute();
-
-        // Queue email notification job in background
-        await trx
-          .insertInto('background_jobs')
-          .values({
-            tenant_id: tenantId,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'send-form-notifications',
-              eventId: String(event.id),
-              tenantId,
-              email,
-              firstName,
-              lastName,
-              mobile,
-              notes,
-            }),
-            run_at: new Date(),
-          })
-          .execute();
-
-        // Queue shift reminder email if enabled
-        if (event.send_reminder !== false) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+        // Queue confirmation email
+        if ((event as any).send_registration_confirmation !== false) {
+          try {
             await trx
               .insertInto('background_jobs')
               .values({
@@ -34285,1855 +37278,49 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
                 queue: 'default',
                 status: 'pending',
                 payload: JSON.stringify({
-                  type: 'send-shift-reminder',
-                  shiftId: String(shiftId),
+                  type: 'send-event-registration-confirmation',
+                  registrationId: String(reg.id),
                   eventId: String(event.id),
-                  personId: String(personId),
+                  personId,
                 }),
-                run_at: runAt,
+                run_at: new Date(),
               })
               .execute();
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue RSVP confirmation');
           }
         }
 
-        // Trigger volunteer signup workflows
-        try {
-          const workflowsController = new WorkflowsController();
-          await workflowsController.triggerVolunteerSignup(tenantId, personId, String(event.id), trx);
-        } catch (err) {
-          logger.error({ err }, 'Failed to trigger volunteer signup workflows in public form');
+        // Queue 24h reminder
+        if ((event as any).send_reminder !== false) {
+          try {
+            const startMs = new Date(event.start_time).getTime();
+            const nowMs = Date.now();
+            if (startMs > nowMs) {
+              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+              await trx
+                .insertInto('background_jobs')
+                .values({
+                  tenant_id: tenantId,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
+                    eventId: String(event.id),
+                    personId,
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
+          }
         }
       });
 
     return { success: true };
-  }
-
-  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
-    const row = await trx
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'current_campaign')
-      .executeTakeFirst();
-
-    if (row) {
-      const value = row.value;
-      if (typeof value === 'number' || typeof value === 'string') {
-        return String(value);
-      }
-      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
-        const id = (value as Record<string, unknown>)['id'];
-        if (typeof id === 'number' || typeof id === 'string') {
-          return String(id);
-        }
-      }
-    }
-
-    const campaignRow = await trx
-      .selectFrom('campaigns')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .limit(1)
-      .executeTakeFirst();
-
-    if (campaignRow) {
-      return String(campaignRow.id);
-    }
-
-    throw new Error('No campaign found for this tenant.');
-  }
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/job-handlers.ts
-
-```typescript
-import { StorageService } from '../storage.service';
-import { PersonsService } from '../../modules/persons/services/persons.service';
-import { DuplicateMaintenanceService } from '../../modules/persons/services/duplicate-maintenance.service';
-import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
-import { CompaniesController } from '../../modules/companies/controller';
-import { TasksController } from '../../modules/tasks/controller';
-import { ListsController } from '../../modules/lists/controller';
-import { ActivityController } from '../../modules/activity/controller';
-import { GoogleOAuthService } from '../../modules/google-sync/google-oauth.service';
-import { GoogleSyncService } from '../../modules/google-sync/google-sync.service';
-import { MsOAuthService } from '../../modules/ms-sync/ms-oauth.service';
-import { MsSyncService } from '../../modules/ms-sync/ms-sync.service';
-import { env } from '../../../env';
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-import { TransactionalEmailService } from '../mail/transactional-mail.service';
-import { UserActivityRepo } from '../user-activity.repo';
-import { NewsletterEmailService } from '../mail/newsletter-mail.service';
-import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
-import { geocodeAndMapHousehold } from '../gis/geocoding';
-import { ExportsRepo } from '../../modules/exports/repositories/exports.repo';
-import { Readable } from 'stream';
-import { CsvTransformStream } from '../csv-stream';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../logger';
-
-const storageService = new StorageService();
-const importsRepo = new ImportsRepo();
-const mailService = new TransactionalEmailService();
-
-export async function executeJob(payload: any, db: Kysely<Models>, jobId?: string): Promise<void> {
-  if (payload.type === 'refresh_list') {
-    const listsController = new ListsController();
-    await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
-  } else if (payload.type === 'enrich_company_google') {
-    const { CompaniesEnrichmentService } =
-      await import('../../modules/companies/services/companies-enrichment.service');
-    const enrichmentSvc = new CompaniesEnrichmentService(db);
-    await enrichmentSvc.enrichCompany(payload.company_id, payload.tenant_id);
-  } else if (payload.type === 'refresh_companies_google') {
-    const { CompaniesEnrichmentService } =
-      await import('../../modules/companies/services/companies-enrichment.service');
-    const enrichmentSvc = new CompaniesEnrichmentService(db);
-    await enrichmentSvc.queueUnenrichedCompanies(payload.tenant_id);
-
-    if (!payload.tenant_id) {
-      await db
-        .insertInto('background_jobs')
-        .values({
-          tenant_id: null,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({ type: 'refresh_companies_google' }),
-          run_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours later
-          max_attempts: 3,
-        })
-        .execute();
-    }
-  } else if (payload.type === 'cleanup_activities') {
-    const activityController = new ActivityController();
-    await activityController.deleteOldActivities();
-
-    // Schedule next cleanup_activities job 24 hours later
-    await db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: null,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({ type: 'cleanup_activities' }),
-        run_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours later
-        max_attempts: 3,
-      })
-      .execute();
-  } else if (payload.type === 'schedule_sync_jobs') {
-    await queueUserSyncJobs(db);
-
-    // Schedule next schedule_sync_jobs job 10 minutes later
-    await db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: null,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({ type: 'schedule_sync_jobs' }),
-        run_at: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes later
-        max_attempts: 3,
-      })
-      .execute();
-  } else if (payload.type === 'google_sync') {
-    const oauthSvc = new GoogleOAuthService(db, {
-      clientId: env.googleClientId ?? '',
-      clientSecret: env.googleClientSecret ?? '',
-      redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-    });
-    const syncSvc = new GoogleSyncService(db, oauthSvc);
-    await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
-  } else if (payload.type === 'ms_sync') {
-    const oauthSvc = new MsOAuthService(db, {
-      clientId: env.msClientId ?? '',
-      clientSecret: env.msClientSecret ?? '',
-      tenantId: env.msTenantId ?? 'common',
-      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-    });
-    const syncSvc = new MsSyncService(db, oauthSvc);
-    await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
-  } else if (payload.type === 'recompute_all_duplicates') {
-    const lastJob = await db
-      .selectFrom('background_jobs')
-      .select(['updated_at'])
-      .where('status', '=', 'completed')
-      .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
-      .orderBy('updated_at', 'desc')
-      .limit(1)
-      .executeTakeFirst();
-
-    const tenants = await db.selectFrom('tenants').select('id').execute();
-    const maintenanceSvc = new DuplicateMaintenanceService();
-    const lastRunTime = lastJob?.updated_at ? new Date(lastJob.updated_at) : null;
-
-    for (const tenant of tenants) {
-      try {
-        let shouldRecompute = true;
-
-        if (lastRunTime) {
-          const personChanged = await db
-            .selectFrom('persons')
-            .select('id')
-            .where('tenant_id', '=', String(tenant.id))
-            .where('updated_at', '>', lastRunTime)
-            .limit(1)
-            .executeTakeFirst();
-
-          const householdChanged = await db
-            .selectFrom('households')
-            .select('id')
-            .where('tenant_id', '=', String(tenant.id))
-            .where('updated_at', '>', lastRunTime)
-            .limit(1)
-            .executeTakeFirst();
-
-          const companyChanged = await db
-            .selectFrom('companies')
-            .select('id')
-            .where('tenant_id', '=', String(tenant.id))
-            .where('updated_at', '>', lastRunTime)
-            .limit(1)
-            .executeTakeFirst();
-
-          if (!personChanged && !householdChanged && !companyChanged) {
-            shouldRecompute = false;
-          }
-        }
-
-        if (shouldRecompute) {
-          await maintenanceSvc.recomputeAllDuplicates(String(tenant.id));
-        }
-      } catch (tenantErr) {
-        logger.error({ err: tenantErr }, `Failed to recompute duplicates for tenant ${tenant.id}`);
-      }
-    }
-
-    await db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: null,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({ type: 'recompute_all_duplicates' }),
-        run_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours later
-        max_attempts: 3,
-      })
-      .execute();
-  } else if (payload.type === 'send-form-notifications') {
-    const event = await db
-      .selectFrom('volunteer_events')
-      .select([
-        'name',
-        'start_time',
-        'end_time',
-        'location_address',
-        'contact_email',
-        'contact_phone',
-        'send_signup_confirmation',
-        'send_volunteer_alert',
-      ])
-      .where('id', '=', payload.eventId)
-      .executeTakeFirst();
-
-    if (!event) {
-      logger.info(`Skipping volunteer signup notifications: event ${payload.eventId} not found.`);
-      return;
-    }
-
-    const startFormatted = new Date(event.start_time).toLocaleString();
-    const endFormatted = new Date(event.end_time).toLocaleString();
-
-    // 1. Send Confirmation Email to the Constituent (if enabled)
-    if (event.send_signup_confirmation !== false) {
-      const coordEmailLine = event.contact_email ? `Email: ${event.contact_email}` : '';
-      const coordPhoneLine = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
-      const coordinatorDetails = [coordEmailLine, coordPhoneLine].filter(Boolean).join('\n');
-
-      const coordEmailHtml = event.contact_email
-        ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>`
-        : '';
-      const coordPhoneHtml = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
-      const coordinatorDetailsHtml = [coordEmailHtml, coordPhoneHtml].filter(Boolean).join('<br>');
-
-      await mailService.sendMail({
-        to: payload.email,
-        subject: `Volunteer Signup Confirmation: ${event.name}`,
-        text: `Hi ${payload.firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nEvent Coordinator Details:\n${coordinatorDetails || 'N/A'}\n\nWe look forward to seeing you there!`,
-        html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p><strong>Event Coordinator Details:</strong><br>${coordinatorDetailsHtml || 'N/A'}</p><p>We look forward to seeing you there!</p>`,
-      });
-    }
-
-    // 2. Send Alert Email to the Event Coordinator / Tenant Admin (if enabled)
-    if (event.send_volunteer_alert !== false) {
-      let alertRecipient = event.contact_email || null;
-
-      if (!alertRecipient) {
-        const admin = await db
-          .selectFrom('authusers')
-          .select('email')
-          .where('tenant_id', '=', payload.tenantId)
-          .limit(1)
-          .executeTakeFirst();
-        if (admin && admin.email) {
-          alertRecipient = admin.email;
-        }
-      }
-
-      if (alertRecipient) {
-        await mailService.sendMail({
-          to: alertRecipient,
-          subject: `[ALERT] New Volunteer Signup for ${event.name}`,
-          text: `Hi,\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}\nPhone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}`,
-          html: `<p>Hi,</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}<br>Email: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}<br>Notes: ${payload.notes || 'None'}</p>`,
-        });
-      }
-    }
-  } else if (payload.type === 'send-shift-reminder') {
-    // Inside the background job processor:
-    const shift = await db
-      .selectFrom('volunteer_shifts')
-      .select(['id', 'status', 'event_id', 'person_id'])
-      .where('id', '=', payload.shiftId)
-      .executeTakeFirst();
-
-    // Silently abort if the shift was cancelled or the user no-showed
-    if (!shift || shift.status === 'cancelled') {
-      return;
-    }
-
-    // Proceed with sending the email...
-
-    if (!shift) {
-      logger.info(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
-      return;
-    }
-
-    if (shift.status !== 'signed_up') {
-      logger.info(`Skipping shift reminder: shift ${payload.shiftId} status is ${shift.status} instead of signed_up.`);
-      return;
-    }
-
-    const event = await db
-      .selectFrom('volunteer_events')
-      .selectAll()
-      .where('id', '=', shift.event_id)
-      .executeTakeFirst();
-
-    if (!event) {
-      logger.info(`Skipping shift reminder: event ${shift.event_id} not found.`);
-      return;
-    }
-
-    if (event.send_reminder === false) {
-      logger.info(`Skipping shift reminder: reminders disabled for event ${event.id}.`);
-      return;
-    }
-
-    const person = await db.selectFrom('persons').selectAll().where('id', '=', shift.person_id).executeTakeFirst();
-
-    if (!person) {
-      logger.info(`Skipping shift reminder: person ${shift.person_id} not found.`);
-      return;
-    }
-
-    if (!person.email) {
-      logger.info(`Skipping shift reminder: person ${shift.person_id} has no email address.`);
-      return;
-    }
-
-    const startFormatted = new Date(event.start_time).toLocaleString();
-    const endFormatted = new Date(event.end_time).toLocaleString();
-
-    const mapsUrl = event.location_address
-      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
-      : null;
-
-    const mapsLinkText = mapsUrl ? `\nDirections & Maps: View on Google Maps (${mapsUrl})` : '';
-
-    const subject = `Volunteer Shift Reminder: ${event.name}`;
-    const text = `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you have an upcoming volunteer shift for "${event.name}".\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsLinkText}\n\nThank you for volunteering, and we look forward to seeing you there!`;
-
-    const html = `
-<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
-  <h2 style="color: #0284c7; margin-top: 0;">Volunteer Shift Reminder</h2>
-  <p>Hi ${person.first_name || 'there'},</p>
-  <p>This is a reminder that you have an upcoming volunteer shift for <strong>"${event.name}"</strong>.</p>
-  <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 16px; margin: 20px 0; border-radius: 8px;">
-    <h3 style="margin: 0 0 8px 0; font-size: 16px;">Shift Details</h3>
-    <p style="margin: 4px 0;"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p>
-    <p style="margin: 4px 0;"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>
-    ${mapsUrl ? `<p style="margin: 12px 0 4px 0;"><strong>Directions & Map:</strong><br><a href="${mapsUrl}" target="_blank" style="color: #0284c7; font-weight: 600; text-decoration: underline;">Open in Google Maps</a></p>` : ''}
-  </div>
-  <p>Thank you for volunteering, and we look forward to seeing you there!</p>
-</div>`;
-
-    await mailService.sendMail({
-      to: person.email,
-      subject,
-      text,
-      html,
-    });
-
-    logger.info(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
-  } else if (payload.type === 'send-webform-notifications') {
-    const form = await db
-      .selectFrom('web_forms')
-      .select(['name', 'send_confirmation', 'send_alert', 'tenant_id'])
-      .where('id', '=', payload.formId)
-      .executeTakeFirst();
-
-    if (!form) {
-      logger.info(`Skipping web form notifications: form ${payload.formId} not found.`);
-      return;
-    }
-
-    // 1. Send Confirmation Email to the Constituent (if enabled)
-    if (form.send_confirmation !== false) {
-      await mailService.sendMail({
-        to: payload.email,
-        subject: `Thank you for your submission to ${form.name}`,
-        text: `Hi ${payload.firstName || 'there'},\n\nThank you for submitting our form "${form.name}". We have received your request and our team will follow up with you soon.`,
-        html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for submitting our form <strong>"${form.name}"</strong>. We have received your request and our team will follow up with you soon.</p>`,
-      });
-    }
-
-    // 2. Send Alert Email to the Tenant Admin (if enabled)
-    if (form.send_alert !== false) {
-      const admin = await db
-        .selectFrom('authusers')
-        .select(['email', 'first_name'])
-        .where('tenant_id', '=', form.tenant_id)
-        .limit(1)
-        .executeTakeFirst();
-
-      if (admin && admin.email) {
-        await mailService.sendMail({
-          to: admin.email,
-          subject: `[ALERT] New Lead Submission on ${form.name}`,
-          text: `Hi ${admin.first_name || 'Admin'},\n\nYou have received a new submission on form "${form.name}" from ${payload.firstName || ''} ${payload.lastName || ''} (${payload.email}).\n\nNotes:\n${payload.notes || 'None'}`,
-          html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>You have received a new submission on form <strong>"${form.name}"</strong> from <strong>${payload.firstName || ''} ${payload.lastName || ''}</strong> (${payload.email}).</p><p><strong>Notes:</strong><br>${payload.notes || 'None'}</p>`,
-        });
-      }
-    }
-  } else if (payload.type === 'send-event-registration-confirmation') {
-    const registration = await db
-      .selectFrom('event_registrations')
-      .select(['id', 'status', 'event_id', 'person_id', 'ticket_type_id'])
-      .where('id', '=', payload.registrationId)
-      .executeTakeFirst();
-
-    if (!registration || registration.status === 'cancelled') {
-      logger.info(`Skipping event confirmation: registration ${payload.registrationId} not found or cancelled.`);
-      return;
-    }
-
-    const event = await db
-      .selectFrom('events')
-      .select([
-        'name',
-        'start_time',
-        'end_time',
-        'location_address',
-        'contact_email',
-        'contact_phone',
-        'send_registration_confirmation',
-      ])
-      .where('id', '=', registration.event_id)
-      .executeTakeFirst();
-
-    if (!event || event.send_registration_confirmation === false) {
-      logger.info(`Skipping event confirmation: event ${registration.event_id} not found or confirmations disabled.`);
-      return;
-    }
-
-    const person = await db
-      .selectFrom('persons')
-      .select(['first_name', 'email'])
-      .where('id', '=', registration.person_id)
-      .executeTakeFirst();
-
-    if (!person || !person.email) {
-      logger.info(`Skipping event confirmation: person ${registration.person_id} has no email.`);
-      return;
-    }
-
-    const startFormatted = new Date(event.start_time).toLocaleString();
-    const endFormatted = new Date(event.end_time).toLocaleString();
-    const coordLine = [
-      event.contact_email ? `Email: ${event.contact_email}` : '',
-      event.contact_phone ? `Phone: ${event.contact_phone}` : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
-    const coordHtml = [
-      event.contact_email ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
-      event.contact_phone ? `Phone: ${event.contact_phone}` : '',
-    ]
-      .filter(Boolean)
-      .join('<br>');
-
-    await mailService.sendMail({
-      to: person.email,
-      subject: `Registration Confirmed: ${event.name}`,
-      text: `Hi ${person.first_name || 'there'},\n\nYou're registered for "${event.name}"!\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${coordLine ? `\n\nContact:\n${coordLine}` : ''}\n\nWe look forward to seeing you there!`,
-      html: `<p>Hi ${person.first_name || 'there'},</p><p>You're registered for <strong>"${event.name}"</strong>!</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${coordHtml ? `<p style="margin:12px 0 4px 0"><strong>Contact:</strong><br>${coordHtml}</p>` : ''}</div><p>We look forward to seeing you there!</p>`,
-    });
-
-    logger.info(`Sent registration confirmation to ${person.email} for event ${registration.event_id}`);
-  } else if (payload.type === 'send-event-reminder') {
-    const registration = await db
-      .selectFrom('event_registrations')
-      .select(['id', 'status', 'event_id', 'person_id'])
-      .where('id', '=', payload.registrationId)
-      .executeTakeFirst();
-
-    if (!registration || registration.status !== 'registered') {
-      logger.info(
-        `Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`,
-      );
-      return;
-    }
-
-    const event = await db.selectFrom('events').selectAll().where('id', '=', registration.event_id).executeTakeFirst();
-
-    if (!event || event.send_reminder === false) {
-      logger.info(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
-      return;
-    }
-
-    const person = await db
-      .selectFrom('persons')
-      .select(['first_name', 'email'])
-      .where('id', '=', registration.person_id)
-      .executeTakeFirst();
-
-    if (!person || !person.email) {
-      logger.info(`Skipping event reminder: person ${registration.person_id} has no email.`);
-      return;
-    }
-
-    const startFormatted = new Date(event.start_time).toLocaleString();
-    const endFormatted = new Date(event.end_time).toLocaleString();
-    const mapsUrl = event.location_address
-      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
-      : null;
-
-    await mailService.sendMail({
-      to: person.email,
-      subject: `Reminder: ${event.name} is tomorrow`,
-      text: `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you're registered for "${event.name}" tomorrow.\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsUrl ? `\nDirections: ${mapsUrl}` : ''}\n\nWe look forward to seeing you there!`,
-      html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;padding:24px;"><h2 style="color:#0284c7;margin-top:0;">Event Reminder</h2><p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you're registered for <strong>"${event.name}"</strong> tomorrow.</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${mapsUrl ? `<p style="margin:12px 0 4px 0"><a href="${mapsUrl}" target="_blank" style="color:#0284c7;font-weight:600;">Open in Google Maps</a></p>` : ''}</div><p>We look forward to seeing you there!</p></div>`,
-    });
-
-    logger.info(`Sent event reminder to ${person.email} for event ${registration.event_id}`);
-  } else if (payload.type === 'send-transactional-email') {
-    await mailService.sendMail({
-      to: payload.to,
-      subject: payload.subject,
-      text: payload.text,
-      html: payload.html,
-    });
-  } else if (payload.type === 'send-subscription-confirmation') {
-    await mailService.sendMail({
-      to: payload.email,
-      subject: 'Please confirm your subscription',
-      text: `Hi ${payload.firstName || 'there'},\n\nPlease confirm your subscription by visiting the link below:\n\n${payload.confirmUrl}\n\nIf you did not request this, you can safely ignore this email.`,
-      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Please confirm your subscription by clicking the button below.</p><p><a href="${payload.confirmUrl}" class="btn">Confirm subscription</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
-    });
-  } else if (payload.import_id && payload.storage_key) {
-    // 1. Mark import status as 'processing' in data_imports
-    await importsRepo.update({
-      tenant_id: payload.tenant_id,
-      id: payload.import_id,
-      row: {
-        status: 'processing',
-        updated_at: new Date(),
-      } as any,
-    });
-
-    // 2. Download mapping payload from storage
-    const buffer = await storageService.download(payload.storage_key);
-    const rows = JSON.parse(buffer.toString('utf8'));
-
-    // 3. Process the import rows in chunks
-    if (payload.source === 'companies') {
-      const companiesController = new CompaniesController();
-      await companiesController.processImportRows(
-        payload.import_id,
-        payload.tenant_id,
-        payload.user_id,
-        Number(payload.skipped || 0),
-        rows,
-      );
-    } else if (payload.source === 'tasks') {
-      const tasksController = new TasksController();
-      await tasksController.processImportRows(
-        payload.import_id,
-        payload.tenant_id,
-        payload.user_id,
-        Number(payload.skipped || 0),
-        rows,
-      );
-    } else {
-      const personsService = new PersonsService();
-      await personsService.processImportRows(
-        payload.import_id,
-        payload.tenant_id,
-        payload.user_id,
-        payload.campaign_id,
-        payload.tags || [],
-        Number(payload.skipped || 0),
-        rows,
-      );
-    }
-
-    // 4. Update import status to 'completed'
-    await importsRepo.update({
-      tenant_id: payload.tenant_id,
-      id: payload.import_id,
-      row: {
-        status: 'completed',
-        processed_at: new Date(),
-        updated_at: new Date(),
-      } as any,
-    });
-
-    try {
-      await storageService.delete(payload.storage_key);
-    } catch (storageErr) {
-      logger.error({ err: storageErr }, `Failed to clean up storage key ${payload.storage_key}`);
-    }
-
-    try {
-      const user = await db
-        .selectFrom('authusers')
-        .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-        .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-        .where('authusers.id', '=', payload.user_id)
-        .executeTakeFirst();
-
-      if (user && user.email) {
-        let optedIn = true;
-        if (user.profile_json) {
-          try {
-            const json = typeof user.profile_json === 'string' ? JSON.parse(user.profile_json) : user.profile_json;
-            if (json?.notifications?.import_summary === false) {
-              optedIn = false;
-            }
-          } catch (e) {
-            logger.error({ err: e }, 'Failed to parse profile json for import summary check');
-          }
-        }
-
-        if (optedIn) {
-          const importRecord = (await importsRepo.getOneBy('id', {
-            tenant_id: payload.tenant_id,
-            value: payload.import_id,
-          })) as any;
-
-          if (importRecord) {
-            const inserted = importRecord.inserted_count || 0;
-            const errors = importRecord.error_count || 0;
-            const skipped = importRecord.skipped_count || 0;
-
-            const mailService = new TransactionalEmailService();
-            await mailService.sendMail({
-              to: user.email,
-              subject: `Spreadsheet Import Complete: ${payload.file_name || 'import.csv'}`,
-              text: `Hi ${user.first_name || 'there'},\n\nYour contact spreadsheet import has completed.\n\nStatistics:\n- Inserted: ${inserted}\n- Errors: ${errors}\n- Skipped: ${skipped}\n\nView imported rows: ${env.appUrl}/imports/${payload.import_id}`,
-              html: `<p>Hi ${user.first_name || 'there'},</p><p>Your contact spreadsheet import has completed.</p><p><strong>Import Statistics:</strong><br>• Inserted: <strong>${inserted}</strong><br>• Errors: <strong>${errors}</strong><br>• Skipped: <strong>${skipped}</strong></p><p><a href="${env.appUrl}/imports/${payload.import_id}">View Imported Rows</a></p>`,
-            });
-          }
-        }
-      }
-    } catch (mailErr) {
-      logger.error({ err: mailErr }, 'Failed to send import completion summary email');
-    }
-  } else if (payload.type === 'check_due_tasks') {
-    await checkDueTasks(db);
-
-    // Schedule next check_due_tasks job 24 hours later
-    await db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: null,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({ type: 'check_due_tasks' }),
-        run_at: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours later
-        max_attempts: 3,
-      })
-      .execute();
-  } else if (payload.type === 'send-newsletter') {
-    const newsletterMailSvc = new NewsletterEmailService();
-    const tenantId = String(payload.tenantId);
-    const newsletterId = String(payload.newsletterId);
-    const userId = String(payload.userId);
-
-    // 1. Fetch newsletter to get settings, targets, segments, and content
-    const newsletter = await db
-      .selectFrom('newsletters')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', newsletterId)
-      .executeTakeFirst();
-
-    if (!newsletter) {
-      logger.warn(`Newsletter ${newsletterId} not found.`);
-      return;
-    }
-
-    // 2. Build the recipient query using NewslettersController
-    const { NewslettersController } = await import('../../modules/newsletters/controller');
-    const controller = new NewslettersController();
-    const baseQuery = controller.buildRecipientQuery(tenantId, newsletter);
-
-    // 3. Count total recipients
-    let offset = payload.offset || 0;
-    let deliveredCount = payload.deliveredCount || 0;
-
-    const countResult = await baseQuery
-      .select(({ fn }: any) => fn.count(sql`DISTINCT persons.email`).as('count'))
-      .executeTakeFirst();
-    const totalRecipients = Number((countResult as any)?.count || 0);
-
-    if (offset === 0) {
-      await db
-        .updateTable('newsletters')
-        .set({
-          status: 'sending',
-          total_recipients: totalRecipients,
-          updated_at: new Date(),
-        })
-        .where('tenant_id', '=', tenantId)
-        .where('id', '=', newsletterId)
-        .execute();
-    }
-
-    // Load communications/settings from database
-    const settingsRows = await db
-      .selectFrom('settings')
-      .select(['key', 'value'])
-      .where('tenant_id', '=', tenantId)
-      .where('key', 'in', [
-        'communications.sendgrid_api_key',
-        'communications.sendgrid_subuser_username',
-        'communications.default_from_name',
-        'communications.default_from_email',
-        'communications.reply_to',
-        'communications.footer_disclaimer',
-        'communications.verified_emails',
-        'organization.address',
-      ])
-      .execute();
-
-    const settingsMap: Record<string, string> = {};
-    let verifiedEmails: string[] = [];
-    for (const row of settingsRows) {
-      if (typeof row.value === 'string') {
-        settingsMap[row.key] = row.value;
-      } else if (row.key === 'communications.verified_emails' && Array.isArray(row.value)) {
-        verifiedEmails = (row.value as unknown[]).map((e) => String(e).toLowerCase().trim());
-      }
-    }
-
-    const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
-    const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
-    const fromName = settingsMap['communications.default_from_name'] || 'PeopleCRM Team';
-    const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
-
-    // Reply-to is only honored when it has been verified (mirrors settings save-time validation).
-    const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
-    const replyTo = replyToRaw && verifiedEmails.includes(replyToRaw) ? replyToRaw : undefined;
-
-    // Mandatory footer appended server-side so it cannot be removed from the editor: org address,
-    // tenant disclaimer, and a SendGrid-substituted unsubscribe link.
-    const footer = buildNewsletterFooter(
-      settingsMap['organization.address'],
-      settingsMap['communications.footer_disclaimer'],
-    );
-
-    const batchSize = 500;
-
-    while (offset < totalRecipients) {
-      // Query a chunk of recipients dynamically using LIMIT and OFFSET
-      // We order by persons.email asc to ensure consistent pagination ordering
-      const chunkRows = await baseQuery
-        .select(['persons.email'])
-        .distinct()
-        .orderBy('persons.email', 'asc')
-        .limit(batchSize)
-        .offset(offset)
-        .execute();
-
-      const chunk = Array.from(new Set(chunkRows.map((r: any) => r.email?.trim()).filter(Boolean))) as string[];
-
-      if (chunk.length === 0) {
-        break;
-      }
-
-      const batchDelivered = await newsletterMailSvc.sendNewsletter({
-        fromName,
-        fromEmail,
-        replyTo,
-        recipients: chunk,
-        subject: newsletter.subject || 'Newsletter',
-        html: (newsletter.html_content || '') + footer.html,
-        text: newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined,
-        sendgridApiKey,
-        subuserUsername,
-        newsletterId,
-        tenantId,
-      });
-
-      deliveredCount += batchDelivered;
-      offset += chunkRows.length;
-
-      // Update progress in the background job payload (no recipients array!)
-      if (jobId) {
-        await db
-          .updateTable('background_jobs')
-          .set({
-            payload: JSON.stringify({
-              type: 'send-newsletter',
-              newsletterId,
-              tenantId,
-              userId,
-              offset,
-              deliveredCount,
-            }),
-            updated_at: new Date(),
-          })
-          .where('id', '=', jobId)
-          .execute();
-      }
-
-      // Add a small delay between batches to respect rate limits
-      if (offset < totalRecipients) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    }
-
-    // Update newsletter status to 'sent'
-    await db
-      .updateTable('newsletters')
-      .set({
-        status: 'sent',
-        delivered_count: deliveredCount,
-        send_date: new Date(),
-        updatedby_id: userId,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', newsletterId)
-      .execute();
-
-    // Log user activity
-    const userActivity = new UserActivityRepo();
-    await userActivity.log({
-      tenant_id: tenantId,
-      user_id: userId,
-      activity: 'send',
-      entity: 'newsletters',
-      entity_id: newsletterId,
-      quantity: totalRecipients,
-      metadata: { recipientsCount: totalRecipients, deliveredCount },
-    });
-
-    const { queueUsageLimitCheck } = await import('../../modules/billing/usage-limits');
-    await queueUsageLimitCheck(tenantId, db);
-  } else if (payload.type === 'recompute_address_fingerprints') {
-    const tenantIds: string[] = [];
-    if (payload.tenant_id) {
-      tenantIds.push(String(payload.tenant_id));
-    } else {
-      const tenants = await db.selectFrom('tenants').select('id').execute();
-      for (const tenant of tenants) {
-        tenantIds.push(String(tenant.id));
-      }
-    }
-
-    for (const tenantId of tenantIds) {
-      try {
-        await recomputeTenantAddressFingerprints(tenantId, db);
-      } catch (tenantErr) {
-        logger.error({ err: tenantErr }, `Failed to recompute address fingerprints for tenant ${tenantId}`);
-      }
-    }
-
-    // Schedule next run 24 hours later if periodic/cron-like (no tenant_id)
-    if (!payload.tenant_id) {
-      await db
-        .insertInto('background_jobs')
-        .values({
-          tenant_id: null,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({ type: 'recompute_address_fingerprints' }),
-          run_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          max_attempts: 3,
-        })
-        .execute();
-    }
-  } else if (payload.type === 'geocode_household') {
-    await geocodeAndMapHousehold(payload.household_id, payload.tenant_id, db);
-  } else if (payload.type === 'process_drip_workflows') {
-    const now = new Date();
-    const pendingEnrollments = await db
-      .selectFrom('workflow_enrollments')
-      .selectAll()
-      .where('status', '=', 'active')
-      .where('next_run_at', '<=', now)
-      .limit(500)
-      .execute();
-
-    for (const enrollment of pendingEnrollments) {
-      try {
-        await db.transaction().execute(async (trx) => {
-          const lockedEnrollment = await trx
-            .selectFrom('workflow_enrollments')
-            .selectAll()
-            .where('id', '=', enrollment.id)
-            .where('status', '=', 'active')
-            .where('next_run_at', '<=', now)
-            .forUpdate()
-            .skipLocked()
-            .executeTakeFirst();
-
-          if (!lockedEnrollment) return;
-
-          const step = await trx
-            .selectFrom('workflow_steps')
-            .selectAll()
-            .where('workflow_id', '=', lockedEnrollment.workflow_id)
-            .where('step_number', '=', lockedEnrollment.current_step_number)
-            .executeTakeFirst();
-
-          if (!step) {
-            await trx
-              .updateTable('workflow_enrollments')
-              .set({
-                status: 'completed',
-                next_run_at: null,
-                updated_at: new Date(),
-              })
-              .where('id', '=', lockedEnrollment.id)
-              .execute();
-            return;
-          }
-
-          const person = await trx
-            .selectFrom('persons')
-            .select(['id', 'email', 'first_name', 'last_name'])
-            .where('id', '=', lockedEnrollment.person_id)
-            .executeTakeFirst();
-
-          if (person && person.email) {
-            const textContent =
-              step.plain_text_content || `Hello ${person.first_name || 'there'},\n\nThis is an automated message.`;
-            const htmlContent =
-              step.html_content || `<p>Hello ${person.first_name || 'there'},</p><p>This is an automated message.</p>`;
-
-            await trx
-              .insertInto('background_jobs')
-              .values({
-                tenant_id: lockedEnrollment.tenant_id,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-transactional-email',
-                  to: person.email,
-                  subject: step.subject,
-                  text: textContent,
-                  html: htmlContent,
-                }),
-                run_at: new Date(),
-                max_attempts: 5,
-              })
-              .execute();
-
-            const workflow = await trx
-              .selectFrom('workflows')
-              .select(['name', 'createdby_id'])
-              .where('id', '=', lockedEnrollment.workflow_id)
-              .executeTakeFirst();
-
-            // Only log activity if the workflow (and its creator) still exist;
-            // skip the log rather than writing a row referencing a phantom user.
-            if (workflow?.createdby_id) {
-              const actorId = String(workflow.createdby_id);
-              await trx
-                .insertInto('user_activity')
-                .values({
-                  tenant_id: lockedEnrollment.tenant_id,
-                  user_id: actorId,
-                  activity: 'send',
-                  entity: 'workflows',
-                  entity_id: String(lockedEnrollment.workflow_id),
-                  quantity: 1,
-                  metadata: JSON.stringify({
-                    person_id: String(person.id),
-                    person_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
-                    email: person.email,
-                    subject: step.subject,
-                    step_number: step.step_number,
-                  }),
-                  createdby_id: actorId,
-                  updatedby_id: actorId,
-                })
-                .execute();
-            }
-          }
-
-          const nextStep = await trx
-            .selectFrom('workflow_steps')
-            .selectAll()
-            .where('workflow_id', '=', lockedEnrollment.workflow_id)
-            .where('step_number', '>', lockedEnrollment.current_step_number)
-            .orderBy('step_number', 'asc')
-            .limit(1)
-            .executeTakeFirst();
-
-          if (nextStep) {
-            const delayMs =
-              nextStep.delay_unit === 'hours'
-                ? nextStep.delay_days * 60 * 60 * 1000
-                : nextStep.delay_days * 24 * 60 * 60 * 1000;
-            const nextRunAt = new Date(Date.now() + delayMs);
-            await trx
-              .updateTable('workflow_enrollments')
-              .set({
-                current_step_number: nextStep.step_number,
-                next_run_at: nextRunAt,
-                updated_at: new Date(),
-              })
-              .where('id', '=', lockedEnrollment.id)
-              .execute();
-          } else {
-            await trx
-              .updateTable('workflow_enrollments')
-              .set({
-                status: 'completed',
-                next_run_at: null,
-                updated_at: new Date(),
-              })
-              .where('id', '=', lockedEnrollment.id)
-              .execute();
-          }
-        });
-      } catch (err) {
-        logger.error({ err }, `Failed to process drip workflow enrollment ${enrollment.id}`);
-      }
-    }
-
-    const runAt = pendingEnrollments.length === 500 ? new Date() : new Date(Date.now() + 10 * 60 * 1000);
-    await db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: null,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({ type: 'process_drip_workflows' }),
-        run_at: runAt,
-        max_attempts: 3,
-      })
-      .execute();
-  } else if (payload.type === 'perform_scheduled_deletions') {
-    const now = new Date();
-
-    const expiredUsers = await db
-      .selectFrom('authusers')
-      .select('id')
-      .where('deletion_scheduled_at', '<=', now)
-      .execute();
-
-    for (const user of expiredUsers) {
-      const userId = String(user.id);
-      await db.transaction().execute(async (trx) => {
-        await trx.deleteFrom('sessions').where('user_id', '=', userId).execute();
-        await trx.deleteFrom('profiles').where('auth_id', '=', userId).execute();
-        await trx.deleteFrom('authusers').where('id', '=', userId).execute();
-      });
-    }
-
-    const expiredTenants = await db
-      .selectFrom('tenants')
-      .select('id')
-      .where('deletion_scheduled_at', '<=', now)
-      .execute();
-
-    for (const tenant of expiredTenants) {
-      const tenantId = String(tenant.id);
-
-      // Capture owner emails before deletion — background_jobs is wiped inside the transaction
-      const ownerUsers = await db
-        .selectFrom('authusers')
-        .select(['email', 'first_name'])
-        .where('tenant_id', '=', tenantId)
-        .where('role', '=', 'owner')
-        .execute();
-
-      logger.info(`Hard-deleting tenant ${tenantId} (deletion_scheduled_at <= now)…`);
-      await db.transaction().execute(async (trx) => {
-        const tid = tenantId;
-
-        // ── Collaboration ─────────────────────────────────────────────────
-        await trx.deleteFrom('task_attachments').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('task_comments').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('task_subtasks').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('tasks').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('map_teams_lists').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('map_teams_persons').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('teams').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('map_lists_persons').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('map_lists_households').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('lists').where('tenant_id', '=', tid).execute();
-
-        // ── Email & Marketing ──────────────────────────────────────────────
-        await trx.deleteFrom('workflow_enrollments').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('workflow_steps').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('workflows').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('newsletter_events').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('newsletters').where('tenant_id', '=', tid).execute();
-
-        // ── Ops & Platform ─────────────────────────────────────────────────
-        await trx.deleteFrom('notifications').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('user_activity').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('potential_duplicates').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('data_imports').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('data_exports').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('web_forms').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('background_jobs').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('webhook_events').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('zapier_subscriptions').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('volunteer_shifts').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('volunteer_events').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('event_registrations').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('event_ticket_types').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('events').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('files').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('ms_oauth_tokens').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tid).execute();
-
-        // ── Email inbox ────────────────────────────────────────────────────
-        await trx.deleteFrom('email_read_states').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('email_comments').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('email_trash').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('email_drafts').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('emails').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('email_folders').where('tenant_id', '=', tid).execute();
-
-        // ── CRM Core ───────────────────────────────────────────────────────
-        await trx.deleteFrom('map_campaigns_users').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('map_peoples_tags').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('map_households_tags').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('companies').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('persons').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('households').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('campaigns').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('tags').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('settings').where('tenant_id', '=', tid).execute();
-
-        // ── Auth & Identity (last) ─────────────────────────────────────────
-        // Null out FK references on tenants before deleting authusers
-        await trx.updateTable('tenants').set({ admin_id: null }).where('id', '=', tid).execute();
-        await trx.deleteFrom('sessions').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('profiles').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('authusers').where('tenant_id', '=', tid).execute();
-        await trx.deleteFrom('tenants').where('id', '=', tid).execute();
-
-        logger.info(`Tenant ${tenantId} fully hard-deleted.`);
-      });
-
-      // Send confirmation emails after the transaction commits (outside the wiped tenant scope)
-      for (const owner of ownerUsers) {
-        if (owner.email) {
-          await mailService.sendMail({
-            to: owner.email,
-            subject: 'Your account data has been permanently deleted',
-            text: `Hi ${owner.first_name},\n\nAll data associated with your PeopleCRM account has been permanently and securely deleted as requested. You will not be billed going forward.\n\nThank you for using PeopleCRM.`,
-            html: `<h2>Account Data Deleted</h2>
-<p>Hi ${owner.first_name},</p>
-<p>All data associated with your PeopleCRM account has been permanently and securely deleted as requested. You will not be billed going forward.</p>
-<p>Thank you for using PeopleCRM. If you ever wish to return, you are always welcome to create a new account.</p>`,
-          });
-        }
-      }
-    }
-
-    // Permanently delete completed background jobs older than 7 days to prevent unbounded table growth
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    await db
-      .deleteFrom('background_jobs')
-      .where('status', '=', 'completed')
-      .where('updated_at', '<=', sevenDaysAgo)
-      .execute();
-
-    await db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: null,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({ type: 'perform_scheduled_deletions' }),
-        run_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        max_attempts: 3,
-      })
-      .execute();
-  } else if (payload.type === 'zapier_trigger') {
-    const { ZapierService } = await import('../../modules/zapier/zapier.service');
-    const zapierService = new ZapierService();
-    await zapierService.fireTrigger(payload.tenant_id, payload.event_type, payload.data);
-  } else if (payload.type === 'check_usage_limits') {
-    const { checkTenantUsage } = await import('../../modules/billing/usage-limits');
-    await checkTenantUsage(payload.tenant_id, db);
-  } else if (payload.type === 'check_all_usage_limits') {
-    const { checkAllUsageLimits } = await import('../../modules/billing/usage-limits');
-    await checkAllUsageLimits(db);
-    await db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: null,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({ type: 'check_all_usage_limits' }),
-        run_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        max_attempts: 3,
-      })
-      .execute();
-  } else if (payload.type === 'export_csv') {
-    const exportsRepo = new ExportsRepo();
-    const exportId = String(payload.export_id);
-    const tenantId = String(payload.tenant_id);
-    try {
-      // Make sure we're exporting one of the allowed tables
-      const table = String(payload.table || payload.entity);
-      const ALLOWED_EXPORT_TABLES = [
-        'persons',
-        'households',
-        'companies',
-        'forms',
-        'workflows',
-        'teams',
-        'events',
-        'newsletters',
-        'tasks',
-        'tags',
-        'issues',
-        'users',
-        'user_activity',
-      ];
-      if (!ALLOWED_EXPORT_TABLES.includes(table)) throw new Error('Invalid export entity');
-
-      // Mark as processing
-      await exportsRepo.updateStatus(exportId, tenantId, 'processing');
-
-      // Fetch all rows for the entity
-      const opts = payload.options ?? {};
-      let query: any;
-
-      if (table === 'user_activity') {
-        query = db
-          .selectFrom('user_activity')
-          .innerJoin('authusers', 'authusers.id', 'user_activity.user_id')
-          .select([
-            'user_activity.id',
-            'user_activity.created_at',
-            sql`TRIM(CONCAT(authusers.first_name, ' ', COALESCE(authusers.last_name, '')))::text`.as('user'),
-            'authusers.email',
-            'user_activity.activity',
-            'user_activity.entity',
-            'user_activity.entity_id',
-            'user_activity.quantity',
-            'user_activity.metadata',
-          ])
-          .where('user_activity.tenant_id', '=', tenantId as any);
-
-        if (opts.userId) {
-          query = query.where('user_activity.user_id', '=', opts.userId);
-        }
-        if (opts.entity) {
-          query = query.where('user_activity.entity', 'in', getEntityFilterValues(opts.entity));
-        }
-        if (opts.activity) {
-          query = query.where('user_activity.activity', '=', opts.activity);
-        }
-        if (opts.searchStr) {
-          const search = `%${opts.searchStr.trim().toLowerCase()}%`;
-          query = query.where((eb: any) =>
-            eb.or([
-              eb('authusers.first_name', 'ilike', search),
-              eb('authusers.last_name', 'ilike', search),
-              eb('user_activity.entity', 'ilike', search),
-              eb('user_activity.activity', 'ilike', search),
-            ]),
-          );
-        }
-      } else {
-        query = db
-          .selectFrom(table as keyof Models)
-          .selectAll()
-          .where('tenant_id', '=', tenantId);
-
-        // Issues are tags with type='issue'
-        if (payload.entity === 'issues') {
-          query = query.where('type', '=', 'issue') as any;
-        }
-
-        // Apply search string if provided
-        if (opts.searchStr) {
-          const like = `%${opts.searchStr}%`;
-          // Best-effort: try name, first_name/last_name depending on table
-          if (table === 'persons') {
-            query = query.where((eb: any) =>
-              eb.or([eb('first_name', 'ilike', like), eb('last_name', 'ilike', like), eb('email', 'ilike', like)]),
-            ) as any;
-          } else if (table === 'households') {
-            query = query.where((eb: any) => eb.or([eb('street1', 'ilike', like), eb('city', 'ilike', like)])) as any;
-          } else {
-            query = query.where('name' as any, 'ilike', like) as any;
-          }
-        }
-      }
-
-      // Apply sort
-      if (opts.sortModel?.length) {
-        for (const s of opts.sortModel) {
-          if (s?.colId) {
-            query = query.orderBy(s.colId as any, s.sort === 'desc' ? 'desc' : 'asc') as any;
-          }
-        }
-      } else {
-        const sortCol = table === 'user_activity' ? 'user_activity.created_at' : 'created_at';
-        query = query.orderBy(sortCol as any, 'desc') as any;
-      }
-
-      // Determine columns
-      const requestedCols: string[] = Array.isArray(payload.columns) && payload.columns.length ? payload.columns : [];
-
-      const storageKey = `exports/${tenantId}/${exportId}.csv`;
-
-      // Stream the query results using query.stream()
-      const dbStream = Readable.from(query.stream());
-      const csvStream = new CsvTransformStream(requestedCols);
-
-      await storageService.uploadStream(storageKey, dbStream.pipe(csvStream), 'text/csv');
-
-      const count = csvStream.rowCount;
-
-      // If no rows were processed, clean up by deleting the empty file if created
-      if (count === 0) {
-        await storageService.delete(storageKey);
-      }
-
-      await exportsRepo.updateStatus(exportId, tenantId, 'completed', {
-        rowCount: count,
-        storageKey: count > 0 ? storageKey : undefined,
-      });
-
-      logger.info(`Export job ${exportId} completed: ${count} rows exported.`);
-
-      // Notify the user who requested the export
-      if (payload.user_id) {
-        try {
-          const user = await db
-            .selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-            .where('authusers.id', '=', payload.user_id)
-            .executeTakeFirst();
-
-          if (user) {
-            let emailOptedIn = true;
-            let inAppOptedIn = true;
-            const profileJson = user.profile_json;
-            if (profileJson) {
-              try {
-                const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-                if (json?.notifications?.export_ready === false) {
-                  emailOptedIn = false;
-                }
-                if (json?.notifications?.export_ready_in_app === false) {
-                  inAppOptedIn = false;
-                }
-              } catch (e) {
-                logger.error({ err: e }, 'Failed to parse profile json for export notifications');
-              }
-            }
-
-            const entityLabel = table === 'user_activity' ? 'Activity Feed' : table;
-            const displayLabel = entityLabel.charAt(0).toUpperCase() + entityLabel.slice(1);
-
-            if (inAppOptedIn) {
-              const { NotificationsRepo } = await import('../../modules/notifications/repositories/notifications.repo');
-              const notificationsRepo = new NotificationsRepo();
-              await notificationsRepo.pushNotification({
-                tenant_id: tenantId,
-                user_id: String(payload.user_id),
-                title: 'Export Ready',
-                message: `Your export of ${count} records from ${displayLabel} is complete.`,
-                type: 'export',
-                link: '/exports',
-              });
-            }
-
-            if (emailOptedIn && user.email) {
-              await mailService.sendMail({
-                to: user.email,
-                subject: `Your Export is Ready: ${payload.file_name || 'export.csv'}`,
-                text: `Hi ${user.first_name || 'there'},\n\nYour export of ${count} records from the ${displayLabel} table is ready.\n\nFile Name: ${payload.file_name || 'export.csv'}\nDownload from the Exports page: ${env.appUrl}/exports`,
-                html: `<p>Hi ${user.first_name || 'there'},</p><p>Your export of <strong>${count}</strong> records from the <strong>${displayLabel}</strong> table is ready.</p><p><strong>File Name:</strong> ${payload.file_name || 'export.csv'}<br><strong>Download Link:</strong> <a href="${env.appUrl}/exports">Go to Exports Page</a></p>`,
-              });
-            }
-          }
-        } catch (notifErr) {
-          logger.error({ err: notifErr }, `Failed to send notifications for export job ${exportId}`);
-        }
-      }
-    } catch (err: any) {
-      logger.error({ err }, `Export job ${exportId} failed`);
-      await exportsRepo.updateStatus(exportId, tenantId, 'failed', {
-        error: (err?.message || String(err)).substring(0, 500),
-      });
-      throw err;
-    }
-  } else if (payload.type === 'prune_newsletter_events') {
-    await pruneNewsletterEvents(db);
-    await db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: null,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({ type: 'prune_newsletter_events' }),
-        run_at: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        max_attempts: 3,
-      })
-      .execute();
-  } else {
-    throw new Error(`Unsupported background job type: ${payload.type}`);
-  }
-}
-
-// Event types that warrant keeping a per-newsletter engagement record.
-// Delivery-only events (delivered, deferred, processed) are not stored.
-const ENGAGEMENT_EVENT_TYPES = new Set(['open', 'click', 'unsubscribe', 'group_unsubscribe', 'bounce', 'spamreport']);
-
-async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
-  const tenants: { id: string; subscription_plan: string | null }[] = await db
-    .selectFrom('tenants')
-    .select(['id', 'subscription_plan'])
-    .execute();
-
-  for (const tenant of tenants) {
-    try {
-      const plan = tenant.subscription_plan ?? 'free';
-      const retentionDays =
-        plan.toLowerCase() === 'representative' ? 90 : plan.toLowerCase() === 'grassroots' ? 30 : 15;
-
-      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
-      const tenantId = String(tenant.id);
-
-      // Fetch events older than the retention window that are engagement events.
-      const expiringEvents: {
-        newsletter_id: string;
-        email: string;
-        event_type: string;
-        timestamp: Date;
-      }[] = await db
-        .selectFrom('newsletter_events')
-        .select(['newsletter_id', 'email', 'event_type', 'timestamp'])
-        .where('tenant_id', '=', tenantId)
-        .where('created_at', '<', cutoff)
-        .execute();
-
-      // Group by (newsletter_id, email) to produce one upsert per recipient.
-      const grouped = new Map<
-        string,
-        {
-          newsletter_id: string;
-          email: string;
-          open_count: number;
-          click_count: number;
-          has_unsubscribed: boolean;
-          hard_bounced: boolean;
-          soft_bounced: boolean;
-          first_opened_at: Date | null;
-          last_opened_at: Date | null;
-          first_clicked_at: Date | null;
-          last_clicked_at: Date | null;
-          bounced_at: Date | null;
-          unsubscribed_at: Date | null;
-        }
-      >();
-
-      for (const ev of expiringEvents) {
-        if (!ENGAGEMENT_EVENT_TYPES.has(ev.event_type)) continue;
-
-        const key = `${ev.newsletter_id}::${ev.email}`;
-        let agg = grouped.get(key);
-        if (!agg) {
-          agg = {
-            newsletter_id: ev.newsletter_id,
-            email: ev.email,
-            open_count: 0,
-            click_count: 0,
-            has_unsubscribed: false,
-            hard_bounced: false,
-            soft_bounced: false,
-            first_opened_at: null,
-            last_opened_at: null,
-            first_clicked_at: null,
-            last_clicked_at: null,
-            bounced_at: null,
-            unsubscribed_at: null,
-          };
-          grouped.set(key, agg);
-        }
-        const ts = new Date(ev.timestamp);
-
-        if (ev.event_type === 'open') {
-          agg.open_count++;
-          if (!agg.first_opened_at || ts < agg.first_opened_at) agg.first_opened_at = ts;
-          if (!agg.last_opened_at || ts > agg.last_opened_at) agg.last_opened_at = ts;
-        } else if (ev.event_type === 'click') {
-          agg.click_count++;
-          if (!agg.first_clicked_at || ts < agg.first_clicked_at) agg.first_clicked_at = ts;
-          if (!agg.last_clicked_at || ts > agg.last_clicked_at) agg.last_clicked_at = ts;
-        } else if (ev.event_type === 'unsubscribe' || ev.event_type === 'group_unsubscribe') {
-          agg.has_unsubscribed = true;
-          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
-        } else if (ev.event_type === 'bounce') {
-          // SendGrid bounce events don't carry a sub-type in this table;
-          // treat all as hard bounce (the webhook handler can refine this).
-          agg.hard_bounced = true;
-          if (!agg.bounced_at) agg.bounced_at = ts;
-        } else if (ev.event_type === 'spamreport') {
-          agg.has_unsubscribed = true;
-          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
-        }
-      }
-
-      // Upsert aggregated rows, then delete the raw events.
-      if (grouped.size > 0) {
-        await db.transaction().execute(async (trx) => {
-          for (const row of grouped.values()) {
-            await trx
-              .insertInto('person_newsletter_engagements')
-              .values({
-                tenant_id: tenantId,
-                newsletter_id: row.newsletter_id,
-                email: row.email,
-                open_count: row.open_count,
-                click_count: row.click_count,
-                has_unsubscribed: row.has_unsubscribed,
-                hard_bounced: row.hard_bounced,
-                soft_bounced: row.soft_bounced,
-                first_opened_at: row.first_opened_at,
-                last_opened_at: row.last_opened_at,
-                first_clicked_at: row.first_clicked_at,
-                last_clicked_at: row.last_clicked_at,
-                bounced_at: row.bounced_at,
-                unsubscribed_at: row.unsubscribed_at,
-              })
-              .onConflict((oc: any) =>
-                oc.columns(['tenant_id', 'newsletter_id', 'email']).doUpdateSet((eb: any) => ({
-                  open_count: sql`person_newsletter_engagements.open_count + ${eb.ref('excluded.open_count')}`,
-                  click_count: sql`person_newsletter_engagements.click_count + ${eb.ref('excluded.click_count')}`,
-                  has_unsubscribed: sql`person_newsletter_engagements.has_unsubscribed OR excluded.has_unsubscribed`,
-                  hard_bounced: sql`person_newsletter_engagements.hard_bounced OR excluded.hard_bounced`,
-                  soft_bounced: sql`person_newsletter_engagements.soft_bounced OR excluded.soft_bounced`,
-                  first_opened_at: sql`LEAST(person_newsletter_engagements.first_opened_at, excluded.first_opened_at)`,
-                  last_opened_at: sql`GREATEST(person_newsletter_engagements.last_opened_at, excluded.last_opened_at)`,
-                  first_clicked_at: sql`LEAST(person_newsletter_engagements.first_clicked_at, excluded.first_clicked_at)`,
-                  last_clicked_at: sql`GREATEST(person_newsletter_engagements.last_clicked_at, excluded.last_clicked_at)`,
-                  bounced_at: sql`COALESCE(person_newsletter_engagements.bounced_at, excluded.bounced_at)`,
-                  unsubscribed_at: sql`COALESCE(person_newsletter_engagements.unsubscribed_at, excluded.unsubscribed_at)`,
-                })),
-              )
-              .execute();
-          }
-
-          await trx
-            .deleteFrom('newsletter_events')
-            .where('tenant_id', '=', tenantId)
-            .where('created_at', '<', cutoff)
-            .execute();
-        });
-      } else {
-        // No engagement events to aggregate — still prune non-engagement events.
-        await db
-          .deleteFrom('newsletter_events')
-          .where('tenant_id', '=', tenantId)
-          .where('created_at', '<', cutoff)
-          .execute();
-      }
-    } catch (err) {
-      logger.error({ err }, `[prune_newsletter_events] Failed for tenant ${tenant.id}`);
-    }
-  }
-}
-
-/**
- * Builds the mandatory newsletter footer appended server-side at send time (so it cannot be removed
- * from the editor). Contains the organization address, the tenant footer disclaimer, and a SendGrid
- * substitution tag (`<% unsubscribe %>`) that SendGrid replaces with a working unsubscribe link when
- * subscription tracking is enabled.
- */
-function buildNewsletterFooter(address?: string, disclaimer?: string): { html: string; text: string } {
-  const esc = (s: string) =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-  const htmlParts: string[] = [];
-  const textParts: string[] = [];
-
-  const addr = (address || '').trim();
-  if (addr) {
-    htmlParts.push(`<div>${esc(addr).replace(/\n/g, '<br>')}</div>`);
-    textParts.push(addr);
-  }
-
-  const disc = (disclaimer || '').trim();
-  if (disc) {
-    htmlParts.push(`<div>${esc(disc).replace(/\n/g, '<br>')}</div>`);
-    textParts.push(disc);
-  }
-
-  // SendGrid substitution tag — replaced with the recipient's unsubscribe URL.
-  htmlParts.push('<div><a href="<% unsubscribe %>">Unsubscribe</a></div>');
-  textParts.push('Unsubscribe: <% unsubscribe %>');
-
-  const html = `<hr style="margin-top:24px"><div style="font-size:12px;color:#888;margin-top:8px">${htmlParts.join('')}</div>`;
-  const text = `\n\n----\n${textParts.join('\n')}`;
-
-  return { html, text };
-}
-
-function getEntityFilterValues(entityFilter: string): string[] {
-  const ent = entityFilter.toLowerCase();
-  if (ent === 'persons' || ent === 'person' || ent === 'people') {
-    return ['person', 'persons'];
-  }
-  if (ent === 'households' || ent === 'household') {
-    return ['household', 'households'];
-  }
-  if (ent === 'companies' || ent === 'company') {
-    return ['company', 'companies'];
-  }
-  if (ent === 'tasks' || ent === 'task') {
-    return ['task', 'tasks', 'tasks_archived'];
-  }
-  if (ent === 'emails' || ent === 'email') {
-    return ['email', 'emails'];
-  }
-  if (ent === 'volunteer_events' || ent === 'volunteer_event') {
-    return ['volunteer_event', 'volunteer_events'];
-  }
-  if (ent === 'volunteer_shifts' || ent === 'volunteer_shift') {
-    return ['volunteer_shift', 'volunteer_shifts'];
-  }
-  if (ent === 'web_forms' || ent === 'web_form' || ent === 'forms' || ent === 'form') {
-    return ['web_form', 'web_forms', 'form', 'forms'];
-  }
-  if (ent === 'tags' || ent === 'tag') {
-    return ['tag', 'tags'];
-  }
-  return [ent];
-}
-
-async function recomputeTenantAddressFingerprints(tenantId: string, db: Kysely<Models>): Promise<void> {
-  const households = await db.selectFrom('households').selectAll().where('tenant_id', '=', tenantId).execute();
-
-  for (const hh of households) {
-    const fp_street = fingerprintStreet({
-      street_num: hh.street_num,
-      street1: hh.street1,
-      street2: hh.street2,
-    });
-    const fp_full = fingerprintFull({
-      apt: hh.apt,
-      street_num: hh.street_num,
-      street1: hh.street1,
-      street2: hh.street2,
-      city: hh.city,
-      state: hh.state,
-      zip: hh.zip,
-      country: hh.country,
-    });
-
-    if (hh.address_fp_street !== fp_street || hh.address_fp_full !== fp_full) {
-      await db
-        .updateTable('households')
-        .set({
-          address_fp_street: fp_street,
-          address_fp_full: fp_full,
-          updated_at: new Date(),
-        })
-        .where('id', '=', hh.id)
-        .where('tenant_id', '=', tenantId)
-        .execute();
-    }
-  }
-
-  const maintenanceSvc = new DuplicateMaintenanceService();
-  await maintenanceSvc.recomputeAllDuplicates(tenantId);
-}
-
-async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
-  try {
-    // Find all tenants with a connected Google account
-    const googleTokens = await db.selectFrom('google_oauth_tokens').select('tenant_id').execute();
-
-    for (const token of googleTokens) {
-      const tenantId = String(token.tenant_id);
-
-      // Check if there is already a pending or processing sync job for this tenant
-      const existing = await db
-        .selectFrom('background_jobs')
-        .select('id')
-        .where('status', 'in', ['pending', 'processing'])
-        .where(sql`payload->>'type'`, '=', 'google_sync')
-        .where(sql`payload->>'tenantId'`, '=', tenantId)
-        .executeTakeFirst();
-
-      if (!existing) {
-        logger.info(`Auto-scheduling Google sync job for tenant ${tenantId}`);
-        await db
-          .insertInto('background_jobs')
-          .values({
-            tenant_id: tenantId,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'google_sync',
-              tenantId,
-              requestedBy: 'system',
-            }),
-            run_at: new Date(),
-            max_attempts: 3,
-          })
-          .execute();
-      }
-    }
-
-    // Find all tenants with a connected Microsoft account
-    const msTokens = await db.selectFrom('ms_oauth_tokens').select('tenant_id').execute();
-
-    for (const token of msTokens) {
-      const tenantId = String(token.tenant_id);
-
-      // Check if there is already a pending or processing sync job for this tenant
-      const existing = await db
-        .selectFrom('background_jobs')
-        .select('id')
-        .where('status', 'in', ['pending', 'processing'])
-        .where(sql`payload->>'type'`, '=', 'ms_sync')
-        .where(sql`payload->>'tenantId'`, '=', tenantId)
-        .executeTakeFirst();
-
-      if (!existing) {
-        logger.info(`Auto-scheduling MS sync job for tenant ${tenantId}`);
-        await db
-          .insertInto('background_jobs')
-          .values({
-            tenant_id: tenantId,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'ms_sync',
-              tenantId,
-              requestedBy: 'system',
-            }),
-            run_at: new Date(),
-            max_attempts: 3,
-          })
-          .execute();
-      }
-    }
-  } catch (err) {
-    logger.error({ err }, 'Failed to queue tenant sync jobs');
-  }
-}
-
-export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
-  const now = new Date();
-  try {
-    const dueTasks = await db
-      .selectFrom('tasks')
-      .innerJoin('authusers', 'authusers.id', 'tasks.assigned_to')
-      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select([
-        'tasks.id as task_id',
-        'tasks.name as task_name',
-        'tasks.due_at',
-        'tasks.details',
-        'authusers.id as user_id',
-        'authusers.email as user_email',
-        'authusers.first_name',
-        'profiles.json as profile_json',
-      ])
-      .where('tasks.status', 'not in', ['done', 'canceled', 'archived'])
-      .where('tasks.due_at', '<=', now)
-      .orderBy('tasks.due_at', 'asc')
-      .execute();
-
-    if (dueTasks.length === 0) return;
-
-    const userTasksMap = new Map<string, any[]>();
-    for (const row of dueTasks) {
-      const userId = String(row.user_id);
-      let userTasks = userTasksMap.get(userId);
-      if (!userTasks) {
-        userTasks = [];
-        userTasksMap.set(userId, userTasks);
-      }
-      userTasks.push(row);
-    }
-
-    const mailService = new TransactionalEmailService();
-
-    for (const [, tasks] of userTasksMap.entries()) {
-      const firstRow = tasks[0];
-      const userEmail = firstRow.user_email;
-      const firstName = firstRow.first_name;
-      const profileJson = firstRow.profile_json;
-
-      let optedIn = true;
-      if (profileJson) {
-        try {
-          const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-          if (json?.notifications?.task_due === false) {
-            optedIn = false;
-          }
-        } catch (e) {
-          logger.error({ err: e }, 'Failed to parse profile json in checkDueTasks');
-        }
-      }
-
-      if (optedIn && userEmail) {
-        let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;
-        let htmlContent = `<p>Hi ${firstName || 'there'},</p><p>Here are your active tasks needing attention today:</p><ul>`;
-
-        for (const t of tasks) {
-          const dueDateStr = t.due_at ? new Date(t.due_at).toLocaleDateString() : 'No due date';
-          textContent += `- ${t.task_name} (Due: ${dueDateStr})\n  Link: ${env.appUrl}/tasks/${t.task_id}\n\n`;
-          htmlContent += `<li><strong>${t.task_name}</strong> (Due: ${dueDateStr}) - <a href="${env.appUrl}/tasks/${t.task_id}">Resolve</a></li>`;
-        }
-
-        htmlContent += `</ul>`;
-
-        await mailService.sendMail({
-          to: userEmail,
-          subject: `Daily Task Attention Needed: ${tasks.length} Task(s) Due or Overdue`,
-          text: textContent,
-          html: htmlContent,
-        });
-      }
-    }
-  } catch (err) {
-    logger.error({ err }, 'Failed to check and notify due tasks');
   }
 }
 ```
@@ -37909,737 +39096,6 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 };
 
 export default emailsApiRoute;
-```
-
-## File: apps/backend/src/app/modules/events/controller.ts
-
-```typescript
-import { TRPCError } from '@trpc/server';
-import type { Transaction } from 'kysely';
-import { sql } from 'kysely';
-import { BaseController } from '../../lib/base.controller';
-import { EventsRepo } from './repositories/events.repo';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { WorkflowsController } from '../workflows/controller';
-import { logger } from '../../logger';
-
-const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-const ipRsvpTimestamps = new Map<string, number[]>();
-const RSVP_RATE_LIMIT_MAX = 5;
-const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
-
-export class EventsController extends BaseController<'events', EventsRepo> {
-  constructor() {
-    super(new EventsRepo());
-  }
-
-  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
-    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
-  }
-
-  public async addEvent(payload: any, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', payload.slug)
-      .executeTakeFirst();
-
-    if (existing) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This URL slug is already in use. Please choose a different one.',
-      });
-    }
-
-    const row = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      location_address: payload.location_address ?? null,
-      start_time: payload.start_time,
-      end_time: payload.end_time,
-      capacity: payload.capacity ?? null,
-      contact_email: payload.contact_email ?? null,
-      contact_phone: payload.contact_phone ?? null,
-      slug: payload.slug,
-      is_published: payload.is_published ?? false,
-      send_reminder: payload.send_reminder ?? true,
-      send_registration_confirmation: payload.send_registration_confirmation ?? true,
-      fields: payload.fields ?? DEFAULT_FIELDS,
-    } as OperationDataType<'events', 'insert'>;
-
-    try {
-      return await this.add(row);
-    } catch (err: any) {
-      if (err?.message?.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-      }
-      throw err;
-    }
-  }
-
-  public async getEventBySlug(slug: string) {
-    // NOTE: unscoped by design — public registration page: tenant is unknown until the event is resolved by slug
-    return this.getRepo()
-      .db.selectFrom('events')
-      .selectAll()
-      .where('slug', '=', slug)
-      .where('is_published', '=', true)
-      .executeTakeFirst();
-  }
-
-  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
-    const row = await this.getRepo()
-      .db.selectFrom('event_registrations')
-      .select(({ fn }) => [fn.count('id').as('cnt')])
-      .where('tenant_id', '=', tenantId)
-      .where('event_id', '=', eventId)
-      .where('status', '!=', 'cancelled')
-      .executeTakeFirst();
-    return Number(row?.cnt ?? 0);
-  }
-
-  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
-    return this.getRepo()
-      .db.selectFrom('event_ticket_types')
-      .selectAll()
-      .where('event_id', '=', eventId)
-      .where('tenant_id', '=', tenantId)
-      .orderBy('sort_order', 'asc')
-      .execute();
-  }
-
-  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
-    if (!slug) return { unique: true };
-    let query = this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const existing = await query.executeTakeFirst();
-    return { unique: !existing };
-  }
-
-  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
-    if (payload.slug) {
-      const existing = await this.getRepo()
-        .db.selectFrom('events')
-        .select('id')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('slug', '=', payload.slug)
-        .where('id', '!=', id)
-        .executeTakeFirst();
-
-      if (existing) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'This URL slug is already in use. Please choose a different one.',
-        });
-      }
-    }
-
-    const row = {
-      ...payload,
-      ...(payload.fields !== undefined ? { fields: payload.fields } : {}),
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'events', 'update'>;
-    let result;
-    try {
-      result = await this.update({ tenant_id: auth.tenant_id, id, row });
-    } catch (err: any) {
-      if (err?.message?.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-      }
-      throw err;
-    }
-
-    // Manage pending reminder jobs when the toggle changes
-    if (payload.send_reminder === false) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'eventId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to clean up pending event reminders');
-      }
-    } else if (payload.send_reminder === true) {
-      try {
-        const event = await this.getRepo()
-          .db.selectFrom('events')
-          .select(['start_time'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', id)
-          .executeTakeFirst();
-
-        if (event) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            const registrations = await this.getRepo()
-              .db.selectFrom('event_registrations')
-              .select(['id', 'person_id'])
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('event_id', '=', id)
-              .where('status', '=', 'registered')
-              .execute();
-
-            for (const reg of registrations) {
-              await this.getRepo()
-                .db.deleteFrom('background_jobs')
-                .where('tenant_id', '=', auth.tenant_id)
-                .where('status', '=', 'pending')
-                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
-                .execute();
-
-              await this.getRepo()
-                .db.insertInto('background_jobs')
-                .values({
-                  tenant_id: auth.tenant_id,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(id),
-                    personId: String(reg.person_id),
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, 'Failed to re-schedule event reminders');
-      }
-    }
-
-    return result;
-  }
-
-  // Ticket types
-
-  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().addTicketType({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      price_cents: payload.price_cents ?? 0,
-      capacity: payload.capacity ?? null,
-      sort_order: payload.sort_order ?? 0,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
-  }
-
-  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
-  }
-
-  // Registrations
-
-  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
-    // Capacity check across the whole event
-    const event = await this.getRepo()
-      .db.selectFrom('events')
-      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', payload.event_id)
-      .executeTakeFirst();
-
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    if (event.capacity !== null) {
-      const countRow = await this.getRepo()
-        .db.selectFrom('event_registrations')
-        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('event_id', '=', payload.event_id)
-        .where('status', '!=', 'cancelled')
-        .executeTakeFirst();
-      if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-      }
-    }
-
-    // Per-ticket-type capacity check
-    if (payload.ticket_type_id) {
-      const ticketType = await this.getRepo()
-        .db.selectFrom('event_ticket_types')
-        .select(['capacity'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', payload.ticket_type_id)
-        .executeTakeFirst();
-
-      if (ticketType && ticketType.capacity !== null) {
-        const ticketCountRow = await this.getRepo()
-          .db.selectFrom('event_registrations')
-          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('ticket_type_id', '=', payload.ticket_type_id)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-        if (Number((ticketCountRow as any)?.cnt || 0) >= ticketType.capacity) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
-        }
-      }
-    }
-
-    const result = await this.getRepo().addRegistration({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      person_id: payload.person_id,
-      ticket_type_id: payload.ticket_type_id ?? null,
-      status: payload.status ?? 'registered',
-      notes: payload.notes ?? null,
-      user_id: auth.user_id,
-    });
-
-    if (result) {
-      // Queue registration confirmation email
-      if (event.send_registration_confirmation !== false) {
-        try {
-          await this.getRepo()
-            .db.insertInto('background_jobs')
-            .values({
-              tenant_id: auth.tenant_id,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({
-                type: 'send-event-registration-confirmation',
-                registrationId: String(result.id),
-                eventId: String(payload.event_id),
-                personId: String(payload.person_id),
-              }),
-              run_at: new Date(),
-            })
-            .execute();
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue registration confirmation');
-        }
-      }
-
-      // Queue 24h reminder
-      if (event.send_reminder !== false) {
-        try {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            await this.getRepo()
-              .db.insertInto('background_jobs')
-              .values({
-                tenant_id: auth.tenant_id,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-reminder',
-                  registrationId: String(result.id),
-                  eventId: String(payload.event_id),
-                  personId: String(payload.person_id),
-                }),
-                run_at: runAt,
-              })
-              .execute();
-          }
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue event reminder');
-        }
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'assign',
-          entity: 'event_registrations',
-          entity_id: String(result.id),
-          quantity: 1,
-          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async checkIn(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { status: 'attended', checked_in_at: new Date() },
-      user_id: auth.user_id,
-    });
-
-    // Cancel pending reminder — they've already arrived
-    try {
-      await this.getRepo()
-        .db.deleteFrom('background_jobs')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('status', '=', 'pending')
-        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-        .where(sql`payload->>'registrationId'`, '=', String(id))
-        .execute();
-    } catch (err) {
-      logger.error({ err }, 'Failed to cancel event reminder on check-in');
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log check-in activity');
-    }
-
-    return result;
-  }
-
-  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: payload,
-      user_id: auth.user_id,
-    });
-
-    // Cancel reminder if status moves away from 'registered'
-    if (payload.status && payload.status !== 'registered') {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on status change');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: payload.status },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log registration update activity');
-    }
-
-    return result;
-  }
-
-  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
-
-    if (result) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'delete',
-          entity: 'event_registrations',
-          entity_id: id,
-          quantity: 1,
-          metadata: { id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration delete activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async rsvpPublic(slug: string, payload: Record<string, string>, clientIp: string) {
-    // Rate limiting
-    const now = Date.now();
-    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
-      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
-    }
-    timestamps.push(now);
-    ipRsvpTimestamps.set(clientIp, timestamps);
-
-    const event = await this.getEventBySlug(slug);
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    // Honeypot
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      return { success: true };
-    }
-
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
-    }
-
-    if (new Date(event.end_time) < new Date()) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
-    }
-
-    const tenantId = String(event.tenant_id);
-    const firstName = payload['first_name']?.trim() || null;
-    const lastName = payload['last_name']?.trim() || null;
-    const mobile = payload['mobile']?.trim() || null;
-    const notes = payload['notes']?.trim() || null;
-    const street1 = payload['street1']?.trim() || null;
-    const city = payload['city']?.trim() || null;
-    const state = payload['state']?.trim() || null;
-    const zip = payload['zip']?.trim() || null;
-    const country = payload['country']?.trim() || null;
-
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id', 'admin_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        const creatorId = tenantRow?.admin_id;
-
-        if (!householdId || !creatorId) {
-          throw new Error('Tenant configuration is incomplete.');
-        }
-
-        // Check overall capacity
-        if (event.capacity !== null) {
-          const countRow = await trx
-            .selectFrom('event_registrations')
-            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-            .where('tenant_id', '=', tenantId)
-            .where('event_id', '=', String(event.id))
-            .where('status', '!=', 'cancelled')
-            .executeTakeFirst();
-          if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-          }
-        }
-
-        // Find or create person
-        const existing = await trx
-          .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (notes) {
-            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
-          }
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          let campaignId: string | null = null;
-          try {
-            const campaignRow = await trx
-              .selectFrom('campaigns')
-              .select('id')
-              .where('tenant_id', '=', tenantId)
-              .orderBy('created_at', 'asc')
-              .limit(1)
-              .executeTakeFirst();
-            campaignId = campaignRow ? String(campaignRow.id) : null;
-          } catch {
-            /* ignore */
-          }
-
-          const insertRow: any = {
-            tenant_id: tenantId,
-            household_id: householdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email,
-            mobile,
-            notes,
-            street1,
-            city,
-            state,
-            zip,
-            country,
-          };
-          if (campaignId) insertRow.campaign_id = campaignId as any;
-
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          try {
-            const workflowsCtrl = new WorkflowsController();
-            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
-          }
-        }
-
-        // Check duplicate registration
-        const existingReg = await trx
-          .selectFrom('event_registrations')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('event_id', '=', String(event.id))
-          .where('person_id', '=', personId)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-
-        if (existingReg) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
-        }
-
-        // Insert registration
-        const reg = await trx
-          .insertInto('event_registrations')
-          .values({
-            tenant_id: tenantId,
-            event_id: String(event.id) as any,
-            person_id: personId,
-            ticket_type_id: null,
-            status: 'registered',
-            notes: notes ?? null,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-
-        // Queue confirmation email
-        if ((event as any).send_registration_confirmation !== false) {
-          try {
-            await trx
-              .insertInto('background_jobs')
-              .values({
-                tenant_id: tenantId,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-registration-confirmation',
-                  registrationId: String(reg.id),
-                  eventId: String(event.id),
-                  personId,
-                }),
-                run_at: new Date(),
-              })
-              .execute();
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue RSVP confirmation');
-          }
-        }
-
-        // Queue 24h reminder
-        if ((event as any).send_reminder !== false) {
-          try {
-            const startMs = new Date(event.start_time).getTime();
-            const nowMs = Date.now();
-            if (startMs > nowMs) {
-              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-              await trx
-                .insertInto('background_jobs')
-                .values({
-                  tenant_id: tenantId,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(event.id),
-                    personId,
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
-          }
-        }
-      });
-
-    return { success: true };
-  }
-}
 ```
 
 ## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
