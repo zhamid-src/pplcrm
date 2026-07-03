@@ -37,15 +37,22 @@ describe('TasksBoard', () => {
     component = fixture.componentInstance;
   });
 
+  // ngOnInit kicks off async work without returning a promise, so trigger it
+  // through change detection (inside the zone) and wait for stability.
+  const runInit = async (): Promise<void> => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+  };
+
   it('should load tasks on init', async () => {
-    await component.ngOnInit();
+    await runInit();
     expect(mockTasksSvc.getAll).toHaveBeenCalled();
     expect(component['tasks']()).toHaveLength(1);
     expect(component['tasks']()[0].id).toBe('t1');
   });
 
   it('should update task status and trigger refresh on drop', async () => {
-    await component.ngOnInit();
+    await runInit();
 
     const mockDragEvent = {
       preventDefault: vi.fn(),
