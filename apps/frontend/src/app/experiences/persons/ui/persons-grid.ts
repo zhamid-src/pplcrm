@@ -9,7 +9,7 @@ import { PcIconNameType } from '@icons/icons.index';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
 
-import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 
 import {
   DATA_GRID_CONFIG,
@@ -21,10 +21,6 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { DATA_TYPE, PersonsService } from '../services/persons-service';
-
-interface ParamsType {
-  value: string[];
-}
 
 @Component({
   selector: 'pc-persons-grid',
@@ -102,9 +98,12 @@ export class PersonsGrid implements OnInit {
         tagType: 'tag',
       },
       cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
     },
     {
       field: 'issues',
@@ -120,9 +119,12 @@ export class PersonsGrid implements OnInit {
         tagType: 'issue',
       },
       cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
     },
     {
       field: 'address',

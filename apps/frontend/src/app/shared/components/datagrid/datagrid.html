@@ -423,7 +423,7 @@
             (isTagColumn(col) && tagList.length) {
             <pc-tags
               [tags]="tagList"
-              [type]="col.cellRendererParams?.tagType || 'tag'"
+              [type]="tagTypeFor(col)"
               [readonly]="true"
               [canDelete]="false"
               [compact]="true"

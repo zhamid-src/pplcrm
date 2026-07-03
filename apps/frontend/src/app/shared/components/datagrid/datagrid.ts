@@ -1358,7 +1358,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   /** Resolve whether a column edits tags or issues from its renderer params. */
-  private tagTypeFor(col?: ColDef): 'tag' | 'issue' {
+  protected tagTypeFor(col?: ColDef): 'tag' | 'issue' {
     const params: unknown = col?.cellRendererParams;
     return isRecord(params) && params['tagType'] === 'issue' ? 'issue' : 'tag';
   }
