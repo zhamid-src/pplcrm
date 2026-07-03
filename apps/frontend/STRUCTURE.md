@@ -1794,8 +1794,8 @@ export class PledgesGridComponent implements OnInit {
       await this.donationsSvc.cancelPledge(String(pledge.id));
       this.alertSvc.showSuccess('Pledge cancelled successfully.');
       await this.load();
-    } catch (err: any) {
-      this.alertSvc.showError(err.message || 'Failed to cancel pledge.');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel pledge.');
     } finally {
       this.cancelling.set(null);
     }
@@ -2888,7 +2888,7 @@ export class EmailsStore {
       await this.refreshFolderCounts();
       this.alerts.showSuccess('Sync complete!');
       return result;
-    } catch (e: any) {
+    } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (
         msg.includes('No email accounts connected') ||
@@ -6056,9 +6056,9 @@ export class NewsletterAddComponent implements OnInit {
         );
       }
       this.close();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to save or send newsletter', err);
-      this.alertSvc.showError(err.message || 'Failed to save or send newsletter.');
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to save or send newsletter.');
     }
   }
 
@@ -9537,8 +9537,8 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
         suspended_at: data.suspended_at ? new Date(data.suspended_at) : null,
         paused_at: data.paused_at ? new Date(data.paused_at) : null,
       });
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to load account status.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load account status.');
     } finally {
       end();
     }
@@ -9559,8 +9559,8 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
     try {
       await this.api.auth.pauseTenant.mutate();
       await this.auth.signOut();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to pause account.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to pause account.');
       this.actionPending.set(false);
     }
   }
@@ -9580,8 +9580,8 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
       await this.api.auth.resumeTenant.mutate();
       await this.loadStatus();
       this.alerts.showSuccess('Account reactivated. Welcome back!');
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to reactivate account.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to reactivate account.');
     } finally {
       this.actionPending.set(false);
     }
@@ -9624,8 +9624,8 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
       await this.api.auth.scheduleTenantDeletion.mutate();
       // All sessions are wiped server-side — sign out locally and redirect to login
       await this.auth.signOut();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to schedule account deletion.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to schedule account deletion.');
       this.actionPending.set(false);
     }
   }
@@ -9645,8 +9645,8 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
       await this.api.auth.cancelTenantDeletion.mutate();
       await this.loadStatus();
       this.alerts.showSuccess('Account deletion cancelled. Your data is safe.');
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to cancel deletion.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel deletion.');
     } finally {
       this.actionPending.set(false);
     }
@@ -13427,8 +13427,8 @@ export class UserViewComponent {
       }
       this.alerts.showSuccess('User deleted');
       await this.router.navigate(['/users']);
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Unable to delete user');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
     } finally {
       end();
     }
@@ -13454,8 +13454,16 @@ export class UserViewComponent {
       const user = await this.users.getById(this.id());
       this.detail.set(user);
       this.stats.set(user.stats);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to load user';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load user';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -13463,6 +13471,10 @@ export class UserViewComponent {
       this.initialized.set(true);
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -13925,90 +13937,6 @@ export class ThemeService {
 
     const isSystemDark = window.matchMedia('(prefers-color-scheme:dark)').matches;
     this.theme.set(isSystemDark ? 'dark' : 'light');
-  }
-}
-```
-
-## File: apps/frontend/src/app/services/api/abstract-api.service.ts
-
-```typescript
-import { signal, Service } from '@angular/core';
-import {
-  DataExportRecordType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  getAllOptionsType,
-  QueueExportInputType,
-} from '../../../../../../libs/common/src';
-import { TRPCService } from './trpc-service';
-import { TRPCClient } from '@trpc/client';
-import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
-
-import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-
-@Service()
-export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPCService<T> {
-  protected abstract readonly endpointName: keyof TRPCClient<TRPCRouter>;
-
-  public readonly refreshCount = signal(0);
-
-  public triggerRefresh() {
-    this.refreshCount.update((n) => n + 1);
-  }
-  public abstract add(row: U, options?: unknown): Promise<Partial<T> | unknown>;
-
-  public abstract addMany(rows: U[]): Promise<Partial<T>[] | unknown>;
-
-  public abstract attachTag(id: string, tag_name: string, type?: 'tag' | 'issue'): Promise<unknown>;
-
-  public abstract count(): Promise<number>;
-
-  public async delete(id: string): Promise<boolean> {
-    const endpoint = this.api[this.endpointName] as {
-      delete: { mutate: (id: string) => Promise<unknown> };
-    };
-    if (!endpoint) {
-      throw new Error(`Endpoint for "${String(this.endpointName)}" not found on tRPC client.`);
-    }
-    return (await endpoint.delete.mutate(id)) !== null;
-  }
-
-  public async deleteMany(ids: string[]): Promise<boolean> {
-    const endpoint = this.api[this.endpointName] as {
-      delete: { mutate: (id: string) => Promise<unknown> };
-      deleteMany?: { mutate: (ids: string[]) => Promise<unknown> };
-    };
-    if (!endpoint) {
-      throw new Error(`Endpoint for "${String(this.endpointName)}" not found on tRPC client.`);
-    }
-    if ('deleteMany' in endpoint && endpoint.deleteMany) {
-      return (await endpoint.deleteMany.mutate(ids)) !== null;
-    }
-    const results = await Promise.all(ids.map((id) => this.delete(id)));
-    return results.every(Boolean);
-  }
-
-  public abstract detachTag(id: string, tag_name: string, type?: 'tag' | 'issue'): Promise<unknown>;
-
-  public abstract getAll(options?: getAllOptionsType): Promise<{ rows: Record<string, unknown>[]; count: number }>;
-
-  public abstract getAllArchived(
-    options?: getAllOptionsType,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }>;
-
-  public abstract getById(id: string): Promise<unknown>;
-
-  public abstract getTags(id: string, type?: 'tag' | 'issue'): Promise<string[]>;
-
-  public abstract update(id: string, data: U, options?: unknown): Promise<Partial<T>[] | unknown>;
-
-  public abstract exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType>;
-
-  public queueExport(input: QueueExportInputType): Promise<DataExportRecordType> {
-    const exportsEndpoint = this.api.exports as {
-      queue: { mutate: (input: QueueExportInputType) => Promise<DataExportRecordType> };
-    };
-    return exportsEndpoint.queue.mutate(input);
   }
 }
 ```
@@ -14589,716 +14517,6 @@ export class FullScreenService {
 export * from '@uxcommon/components/confirm-dialog.service';
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/fetch.controller.ts
-
-```typescript
-import { inject, Injectable } from '@angular/core';
-import type { DataGrid } from '../datagrid';
-import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
-import { DataGridDataService } from '../services/data.service';
-import { GridStoreService } from '../services/grid-store.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-@Injectable()
-export class FetchController {
-  private readonly gridSvc = inject(AbstractAPIService);
-  private readonly dataSvc = inject(DataGridDataService);
-  private readonly store = inject(GridStoreService);
-  private readonly alertSvc = inject(AlertService);
-
-  private get grid(): DataGrid<any, any> {
-    return this.store.grid;
-  }
-
-  async loadPage(index: number, append?: boolean): Promise<void> {
-    const end = this.grid._loading.begin();
-    try {
-      const pageSize = this.store.pageSize();
-      const startRow = index * pageSize;
-      const endRow = startRow + pageSize;
-      const options = this.dataSvc.buildGetAllOptions({
-        searchStr: this.grid.searchTerm(),
-        startRow,
-        endRow,
-        tags: this.grid.selectedTags(),
-        issues: this.grid.selectedIssues(),
-        filterModel: this.grid.buildFilterModel(),
-        sortState: this.store.sorting(),
-        sortCol: this.grid.sortCol(),
-        sortDir: this.grid.sortDir(),
-        includeArchived: this.grid.archiveMode(),
-        advancedFilterModel: this.grid.externalAdvancedFilterModel() || this.grid.advFilter.buildModel(),
-        listId: this.grid.activeListId(),
-      });
-      const data = this.grid.archiveMode()
-        ? await this.gridSvc.getAllArchived(options)
-        : await this.gridSvc.getAll(options);
-      const incoming = data.rows ?? [];
-      if (append && this.store.rows().length > 0) {
-        const next = [...this.store.rows(), ...incoming];
-        this.store.rows.set(next);
-        this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
-      } else {
-        this.store.rows.set(incoming);
-        this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
-      }
-      this.grid.totalCountAll.set(data.count ?? this.store.rows().length);
-      this.store.pageIndex.set(index);
-    } catch {
-      this.alertSvc.showError(this.grid.config.messages.loadFailed);
-    } finally {
-      end();
-    }
-  }
-
-  async selectAllMatching(): Promise<{ ids: string[]; count: number }> {
-    const options: any = {
-      searchStr: this.grid.searchTerm(),
-      tags: this.grid.selectedTags(),
-      issues: this.grid.selectedIssues(),
-      advancedFilterModel: this.grid.externalAdvancedFilterModel() || this.grid.advFilter.buildModel(),
-      listId: this.grid.activeListId() ?? undefined,
-    };
-    const { rows } = this.grid.archiveMode()
-      ? await this.gridSvc.getAllArchived(options)
-      : await this.gridSvc.getAll(options);
-    const rowCanSelect = this.grid.rowCanSelect();
-    const filteredRows = rowCanSelect ? (rows ?? []).filter(rowCanSelect) : (rows ?? []);
-    const ids = filteredRows.map((r: any) => this.grid.toId(r)).filter(Boolean);
-    return { ids, count: filteredRows.length };
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/keyboard.controller.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-
-@Injectable()
-export class KeyboardController {
-  handleCellKeydown(
-    ev: KeyboardEvent,
-    helpers: {
-      getColDefById: (id: string) => any | undefined;
-      isEditable: (col: any) => boolean;
-      startEdit: (row: any, col: any) => void;
-      rows: () => any[];
-    },
-  ) {
-    const td = (ev.target as HTMLElement).closest('td') as HTMLElement | null;
-    if (!td) return;
-    const tr = td.parentElement as HTMLElement | null;
-    if (!tr) return;
-    const colId = td.getAttribute('data-col-id') || '';
-    if (!colId) return;
-    const key = ev.key;
-    if (key === 'Enter') {
-      ev.preventDefault();
-      const rowId = tr.getAttribute('data-row-id') || '';
-      if (!rowId) return;
-      const col = helpers.getColDefById(colId);
-      if (!col) return;
-      const row = helpers.rows().find((r: any) => String(r?.id) === rowId);
-      if (!row) return;
-      if (helpers.isEditable(col)) helpers.startEdit(row, col);
-      return;
-    }
-    if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'ArrowLeft' && key !== 'ArrowRight') return;
-    ev.preventDefault();
-    if (key === 'ArrowDown' || key === 'ArrowUp') {
-      const dir = key === 'ArrowDown' ? 1 : -1;
-      let rowEl: HTMLElement | null = tr;
-      while (rowEl) {
-        rowEl =
-          dir > 0
-            ? (rowEl.nextElementSibling as HTMLElement | null)
-            : (rowEl.previousElementSibling as HTMLElement | null);
-        if (!rowEl) break;
-        const nextTd = rowEl.querySelector(`td[data-col-id="${colId}"]`) as HTMLElement | null;
-        if (nextTd) {
-          nextTd.focus({ preventScroll: false });
-          break;
-        }
-      }
-    } else {
-      const cells = Array.from(tr.querySelectorAll('td')) as HTMLElement[];
-      const idx = cells.findIndex((c) => c === td);
-      const nextIdx = key === 'ArrowRight' ? idx + 1 : idx - 1;
-      const nextTd = cells[nextIdx];
-      if (nextTd) nextTd.focus({ preventScroll: false });
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/pinning.controller.ts
-
-```typescript
-import { Injectable, signal, effect } from '@angular/core';
-import { DataGridColumnsService } from '../services/columns.service';
-
-@Injectable()
-export class PinningController {
-  private headerWidthMap = new Map<string, number>();
-  readonly pinnedLeftOffsets = signal<Record<string, number>>({});
-  readonly pinnedRightOffsets = signal<Record<string, number>>({});
-  private tsTable: any = null;
-  private headerWidthVer = signal(0);
-  private pinStateVer = signal(0);
-  private initialized = false;
-  private getColWidth: ((id: string) => number | null) | null = null;
-  private getSelectionWidth: (() => number) | null = null;
-  private getPinState: (() => { left: string[]; right: string[] }) | null = null;
-
-  constructor(private readonly columnsSvc: DataGridColumnsService) {
-    // Create effect within injection context
-    effect(() => {
-      // Touch versions/signals to create dependencies
-      void this.headerWidthVer();
-      void this.pinStateVer();
-      if (!this.initialized || !this.getSelectionWidth || !this.getColWidth || !this.getPinState) return;
-      const sel = this.getSelectionWidth();
-      const pin = this.getPinState();
-      const { left, right } = this.columnsSvc.computePinOffsets({
-        pinned: { left: pin.left || [], right: pin.right || [] },
-        getColWidth: (id) => (this.getColWidth ? this.getColWidth(id) : null),
-        headerWidthMap: this.headerWidthMap,
-        selectionStickyWidth: sel,
-      });
-      this.pinnedLeftOffsets.set(left);
-      this.pinnedRightOffsets.set(right);
-    });
-  }
-
-  attachTable(tsTable: any) {
-    this.tsTable = tsTable;
-  }
-
-  init(opts: {
-    getColWidth: (id: string) => number | null;
-    getSelectionWidth: () => number;
-    getPinState: () => { left: string[]; right: string[] };
-  }) {
-    if (this.initialized) return;
-    this.initialized = true;
-    this.getColWidth = opts.getColWidth;
-    this.getSelectionWidth = opts.getSelectionWidth;
-    this.getPinState = opts.getPinState;
-    // Kick the effect now that getters are set
-    this.notifyPinStateChanged();
-  }
-
-  notifyPinStateChanged() {
-    this.pinStateVer.update((x) => x + 1);
-  }
-
-  measureHeaderWidths(table: HTMLTableElement): { selectionWidth: number | null; headerMap: Map<string, number> } {
-    const measured = this.columnsSvc.measureHeaderWidths(table);
-    this.headerWidthMap = measured.headerMap;
-    this.headerWidthVer.update((x) => x + 1);
-    return { selectionWidth: measured.selectionWidth, headerMap: measured.headerMap };
-  }
-
-  updatePinOffsets(tsTable: any, getColWidth: (id: string) => number | null, selectionStickyWidth: number) {
-    const table = tsTable ?? this.tsTable;
-    const pin = table?.getState?.().columnPinning || { left: [], right: [] };
-    const { left, right } = this.columnsSvc.computePinOffsets({
-      pinned: { left: Array.isArray(pin.left) ? pin.left : [], right: Array.isArray(pin.right) ? pin.right : [] },
-      getColWidth,
-      headerWidthMap: this.headerWidthMap,
-      selectionStickyWidth,
-    });
-    this.pinnedLeftOffsets.set(left);
-    this.pinnedRightOffsets.set(right);
-  }
-
-  leftOffsetPx(id: string): number {
-    return this.pinnedLeftOffsets()[id] || 0;
-  }
-  rightOffsetPx(id: string): number {
-    return this.pinnedRightOffsets()[id] || 0;
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/reorder.controller.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-
-@Injectable()
-export class ReorderController {
-  private dragColId: string | null = null;
-  private suppressHeaderDrag: () => boolean = () => false;
-  private requestPersist: () => void = () => undefined;
-
-  configure(opts: { suppressHeaderDrag: () => boolean; requestPersist: () => void }) {
-    this.suppressHeaderDrag = opts.suppressHeaderDrag;
-    this.requestPersist = opts.requestPersist;
-  }
-
-  onDragOver(ev: DragEvent) {
-    ev.preventDefault();
-    try {
-      ev.dataTransfer!.dropEffect = 'move';
-    } catch {}
-  }
-
-  onDragStart(h: any, ev: DragEvent) {
-    if (this.suppressHeaderDrag()) {
-      try {
-        ev.preventDefault();
-      } catch {}
-      ev.stopPropagation();
-      return;
-    }
-    const id = String(h?.column?.id || '');
-    this.dragColId = id;
-    try {
-      ev.dataTransfer?.setData('text/plain', id);
-      ev.dataTransfer!.effectAllowed = 'move';
-    } catch {}
-  }
-
-  onDrop(h: any, ev: DragEvent, tsTable: any) {
-    ev.preventDefault();
-    const src = ev.dataTransfer?.getData('text/plain') || this.dragColId;
-    const tgt = String(h?.column?.id || '');
-    if (!src || !tgt || src === tgt) return;
-    const leaves: any[] = tsTable?.getAllLeafColumns?.() || [];
-    const order: string[] = leaves.map((c: any) => String(c.id));
-    const from = order.indexOf(String(src));
-    const to = order.indexOf(String(tgt));
-    if (from < 0 || to < 0) return;
-    order.splice(to, 0, ...order.splice(from, 1));
-    tsTable?.setOptions?.((prev: any) => ({ ...prev, state: { ...prev.state, columnOrder: order } }));
-    this.requestPersist();
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/resizing.controller.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-
-@Injectable()
-export class ResizingController {
-  private _colStartX = 0;
-  private _colStartW = 0;
-  private _selStartX = 0;
-  private _selStartW = 48;
-
-  beginHeaderResize(
-    h: any,
-    clientX: number,
-    getColWidth: (id: string) => number | null,
-    applySize: (col: any, id: string, w: number) => void,
-    onDone: () => void,
-  ) {
-    const col = h?.column;
-    if (!col) return;
-    const id = String(col.id || '');
-    const startW = Number((typeof col.getSize === 'function' ? col.getSize() : undefined) || getColWidth(id) || 100);
-    this._colStartX = clientX;
-    this._colStartW = startW;
-    const move = (e: MouseEvent) => {
-      const dx = e.clientX - this._colStartX;
-      const w = Math.max(40, Math.floor(this._colStartW + dx));
-      applySize(col, id, w);
-    };
-    const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      onDone();
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  }
-
-  beginHeaderResizeTouch(
-    h: any,
-    clientX: number,
-    getColWidth: (id: string) => number | null,
-    applySize: (col: any, id: string, w: number) => void,
-    onDone: () => void,
-  ) {
-    const col = h?.column;
-    if (!col) return;
-    const id = String(col.id || '');
-    const startW = Number((typeof col.getSize === 'function' ? col.getSize() : undefined) || getColWidth(id) || 100);
-    this._colStartX = clientX;
-    this._colStartW = startW;
-    const move = (e: TouchEvent) => {
-      const dx = (e.touches?.[0]?.clientX ?? 0) - this._colStartX;
-      const w = Math.max(40, Math.floor(this._colStartW + dx));
-      applySize(col, id, w);
-    };
-    const up = () => {
-      window.removeEventListener('touchmove', move);
-      window.removeEventListener('touchend', up);
-      onDone();
-    };
-    window.addEventListener('touchmove', move);
-    window.addEventListener('touchend', up);
-  }
-
-  beginSelectionResize(clientX: number, startWidth: number, setWidth: (w: number) => void, onDone: () => void) {
-    this._selStartX = clientX;
-    this._selStartW = startWidth;
-    const move = (e: MouseEvent) => {
-      const dx = e.clientX - this._selStartX;
-      const w = Math.max(32, this._selStartW + dx);
-      setWidth(Math.round(w));
-    };
-    const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      onDone();
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  }
-
-  beginSelectionResizeTouch(clientX: number, startWidth: number, setWidth: (w: number) => void, onDone: () => void) {
-    this._selStartX = clientX;
-    this._selStartW = startWidth;
-    const move = (e: TouchEvent) => {
-      const dx = (e.touches?.[0]?.clientX ?? 0) - this._selStartX;
-      const w = Math.max(32, this._selStartW + dx);
-      setWidth(Math.round(w));
-    };
-    const up = () => {
-      window.removeEventListener('touchmove', move);
-      window.removeEventListener('touchend', up);
-      onDone();
-    };
-    window.addEventListener('touchmove', move);
-    window.addEventListener('touchend', up);
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/directives/editable-cell.directive.ts
-
-```typescript
-import { Directive, ElementRef, inject, input } from '@angular/core';
-import { EditingController } from '../controllers/editing.controller';
-
-@Directive({
-  selector: '[pcEditable]',
-  host: {
-    '(click)': 'onClick()',
-    '(keydown.enter)': 'onEnter()',
-    '(keydown.esc)': 'onEsc()',
-    '(focusout)': 'onFocusOut($event)',
-    '(mousedown)': 'onMouseDown()',
-    '(document:mouseup)': 'onMouseUp()',
-  },
-})
-export class EditableCellDirective {
-  private readonly editing = inject(EditingController);
-  private readonly host = inject(ElementRef<HTMLElement>);
-  private _isEditing = false;
-  private isMouseDownInside = false;
-
-  private get isEditing(): boolean {
-    const p = this.pcEditable();
-    if (p && typeof p.isEditingCell === 'function') {
-      return p.isEditingCell();
-    }
-    return this._isEditing;
-  }
-
-  private set isEditing(val: boolean) {
-    this._isEditing = val;
-  }
-
-  public readonly pcEditable = input.required<{
-    row: any;
-    col: any;
-    toId: (r: any) => string;
-    coerce: (col: any, raw: any) => any;
-    value: () => any; // current editingValue()
-    setEditingCell: (v: { id: string; field: string } | null) => void;
-    setEditingValue: (v: any) => void;
-    getCellValue: (row: any, col: any) => any;
-    getEditingDisplayValue: (row: any, col: any) => any;
-    createPayload: (row: any, key: string) => any;
-    applyEdit: (id: string, data: any) => Promise<boolean>;
-    updateEditedRow: (id: string, field: string | undefined, v: any) => void;
-    updateWindow: (s: number, e: number) => void;
-    startIndex: () => number;
-    endIndex: () => number;
-    showSuccess: (m: string) => void;
-    showError: (m: string) => void;
-    undo: () => void;
-    customCommit?: (currentValue: any) => Promise<unknown>;
-    isEditable?: () => boolean;
-    isEditingCell?: () => boolean;
-  }>();
-
-  protected onMouseDown() {
-    this.isMouseDownInside = true;
-  }
-
-  protected onMouseUp() {
-    this.isMouseDownInside = false;
-  }
-
-  protected onClick() {
-    const p = this.pcEditable();
-    if (typeof p.isEditable === 'function' && !p.isEditable()) return;
-    const { row, col, toId, setEditingCell, setEditingValue, getCellValue, getEditingDisplayValue } = p;
-    if (!col?.field) return;
-    // Respect col.editable for parity with grid logic
-    if (!col?.editable) return;
-    const id = toId(row);
-    if (!id) return;
-    try {
-      const cur = getEditingDisplayValue ? getEditingDisplayValue(row, col) : getCellValue(row, col);
-      const cloned = Array.isArray(cur) ? [...cur] : cur;
-      setEditingValue(cloned);
-    } catch {}
-    setEditingCell({ id, field: col.field });
-    this.isEditing = true;
-  }
-
-  protected async onEnter() {
-    if (!this.isEditing) return;
-    await this.commit();
-  }
-
-  protected onEsc() {
-    if (!this.isEditing) return;
-    this.isEditing = false;
-    this.pcEditable().setEditingCell(null);
-  }
-
-  // Commit only when focus leaves the cell subtree
-  protected async onFocusOut(ev: FocusEvent) {
-    if (!this.isEditing) return;
-    if (this.isMouseDownInside) return;
-    const container = this.host.nativeElement;
-    const next = ev.relatedTarget as Node | null;
-    if (next && container.contains(next)) return;
-    await this.commit();
-  }
-
-  private async commit() {
-    const p = this.pcEditable();
-    if (!p?.col?.field) return;
-    const currentValue = p.coerce(p.col, p.value());
-    if (typeof p.customCommit === 'function') {
-      await p.customCommit(currentValue);
-    } else {
-      await this.editing.commitSingleCell(p.row, p.col, currentValue);
-    }
-    p.setEditingCell(null);
-    this.isEditing = false;
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/directives/header-reorder.directive.ts
-
-```typescript
-import { Directive, inject, input } from '@angular/core';
-import { DataGrid } from '../datagrid';
-
-@Directive({
-  selector: '[pcHeaderReorder]',
-  host: {
-    '(dragstart)': 'onDragStart($event)',
-    '(dragover)': 'onDragOver($event)',
-    '(drop)': 'onDrop($event)',
-  },
-})
-export class HeaderReorderDirective {
-  public readonly header = input<any>(undefined, { alias: 'pcHeaderReorder' });
-
-  private readonly grid: any = inject(DataGrid);
-
-  protected onDragStart(ev: DragEvent) {
-    try {
-      this.grid.onHeaderDragStart(this.header(), ev);
-    } catch {}
-  }
-
-  protected onDragOver(ev: DragEvent) {
-    try {
-      this.grid.onHeaderDragOver(this.header(), ev);
-    } catch {}
-  }
-
-  protected onDrop(ev: DragEvent) {
-    try {
-      this.grid.onHeaderDrop(this.header(), ev);
-    } catch {}
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/directives/header-resize.directive.ts
-
-```typescript
-import { Directive, ElementRef, inject, input } from '@angular/core';
-import { ResizingController } from '../controllers/resizing.controller';
-import { PinningController } from '../controllers/pinning.controller';
-import type { HeaderRef } from '../types';
-
-@Directive({
-  selector: '[pcHeaderResize]',
-  host: {
-    '(mousedown)': 'onMouseDown($event)',
-    '(touchstart)': 'onTouchStart($event)',
-    '(dragstart)': 'onDragStart($event)',
-    '(dblclick)': 'onDoubleClick($event)',
-  },
-})
-export class HeaderResizeDirective {
-  private readonly resizing = inject(ResizingController);
-  private readonly pinning = inject(PinningController);
-  private readonly hostEl = inject(ElementRef) as ElementRef<HTMLElement>;
-
-  public readonly pcHeaderResize = input.required<{
-    header: HeaderRef; // TanStack header ref
-    getColWidth: (id: string) => number | null;
-    setWidth: (col: any, id: string, px: number) => void;
-    requestPersist: () => void;
-    selectionWidth: () => number;
-    setSuppressHeaderDrag: (v: boolean) => void;
-  }>();
-
-  protected onMouseDown(ev: MouseEvent) {
-    ev.stopPropagation();
-    if (ev.detail > 1) return; // let double-click handler manage autosize
-    const cfg = this.pcHeaderResize();
-    const h = cfg.header;
-    // prevent column drag while resizing
-    try {
-      cfg.setSuppressHeaderDrag(true);
-    } catch {}
-    this.resizing.beginHeaderResize(
-      h,
-      ev.clientX,
-      cfg.getColWidth,
-      (col, id, w) => {
-        cfg.setWidth(col, id, w);
-        this.pinning.updatePinOffsets(h?.table, (cid) => cfg.getColWidth(cid) ?? 0, cfg.selectionWidth());
-      },
-      () => {
-        try {
-          cfg.requestPersist();
-        } catch {}
-        try {
-          cfg.setSuppressHeaderDrag(false);
-        } catch {}
-      },
-    );
-  }
-
-  protected onTouchStart(ev: TouchEvent) {
-    ev.stopPropagation();
-    const x = ev.touches?.[0]?.clientX ?? 0;
-    const cfg = this.pcHeaderResize();
-    const h = cfg.header;
-    try {
-      cfg.setSuppressHeaderDrag(true);
-    } catch {}
-    this.resizing.beginHeaderResizeTouch(
-      h,
-      x,
-      cfg.getColWidth,
-      (col, id, w) => {
-        cfg.setWidth(col, id, w);
-        this.pinning.updatePinOffsets(h?.table, (cid) => cfg.getColWidth(cid) ?? 0, cfg.selectionWidth());
-      },
-      () => {
-        try {
-          cfg.requestPersist();
-        } catch {}
-        try {
-          cfg.setSuppressHeaderDrag(false);
-        } catch {}
-      },
-    );
-  }
-
-  protected onDragStart(ev: DragEvent) {
-    ev.preventDefault();
-    ev.stopPropagation();
-  }
-
-  protected onDoubleClick(ev: MouseEvent) {
-    ev.preventDefault();
-    ev.stopPropagation();
-    const width = this.measureHeaderAutoWidth();
-    if (width == null) return;
-    this.applyWidth(Math.max(40, Math.round(width)));
-  }
-
-  private applyWidth(nextWidth: number) {
-    const cfg = this.pcHeaderResize();
-    const header = cfg.header;
-    const col = header?.column as { id?: string; setSize?: (value: number) => void } | undefined;
-    const id = col?.id == null ? '' : String(col.id);
-    if (!id || !col) return;
-
-    cfg.setWidth(col, id, nextWidth);
-    this.pinning.updatePinOffsets(header?.table, (cid) => cfg.getColWidth(cid) ?? 0, cfg.selectionWidth());
-    try {
-      cfg.requestPersist();
-    } catch {}
-  }
-
-  private measureHeaderAutoWidth(): number | null {
-    const headerEl = this.hostEl.nativeElement.closest('th');
-    if (!headerEl) return null;
-
-    const doc = headerEl.ownerDocument;
-    const content = headerEl.querySelector<HTMLElement>('[data-header-content]');
-    if (!content) return null;
-
-    const clone = content.cloneNode(true) as HTMLElement;
-    clone.style.position = 'absolute';
-    clone.style.visibility = 'hidden';
-    clone.style.pointerEvents = 'none';
-    clone.style.flex = '0 0 auto';
-    clone.style.width = 'auto';
-    clone.style.height = 'auto';
-    clone.style.maxWidth = 'unset';
-    clone.style.whiteSpace = 'nowrap';
-    clone.style.left = '-9999px';
-    clone.style.top = '0';
-
-    const labelClone = clone.querySelector<HTMLElement>('[data-header-label]');
-    if (labelClone) {
-      labelClone.style.flex = '0 0 auto';
-      labelClone.style.whiteSpace = 'nowrap';
-    }
-
-    doc.body.appendChild(clone);
-    const contentWidth = clone.getBoundingClientRect().width;
-    clone.remove();
-    if (contentWidth <= 0) return null;
-
-    const view = doc.defaultView;
-    const style = view ? view.getComputedStyle(headerEl) : null;
-    const paddingLeft = style ? parseFloat(style.paddingLeft || '0') : 0;
-    const paddingRight = style ? parseFloat(style.paddingRight || '0') : 0;
-    const borderLeft = style ? parseFloat(style.borderLeftWidth || '0') : 0;
-    const borderRight = style ? parseFloat(style.borderRightWidth || '0') : 0;
-
-    // add a small buffer so content does not feel cramped next to the resizer
-    const buffer = 8;
-
-    return contentWidth + paddingLeft + paddingRight + borderLeft + borderRight + buffer;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/directives/resize-handle.directive.ts
 
 ```typescript
@@ -15326,68 +14544,6 @@ export class StickyPinDirective {
   public readonly right = input(0, { alias: 'pcStickyRight' });
   public readonly z = input(0, { alias: 'pcStickyZ' });
   public readonly bg = input(true, { alias: 'pcStickyBg' });
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/services/data.service.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-import type { getAllOptionsType } from '../../../../../../../../libs/common/src';
-
-@Injectable({ providedIn: 'root' })
-export class DataGridDataService {
-  computeTotalPages(totalCountAll: number, pageSize: number): number {
-    const size = pageSize || 1;
-    return Math.max(1, Math.ceil((totalCountAll || 0) / size));
-  }
-
-  buildGetAllOptions(args: {
-    searchStr: string;
-    startRow: number;
-    endRow: number;
-    tags: string[];
-    issues?: string[];
-    filterModel: Record<string, any>;
-    sortState: Array<{ id: string; desc?: boolean }>;
-    sortCol: string | null;
-    sortDir: 'asc' | 'desc' | null;
-    includeArchived?: boolean;
-    advancedFilterModel?: any;
-    listId?: string | null;
-  }): Partial<getAllOptionsType> {
-    const {
-      searchStr,
-      startRow,
-      endRow,
-      tags,
-      issues,
-      filterModel,
-      sortState,
-      sortCol,
-      sortDir,
-      includeArchived,
-      advancedFilterModel,
-      listId,
-    } = args;
-    return {
-      searchStr,
-      startRow,
-      endRow,
-      tags,
-      issues,
-      filterModel,
-      includeArchived,
-      advancedFilterModel,
-      listId: listId ?? undefined,
-      sortModel:
-        sortState && sortState.length
-          ? sortState.map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' }))
-          : sortCol && sortDir
-            ? [{ colId: sortCol, sort: sortDir }]
-            : [],
-    } satisfies Partial<getAllOptionsType>;
-  }
 }
 ```
 
@@ -15427,151 +14583,6 @@ export class DataGridSelectionService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/services/tag-options.service.ts
-
-```typescript
-import { Injectable, inject } from '@angular/core';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { TagPaletteService } from '@experiences/tags/ui/tag-palette.service';
-
-@Injectable({ providedIn: 'root' })
-export class TagOptionsService {
-  private readonly tagsSvc = inject(TagsService);
-  private readonly tagPaletteSvc = inject(TagPaletteService);
-
-  public readonly tagNames: string[] = [];
-  public readonly issueNames: string[] = [];
-
-  private tagPending: Promise<string[]> | null = null;
-  private issuePending: Promise<string[]> | null = null;
-
-  async invalidate(type?: 'tag' | 'issue'): Promise<void> {
-    if (!type || type === 'tag') {
-      this.tagPending = null;
-      await this.load('tag');
-    }
-    if (!type || type === 'issue') {
-      this.issuePending = null;
-      await this.load('issue');
-    }
-  }
-
-  async getTagNames(type: 'tag' | 'issue' = 'tag'): Promise<string[]> {
-    const live = type === 'issue' ? this.issueNames : this.tagNames;
-    if (live.length > 0) return live;
-    await this.load(type);
-    return live;
-  }
-
-  private async load(type: 'tag' | 'issue'): Promise<void> {
-    const isPending = type === 'issue' ? this.issuePending : this.tagPending;
-    if (isPending) {
-      await isPending;
-      return;
-    }
-
-    const live = type === 'issue' ? this.issueNames : this.tagNames;
-
-    const promise = this.fetchTagNames(type)
-      .then((names) => {
-        // Mutate in-place so all external references stay valid
-        live.splice(0, live.length, ...names);
-        if (type === 'issue') this.issuePending = null;
-        else this.tagPending = null;
-        void this.tagPaletteSvc.ensurePalette();
-        return names;
-      })
-      .catch(() => {
-        if (type === 'issue') this.issuePending = null;
-        else this.tagPending = null;
-        return [] as string[];
-      });
-
-    if (type === 'issue') this.issuePending = promise;
-    else this.tagPending = promise;
-
-    await promise;
-  }
-
-  private async fetchTagNames(type: 'tag' | 'issue' = 'tag'): Promise<string[]> {
-    try {
-      const { rows } = await this.tagsSvc.getAll({ limit: 1000, offset: 0, orderBy: ['name'], type });
-      const names = Array.isArray(rows)
-        ? rows
-            .map((row: any) => (row?.name != null ? String(row.name).trim() : ''))
-            .filter((name: string): name is string => name.length > 0)
-        : [];
-      const seen = new Set<string>();
-      const unique: string[] = [];
-      for (const name of names) {
-        if (seen.has(name)) continue;
-        seen.add(name);
-        unique.push(name);
-      }
-      unique.sort((a, b) => a.localeCompare(b));
-      return unique;
-    } catch {
-      return [];
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/services/utils.service.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-
-@Injectable({ providedIn: 'root' })
-export class DataGridUtilsService {
-  bucketByRoute(nodes: any[]): Map<string, any[]> {
-    const map = new Map<string, any[]>();
-    for (const n of nodes) {
-      const routeArr = (n as { route?: unknown[] }).route ?? [];
-      const key = JSON.stringify(routeArr);
-      const list = map.get(key) ?? [];
-      if (n.data) list.push(n.data);
-      map.set(key, list);
-    }
-    return map;
-  }
-
-  createPayload<T>(row: Partial<T>, key: keyof T): Partial<T> {
-    return row[key] !== undefined ? ({ [key]: row[key] } as Partial<T>) : {};
-  }
-
-  tagsToString(tags: string[]): string {
-    if (!tags || !Array.isArray(tags)) return '';
-    return tags
-      .filter((t) => typeof t === 'string' && t.trim().length > 0)
-      .map((t) => {
-        const trimmed = t.trim();
-        return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-      })
-      .join(', ');
-  }
-
-  tagArrayEquals(tagsA: string[], tagsB: string[]): number {
-    return (tagsA ?? []).toString().localeCompare((tagsB ?? []).toString());
-  }
-
-  normalizeTagSelection(value: unknown): string[] {
-    const input = Array.isArray(value) ? value : value == null ? [] : [value];
-    const seen = new Set<string>();
-    const result: string[] = [];
-    for (const entry of input) {
-      if (entry == null) continue;
-      const tag = typeof entry === 'string' ? entry.trim() : String(entry).trim();
-      if (!tag) continue;
-      if (seen.has(tag)) continue;
-      seen.add(tag);
-      result.push(tag);
-    }
-    return result;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/state/grid-context.service.ts
 
 ```typescript
@@ -15594,115 +14605,6 @@ export class GridContextService {
 
   // Helpers
   readonly hasAnyFilter = computed(() => Object.keys(this.store.filterValues() || {}).length > 0);
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.html
-
-```html
-<div class="fixed inset-0 z-40">
-  <div class="absolute inset-0 bg-black/30" (click)="close.emit()"></div>
-  <aside class="absolute right-0 top-0 h-full w-[360px] max-w-[90vw] bg-base-100 shadow-xl p-4 flex flex-col">
-    <!-- Pinned Header Area -->
-    <div class="shrink-0">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="text-lg font-semibold">Filters</h3>
-        <button class="btn btn-ghost btn-sm px-2" (click)="close.emit()">
-          <pc-icon name="chevron-right"></pc-icon>
-        </button>
-      </div>
-      <div class="flex justify-between items-center mb-3">
-        <span class="text-sm opacity-70">Combine column filters and operators.</span>
-        <button
-          class="btn btn-link btn-xs text-primary font-bold p-0 no-underline hover:underline flex items-center gap-0.5"
-          [disabled]="hasActiveFilters()"
-          (click)="!hasActiveFilters() && openAdvanced.emit()"
-        >
-          Advanced Filter &gt;
-        </button>
-      </div>
-
-      <!-- Apply / Clear buttons pinned at top -->
-      <div class="flex gap-2 mb-1">
-        <button class="btn btn-primary btn-sm flex-1" (click)="apply.emit()">Apply</button>
-        <button class="btn btn-outline btn-sm flex-1" (click)="clear.emit()">Clear</button>
-      </div>
-
-      <div class="divider my-3"></div>
-    </div>
-
-    <!-- Scrollable Fields Area -->
-    <div class="flex-1 overflow-y-auto space-y-3 pr-1">
-      @for (field of panelFields(); track field) {
-      <div class="form-control">
-        <label class="label py-0"><span class="label-text font-medium">{{ labelFor()(field) }}</span></label>
-        <div class="flex gap-2 mt-1">
-          <select
-            class="select select-bordered select-xs w-28"
-            (change)="changeOp.emit({ field, op: $any($event.target).value })"
-            [value]="$any(panelFilters())[field]?.op || 'contains'"
-          >
-            <option value="contains">contains</option>
-            <option value="notContains">does not contain</option>
-            <option value="equals">equals</option>
-            <option value="notEquals">does not equal</option>
-            <option value="startsWith">starts with</option>
-            <option value="endsWith">ends with</option>
-            <option value="isEmpty">is empty</option>
-            <option value="isNotEmpty">is not empty</option>
-          </select>
-          @let filterOp = $any(panelFilters())[field]?.op; @if (filterOp !== 'isEmpty' && filterOp !== 'isNotEmpty') {
-          @if (optionsFor()(field)?.length) {
-          <select
-            class="select select-bordered select-xs flex-1"
-            (change)="changeValue.emit({ field, value: $any($event.target).value })"
-            [value]="$any(panelFilters())[field]?.value || ''"
-          >
-            <option value="">Any</option>
-            @for (opt of optionsFor()(field)!; track opt) {
-            <option [value]="opt">{{ opt }}</option>
-            }
-          </select>
-          } @else {
-          <input
-            class="input input-bordered input-xs flex-1"
-            type="text"
-            placeholder="Value"
-            (input)="changeValue.emit({ field, value: $any($event.target).value })"
-            [value]="$any(panelFilters())[field]?.value || ''"
-          />
-          } }
-        </div>
-      </div>
-      }
-    </div>
-  </aside>
-</div>
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-
-@Component({
-  selector: 'pc-dg-filter-panel',
-  imports: [Icon],
-  templateUrl: 'datagrid-filter-panel.html',
-})
-export class DataGridFilterPanelComponent {
-  public apply = output<void>();
-  public changeOp = output<{ field: string; op: string }>();
-  public changeValue = output<{ field: string; value: any }>();
-  public clear = output<void>();
-  public close = output<void>();
-  public openAdvanced = output<void>();
-  public hasActiveFilters = input<boolean>(false);
-  public labelFor = input<(field: string) => string>((f) => f);
-  public optionsFor = input<(field: string) => string[] | null>((_f) => null);
-  public panelFields = input<string[]>([]);
-  public panelFilters = input<Record<string, { op: string; value: any }>>({});
 }
 ```
 
@@ -15766,48 +14668,6 @@ export class DataGridFilterPanelComponent {
 </tr>
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-inline-filters-row.ts
-
-```typescript
-import { Component, computed, inject, input } from '@angular/core';
-
-import { DataGrid } from '../datagrid';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-
-@Component({
-  selector: 'pc-dg-inline-filters-row',
-  templateUrl: 'datagrid-inline-filters-row.html',
-})
-export class DataGridInlineFiltersRowComponent {
-  private readonly grid: any = inject(DataGrid, { optional: true });
-
-  public clearHeaderFilter = input<(field: string) => void>((f) => this.grid?.clearHeaderFilter(f));
-  public enableSelection = input<boolean>(true);
-  public getColDefById = input<(id: string) => ColDef | undefined>((id) => this.grid?.getColDefById(id));
-  public getFilterOptionsForCol = input<(col: ColDef) => string[] | null>(
-    (c) => this.grid?.getFilterOptionsForCol(c) ?? null,
-  );
-  public getFilterValue = input<(field: string) => string>((f) => this.grid?.getFilterValue(f) ?? '');
-  public inlineFilterLabel = input<(field: string) => string>((f) => this.grid?.inlineFilterLabel?.(f) ?? '');
-  public isOptionChecked = input<(field: string, option: string) => boolean>(
-    (f, o) => !!this.grid?.isOptionChecked(f, o),
-  );
-  public leafHeaders = input<any[]>([]);
-  public leftOffsetPx = input.required<(colId: string) => number>();
-  public onHeaderFilterInput = input<(field: string, value: any) => void>((f, v) =>
-    this.grid?.onHeaderFilterInput(f, v),
-  );
-  public onToggleFilterOption = input<(field: string, option: string, checked: boolean) => void>((f, o, c) =>
-    this.grid?.onToggleFilterOption(f, o, c),
-  );
-  public pinState = input.required<(h: any) => 'left' | 'right' | false>();
-  public rightOffsetPx = input.required<(colId: string) => number>();
-  public selectionStickyWidth = input<number>(48);
-
-  public readonly colWidths = computed<Record<string, number>>(() => this.grid?.colWidths?.() ?? {});
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.css
 
 ```css
@@ -15864,49 +14724,6 @@ export class DataGridInlineFiltersRowComponent {
       1 13,
     default !important;
 }
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/grid-defaults.ts
-
-```typescript
-import type { GridRow } from './types';
-
-/** Params passed to colDef callbacks (cellRenderer, valueFormatter, valueGetter, valueSetter, ...). */
-export interface CellParams {
-  data?: GridRow;
-  value?: unknown;
-  newValue?: unknown;
-  colDef?: ColumnDef;
-}
-
-// Lightweight column definition used by DataGrid
-export interface ColumnDef {
-  cellClass?: string | ((p: CellParams) => string | undefined);
-  cellDataType?: string;
-  cellEditorParams?: unknown;
-  cellRenderer?: (p: CellParams) => CellRendererResult;
-  cellRendererParams?: unknown;
-  comparator?: (a: unknown, b: unknown) => number;
-  editable?: boolean;
-  equals?: (a: unknown, b: unknown) => boolean;
-  field?: string;
-  headerName?: string;
-  hide?: boolean;
-  onCellClicked?: (event: CellParams) => void;
-  onCellDoubleClicked?: (event: CellParams) => void;
-  isCellInteractive?: (row: GridRow) => boolean;
-  tagColumn?: boolean;
-  valueFormatter?: (p: CellParams) => unknown;
-
-  // Compatibility props (ignored by current table but kept for typing)
-  valueGetter?: (p: CellParams) => unknown;
-  valueSetter?: (p: CellParams) => boolean;
-  minWidth?: number;
-}
-
-type CellRendererResult = string | HTMLElement;
-
-export const SELECTION_COLUMN: ColumnDef = {};
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/tool-button.ts
@@ -17166,9 +15983,11 @@ export class NewPasswordPage implements OnInit {
 
           this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
           void this.router.navigateByUrl('signin');
-        } catch (err: any) {
+        } catch (err) {
           // Catch backend/network rejections properly
-          this.alertSvc.showError(err?.message || 'Failed to reset password. Please try again.');
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : 'Failed to reset password. Please try again.',
+          );
           this.error.set(true);
         } finally {
           end();
@@ -17248,8 +16067,8 @@ export class ResetPasswordPage {
           );
           this.emailSent.set(true);
           void this.router.navigateByUrl('signin');
-        } catch (err: any) {
-          this.alertSvc.showError(err.message || String(err));
+        } catch (err) {
+          this.alertSvc.showError(err instanceof Error && err.message ? err.message : String(err));
         } finally {
           end();
         }
@@ -17303,8 +16122,10 @@ export class ResumeAccountPage extends TRPCService<any> {
       await this.api.auth.resumeTenant.mutate();
       await this.auth.getCurrentUser();
       void this.router.navigate(['/']);
-    } catch (err: any) {
-      this.errorMessage.set(err.message || 'Failed to reactivate account. Please try again.');
+    } catch (err) {
+      this.errorMessage.set(
+        err instanceof Error && err.message ? err.message : 'Failed to reactivate account. Please try again.',
+      );
     } finally {
       this.actionPending.set(false);
     }
@@ -17397,8 +16218,8 @@ export class SignUpPage {
           } else {
             this.alertSvc.showError('Unable to complete signup.');
           }
-        } catch (err: any) {
-          this.alertSvc.showError(err.message);
+        } catch (err) {
+          this.alertSvc.showError(err instanceof Error ? err.message : 'Signup failed.');
         } finally {
           end();
         }
@@ -17462,9 +16283,11 @@ export class VerifyEmailPage implements OnInit {
         this.status.set('error');
         this.errorMessage.set('Verification failed. The link may be invalid.');
       }
-    } catch (err: any) {
+    } catch (err) {
       this.status.set('error');
-      this.errorMessage.set(err.message || 'An unexpected error occurred during verification.');
+      this.errorMessage.set(
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during verification.',
+      );
     } finally {
       end();
     }
@@ -17524,9 +16347,11 @@ export class VerifySenderEmailPage implements OnInit {
         this.status.set('error');
         this.errorMessage.set('Verification failed. The token may be invalid.');
       }
-    } catch (err: any) {
+    } catch (err) {
       this.status.set('error');
-      this.errorMessage.set(err.message || 'An unexpected error occurred during verification.');
+      this.errorMessage.set(
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during verification.',
+      );
     } finally {
       end();
     }
@@ -18002,8 +16827,13 @@ export class CompaniesGrid {
       });
       this.importerOpen.set(false);
       await this.grid()?.refresh();
-    } catch (e: any) {
-      const msg = e?.message || e?.data?.message || 'Import failed';
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
       this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
       this.importerOpen.set(false);
     }
@@ -18015,6 +16845,10 @@ export class CompaniesGrid {
     if (Number.isNaN(date.getTime())) return '';
     return this.dateFormatter.format(date);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -18248,8 +17082,16 @@ export class CompanyView {
       this.companiesSvc.triggerRefresh();
       this.alertSvc.showSuccess('Company deleted');
       await this.router.navigate(['/companies']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete company';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete company';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -18272,6 +17114,10 @@ export class CompanyView {
     if (!id) return '?';
     return this.usersById().get(String(id))?.first_name ?? '?';
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -21594,8 +20440,16 @@ export class ImportsPage {
       this.alerts.showSuccess('Import deleted');
       await this.load();
       this.closeDeleteDialog(dialog);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to delete import';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to delete import';
       this.alerts.showError(message);
     } finally {
       this.deleting.set(false);
@@ -21614,8 +20468,16 @@ export class ImportsPage {
     try {
       const list = await this.imports.list();
       this.items.set(list ?? []);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to load imports';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load imports';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -21623,6 +20485,10 @@ export class ImportsPage {
       end();
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -23271,478 +22137,6 @@ export class PeopleInHousehold {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
-
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
-
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-
-import {
-  DATA_GRID_CONFIG,
-  DEFAULT_DATA_GRID_CONFIG,
-  provideDataGridConfig,
-} from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DATA_TYPE, PersonsService } from '../services/persons-service';
-
-@Component({
-  selector: 'pc-persons-grid',
-  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
-  templateUrl: './persons-grid.html',
-  providers: [
-    { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({ messages: { exportEntity: 'persons', exportFileName: 'persons-export.csv' } }),
-  ],
-})
-export class PersonsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  private readonly personsService = inject(PersonsService);
-
-  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
-
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-
-  public inline = input<boolean>(false);
-
-  private addressChangeModalId: string | null = null;
-  private importProgressTimer: any;
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-
-  protected readonly mappableFields = [
-    'first_name',
-    'middle_names',
-    'last_name',
-    'email',
-    'email2',
-    'mobile',
-    'home_phone',
-    'street_num',
-    'street1',
-    'street2',
-    'apt',
-    'city',
-    'state',
-    'zip',
-    'country',
-    'notes',
-  ];
-
-  protected col: ColDef[] = [
-    { field: 'first_name', headerName: 'First Name', editable: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true },
-    { field: 'email', headerName: 'Email', editable: true },
-    { field: 'mobile', headerName: 'Mobile', editable: true },
-    { field: 'company_name', headerName: 'Company', editable: false },
-    {
-      field: 'home_phone',
-      headerName: 'Home phone',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'tags',
-      hide: true,
-      headerName: 'Tags',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'address',
-      headerName: 'Address',
-      editable: false,
-      onCellClicked: this.onAddressCellClicked.bind(this),
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-      isCellInteractive: (row: any) => !row.household_is_placeholder,
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        return parts.join(', ').trim() || 'No household assigned';
-      },
-    },
-    {
-      field: 'street_num',
-      headerName: 'Street Number',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'apt',
-      headerName: 'Apt',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street2',
-      headerName: 'Street 2',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'city',
-      headerName: 'City',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'state',
-      headerName: 'State/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'zip',
-      headerName: 'Zip/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'country',
-      headerName: 'Country',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-
-  // Generic CSV importer integration
-  protected importerOpen = signal(false);
-  protected importSummary = signal<CsvImportSummary | null>(null);
-
-  public listId = input<string | null>(null);
-
-  protected readonly narrowTypeOptions = [
-    { label: 'All', value: null, tags: [] },
-    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
-    { label: 'Donors', value: 'donor', tags: ['donor'] },
-  ];
-
-  protected tagsInput = '';
-
-  public ngOnInit() {
-    void this.initializeComponent();
-  }
-
-  private async initializeComponent(): Promise<void> {
-    try {
-      await this.loadTagOptions();
-      await this.loadIssueOptions();
-      // Any logic that depends on this data should go here
-    } catch (error) {
-      console.error('Initialization failed', error);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected getPlusIcon(): PcIconNameType {
-    return 'user-plus';
-  }
-
-  // paging/preview managed by CsvImportComponent
-
-  protected confirmOpenEditOnDoubleClick(event: any) {
-    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
-    this.confirmAddressChange();
-  }
-
-  protected onAddressCellClicked(event: any) {
-    const householdId = event?.data?.household_id ?? event?.household_id;
-    if (householdId) {
-      void this.router.navigate(['households', householdId]);
-    }
-  }
-
-  protected getTitle() {
-    return 'People';
-  }
-
-  protected getDescription() {
-    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
-  }
-
-  // --- Import CSV Flow ---
-  protected openImportDialog() {
-    // Clear any prior summary to avoid stale dialogs
-    this.importSummary.set(null);
-    this.tagsInput = '';
-    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
-    this.importerOpen.set(true);
-  }
-
-  protected routeToHouseholds() {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.close();
-
-    if (this.addressChangeModalId !== null) {
-      void this.router.navigate(['households', this.addressChangeModalId]);
-    }
-  }
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-    const inputTags = this.tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => !!t);
-    const tags = inputTags;
-
-    try {
-      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        tag: res?.tag ?? undefined,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e: any) {
-      const msg = e?.message || e?.data?.message || 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  public autoMapHeader(h: string): string {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      firstname: 'first_name',
-      fname: 'first_name',
-      middlename: 'middle_names',
-      lastname: 'last_name',
-      lname: 'last_name',
-      name: 'first_name',
-      email: 'email',
-      emailaddress: 'email',
-      email1address: 'email',
-      email2: 'email2',
-      email2address: 'email2',
-      mobile: 'mobile',
-      mobilephone: 'mobile',
-      cellphone: 'mobile',
-      primaryphone: 'mobile',
-      businessphone: 'mobile',
-      homephone: 'home_phone',
-      streetnum: 'street_num',
-      streetnumber: 'street_num',
-      homestreet: 'street1',
-      homestreet1: 'street1',
-      homestreet2: 'street2',
-      homestreet3: 'street2',
-      homeaddress: 'street1',
-      homeaddresspobox: 'street2',
-      homecity: 'city',
-      homestate: 'state',
-      homepostalcode: 'zip',
-      homecountry: 'country',
-      businessstreet: 'street1',
-      businessstreet1: 'street1',
-      businessstreet2: 'street2',
-      businessstreet3: 'street2',
-      businessaddress: 'street1',
-      businessaddresspobox: 'street2',
-      businesscity: 'city',
-      businessstate: 'state',
-      businesspostalcode: 'zip',
-      businesscountry: 'country',
-      address1: 'street1',
-      address2: 'street2',
-      street1: 'street1',
-      street2: 'street2',
-      apt: 'apt',
-      apartment: 'apt',
-      city: 'city',
-      state: 'state',
-      province: 'state',
-      zip: 'zip',
-      postal: 'zip',
-      country: 'country',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
-  }
-
-  private confirmAddressChange(): void {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.showModal();
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    const ids = selected.map((r: any) => r.id);
-
-    // Show standard delete confirmation
-    const selectedCount = selected.length;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : this.config.messages.deleteConfirmMessage;
-
-    const ok = await this.dialogs.confirm({
-      title: this.config.messages.deleteConfirmTitle,
-      message: dynamicMessage,
-      variant: this.config.messages.deleteConfirmVariant,
-      icon: this.config.messages.deleteConfirmIcon,
-      confirmText: this.config.messages.deleteConfirmText,
-      cancelText: this.config.messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return true; // Handled
-
-    const end = this._loading.begin();
-    try {
-      // Call deleteMany without force, skipping global error toast
-      await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-    } catch (err: any) {
-      // Check if it's the captain error message
-      const errMsg = err?.message || err?.data?.message || '';
-      if (errMsg.includes('team captains')) {
-        // Ask the user if they want to proceed despite being a team captain
-        const forceOk = await this.dialogs.confirm({
-          title: 'Team Captain Warning',
-          message: errMsg,
-          variant: 'warning',
-          confirmText: 'Yes, delete anyway',
-          cancelText: 'Cancel',
-        });
-        if (forceOk) {
-          try {
-            await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-          } catch (forceErr: any) {
-            const forceErrMsg = forceErr?.message || forceErr?.data?.message || 'Delete failed';
-            this.alertSvc.showError(forceErrMsg);
-          }
-        }
-      } else {
-        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
-      }
-    } finally {
-      end();
-      this.grid()?.clearAllSelection();
-      await this.grid()?.refresh();
-    }
-    return true;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/profile/profile-page.ts
 
 ```typescript
@@ -23910,8 +22304,16 @@ export class ProfilePage implements OnInit {
       this.alerts.showSuccess('Profile updated successfully');
       await this.load();
       this.form().reset();
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to update profile';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to update profile';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -23926,8 +22328,16 @@ export class ProfilePage implements OnInit {
       await this.auth.cancelEmailChange();
       this.alerts.showSuccess('Email change canceled and reverted');
       await this.load();
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to cancel email change';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to cancel email change';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -24057,8 +22467,8 @@ export class ProfilePage implements OnInit {
       const data = await this.auth.uploadAvatar(webpFile);
       this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
       this.alerts.showSuccess('Profile picture updated successfully');
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to crop/upload avatar');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
     } finally {
       this.uploadingAvatar.set(false);
     }
@@ -24070,8 +22480,8 @@ export class ProfilePage implements OnInit {
       await this.auth.deleteAvatar();
       this.avatarUrl.set(null);
       this.alerts.showSuccess('Profile picture removed');
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to remove avatar');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
     } finally {
       this.uploadingAvatar.set(false);
     }
@@ -24093,8 +22503,16 @@ export class ProfilePage implements OnInit {
       this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
       this.setForm(user);
       this.form().reset();
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to load profile';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load profile';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -24144,6 +22562,10 @@ export class ProfilePage implements OnInit {
       },
     } as UpdateAuthUserType;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -24202,9 +22624,9 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     try {
       const data = await this.api.billing.getDetails.query();
       this.details.set(data);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      this.alerts.showError(err.message || 'Failed to load subscription details.');
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load subscription details.');
     } finally {
       end();
     }
@@ -24232,8 +22654,8 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       } else {
         throw new Error('No redirect URL returned from billing engine.');
       }
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Checkout failed. Please try again.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Checkout failed. Please try again.');
       this.actionPending.set(false);
     }
   }
@@ -24247,8 +22669,8 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       } else {
         throw new Error('No redirect URL returned from billing portal.');
       }
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Could not open billing portal.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not open billing portal.');
       this.actionPending.set(false);
     }
   }
@@ -24259,8 +22681,8 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       await this.api.billing.activateMockPlan.mutate({ plan });
       this.alerts.showSuccess(`Success! [Mock Mode] activated your "${plan.toUpperCase()}" plan.`);
       await this.loadBilling();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Mock plan activation failed.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Mock plan activation failed.');
     } finally {
       end();
       this.clearQueryParams();
@@ -24273,8 +22695,8 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       await this.api.billing.cancelMockPlan.mutate();
       this.alerts.showSuccess('Mock subscription has been canceled.');
       await this.loadBilling();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to cancel mock plan.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel mock plan.');
     } finally {
       end();
     }
@@ -24444,8 +22866,8 @@ export class PasskeySettingsComponent implements OnInit {
           pendingName: r.friendly_name ?? '',
         })),
       );
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to load passkeys.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load passkeys.');
     } finally {
       end();
     }
@@ -24459,9 +22881,9 @@ export class PasskeySettingsComponent implements OnInit {
         this.alerts.showSuccess('Passkey registered successfully.');
         await this.loadPasskeys();
       }
-    } catch (err: any) {
-      if (err?.name !== 'NotAllowedError') {
-        this.alerts.showError(err.message || 'Failed to register passkey.');
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
+        this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to register passkey.');
       }
     } finally {
       this.adding.set(false);
@@ -24481,8 +22903,8 @@ export class PasskeySettingsComponent implements OnInit {
       await this.authService.deletePasskey(passkey.id);
       this.alerts.showSuccess('Passkey removed.');
       this.passkeys.update((list) => list.filter((p) => p.id !== passkey.id));
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to remove passkey.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove passkey.');
     }
   }
 
@@ -24508,8 +22930,8 @@ export class PasskeySettingsComponent implements OnInit {
       this.passkeys.update((list) =>
         list.map((p) => (p.id === passkey.id ? { ...p, friendly_name: name, editingName: false } : p)),
       );
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to rename passkey.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to rename passkey.');
     }
   }
 }
@@ -27086,8 +25508,16 @@ export class TeamViewComponent {
       this.teamsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Team deleted');
       await this.router.navigate(['/teams']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete team';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete team';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -27138,6 +25568,10 @@ export class TeamViewComponent {
         return 'ghost';
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -27209,81 +25643,6 @@ export class TeamsGridComponent {
     const date = value instanceof Date ? value : new Date(value as string);
     if (Number.isNaN(date.getTime())) return '';
     return this.dateFormatter.format(date);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  InviteAuthUserType,
-  UpdateAuthUserType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Service()
-export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
-  protected override readonly endpointName = 'authusers';
-
-  public add(row: InviteAuthUserType) {
-    return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public addMany(_rows: InviteAuthUserType[]) {
-    return Promise.resolve([]);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return this.api.authusers.count.query();
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal }) as Promise<{
-      rows: Record<string, unknown>[];
-      count: number;
-    }>;
-  }
-
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public getById(id: string) {
-    return this.api.authusers.getById.query(id) as Promise<IAuthUserDetail>;
-  }
-
-  public getTags(_id: string) {
-    return Promise.resolve([]);
-  }
-
-  public update(id: string, data: UpdateAuthUserType) {
-    return this.api.authusers.update.mutate({ id, data }) as Promise<IAuthUserRecord>;
-  }
-
-  public adminTriggerPasswordReset(id: string): Promise<{ success: boolean }> {
-    return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
-  }
-
-  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return Promise.reject(new Error('User export is not available'));
   }
 }
 ```
@@ -28672,6 +27031,90 @@ export class Navbar implements OnDestroy {
 }
 ```
 
+## File: apps/frontend/src/app/services/api/abstract-api.service.ts
+
+```typescript
+import { signal, Service } from '@angular/core';
+import {
+  DataExportRecordType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  getAllOptionsType,
+  QueueExportInputType,
+} from '../../../../../../libs/common/src';
+import { TRPCService } from './trpc-service';
+import { TRPCClient } from '@trpc/client';
+import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
+
+import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+
+@Service()
+export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPCService<T> {
+  protected abstract readonly endpointName: keyof TRPCClient<TRPCRouter>;
+
+  public readonly refreshCount = signal(0);
+
+  public triggerRefresh() {
+    this.refreshCount.update((n) => n + 1);
+  }
+  public abstract add(row: U, options?: unknown): Promise<Partial<T> | unknown>;
+
+  public abstract addMany(rows: U[]): Promise<Partial<T>[] | unknown>;
+
+  public abstract attachTag(id: string, tag_name: string, type?: 'tag' | 'issue'): Promise<unknown>;
+
+  public abstract count(): Promise<number>;
+
+  public async delete(id: string): Promise<boolean> {
+    const endpoint = this.api[this.endpointName] as {
+      delete: { mutate: (id: string) => Promise<unknown> };
+    };
+    if (!endpoint) {
+      throw new Error(`Endpoint for "${String(this.endpointName)}" not found on tRPC client.`);
+    }
+    return (await endpoint.delete.mutate(id)) !== null;
+  }
+
+  public async deleteMany(ids: string[]): Promise<boolean> {
+    const endpoint = this.api[this.endpointName] as {
+      delete: { mutate: (id: string) => Promise<unknown> };
+      deleteMany?: { mutate: (ids: string[]) => Promise<unknown> };
+    };
+    if (!endpoint) {
+      throw new Error(`Endpoint for "${String(this.endpointName)}" not found on tRPC client.`);
+    }
+    if ('deleteMany' in endpoint && endpoint.deleteMany) {
+      return (await endpoint.deleteMany.mutate(ids)) !== null;
+    }
+    const results = await Promise.all(ids.map((id) => this.delete(id)));
+    return results.every(Boolean);
+  }
+
+  public abstract detachTag(id: string, tag_name: string, type?: 'tag' | 'issue'): Promise<unknown>;
+
+  public abstract getAll(options?: getAllOptionsType): Promise<{ rows: Record<string, unknown>[]; count: number }>;
+
+  public abstract getAllArchived(
+    options?: getAllOptionsType,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }>;
+
+  public abstract getById(id: string): Promise<unknown>;
+
+  public abstract getTags(id: string, type?: 'tag' | 'issue'): Promise<string[]>;
+
+  public abstract update(id: string, data: U, options?: unknown): Promise<Partial<T>[] | unknown>;
+
+  public abstract exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType>;
+
+  public queueExport(input: QueueExportInputType): Promise<DataExportRecordType> {
+    const exportsEndpoint = this.api.exports as {
+      queue: { mutate: (input: QueueExportInputType) => Promise<DataExportRecordType> };
+    };
+    return exportsEndpoint.queue.mutate(input);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/services/api/http-download.ts
 
 ```typescript
@@ -28882,417 +27325,746 @@ export const jsendInterceptor: HttpInterceptorFn = (req, next) => {
 };
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/editing.controller.ts
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/fetch.controller.ts
 
 ```typescript
-import { Injectable, inject } from '@angular/core';
-import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { inject, Injectable } from '@angular/core';
 import type { DataGrid } from '../datagrid';
+import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
+import { DataGridDataService } from '../services/data.service';
 import { GridStoreService } from '../services/grid-store.service';
-import { DataGridUtilsService } from '../services/utils.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
+import type { getAllOptionsType } from '../../../../../../../../libs/common/src';
 
 @Injectable()
-export class EditingController {
+export class FetchController {
+  private readonly gridSvc = inject(AbstractAPIService);
+  private readonly dataSvc = inject(DataGridDataService);
   private readonly store = inject(GridStoreService);
   private readonly alertSvc = inject(AlertService);
-  private readonly utilsSvc = inject(DataGridUtilsService);
-  private readonly gridSvc = inject(AbstractAPIService);
 
-  private get grid(): DataGrid<any, any> {
-    return this.store.grid;
+  private get grid(): DataGrid<keyof Models, unknown> {
+    return this.store.grid as unknown as DataGrid<keyof Models, unknown>;
   }
 
-  public coerceEditingValue(col: { cellDataType?: string }, raw: any): any {
-    const t = String(col?.cellDataType || '').toLowerCase();
-    if (t === 'number' || t === 'numeric') {
-      const n = typeof raw === 'number' ? raw : parseFloat(String(raw ?? '').trim());
-      return isNaN(n) ? null : n;
-    }
-    if (t === 'date' || t === 'datetime' || t === 'dateonly') {
-      const v = String(raw ?? '').trim();
-      return v.length > 10 ? v.slice(0, 10) : v;
-    }
-    if (t === 'color' || t === 'colour') {
-      const v = String(raw ?? '').trim();
-      const pattern = /^#([0-9a-fA-F]{6})$/;
-      return pattern.test(v) ? v.toLowerCase() : null;
-    }
-    return raw;
-  }
-
-  public async commitSingleCell(
-    row: any,
-    col: { field?: string; cellDataType?: string; valueSetter?: (p: any) => boolean },
-    currentValue: any,
-  ): Promise<boolean> {
-    if (!col.field) return false;
-    const id = this.grid.toId(row);
-    if (!id) return false;
-    const key = col.field as string;
-    const prev = (row as Record<string, unknown>)[key];
-    // If a valueSetter is provided on the col, let it handle assignment/normalization
-    let changed = false;
-    const before: Record<string, unknown> = { ...(row || {}) };
-    if (typeof col.valueSetter === 'function') {
-      try {
-        const didSet = col.valueSetter({ data: row, newValue: currentValue, value: prev, colDef: col });
-        changed = !!didSet;
-      } catch {
-        changed = false;
-      }
-    } else {
-      const equal = prev === currentValue || (prev == null && (currentValue == null || currentValue === ''));
-      changed = !equal;
-      if (changed) Object.assign(row as object, { [key]: currentValue });
-    }
-    if (!changed) return true;
+  async loadPage(index: number, append?: boolean): Promise<void> {
+    const end = this.grid._loading.begin();
     try {
-      if (this.shouldBlockEdit(row, key)) {
-        void this.grid.undoMgr.undo();
-        this.alertSvc.showError('Editing this field is blocked');
-        Object.assign(row as object, { [key]: before[key] });
-        return false;
+      const pageSize = this.store.pageSize();
+      const startRow = index * pageSize;
+      const endRow = startRow + pageSize;
+      const options = this.dataSvc.buildGetAllOptions({
+        searchStr: this.grid.searchTerm(),
+        startRow,
+        endRow,
+        tags: this.grid.selectedTags(),
+        issues: this.grid.selectedIssues(),
+        filterModel: this.grid.buildFilterModel(),
+        sortState: this.store.sorting() as unknown as Array<{ id: string; desc?: boolean }>,
+        sortCol: this.grid.sortCol(),
+        sortDir: this.grid.sortDir(),
+        includeArchived: this.grid.archiveMode(),
+        advancedFilterModel: this.grid.externalAdvancedFilterModel() || this.grid.advFilter.buildModel(),
+        listId: this.grid.activeListId(),
+      });
+      const data = this.grid.archiveMode()
+        ? await this.gridSvc.getAllArchived(options)
+        : await this.gridSvc.getAll(options);
+      const incoming = data.rows ?? [];
+      if (append && this.store.rows().length > 0) {
+        const next = [...this.store.rows(), ...incoming];
+        this.store.rows.set(next);
+        this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
+      } else {
+        this.store.rows.set(incoming);
+        this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
       }
-      const payload = this.utilsSvc.createPayload(row, key);
-      const edited = await this.gridSvc
-        .update(id, payload)
-        .then(() => true)
-        .catch(() => false);
-      if (!edited) {
-        void this.grid.undoMgr.undo();
-        Object.assign(row as object, { [key]: before[key] });
-        this.alertSvc.showError('Update failed');
-        return false;
-      }
-      this.grid.updateEditedRowInCaches(id, col.field, currentValue, before[key]);
-      this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
-      this.alertSvc.showSuccess('Row updated');
-      return true;
+      this.grid.totalCountAll.set(data.count ?? this.store.rows().length);
+      this.store.pageIndex.set(index);
     } catch {
-      Object.assign(row as object, { [key]: before[key] });
-      this.alertSvc.showError('Update failed');
-      return false;
-    }
-  }
-
-  public shouldBlockEdit(row: any, key: string): boolean {
-    return !!(
-      row &&
-      typeof row === 'object' &&
-      'deletable' in row &&
-      (row as { deletable?: boolean }).deletable === false &&
-      key === 'name'
-    );
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/virtualizer.controller.ts
-
-```typescript
-import { Injectable, effect, signal } from '@angular/core';
-import { Virtualizer, elementScroll, observeElementOffset, observeElementRect } from '@tanstack/virtual-core';
-import { GridStoreService } from '../services/grid-store.service';
-
-@Injectable()
-export class VirtualizerController {
-  private virtualizer: Virtualizer<HTMLDivElement, Element> | undefined;
-  private scrollerEl: HTMLDivElement | null = null;
-  private rowHeight = 36;
-  private fetchingNext = false;
-  private canNextFn: (() => boolean) | null = null;
-  private isLoadingFn: (() => boolean) | null = null;
-  private nextPageFn: (() => Promise<void>) | null = null;
-  private tsTable: any = null;
-
-  // Local viewport tracking used for fallback calculations
-  readonly viewportH = signal(0);
-
-  constructor(private readonly store: GridStoreService) {
-    // Keep virtualizer count in sync with rows length
-    effect(() => {
-      const count = this.store.rows().length;
-      if (this.virtualizer) this.virtualizer.setOptions({ ...this.virtualizer.options, count });
-    });
-  }
-
-  attach(scroller: HTMLDivElement, rowHeight: number) {
-    this.scrollerEl = scroller;
-    this.rowHeight = rowHeight;
-    this.viewportH.set(scroller.clientHeight || 0);
-    this.virtualizer = new Virtualizer<HTMLDivElement, Element>({
-      count: this.store.rows().length,
-      getScrollElement: () => scroller,
-      estimateSize: () => this.rowHeight,
-      overscan: 6,
-      scrollToFn: elementScroll,
-      observeElementRect,
-      observeElementOffset,
-    });
-  }
-
-  attachTable(tsTable: any) {
-    this.tsTable = tsTable;
-  }
-
-  configurePaging(opts: { canNext: () => boolean; isLoading: () => boolean; nextPage: () => Promise<void> }) {
-    this.canNextFn = opts.canNext;
-    this.isLoadingFn = opts.isLoading;
-    this.nextPageFn = opts.nextPage;
-  }
-
-  detach() {
-    this.virtualizer = undefined;
-    this.scrollerEl = null;
-    this.tsTable = null;
-  }
-
-  setCount(n: number) {
-    if (this.virtualizer) {
-      this.virtualizer.setOptions({ ...this.virtualizer.options, count: n });
-    }
-  }
-
-  onScroll(event: Event) {
-    const el = event.target as HTMLElement;
-    this.viewportH.set(el.clientHeight || this.viewportH());
-    this.virtualizer?.scrollToOffset?.(el.scrollTop || 0);
-    // Infinite append: when near bottom, fetch next page if available
-    try {
-      if (this.canNextFn && this.isLoadingFn && this.nextPageFn) {
-        if (this.canNextFn() && !this.isLoadingFn() && !this.fetchingNext) {
-          const nearBottom = this.endIndex() > this.store.rows().length - 10;
-          if (nearBottom) {
-            this.fetchingNext = true;
-            void this.nextPageFn().finally(() => (this.fetchingNext = false));
-          }
-        }
-      }
-    } catch {}
-  }
-
-  startIndex(): number {
-    const items = this.virtualizer?.getVirtualItems() ?? [];
-    if (items.length && items[0]) return items[0].index;
-    // Fallback before virtualizer initializes
-    const sc = this.scrollerEl;
-    const top = sc?.scrollTop || 0;
-    return Math.max(0, Math.floor(top / this.rowHeight));
-  }
-
-  endIndex(): number {
-    const items = this.virtualizer?.getVirtualItems() ?? [];
-    if (items.length && items[items.length - 1]) return items[items.length - 1]!.index + 1;
-    return Math.min(this.store.rows().length, this.startIndex() + this.visibleCount());
-  }
-
-  topPadHeight(): number {
-    const v = this.virtualizer;
-    if (v) {
-      const items = v.getVirtualItems();
-      if (items.length && items[0]) return items[0].start;
-    }
-    return this.startIndex() * this.rowHeight;
-  }
-
-  bottomPadHeight(): number {
-    const v = this.virtualizer;
-    if (v) {
-      const items = v.getVirtualItems();
-      const total = v.getTotalSize();
-      const renderedEnd = items.length ? items[items.length - 1].end : 0;
-      return Math.max(0, total - renderedEnd);
-    }
-    const total = this.store.rows().length * this.rowHeight;
-    const rendered = this.topPadHeight() + (this.endIndex() - this.startIndex()) * this.rowHeight;
-    return Math.max(0, total - rendered);
-  }
-
-  visibleTableRows(): any[] {
-    const all = this.tsTable?.getRowModel?.().rows || [];
-    const start = this.startIndex();
-    const end = this.endIndex();
-    return all.slice(start, end);
-  }
-
-  visibleCount(): number {
-    const items = this.virtualizer?.getVirtualItems() ?? [];
-    if (items.length) return items.length;
-    const vp = this.viewportH() || 0;
-    return Math.max(1, Math.ceil(vp / this.rowHeight) + 6);
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/services/actions.service.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-import type { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
-import type { AlertService } from '@uxcommon/components/alerts/alert-service';
-import type { loadingGate } from '@uxcommon/loading-gate';
-
-import { DataGridConfig } from '../datagrid.tokens';
-
-@Injectable({ providedIn: 'root' })
-export class DataGridActionsService {
-  public async confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
-    const { messages } = ctx.config;
-
-    const selectedCount = ctx.getSelectedRows()?.length ?? 0;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : ctx.config.messages.deleteConfirmMessage;
-
-    const ok = await ctx.dialogs.confirm({
-      title: messages.deleteConfirmTitle,
-      message: dynamicMessage,
-      variant: messages.deleteConfirmVariant,
-      icon: messages.deleteConfirmIcon,
-      confirmText: messages.deleteConfirmText,
-      cancelText: messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return;
-
-    const rows = ctx.getSelectedRows();
-    if (!rows.length) {
-      ctx.alertSvc.showError(messages.deleteNoneSelected);
-      return;
-    }
-
-    const isNonDeletable = (row: Record<string, unknown>) => {
-      if (!('deletable' in row)) return false;
-      const value = (row as { deletable?: unknown }).deletable;
-      if (typeof value === 'boolean') return value === false;
-      if (typeof value === 'string') {
-        const normalized = value.trim().toLowerCase();
-        return normalized === 'false' || normalized === '0';
-      }
-      if (typeof value === 'number') return value === 0;
-      return false;
-    };
-
-    const deletableRows = rows.filter((row) => !isNonDeletable(row as Record<string, unknown>));
-    const containsNonDeletable = deletableRows.length !== rows.length;
-    if (containsNonDeletable) {
-      ctx.alertSvc.showError(messages.deleteSystemValues);
-      return;
-    }
-    if (!deletableRows.length) {
-      return;
-    }
-
-    const end = ctx._loading.begin();
-    try {
-      const ids = deletableRows.map((r) => r.id);
-      const ok2 = await ctx.gridSvc.deleteMany(ids);
-      if (!ok2) {
-        ctx.alertSvc.showError(messages.deleteFailed);
-        return;
-      }
-      ctx.alertSvc.showSuccess(messages.deleteSuccess);
+      this.alertSvc.showError(this.grid.config.messages.loadFailed);
     } finally {
       end();
     }
   }
 
-  public async doExportCsv(deps: {
-    dialogs: ConfirmDialogService;
-    alertSvc: AlertService;
-    config: DataGridConfig;
-    getRowsForExport?: () => Array<Record<string, any>>;
-    requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
-    queueFullExport?: () => Promise<void>;
-    displayedCount?: number;
-    totalCount?: number;
-  }) {
-    const { messages } = deps.config;
+  async selectAllMatching(): Promise<{ ids: string[]; count: number }> {
+    const options: getAllOptionsType = {
+      searchStr: this.grid.searchTerm(),
+      tags: this.grid.selectedTags(),
+      issues: this.grid.selectedIssues(),
+      advancedFilterModel: this.grid.externalAdvancedFilterModel() || this.grid.advFilter.buildModel(),
+      listId: this.grid.activeListId() ?? undefined,
+    };
+    const { rows } = this.grid.archiveMode()
+      ? await this.gridSvc.getAllArchived(options)
+      : await this.gridSvc.getAll(options);
+    const rowCanSelect = this.grid.rowCanSelect();
+    const filteredRows = rowCanSelect ? (rows ?? []).filter(rowCanSelect) : (rows ?? []);
+    const ids = filteredRows.map((r) => this.grid.toId(r)).filter(Boolean);
+    return { ids, count: filteredRows.length };
+  }
+}
+```
 
-    const displayedCount = deps.displayedCount ?? 0;
-    const totalCount = deps.totalCount ?? displayedCount;
-    const hasAllRowsVisible = totalCount <= displayedCount;
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/keyboard.controller.ts
 
-    let exportAllData = false;
-    if (!hasAllRowsVisible) {
-      const parts: string[] = [];
-      if (totalCount > 0 && displayedCount > 0) {
-        parts.push(`Only ${displayedCount} of ${totalCount} rows are currently displayed.`);
-      }
-      parts.push(messages.exportMessage);
-      parts.push(messages.exportNavigateWarning);
-      const wantsAll = await deps.dialogs.confirm({
-        title: messages.exportTitle,
-        message: parts.filter(Boolean).join('\n\n'),
-        variant: 'info',
-        icon: messages.exportIcon,
-        confirmText: messages.exportConfirmText,
-        cancelText: messages.exportCancelText,
-        allowBackdropClose: false,
-      });
-      exportAllData = wantsAll === true;
+```typescript
+import { Injectable } from '@angular/core';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { GridRow } from '../types';
+
+@Injectable()
+export class KeyboardController {
+  handleCellKeydown(
+    ev: KeyboardEvent,
+    helpers: {
+      getColDefById: (id: string) => ColDef | undefined;
+      isEditable: (col: ColDef) => boolean;
+      startEdit: (row: GridRow, col: ColDef) => void;
+      rows: () => GridRow[];
+    },
+  ) {
+    const td = (ev.target as HTMLElement).closest('td') as HTMLElement | null;
+    if (!td) return;
+    const tr = td.parentElement as HTMLElement | null;
+    if (!tr) return;
+    const colId = td.getAttribute('data-col-id') || '';
+    if (!colId) return;
+    const key = ev.key;
+    if (key === 'Enter') {
+      ev.preventDefault();
+      const rowId = tr.getAttribute('data-row-id') || '';
+      if (!rowId) return;
+      const col = helpers.getColDefById(colId);
+      if (!col) return;
+      const row = helpers.rows().find((r) => String(r?.['id']) === rowId);
+      if (!row) return;
+      if (helpers.isEditable(col)) helpers.startEdit(row, col);
+      return;
     }
-
-    // --- "All rows" path: queue background job, return immediately ---
-    if (exportAllData) {
-      if (deps.queueFullExport) {
-        try {
-          await deps.queueFullExport();
-          deps.alertSvc.showSuccess('Export queued! Visit the Exports page to download when ready.');
-        } catch {
-          deps.alertSvc.showError(messages.exportFailed);
+    if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'ArrowLeft' && key !== 'ArrowRight') return;
+    ev.preventDefault();
+    if (key === 'ArrowDown' || key === 'ArrowUp') {
+      const dir = key === 'ArrowDown' ? 1 : -1;
+      let rowEl: HTMLElement | null = tr;
+      while (rowEl) {
+        rowEl =
+          dir > 0
+            ? (rowEl.nextElementSibling as HTMLElement | null)
+            : (rowEl.previousElementSibling as HTMLElement | null);
+        if (!rowEl) break;
+        const nextTd = rowEl.querySelector(`td[data-col-id="${colId}"]`) as HTMLElement | null;
+        if (nextTd) {
+          nextTd.focus({ preventScroll: false });
+          break;
         }
-        return;
       }
-      // fallback: no queue callback, fall through to synchronous path
-    }
-
-    // --- "Displayed rows" path: synchronous, in-memory, direct download ---
-    if (!deps.getRowsForExport) return;
-
-    try {
-      const rows = deps.getRowsForExport();
-      if (!rows.length) {
-        deps.alertSvc.showInfo('No rows to export.');
-        return;
-      }
-      const rowCount = rows.length;
-      const headers = Object.keys(rows[0]!);
-      const escape = (v: any) => {
-        const s = v == null ? '' : String(v);
-        return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
-      };
-      const csv = [headers.join(',')]
-        .concat(rows.map((r) => headers.map((h) => escape((r as Record<string, unknown>)[h])).join(',')))
-        .join('\n');
-
-      const fileName = messages.exportFileName || 'export.csv';
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      deps.alertSvc.showSuccess(`${messages.exportReady} (${rowCount} rows)`);
-    } catch {
-      deps.alertSvc.showError(messages.exportFailed);
+    } else {
+      const cells = Array.from(tr.querySelectorAll('td')) as HTMLElement[];
+      const idx = cells.findIndex((c) => c === td);
+      const nextIdx = key === 'ArrowRight' ? idx + 1 : idx - 1;
+      const nextTd = cells[nextIdx];
+      if (nextTd) nextTd.focus({ preventScroll: false });
     }
   }
 }
+```
 
-type DeleteCtx = {
-  _loading: loadingGate;
-  alertSvc: AlertService;
-  config: DataGridConfig;
-  dialogs: ConfirmDialogService;
-  gridSvc: { deleteMany: (ids: string[]) => Promise<boolean> };
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/pinning.controller.ts
 
-  getSelectedRows: () => (Partial<any> & { id: string })[];
-};
+```typescript
+import { Injectable, inject, signal, effect } from '@angular/core';
+import type { Table } from '@tanstack/table-core';
+import { DataGridColumnsService } from '../services/columns.service';
+import type { GridRow } from '../types';
+
+@Injectable()
+export class PinningController {
+  private readonly columnsSvc = inject(DataGridColumnsService);
+
+  private headerWidthMap = new Map<string, number>();
+  readonly pinnedLeftOffsets = signal<Record<string, number>>({});
+  readonly pinnedRightOffsets = signal<Record<string, number>>({});
+  private tsTable: Table<GridRow> | null = null;
+  private headerWidthVer = signal(0);
+  private pinStateVer = signal(0);
+  private initialized = false;
+  private getColWidth: ((id: string) => number | null) | null = null;
+  private getSelectionWidth: (() => number) | null = null;
+  private getPinState: (() => { left: string[]; right: string[] }) | null = null;
+
+  constructor() {
+    // Create effect within injection context
+    effect(() => {
+      // Touch versions/signals to create dependencies
+      void this.headerWidthVer();
+      void this.pinStateVer();
+      if (!this.initialized || !this.getSelectionWidth || !this.getColWidth || !this.getPinState) return;
+      const sel = this.getSelectionWidth();
+      const pin = this.getPinState();
+      const { left, right } = this.columnsSvc.computePinOffsets({
+        pinned: { left: pin.left || [], right: pin.right || [] },
+        getColWidth: (id) => (this.getColWidth ? this.getColWidth(id) : null),
+        headerWidthMap: this.headerWidthMap,
+        selectionStickyWidth: sel,
+      });
+      this.pinnedLeftOffsets.set(left);
+      this.pinnedRightOffsets.set(right);
+    });
+  }
+
+  attachTable(tsTable: Table<GridRow> | undefined) {
+    this.tsTable = tsTable ?? null;
+  }
+
+  init(opts: {
+    getColWidth: (id: string) => number | null;
+    getSelectionWidth: () => number;
+    getPinState: () => { left: string[]; right: string[] };
+  }) {
+    if (this.initialized) return;
+    this.initialized = true;
+    this.getColWidth = opts.getColWidth;
+    this.getSelectionWidth = opts.getSelectionWidth;
+    this.getPinState = opts.getPinState;
+    // Kick the effect now that getters are set
+    this.notifyPinStateChanged();
+  }
+
+  notifyPinStateChanged() {
+    this.pinStateVer.update((x) => x + 1);
+  }
+
+  measureHeaderWidths(table: HTMLTableElement): { selectionWidth: number | null; headerMap: Map<string, number> } {
+    const measured = this.columnsSvc.measureHeaderWidths(table);
+    this.headerWidthMap = measured.headerMap;
+    this.headerWidthVer.update((x) => x + 1);
+    return { selectionWidth: measured.selectionWidth, headerMap: measured.headerMap };
+  }
+
+  updatePinOffsets(
+    tsTable: Table<GridRow> | undefined,
+    getColWidth: (id: string) => number | null,
+    selectionStickyWidth: number,
+  ) {
+    const table = tsTable ?? this.tsTable;
+    const pin = table?.getState().columnPinning || { left: [], right: [] };
+    const { left, right } = this.columnsSvc.computePinOffsets({
+      pinned: { left: Array.isArray(pin.left) ? pin.left : [], right: Array.isArray(pin.right) ? pin.right : [] },
+      getColWidth,
+      headerWidthMap: this.headerWidthMap,
+      selectionStickyWidth,
+    });
+    this.pinnedLeftOffsets.set(left);
+    this.pinnedRightOffsets.set(right);
+  }
+
+  leftOffsetPx(id: string): number {
+    return this.pinnedLeftOffsets()[id] || 0;
+  }
+  rightOffsetPx(id: string): number {
+    return this.pinnedRightOffsets()[id] || 0;
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/reorder.controller.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import type { Header, Table } from '@tanstack/table-core';
+import type { GridRow } from '../types';
+
+@Injectable()
+export class ReorderController {
+  private dragColId: string | null = null;
+  private suppressHeaderDrag: () => boolean = () => false;
+  private requestPersist: () => void = () => undefined;
+
+  configure(opts: { suppressHeaderDrag: () => boolean; requestPersist: () => void }) {
+    this.suppressHeaderDrag = opts.suppressHeaderDrag;
+    this.requestPersist = opts.requestPersist;
+  }
+
+  onDragOver(ev: DragEvent) {
+    ev.preventDefault();
+    try {
+      ev.dataTransfer!.dropEffect = 'move';
+    } catch {}
+  }
+
+  onDragStart(h: Header<GridRow, unknown>, ev: DragEvent) {
+    if (this.suppressHeaderDrag()) {
+      try {
+        ev.preventDefault();
+      } catch {}
+      ev.stopPropagation();
+      return;
+    }
+    const id = String(h?.column?.id || '');
+    this.dragColId = id;
+    try {
+      ev.dataTransfer?.setData('text/plain', id);
+      ev.dataTransfer!.effectAllowed = 'move';
+    } catch {}
+  }
+
+  onDrop(h: Header<GridRow, unknown>, ev: DragEvent, tsTable: Table<GridRow> | undefined) {
+    ev.preventDefault();
+    const src = ev.dataTransfer?.getData('text/plain') || this.dragColId;
+    const tgt = String(h?.column?.id || '');
+    if (!src || !tgt || src === tgt) return;
+    const leaves = tsTable?.getAllLeafColumns?.() || [];
+    const order: string[] = leaves.map((c) => String(c.id));
+    const from = order.indexOf(String(src));
+    const to = order.indexOf(String(tgt));
+    if (from < 0 || to < 0) return;
+    order.splice(to, 0, ...order.splice(from, 1));
+    tsTable?.setOptions?.((prev) => ({ ...prev, state: { ...prev.state, columnOrder: order } }));
+    this.requestPersist();
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/resizing.controller.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import type { HeaderRef } from '../types';
+
+@Injectable()
+export class ResizingController {
+  private _colStartX = 0;
+  private _colStartW = 0;
+  private _selStartX = 0;
+  private _selStartW = 48;
+
+  beginHeaderResize(
+    h: HeaderRef,
+    clientX: number,
+    getColWidth: (id: string) => number | null,
+    applySize: (col: HeaderRef['column'], id: string, w: number) => void,
+    onDone: () => void,
+  ) {
+    const col = h?.column;
+    if (!col) return;
+    const id = String(col.id || '');
+    const startW = Number((typeof col.getSize === 'function' ? col.getSize() : undefined) || getColWidth(id) || 100);
+    this._colStartX = clientX;
+    this._colStartW = startW;
+    const move = (e: MouseEvent) => {
+      const dx = e.clientX - this._colStartX;
+      const w = Math.max(40, Math.floor(this._colStartW + dx));
+      applySize(col, id, w);
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      onDone();
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
+
+  beginHeaderResizeTouch(
+    h: HeaderRef,
+    clientX: number,
+    getColWidth: (id: string) => number | null,
+    applySize: (col: HeaderRef['column'], id: string, w: number) => void,
+    onDone: () => void,
+  ) {
+    const col = h?.column;
+    if (!col) return;
+    const id = String(col.id || '');
+    const startW = Number((typeof col.getSize === 'function' ? col.getSize() : undefined) || getColWidth(id) || 100);
+    this._colStartX = clientX;
+    this._colStartW = startW;
+    const move = (e: TouchEvent) => {
+      const dx = (e.touches?.[0]?.clientX ?? 0) - this._colStartX;
+      const w = Math.max(40, Math.floor(this._colStartW + dx));
+      applySize(col, id, w);
+    };
+    const up = () => {
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', up);
+      onDone();
+    };
+    window.addEventListener('touchmove', move);
+    window.addEventListener('touchend', up);
+  }
+
+  beginSelectionResize(clientX: number, startWidth: number, setWidth: (w: number) => void, onDone: () => void) {
+    this._selStartX = clientX;
+    this._selStartW = startWidth;
+    const move = (e: MouseEvent) => {
+      const dx = e.clientX - this._selStartX;
+      const w = Math.max(32, this._selStartW + dx);
+      setWidth(Math.round(w));
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      onDone();
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
+
+  beginSelectionResizeTouch(clientX: number, startWidth: number, setWidth: (w: number) => void, onDone: () => void) {
+    this._selStartX = clientX;
+    this._selStartW = startWidth;
+    const move = (e: TouchEvent) => {
+      const dx = (e.touches?.[0]?.clientX ?? 0) - this._selStartX;
+      const w = Math.max(32, this._selStartW + dx);
+      setWidth(Math.round(w));
+    };
+    const up = () => {
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', up);
+      onDone();
+    };
+    window.addEventListener('touchmove', move);
+    window.addEventListener('touchend', up);
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/directives/editable-cell.directive.ts
+
+```typescript
+import { Directive, ElementRef, inject, input } from '@angular/core';
+import { EditingController } from '../controllers/editing.controller';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { GridRow } from '../types';
+
+@Directive({
+  selector: '[pcEditable]',
+  host: {
+    '(click)': 'onClick()',
+    '(keydown.enter)': 'onEnter()',
+    '(keydown.esc)': 'onEsc()',
+    '(focusout)': 'onFocusOut($event)',
+    '(mousedown)': 'onMouseDown()',
+    '(document:mouseup)': 'onMouseUp()',
+  },
+})
+export class EditableCellDirective {
+  private readonly editing = inject(EditingController);
+  private readonly host = inject(ElementRef<HTMLElement>);
+  private _isEditing = false;
+  private isMouseDownInside = false;
+
+  private get isEditing(): boolean {
+    const p = this.pcEditable();
+    if (p && typeof p.isEditingCell === 'function') {
+      return p.isEditingCell();
+    }
+    return this._isEditing;
+  }
+
+  private set isEditing(val: boolean) {
+    this._isEditing = val;
+  }
+
+  public readonly pcEditable = input.required<{
+    row: GridRow;
+    col: ColDef;
+    toId(r: unknown): string;
+    coerce(col: ColDef, raw: unknown): unknown;
+    value(): unknown; // current editingValue()
+    setEditingCell: (v: { id: string; field: string } | null) => void;
+    setEditingValue: (v: unknown) => void;
+    getCellValue(row: GridRow, col: ColDef): unknown;
+    getEditingDisplayValue(row: GridRow, col: ColDef): unknown;
+    createPayload(row: GridRow, key: string): Partial<GridRow>;
+    applyEdit(id: string, data: Partial<GridRow>): Promise<boolean>;
+    updateEditedRow(id: string, field: string | undefined, v: unknown): void;
+    updateWindow: (s: number, e: number) => void;
+    startIndex: () => number;
+    endIndex: () => number;
+    showSuccess: (m: string) => void;
+    showError: (m: string) => void;
+    undo: () => void;
+    customCommit?(currentValue: unknown): Promise<unknown>;
+    isEditable?: () => boolean;
+    isEditingCell?: () => boolean;
+  }>();
+
+  protected onMouseDown() {
+    this.isMouseDownInside = true;
+  }
+
+  protected onMouseUp() {
+    this.isMouseDownInside = false;
+  }
+
+  protected onClick() {
+    const p = this.pcEditable();
+    if (typeof p.isEditable === 'function' && !p.isEditable()) return;
+    const { row, col, toId, setEditingCell, setEditingValue, getCellValue, getEditingDisplayValue } = p;
+    if (!col?.field) return;
+    // Respect col.editable for parity with grid logic
+    if (!col?.editable) return;
+    const id = toId(row);
+    if (!id) return;
+    try {
+      const cur = getEditingDisplayValue ? getEditingDisplayValue(row, col) : getCellValue(row, col);
+      const cloned = Array.isArray(cur) ? [...cur] : cur;
+      setEditingValue(cloned);
+    } catch {}
+    setEditingCell({ id, field: col.field });
+    this.isEditing = true;
+  }
+
+  protected async onEnter() {
+    if (!this.isEditing) return;
+    await this.commit();
+  }
+
+  protected onEsc() {
+    if (!this.isEditing) return;
+    this.isEditing = false;
+    this.pcEditable().setEditingCell(null);
+  }
+
+  // Commit only when focus leaves the cell subtree
+  protected async onFocusOut(ev: FocusEvent) {
+    if (!this.isEditing) return;
+    if (this.isMouseDownInside) return;
+    const container = this.host.nativeElement;
+    const next = ev.relatedTarget as Node | null;
+    if (next && container.contains(next)) return;
+    await this.commit();
+  }
+
+  private async commit() {
+    const p = this.pcEditable();
+    if (!p?.col?.field) return;
+    const currentValue = p.coerce(p.col, p.value());
+    if (typeof p.customCommit === 'function') {
+      await p.customCommit(currentValue);
+    } else {
+      await this.editing.commitSingleCell(p.row, p.col, currentValue);
+    }
+    p.setEditingCell(null);
+    this.isEditing = false;
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/directives/header-reorder.directive.ts
+
+```typescript
+import { Directive, inject, input } from '@angular/core';
+import type { Header } from '@tanstack/table-core';
+import { DataGrid } from '../datagrid';
+import type { GridRow } from '../types';
+
+@Directive({
+  selector: '[pcHeaderReorder]',
+  host: {
+    '(dragstart)': 'onDragStart($event)',
+    '(dragover)': 'onDragOver($event)',
+    '(drop)': 'onDrop($event)',
+  },
+})
+export class HeaderReorderDirective {
+  public readonly header = input<Header<GridRow, unknown> | undefined>(undefined, { alias: 'pcHeaderReorder' });
+
+  private readonly grid = inject(DataGrid);
+
+  protected onDragStart(ev: DragEvent) {
+    try {
+      this.grid.onHeaderDragStart(this.header(), ev);
+    } catch {}
+  }
+
+  protected onDragOver(ev: DragEvent) {
+    try {
+      this.grid.onHeaderDragOver(this.header(), ev);
+    } catch {}
+  }
+
+  protected onDrop(ev: DragEvent) {
+    try {
+      this.grid.onHeaderDrop(this.header(), ev);
+    } catch {}
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/directives/header-resize.directive.ts
+
+```typescript
+import { Directive, ElementRef, inject, input } from '@angular/core';
+import type { Table } from '@tanstack/table-core';
+import { ResizingController } from '../controllers/resizing.controller';
+import { PinningController } from '../controllers/pinning.controller';
+import type { GridRow, HeaderRef } from '../types';
+
+@Directive({
+  selector: '[pcHeaderResize]',
+  host: {
+    '(mousedown)': 'onMouseDown($event)',
+    '(touchstart)': 'onTouchStart($event)',
+    '(dragstart)': 'onDragStart($event)',
+    '(dblclick)': 'onDoubleClick($event)',
+  },
+})
+export class HeaderResizeDirective {
+  private readonly resizing = inject(ResizingController);
+  private readonly pinning = inject(PinningController);
+  private readonly hostEl = inject(ElementRef) as ElementRef<HTMLElement>;
+
+  public readonly pcHeaderResize = input.required<{
+    header: HeaderRef; // TanStack header ref
+    getColWidth: (id: string) => number | null;
+    setWidth: (col: HeaderRef['column'], id: string, px: number) => void;
+    requestPersist: () => void;
+    selectionWidth: () => number;
+    setSuppressHeaderDrag: (v: boolean) => void;
+  }>();
+
+  protected onMouseDown(ev: MouseEvent) {
+    ev.stopPropagation();
+    if (ev.detail > 1) return; // let double-click handler manage autosize
+    const cfg = this.pcHeaderResize();
+    const h = cfg.header;
+    // prevent column drag while resizing
+    try {
+      cfg.setSuppressHeaderDrag(true);
+    } catch {}
+    this.resizing.beginHeaderResize(
+      h,
+      ev.clientX,
+      cfg.getColWidth,
+      (col, id, w) => {
+        cfg.setWidth(col, id, w);
+        this.pinning.updatePinOffsets(
+          h?.table as Table<GridRow> | undefined,
+          (cid) => cfg.getColWidth(cid) ?? 0,
+          cfg.selectionWidth(),
+        );
+      },
+      () => {
+        try {
+          cfg.requestPersist();
+        } catch {}
+        try {
+          cfg.setSuppressHeaderDrag(false);
+        } catch {}
+      },
+    );
+  }
+
+  protected onTouchStart(ev: TouchEvent) {
+    ev.stopPropagation();
+    const x = ev.touches?.[0]?.clientX ?? 0;
+    const cfg = this.pcHeaderResize();
+    const h = cfg.header;
+    try {
+      cfg.setSuppressHeaderDrag(true);
+    } catch {}
+    this.resizing.beginHeaderResizeTouch(
+      h,
+      x,
+      cfg.getColWidth,
+      (col, id, w) => {
+        cfg.setWidth(col, id, w);
+        this.pinning.updatePinOffsets(
+          h?.table as Table<GridRow> | undefined,
+          (cid) => cfg.getColWidth(cid) ?? 0,
+          cfg.selectionWidth(),
+        );
+      },
+      () => {
+        try {
+          cfg.requestPersist();
+        } catch {}
+        try {
+          cfg.setSuppressHeaderDrag(false);
+        } catch {}
+      },
+    );
+  }
+
+  protected onDragStart(ev: DragEvent) {
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+
+  protected onDoubleClick(ev: MouseEvent) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const width = this.measureHeaderAutoWidth();
+    if (width == null) return;
+    this.applyWidth(Math.max(40, Math.round(width)));
+  }
+
+  private applyWidth(nextWidth: number) {
+    const cfg = this.pcHeaderResize();
+    const header = cfg.header;
+    const col = header?.column;
+    const id = col?.id == null ? '' : String(col.id);
+    if (!id || !col) return;
+
+    cfg.setWidth(col, id, nextWidth);
+    this.pinning.updatePinOffsets(
+      header?.table as Table<GridRow> | undefined,
+      (cid) => cfg.getColWidth(cid) ?? 0,
+      cfg.selectionWidth(),
+    );
+    try {
+      cfg.requestPersist();
+    } catch {}
+  }
+
+  private measureHeaderAutoWidth(): number | null {
+    const headerEl = this.hostEl.nativeElement.closest('th');
+    if (!headerEl) return null;
+
+    const doc = headerEl.ownerDocument;
+    const content = headerEl.querySelector<HTMLElement>('[data-header-content]');
+    if (!content) return null;
+
+    const clone = content.cloneNode(true) as HTMLElement;
+    clone.style.position = 'absolute';
+    clone.style.visibility = 'hidden';
+    clone.style.pointerEvents = 'none';
+    clone.style.flex = '0 0 auto';
+    clone.style.width = 'auto';
+    clone.style.height = 'auto';
+    clone.style.maxWidth = 'unset';
+    clone.style.whiteSpace = 'nowrap';
+    clone.style.left = '-9999px';
+    clone.style.top = '0';
+
+    const labelClone = clone.querySelector<HTMLElement>('[data-header-label]');
+    if (labelClone) {
+      labelClone.style.flex = '0 0 auto';
+      labelClone.style.whiteSpace = 'nowrap';
+    }
+
+    doc.body.appendChild(clone);
+    const contentWidth = clone.getBoundingClientRect().width;
+    clone.remove();
+    if (contentWidth <= 0) return null;
+
+    const view = doc.defaultView;
+    const style = view ? view.getComputedStyle(headerEl) : null;
+    const paddingLeft = style ? parseFloat(style.paddingLeft || '0') : 0;
+    const paddingRight = style ? parseFloat(style.paddingRight || '0') : 0;
+    const borderLeft = style ? parseFloat(style.borderLeftWidth || '0') : 0;
+    const borderRight = style ? parseFloat(style.borderRightWidth || '0') : 0;
+
+    // add a small buffer so content does not feel cramped next to the resizer
+    const buffer = 8;
+
+    return contentWidth + paddingLeft + paddingRight + borderLeft + borderRight + buffer;
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/columns.service.ts
@@ -29363,134 +28135,64 @@ export class DataGridColumnsService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/services/filters.service.ts
+## File: apps/frontend/src/app/shared/components/datagrid/services/data.service.ts
 
 ```typescript
 import { Injectable } from '@angular/core';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-
-export type Op =
-  | 'contains'
-  | 'equals'
-  | 'in'
-  | 'isEmpty'
-  | 'isNotEmpty'
-  | 'notContains'
-  | 'notEquals'
-  | 'startsWith'
-  | 'endsWith';
-
-export interface SelectOption {
-  value: string;
-  label: string;
-}
-
-export interface SelectEditorOptions {
-  choices: SelectOption[];
-  multiple: boolean;
-  size?: number;
-}
+import type { getAllOptionsType } from '../../../../../../../../libs/common/src';
 
 @Injectable({ providedIn: 'root' })
-export class DataGridFiltersService {
-  buildFilterModel(raw: Record<string, any>): Record<string, any> {
-    const out: Record<string, any> = {};
-    for (const [k, v] of Object.entries(raw)) {
-      if (v === undefined || v === null) continue;
-      if (typeof v === 'object' && v && 'value' in v) {
-        const vv = v as { op?: Op; value?: unknown };
-        const op = vv.op ?? 'contains';
-        const sv = String(vv.value ?? '').trim();
-        if (op === 'isEmpty' || op === 'isNotEmpty') {
-          out[k] = { type: 'text', op, value: '' };
-        } else {
-          if (!sv) continue;
-          out[k] = { type: 'text', op, value: sv };
-        }
-      } else {
-        const sv = String(v).trim();
-        if (!sv) continue;
-        out[k] = { type: 'text', op: 'contains', value: sv };
-      }
-    }
-    return out;
+export class DataGridDataService {
+  computeTotalPages(totalCountAll: number, pageSize: number): number {
+    const size = pageSize || 1;
+    return Math.max(1, Math.ceil((totalCountAll || 0) / size));
   }
 
-  getSelectEditorOptions(col: ColDef): SelectEditorOptions | null {
-    const cfg = this.resolveEditorConfig(col);
-    if (!cfg) return null;
-    const rawValues = Array.isArray(cfg.values) ? (cfg.values as unknown[]) : [];
-    const labels = Array.isArray(cfg.labels) ? cfg.labels : null;
-    const choices: SelectOption[] = [];
-    for (let i = 0; i < rawValues.length; i++) {
-      const entry = rawValues[i];
-      const fallbackLabel = labels && labels.length > i ? labels[i] : undefined;
-      if (entry && typeof entry === 'object') {
-        const obj = entry as Record<string, unknown>;
-        const value = 'value' in obj ? obj['value'] : entry;
-        const labelCandidate = 'label' in obj ? obj['label'] : 'name' in obj ? obj['name'] : fallbackLabel;
-        const valueStr = value != null ? String(value) : '';
-        const labelStr = labelCandidate != null ? String(labelCandidate) : valueStr;
-        choices.push({ value: valueStr, label: labelStr });
-      } else {
-        const valueStr = entry != null ? String(entry) : '';
-        const labelStr = fallbackLabel != null ? String(fallbackLabel) : valueStr;
-        choices.push({ value: valueStr, label: labelStr });
-      }
-    }
-    const multiple = !!cfg.multiple;
-    if (!choices.length && !multiple) return null;
-    const sizeRaw = cfg.size ?? cfg.listSize ?? cfg.rows ?? cfg.lines;
-    const parsed = Number(sizeRaw);
-    const size = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : multiple ? 5 : undefined;
-    return { choices, multiple, size };
-  }
-
-  getFilterOptionsForCol(col: ColDef): string[] | null {
-    const options = this.getSelectEditorOptions(col);
-    if (!options || !options.choices.length) return null;
-    return options.choices.map((c) => c.label);
-  }
-
-  getFilterValue(filterValues: Record<string, any>, field: string): string {
-    const fv: any = filterValues[field];
-    if (fv && typeof fv === 'object' && 'value' in fv) return String(fv.value ?? '');
-    return fv ? String(fv) : '';
-  }
-
-  getFilterArray(filterValues: Record<string, any>, field: string): string[] {
-    const fv: any = filterValues[field];
-    if (fv && typeof fv === 'object' && Array.isArray(fv.value)) return fv.value as string[];
-    const single = this.getFilterValue(filterValues, field);
-    return single ? [single] : [];
-  }
-
-  inlineFilterLabel(filterValues: Record<string, any>, field: string): string {
-    const arr = this.getFilterArray(filterValues, field);
-    if (!arr.length) return 'All';
-    if (arr.length === 1) return arr[0]!;
-    return `${arr.length} selected`;
-  }
-
-  preparePanelFilters(current: Record<string, any>): Record<string, { op: string; value: any }> {
-    const panel: Record<string, { op: string; value: any }> = {};
-    for (const [k, v] of Object.entries(current)) {
-      const entry = v as { op?: string; value?: any };
-      if (entry && typeof entry === 'object' && 'op' in entry && 'value' in entry)
-        panel[k] = entry as { op: string; value: any };
-      else panel[k] = { op: 'contains', value: v };
-    }
-    return panel;
-  }
-
-  private resolveEditorConfig(col: ColDef): any {
-    const cep = col?.cellEditorParams;
-    if (!cep) return null;
-    try {
-      return typeof cep === 'function' ? cep() : cep;
-    } catch {
-      return null;
-    }
+  buildGetAllOptions(args: {
+    searchStr: string;
+    startRow: number;
+    endRow: number;
+    tags: string[];
+    issues?: string[];
+    filterModel: Record<string, unknown>;
+    sortState: Array<{ id: string; desc?: boolean }>;
+    sortCol: string | null;
+    sortDir: 'asc' | 'desc' | null;
+    includeArchived?: boolean;
+    advancedFilterModel?: NonNullable<getAllOptionsType>['advancedFilterModel'];
+    listId?: string | null;
+  }): Partial<getAllOptionsType> {
+    const {
+      searchStr,
+      startRow,
+      endRow,
+      tags,
+      issues,
+      filterModel,
+      sortState,
+      sortCol,
+      sortDir,
+      includeArchived,
+      advancedFilterModel,
+      listId,
+    } = args;
+    return {
+      searchStr,
+      startRow,
+      endRow,
+      tags,
+      issues,
+      filterModel,
+      includeArchived,
+      advancedFilterModel,
+      listId: listId ?? undefined,
+      sortModel:
+        sortState && sortState.length
+          ? sortState.map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' }))
+          : sortCol && sortDir
+            ? [{ colId: sortCol, sort: sortDir }]
+            : [],
+    } satisfies Partial<getAllOptionsType>;
   }
 }
 ```
@@ -29611,264 +28313,6 @@ export class GridAdvancedFilterService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/services/grid-store.service.ts
-
-```typescript
-import { Injectable, computed, effect, signal, untracked, linkedSignal } from '@angular/core';
-import type { GridRow } from '../types';
-
-@Injectable()
-export class GridStoreService {
-  public grid?: any;
-  readonly rows = signal<GridRow[]>([]);
-  readonly sorting = signal<any[]>([]);
-  readonly colVisibility = signal<Record<string, boolean>>({});
-  readonly colWidths = signal<Record<string, number>>({});
-  readonly filterValues = signal<Record<string, any>>({});
-  readonly panelFilters = signal<Record<string, { op: string; value: any }>>({});
-  readonly selectedIdSet = linkedSignal<Record<string, any>, Set<string>>({
-    source: () => this.filterValues(),
-    computation: () => new Set<string>(),
-  });
-  readonly allSelected = linkedSignal<Record<string, any>, boolean>({
-    source: () => this.filterValues(),
-    computation: () => false,
-  });
-  readonly allSelectedIdSet = linkedSignal<Record<string, any>, Set<string>>({
-    source: () => this.filterValues(),
-    computation: () => new Set<string>(),
-  });
-  readonly allSelectedIds = linkedSignal<Record<string, any>, string[]>({
-    source: () => this.filterValues(),
-    computation: () => [],
-  });
-  readonly allSelectedCount = linkedSignal<Record<string, any>, number>({
-    source: () => this.filterValues(),
-    computation: () => 0,
-  });
-  readonly selectionStickyWidth = signal<number>(48);
-  readonly pageIndex = signal<number>(0);
-  readonly pageSize = signal<number>(25);
-
-  readonly displayedCount = computed(() => this.rows().length);
-
-  readonly editCommitCount = signal<number>(0);
-  private _lastSnapshot: any = null;
-
-  public recordSnapshotBeforeCommit(id: string, field: string, prevValue: any, newValue: any) {
-    let rowsCopy: any[] = [];
-    try {
-      rowsCopy = JSON.parse(JSON.stringify(this.rows() || []));
-    } catch {
-      rowsCopy = (this.rows() || []).map((r: any) => {
-        const copy = { ...r };
-        if (Array.isArray(r.tags)) copy.tags = [...r.tags];
-        if (Array.isArray(r.issues)) copy.issues = [...r.issues];
-        return copy;
-      });
-    }
-
-    const getRowId = this._getRowId || ((r: any) => String(r?.id || ''));
-    rowsCopy = rowsCopy.map((r: any) => {
-      if (getRowId(r) === id) {
-        return { ...r, [field]: prevValue };
-      }
-      return r;
-    });
-
-    this._lastSnapshot = {
-      rows: rowsCopy,
-      selectedIdSet: new Set(this.selectedIdSet()),
-      filterValues: { ...this.filterValues() },
-      sorting: [...this.sorting()],
-      pageIndex: this.pageIndex(),
-      pageSize: this.pageSize(),
-      editMeta: {
-        id,
-        field,
-        prevValue,
-        newValue,
-      },
-    };
-    this.editCommitCount.update((c) => c + 1);
-  }
-
-  private _persistKey = signal<string>('');
-  private _persistTick = signal<number>(0);
-  private _table: any = null;
-  private _getRowId: ((row: any) => string) | null = null;
-
-  constructor() {
-    effect(() => {
-      const count = this.editCommitCount();
-      if (count === 0) return;
-
-      untracked(() => {
-        if (this._lastSnapshot && this.grid?.undoMgr) {
-          this.grid.undoMgr.pushUndo(this._lastSnapshot);
-          this._lastSnapshot = null;
-        }
-      });
-    });
-
-    effect(() => {
-      const key = this._persistKey();
-      this.sorting();
-      this.colVisibility();
-      this.filterValues();
-      this.selectionStickyWidth();
-      this.colWidths();
-      this.pageSize();
-      this._persistTick();
-      if (!key) return;
-      try {
-        const st = (this._table?.getState?.() ?? {}) as unknown as {
-          sorting?: any[];
-          columnVisibility?: Record<string, boolean>;
-          columnPinning?: { left: string[]; right: string[] };
-          columnSizing?: Record<string, number>;
-          columnOrder?: string[];
-        };
-        const data = {
-          sorting: st.sorting || this.sorting(),
-          visibility: st.columnVisibility || this.colVisibility(),
-          pinning: st.columnPinning || { left: [], right: [] },
-          sizing: st.columnSizing || this.colWidths(),
-          order: st.columnOrder || [],
-          filters: this.filterValues() || {},
-          selectionWidth: this.selectionStickyWidth(),
-          pageSize: this.pageSize(),
-        };
-        localStorage.setItem(key, JSON.stringify(data));
-      } catch {}
-    });
-
-    // Attempt to load persisted state whenever key changes
-    effect(() => {
-      const key = this._persistKey();
-      if (!key) return;
-      this._loadFromStorage(key);
-    });
-
-    effect(() => {
-      const v = this.colVisibility();
-      if (this._table) {
-        try {
-          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
-        } catch {}
-      }
-    });
-
-    // Sync sorting state
-    effect(() => {
-      const s = this.sorting();
-      if (this._table) {
-        try {
-          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, sorting: s } }));
-        } catch {}
-      }
-    });
-
-    // Sync column sizing
-    effect(() => {
-      const sizing = this.colWidths();
-      if (this._table) {
-        try {
-          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
-        } catch {}
-      }
-    });
-
-    // Sync data
-    effect(() => {
-      const r = this.rows();
-      if (this._table) {
-        try {
-          this._table.setOptions((prev: any) => ({ ...prev, data: r }));
-        } catch {}
-      }
-    });
-
-    // Sync row selection map for current rows
-    effect(() => {
-      const rows = this.rows();
-      const ids = this.selectedIdSet();
-      if (!this._table || !this._getRowId) return;
-      try {
-        const map: Record<string, boolean> = {};
-        for (const r of rows) {
-          const id = this._getRowId(r);
-          if (id && ids.has(id)) map[id] = true;
-        }
-        this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, rowSelection: map } }));
-      } catch {}
-    });
-  }
-
-  setPersistKey(key: string) {
-    this._persistKey.set(key || '');
-  }
-
-  attachTable(table: any) {
-    this._table = table;
-  }
-
-  setGetRowId(fn: (row: any) => string) {
-    this._getRowId = fn;
-  }
-
-  requestPersist() {
-    this._persistTick.update((v) => (v + 1) | 0);
-  }
-
-  loadState() {
-    const key = this._persistKey();
-    if (!key) return;
-    this._loadFromStorage(key);
-  }
-
-  private _loadFromStorage(key: string) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return;
-      type Persisted = {
-        sorting?: any[];
-        visibility?: Record<string, boolean>;
-        filters?: Record<string, any>;
-        selectionWidth?: number;
-        sizing?: Record<string, number>;
-        pinning?: { left: string[]; right: string[] };
-        order?: string[];
-        pageSize?: number;
-      };
-      const data = JSON.parse(raw || '{}') as unknown as Persisted;
-      if (data.sorting) this.sorting.set(data.sorting);
-      if (data.visibility) this.colVisibility.set({ ...untracked(() => this.colVisibility()), ...data.visibility });
-      if (data.filters) this.filterValues.set(data.filters);
-      if (typeof data.selectionWidth === 'number') this.selectionStickyWidth.set(data.selectionWidth);
-      if (typeof data.pageSize === 'number' && data.pageSize > 0) this.pageSize.set(data.pageSize);
-      const sizing = data.sizing || {};
-      queueMicrotask(() => {
-        if (this._table?.setOptions) {
-          this._table.setOptions((prev: any) => ({
-            ...prev,
-            state: {
-              ...prev.state,
-              sorting: data.sorting || prev.state?.sorting,
-              columnVisibility: data.visibility || prev.state?.columnVisibility,
-              columnPinning: data.pinning || prev.state?.columnPinning,
-              columnSizing: sizing || prev.state?.columnSizing,
-              columnOrder: data.order || prev.state?.columnOrder,
-            },
-          }));
-        }
-        this.colWidths.set({ ...(sizing || {}) });
-      });
-    } catch {}
-  }
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/services/nav.service.ts
 
 ```typescript
@@ -29899,105 +28343,306 @@ export class DataGridNavService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/services/table.service.ts
+## File: apps/frontend/src/app/shared/components/datagrid/services/tag-options.service.ts
+
+```typescript
+import { Injectable, inject } from '@angular/core';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { TagPaletteService } from '@experiences/tags/ui/tag-palette.service';
+
+@Injectable({ providedIn: 'root' })
+export class TagOptionsService {
+  private readonly tagsSvc = inject(TagsService);
+  private readonly tagPaletteSvc = inject(TagPaletteService);
+
+  public readonly tagNames: string[] = [];
+  public readonly issueNames: string[] = [];
+
+  private tagPending: Promise<string[]> | null = null;
+  private issuePending: Promise<string[]> | null = null;
+
+  async invalidate(type?: 'tag' | 'issue'): Promise<void> {
+    if (!type || type === 'tag') {
+      this.tagPending = null;
+      await this.load('tag');
+    }
+    if (!type || type === 'issue') {
+      this.issuePending = null;
+      await this.load('issue');
+    }
+  }
+
+  async getTagNames(type: 'tag' | 'issue' = 'tag'): Promise<string[]> {
+    const live = type === 'issue' ? this.issueNames : this.tagNames;
+    if (live.length > 0) return live;
+    await this.load(type);
+    return live;
+  }
+
+  private async load(type: 'tag' | 'issue'): Promise<void> {
+    const isPending = type === 'issue' ? this.issuePending : this.tagPending;
+    if (isPending) {
+      await isPending;
+      return;
+    }
+
+    const live = type === 'issue' ? this.issueNames : this.tagNames;
+
+    const promise = this.fetchTagNames(type)
+      .then((names) => {
+        // Mutate in-place so all external references stay valid
+        live.splice(0, live.length, ...names);
+        if (type === 'issue') this.issuePending = null;
+        else this.tagPending = null;
+        void this.tagPaletteSvc.ensurePalette();
+        return names;
+      })
+      .catch(() => {
+        if (type === 'issue') this.issuePending = null;
+        else this.tagPending = null;
+        return [] as string[];
+      });
+
+    if (type === 'issue') this.issuePending = promise;
+    else this.tagPending = promise;
+
+    await promise;
+  }
+
+  private async fetchTagNames(type: 'tag' | 'issue' = 'tag'): Promise<string[]> {
+    try {
+      const { rows } = await this.tagsSvc.getAll({ limit: 1000, offset: 0, orderBy: ['name'], type });
+      const names = Array.isArray(rows)
+        ? rows
+            .map((row) => (row?.['name'] != null ? String(row['name']).trim() : ''))
+            .filter((name): name is string => name.length > 0)
+        : [];
+      const seen = new Set<string>();
+      const unique: string[] = [];
+      for (const name of names) {
+        if (seen.has(name)) continue;
+        seen.add(name);
+        unique.push(name);
+      }
+      unique.sort((a, b) => a.localeCompare(b));
+      return unique;
+    } catch {
+      return [];
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/services/utils.service.ts
 
 ```typescript
 import { Injectable } from '@angular/core';
-import {
-  createTable,
-  getCoreRowModel,
-  type Updater,
-  type SortingState,
-  type ColumnDef as TSColumnDef,
-} from '@tanstack/table-core';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-import type { GridRow } from '../types';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
 @Injectable({ providedIn: 'root' })
-export class DataGridTableService {
-  updateTableWindow(
-    table: any,
-    rows: any[],
-    start: number,
-    end: number,
-    rowSelection: Record<string, boolean>,
-    sortCol: string | null,
-    sortDir: 'asc' | 'desc' | null,
-  ) {
-    const data = rows.slice(start, end);
-    if (!table) return;
-    table.setOptions((prev: any) => ({
-      ...prev,
-      data,
-      state: {
-        ...prev.state,
-        rowSelection,
-        sorting: sortCol && sortDir ? [{ id: sortCol, desc: sortDir === 'desc' }] : [],
-      },
-    }));
+export class DataGridUtilsService {
+  bucketByRoute(nodes: unknown[]): Map<string, unknown[]> {
+    const map = new Map<string, unknown[]>();
+    for (const n of nodes) {
+      const routeArr = isRecord(n) && Array.isArray(n['route']) ? n['route'] : [];
+      const key = JSON.stringify(routeArr);
+      const list = map.get(key) ?? [];
+      if (isRecord(n) && n['data']) list.push(n['data']);
+      map.set(key, list);
+    }
+    return map;
   }
 
-  setTableData(
-    table: any,
-    rows: any[],
-    rowSelection: Record<string, boolean>,
-    sortCol: string | null,
-    sortDir: 'asc' | 'desc' | null,
-  ) {
-    if (!table) return;
-    table.setOptions((prev: any) => ({
-      ...prev,
-      data: rows,
-      state: {
-        ...prev.state,
-        rowSelection,
-        sorting: sortCol && sortDir ? [{ id: sortCol, desc: sortDir === 'desc' }] : [],
-      },
-    }));
+  createPayload<T>(row: Partial<T>, key: keyof T): Partial<T> {
+    return row[key] !== undefined ? ({ [key]: row[key] } as Partial<T>) : {};
   }
 
-  createGridTable(params: {
-    rows: any[];
-    columns: TSColumnDef<any, any>[];
-    getRowId: (row: any) => string;
-    state: any;
-    onStateChange: () => void;
-    onSortingChange: (updater: Updater<SortingState>) => void;
-    onRowSelectionChange: (updater: Updater<any>) => void;
-    onColumnSizingChange: (updater: Updater<Record<string, number>>) => void;
-  }): any {
-    return createTable({
-      data: params.rows,
-      columns: params.columns,
-      getCoreRowModel: getCoreRowModel(),
-      getRowId: params.getRowId,
-      // not in the formal type, supported by our usage
-      enableColumnResizing: true as unknown as boolean,
-      state: params.state,
-      initialState: {
-        columnPinning: { left: [], right: [] },
-        columnSizing: {},
-      },
-      onStateChange: params.onStateChange,
-      renderFallbackValue: null as unknown,
-      onSortingChange: params.onSortingChange,
-      onRowSelectionChange: params.onRowSelectionChange,
-      columnResizeMode: 'onChange',
-      onColumnSizingChange: params.onColumnSizingChange,
-    });
+  tagsToString(tags: string[]): string {
+    if (!tags || !Array.isArray(tags)) return '';
+    return tags
+      .filter((t) => typeof t === 'string' && t.trim().length > 0)
+      .map((t) => {
+        const trimmed = t.trim();
+        return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+      })
+      .join(', ');
   }
 
-  buildTsColumns(colDefs: ColDef[]): TSColumnDef<GridRow, unknown>[] {
-    return colDefs
-      .filter((c) => !!c.field)
-      .map((c) => ({
-        id: c.field as string,
-        header: c.headerName || (c.field as string),
-        accessorFn: (row: GridRow) => row?.[c.field as string],
-        enableSorting: true,
-        enableResizing: true,
-      })) as unknown as TSColumnDef<GridRow, unknown>[];
+  tagArrayEquals(tagsA: string[], tagsB: string[]): number {
+    return (tagsA ?? []).toString().localeCompare((tagsB ?? []).toString());
   }
+
+  normalizeTagSelection(value: unknown): string[] {
+    const input = Array.isArray(value) ? value : value == null ? [] : [value];
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const entry of input) {
+      if (entry == null) continue;
+      const tag = typeof entry === 'string' ? entry.trim() : String(entry).trim();
+      if (!tag) continue;
+      if (seen.has(tag)) continue;
+      seen.add(tag);
+      result.push(tag);
+    }
+    return result;
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.html
+
+```html
+<div class="fixed inset-0 z-40">
+  <div class="absolute inset-0 bg-black/30" (click)="closePanel.emit()"></div>
+  <aside class="absolute right-0 top-0 h-full w-[360px] max-w-[90vw] bg-base-100 shadow-xl p-4 flex flex-col">
+    <!-- Pinned Header Area -->
+    <div class="shrink-0">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-lg font-semibold">Filters</h3>
+        <button class="btn btn-ghost btn-sm px-2" (click)="closePanel.emit()">
+          <pc-icon name="chevron-right"></pc-icon>
+        </button>
+      </div>
+      <div class="flex justify-between items-center mb-3">
+        <span class="text-sm opacity-70">Combine column filters and operators.</span>
+        <button
+          class="btn btn-link btn-xs text-primary font-bold p-0 no-underline hover:underline flex items-center gap-0.5"
+          [disabled]="hasActiveFilters()"
+          (click)="!hasActiveFilters() && openAdvanced.emit()"
+        >
+          Advanced Filter &gt;
+        </button>
+      </div>
+
+      <!-- Apply / Clear buttons pinned at top -->
+      <div class="flex gap-2 mb-1">
+        <button class="btn btn-primary btn-sm flex-1" (click)="apply.emit()">Apply</button>
+        <button class="btn btn-outline btn-sm flex-1" (click)="clear.emit()">Clear</button>
+      </div>
+
+      <div class="divider my-3"></div>
+    </div>
+
+    <!-- Scrollable Fields Area -->
+    <div class="flex-1 overflow-y-auto space-y-3 pr-1">
+      @for (field of panelFields(); track field) {
+      <div class="form-control">
+        <label class="label py-0"><span class="label-text font-medium">{{ labelFor()(field) }}</span></label>
+        <div class="flex gap-2 mt-1">
+          <select
+            class="select select-bordered select-xs w-28"
+            (change)="changeOp.emit({ field, op: $any($event.target).value })"
+            [value]="$any(panelFilters())[field]?.op || 'contains'"
+          >
+            <option value="contains">contains</option>
+            <option value="notContains">does not contain</option>
+            <option value="equals">equals</option>
+            <option value="notEquals">does not equal</option>
+            <option value="startsWith">starts with</option>
+            <option value="endsWith">ends with</option>
+            <option value="isEmpty">is empty</option>
+            <option value="isNotEmpty">is not empty</option>
+          </select>
+          @let filterOp = $any(panelFilters())[field]?.op; @if (filterOp !== 'isEmpty' && filterOp !== 'isNotEmpty') {
+          @if (optionsFor()(field)?.length) {
+          <select
+            class="select select-bordered select-xs flex-1"
+            (change)="changeValue.emit({ field, value: $any($event.target).value })"
+            [value]="$any(panelFilters())[field]?.value || ''"
+          >
+            <option value="">Any</option>
+            @for (opt of optionsFor()(field)!; track opt) {
+            <option [value]="opt">{{ opt }}</option>
+            }
+          </select>
+          } @else {
+          <input
+            class="input input-bordered input-xs flex-1"
+            type="text"
+            placeholder="Value"
+            (input)="changeValue.emit({ field, value: $any($event.target).value })"
+            [value]="$any(panelFilters())[field]?.value || ''"
+          />
+          } }
+        </div>
+      </div>
+      }
+    </div>
+  </aside>
+</div>
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+
+@Component({
+  selector: 'pc-dg-filter-panel',
+  imports: [Icon],
+  templateUrl: 'datagrid-filter-panel.html',
+})
+export class DataGridFilterPanelComponent {
+  public apply = output<void>();
+  public changeOp = output<{ field: string; op: string }>();
+  public changeValue = output<{ field: string; value: unknown }>();
+  public clear = output<void>();
+  public closePanel = output<void>();
+  public openAdvanced = output<void>();
+  public hasActiveFilters = input<boolean>(false);
+  public labelFor = input<(field: string) => string>((f) => f);
+  public optionsFor = input<(field: string) => string[] | null>((_f) => null);
+  public panelFields = input<string[]>([]);
+  public panelFilters = input<Record<string, { op: string; value: unknown }>>({});
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-inline-filters-row.ts
+
+```typescript
+import { Component, computed, inject, input } from '@angular/core';
+import type { Header } from '@tanstack/table-core';
+
+import { DataGrid } from '../datagrid';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { GridRow } from '../types';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+@Component({
+  selector: 'pc-dg-inline-filters-row',
+  templateUrl: 'datagrid-inline-filters-row.html',
+})
+export class DataGridInlineFiltersRowComponent {
+  private readonly grid: DataGrid<keyof Models, unknown> | null = inject(DataGrid, { optional: true });
+
+  public clearHeaderFilter = input<(field: string) => void>((f) => this.grid?.clearHeaderFilter(f));
+  public enableSelection = input<boolean>(true);
+  public getColDefById = input<(id: string) => ColDef | undefined>((id) => this.grid?.getColDefById(id));
+  public getFilterOptionsForCol = input<(col: ColDef) => string[] | null>(
+    (c) => this.grid?.getFilterOptionsForCol(c) ?? null,
+  );
+  public getFilterValue = input<(field: string) => string>((f) => this.grid?.getFilterValue(f) ?? '');
+  public inlineFilterLabel = input<(field: string) => string>((f) => this.grid?.inlineFilterLabel?.(f) ?? '');
+  public isOptionChecked = input<(field: string, option: string) => boolean>(
+    (f, o) => !!this.grid?.isOptionChecked(f, o),
+  );
+  public leafHeaders = input<Header<GridRow, unknown>[]>([]);
+  public leftOffsetPx = input.required<(colId: string) => number>();
+  public onHeaderFilterInput = input<(field: string, value: unknown) => void>((f, v) =>
+    this.grid?.onHeaderFilterInput(f, v),
+  );
+  public onToggleFilterOption = input<(field: string, option: string, checked: boolean) => void>((f, o, c) =>
+    this.grid?.onToggleFilterOption(f, o, c),
+  );
+  public pinState = input.required<(h: Header<GridRow, unknown>) => 'left' | 'right' | false>();
+  public rightOffsetPx = input.required<(colId: string) => number>();
+  public selectionStickyWidth = input<number>(48);
+
+  public readonly colWidths = computed<Record<string, number>>(() => this.grid?.colWidths?.() ?? {});
 }
 ```
 
@@ -30095,213 +28740,47 @@ export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
 };
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/types.ts
+## File: apps/frontend/src/app/shared/components/datagrid/grid-defaults.ts
 
 ```typescript
-export type SortDir = 'asc' | 'desc' | 'none';
+import type { GridRow } from './types';
 
-/** Row shape served by the grid APIs: a dynamic record keyed by column field. */
-export type GridRow = Record<string, unknown>;
-
-export interface HeaderRef {
-  column: {
-    id: string;
-    getIsSorted?: () => 'asc' | 'desc' | false;
-    toggleSorting?: (desc?: boolean, multi?: boolean) => void;
-    clearSorting?: () => void;
-    pin?: (side: 'left' | 'right' | false) => void;
-    getIsPinned?: () => 'left' | 'right' | false;
-    getSize?: () => number;
-    setSize?: (px: number) => void;
-  };
-  table?: unknown;
+/** Params passed to colDef callbacks (cellRenderer, valueFormatter, valueGetter, valueSetter, ...). */
+export interface CellParams {
+  data?: GridRow;
+  value?: unknown;
+  newValue?: unknown;
+  colDef?: ColumnDef;
 }
-```
 
-## File: apps/frontend/src/app/shared/components/datagrid/undo-redo-mgr.ts
+// Lightweight column definition used by DataGrid
+export interface ColumnDef {
+  cellClass?: string | ((p: CellParams) => string | undefined);
+  cellDataType?: string;
+  cellEditorParams?: unknown;
+  cellRenderer?: (p: CellParams) => CellRendererResult;
+  cellRendererParams?: unknown;
+  comparator?: (a: unknown, b: unknown) => number;
+  editable?: boolean;
+  equals?: (a: unknown, b: unknown) => boolean;
+  field?: string;
+  headerName?: string;
+  hide?: boolean;
+  onCellClicked?: (event: CellParams) => void;
+  onCellDoubleClicked?: (event: CellParams) => void;
+  isCellInteractive?: (row: GridRow) => boolean;
+  tagColumn?: boolean;
+  valueFormatter?: (p: CellParams) => unknown;
 
-```typescript
-import { computed, signal } from '@angular/core';
-
-export class UndoManager {
-  private readonly isOperating = signal(false);
-
-  private readonly undoStack = signal<any[]>([]);
-  private readonly redoStack = signal<any[]>([]);
-  private grid: any = null;
-
-  public readonly canRedo = computed(() => this.redoStack().length > 0 && !this.isOperating());
-  public readonly canUndo = computed(() => this.undoStack().length > 0 && !this.isOperating());
-
-  public getRedoSize(): number {
-    return this.redoStack().length;
-  }
-
-  public getUndoSize(): number {
-    return this.undoStack().length;
-  }
-
-  public initialize(_api: any): void {
-    this.grid = _api;
-    this.isOperating.set(false);
-  }
-
-  public pushUndo(snapshot: any): void {
-    this.undoStack.update((s) => {
-      const next = [...s, snapshot];
-      return next.length > 50 ? next.slice(1) : next;
-    });
-    this.redoStack.set([]);
-  }
-
-  public async redo() {
-    const redoStack = this.redoStack();
-    if (this.isOperating() || redoStack.length === 0 || !this.grid) return;
-
-    this.isOperating.set(true);
-    try {
-      const target = redoStack[redoStack.length - 1];
-      this.redoStack.update((s) => s.slice(0, -1));
-
-      const current = this.captureCurrentState();
-      if (current && target.editMeta) {
-        current.editMeta = target.editMeta;
-      }
-
-      this.undoStack.update((s) => {
-        const next = [...s, current];
-        return next.length > 50 ? next.slice(1) : next;
-      });
-
-      await this.applySnapshot(target, 'redo');
-    } finally {
-      this.isOperating.set(false);
-    }
-  }
-
-  public async undo() {
-    const undoStack = this.undoStack();
-    if (this.isOperating() || undoStack.length === 0 || !this.grid) return;
-
-    this.isOperating.set(true);
-    try {
-      const target = undoStack[undoStack.length - 1];
-      this.undoStack.update((s) => s.slice(0, -1));
-
-      const current = this.captureCurrentState();
-      if (current && target.editMeta) {
-        current.editMeta = target.editMeta;
-      }
-
-      this.redoStack.update((s) => {
-        const next = [...s, current];
-        return next.length > 50 ? next.slice(1) : next;
-      });
-
-      await this.applySnapshot(target, 'undo');
-    } finally {
-      this.isOperating.set(false);
-    }
-  }
-
-  private captureCurrentState(): any {
-    const store = this.grid?.store;
-    if (!store) return null;
-
-    let rowsCopy: any[] = [];
-    try {
-      rowsCopy = JSON.parse(JSON.stringify(store.rows() || []));
-    } catch {
-      rowsCopy = (store.rows() || []).map((r: any) => {
-        const copy = { ...r };
-        if (Array.isArray(r.tags)) copy.tags = [...r.tags];
-        if (Array.isArray(r.issues)) copy.issues = [...r.issues];
-        return copy;
-      });
-    }
-
-    return {
-      rows: rowsCopy,
-      selectedIdSet: new Set(store.selectedIdSet()),
-      filterValues: { ...store.filterValues() },
-      sorting: [...store.sorting()],
-      pageIndex: store.pageIndex(),
-      pageSize: store.pageSize(),
-    };
-  }
-
-  private async applySnapshot(target: any, actionType: 'undo' | 'redo') {
-    if (!target || !this.grid || !this.grid.store) return;
-    const store = this.grid.store;
-    const flashedCells: { id: string; field: string }[] = [];
-
-    if (target.editMeta) {
-      try {
-        const { id, field, prevValue, newValue } = target.editMeta;
-        const valToSet = actionType === 'undo' ? prevValue : newValue;
-        const payload = { [field]: valToSet };
-        await this.grid.gridSvc.update(id, payload);
-        flashedCells.push({ id: String(id), field });
-      } catch (err) {
-        console.error(`Failed to update backend on ${actionType}:`, err);
-        if (this.grid.alertSvc) {
-          this.grid.alertSvc.showError('Reverting changes on the server failed');
-        }
-      }
-    } else {
-      try {
-        const currentRows = store.rows() || [];
-        const diffs = this.findRowsDiff(currentRows, target.rows);
-        for (const diff of diffs) {
-          const payload = { [diff.field]: diff.newValue };
-          await this.grid.gridSvc.update(diff.id, payload);
-          flashedCells.push({ id: String(diff.id), field: diff.field });
-        }
-      } catch (err) {
-        console.error(`Failed to update backend on ${actionType} fallback:`, err);
-      }
-    }
-
-    store.rows.set(target.rows);
-    store.selectedIdSet.set(target.selectedIdSet);
-    store.filterValues.set(target.filterValues);
-    store.sorting.set(target.sorting);
-    store.pageIndex.set(target.pageIndex);
-    store.pageSize.set(target.pageSize);
-
-    this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
-
-    for (const item of flashedCells) {
-      if (typeof this.grid.triggerCellFlash === 'function') {
-        this.grid.triggerCellFlash(item.id, item.field);
-      }
-    }
-  }
-
-  private findRowsDiff(oldRows: any[], newRows: any[]): { id: string; field: string; prevValue: any; newValue: any }[] {
-    const diffs: { id: string; field: string; prevValue: any; newValue: any }[] = [];
-    const oldMap = new Map<string, any>();
-    for (const r of oldRows) {
-      if (r && r.id) oldMap.set(String(r.id), r);
-    }
-    for (const r of newRows) {
-      if (!r || !r.id) continue;
-      const idStr = String(r.id);
-      const oldRow = oldMap.get(idStr);
-      if (oldRow) {
-        for (const key of Object.keys(r)) {
-          if (key === 'id') continue;
-          const val1 = oldRow[key];
-          const val2 = r[key];
-          if (JSON.stringify(val1) !== JSON.stringify(val2)) {
-            diffs.push({ id: idStr, field: key, prevValue: val1, newValue: val2 });
-          }
-        }
-      }
-    }
-    return diffs;
-  }
+  // Compatibility props (ignored by current table but kept for typing)
+  valueGetter?: (p: CellParams) => unknown;
+  valueSetter?: (p: CellParams) => boolean;
+  minWidth?: number;
 }
+
+type CellRendererResult = string | HTMLElement;
+
+export const SELECTION_COLUMN: ColumnDef = {};
 ```
 
 ## File: apps/frontend/src/app/shared/components/query-builder/query-builder.ts
@@ -31173,9 +29652,13 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
       this.status.set('success');
       // Refresh so authGuard doesn't re-redirect on subsequent navigation
       await this.auth.getCurrentUser().catch(() => null);
-    } catch (err: any) {
+    } catch (err) {
       this.status.set('error');
-      this.errorMessage.set(err.message || 'This link is invalid or the deletion window has already passed.');
+      this.errorMessage.set(
+        err instanceof Error && err.message
+          ? err.message
+          : 'This link is invalid or the deletion window has already passed.',
+      );
     } finally {
       end();
     }
@@ -31188,8 +29671,10 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
       // Refresh user so guard clears and we can navigate
       await this.auth.getCurrentUser();
       void this.router.navigate(['/']);
-    } catch (err: any) {
-      this.errorMessage.set(err.message || 'Failed to cancel deletion. Please try again.');
+    } catch (err) {
+      this.errorMessage.set(
+        err instanceof Error && err.message ? err.message : 'Failed to cancel deletion. Please try again.',
+      );
     } finally {
       this.actionPending.set(false);
     }
@@ -31247,9 +29732,11 @@ export class ConfirmSubscriptionPage implements OnInit {
         this.status.set('error');
         this.errorMessage.set('Confirmation failed. The link may be invalid or expired.');
       }
-    } catch (err: any) {
+    } catch (err) {
       this.status.set('error');
-      this.errorMessage.set(err.message || 'An unexpected error occurred during confirmation.');
+      this.errorMessage.set(
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during confirmation.',
+      );
     } finally {
       end();
     }
@@ -31466,7 +29953,7 @@ export class ActivityFeed implements OnInit {
       } else {
         this.alertSvc.showError('No activity data to export');
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to export activity feed', err);
       this.alertSvc.showError('Failed to export activity feed');
     } finally {
@@ -33070,7 +31557,7 @@ export class EventViewComponent {
   protected readonly selectedPersonId = signal<string | null>(null);
   protected readonly selectedTicketTypeId = signal<string | null>(null);
   protected readonly addingRegistration = signal(false);
-  protected readonly searchTimeout: any = null;
+  protected readonly searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
   protected activeTab = signal<string>('attendees');
 
@@ -33159,8 +31646,8 @@ export class EventViewComponent {
       this.eventsFrontendSvc.triggerRefresh();
       this.alertSvc.showSuccess('Event deleted');
       await this.router.navigate(['/events/pages']);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Unable to delete event');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Unable to delete event');
     } finally {
       end();
     }
@@ -33208,8 +31695,8 @@ export class EventViewComponent {
       this.personSearchResults.set([]);
       const regs = await this.eventsSvc.getRegistrations(this.id());
       this.registrations.set(regs || []);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Failed to add registration');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to add registration');
     } finally {
       this.addingRegistration.set(false);
     }
@@ -33221,8 +31708,8 @@ export class EventViewComponent {
       this.alertSvc.showSuccess(`${reg.first_name} checked in`);
       const regs = await this.eventsSvc.getRegistrations(this.id());
       this.registrations.set(regs || []);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Failed to check in');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to check in');
     }
   }
 
@@ -33231,8 +31718,8 @@ export class EventViewComponent {
       await this.eventsSvc.updateRegistration(String(reg.id), { status: status as any });
       const regs = await this.eventsSvc.getRegistrations(this.id());
       this.registrations.set(regs || []);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Failed to update status');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to update status');
     }
   }
 
@@ -33249,8 +31736,8 @@ export class EventViewComponent {
       this.alertSvc.showSuccess('Registration removed');
       const regs = await this.eventsSvc.getRegistrations(this.id());
       this.registrations.set(regs || []);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Failed to remove registration');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to remove registration');
     }
   }
 
@@ -33812,8 +32299,16 @@ ${
       this.formsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Web form deleted');
       await this.router.navigate(['/forms']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete web form';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete web form';
       this.alertSvc.showError(message);
     } finally {
       this.saving.set(false);
@@ -33876,8 +32371,8 @@ ${
               void this.router.navigate(['/forms', id]);
             }
           }
-        } catch (err: any) {
-          const msg = err.message || 'An error occurred while saving the form.';
+        } catch (err) {
+          const msg = err instanceof Error && err.message ? err.message : 'An error occurred while saving the form.';
           this.error.set(msg);
           this.alertSvc.showError(msg);
         } finally {
@@ -33945,6 +32440,10 @@ ${
       end();
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -34205,8 +32704,16 @@ ${
       this.formsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Web form deleted');
       await this.router.navigate([backRoute]);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete web form';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete web form';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -34236,6 +32743,10 @@ ${
     if (!id) return '?';
     return this.usersById.get(String(id))?.first_name ?? '?';
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -34513,8 +33024,16 @@ export class FundraisingFormComponent implements OnInit {
       this.formsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Donation page deleted');
       await this.router.navigate(['/donation-pages']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete donation page';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete donation page';
       this.alertSvc.showError(message);
     } finally {
       this.saving.set(false);
@@ -34577,8 +33096,8 @@ export class FundraisingFormComponent implements OnInit {
               void this.router.navigate(['/donation-pages', id]);
             }
           }
-        } catch (err: any) {
-          const msg = err.message || 'An error occurred while saving.';
+        } catch (err) {
+          const msg = err instanceof Error && err.message ? err.message : 'An error occurred while saving.';
           this.error.set(msg);
           this.alertSvc.showError(msg);
         } finally {
@@ -34643,365 +33162,9 @@ export class FundraisingFormComponent implements OnInit {
     }
   }
 }
-```
 
-## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
-
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
-
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { HouseholdsService } from '../services/households-service';
-
-@Component({
-  selector: 'pc-households-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        [showToolbar]="!inline()"
-        title="Households"
-        i18n-title
-        description="Manage household groups, track shared addresses, and organize family relationships."
-        i18n-description
-        [listId]="listId()"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableMerge]="false"
-        [disableView]="false"
-        [disableImport]="false"
-        [confirmDeleteOverride]="onConfirmDeleteBind"
-        [rowCanSelect]="rowCanSelectFn"
-        (importCSV)="openImportDialog()"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="add-home"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-
-    <!-- Reusable CSV Importer for Households -->
-    <pc-csv-importer
-      [open]="importerOpen()"
-      [title]="'Import Households from CSV'"
-      [mappableFields]="mappableFields"
-      [autoMapHeader]="autoMapHeader"
-      [summary]="importSummary()"
-      (submit)="onImportSubmit($event)"
-      (close)="importerOpen.set(false); importSummary.set(null)"
-      (closeSummary)="importSummary.set(null)"
-    >
-      <div pc-import-extras class="grid gap-2">
-        <label i18n class="font-semibold">3) Add tags to all imported rows (optional)</label>
-        <input
-          class="input input-bordered"
-          placeholder="Comma separated e.g. neighborhood, parish"
-          i18n-placeholder
-          [(ngModel)]="tagsInput"
-        />
-      </div>
-    </pc-csv-importer>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: HouseholdsService },
-    provideDataGridConfig({ messages: { exportEntity: 'households', exportFileName: 'households-export.csv' } }),
-  ],
-})
-export class HouseholdsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly dialogSvc = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly householdsService = inject(HouseholdsService);
-
-  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
-
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
-
-  public inline = input<boolean>(false);
-
-  protected readonly mappableFields: string[] = [
-    'street_num',
-    'apt',
-    'street1',
-    'street2',
-    'city',
-    'state',
-    'zip',
-    'country',
-    'home_phone',
-    'notes',
-  ];
-
-  protected autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      streetnum: 'street_num',
-      streetnumber: 'street_num',
-      homestreet: 'street1',
-      homestreet1: 'street1',
-      homestreet2: 'street2',
-      homestreet3: 'street2',
-      homeaddress: 'street1',
-      homeaddresspobox: 'street2',
-      businessstreet: 'street1',
-      businessstreet1: 'street1',
-      businessstreet2: 'street2',
-      businessstreet3: 'street2',
-      businessaddress: 'street1',
-      businessaddresspobox: 'street2',
-      address1: 'street1',
-      address2: 'street2',
-      street1: 'street1',
-      street2: 'street2',
-      apt: 'apt',
-      apartment: 'apt',
-      city: 'city',
-      state: 'state',
-      province: 'state',
-      zip: 'zip',
-      postal: 'zip',
-      country: 'country',
-      homephone: 'home_phone',
-      phone: 'home_phone',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
-  };
-
-  protected col: ColDef[] = [
-    {
-      field: 'persons_count',
-      headerName: 'People',
-      onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
-    },
-    { field: 'street_num', headerName: 'Street Number', editable: true },
-    { field: 'apt', headerName: 'Apt', editable: true },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: true,
-      valueFormatter: (params: any) =>
-        params.data?.is_placeholder ? 'People with no addresses' : (params.value ?? ''),
-    },
-    { field: 'street2', headerName: 'Street 2', editable: true },
-    { field: 'city', headerName: 'City', editable: true },
-    {
-      field: 'tags',
-      headerName: 'Tags',
-      hide: true,
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    { field: 'state', headerName: 'State/Province', editable: true },
-    { field: 'zip', headerName: 'Zip/Province', editable: true },
-    { field: 'country', headerName: 'Country', editable: true },
-    { field: 'district', headerName: 'District / Riding', editable: false, minWidth: 140 },
-    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, minWidth: 180 },
-    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
-    { field: 'home_phone', headerName: 'Home phone', editable: true },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-  public listId = input<string | null>(null);
-  public showHeader = input<boolean>(true);
-
-  protected importSummary = signal<CsvImportSummary | null>(null);
-
-  // Importer state
-  protected importerOpen = signal(false);
-  protected tagsInput = '';
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadTagOptions();
-    await this.loadIssueOptions();
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected openEditOnDoubleClick(event: any) {
-    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
-      id: string;
-      persons_count?: number | string | null;
-      is_placeholder?: boolean;
-    }>;
-
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
-    if (selected.some((r) => r.is_placeholder)) {
-      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
-      return true;
-    }
-
-    // Collect IDs for households that have people
-    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
-    const householdIds = selected.map((r) => r.id);
-
-    if (populated.length > 0) {
-      // Fetch person IDs for all households-with-people so we can act on them
-      const personIdArrays = await Promise.all(
-        populated.map(async (h) => {
-          try {
-            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
-            return people.map((p) => p.id);
-          } catch {
-            return [];
-          }
-        }),
-      );
-      const personIds = personIdArrays.flat();
-      const peopleCount = personIds.length;
-
-      // Show the 3-option dialog and wait for user's choice
-      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-        title: 'Households have people',
-        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-        variant: 'warning',
-        choices: [
-          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-        ],
-        cancelText: 'Cancel',
-      });
-
-      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
-
-      if (choice === 'keep-people') {
-        // Detach each person from their household (moves to blank household)
-        await Promise.all(
-          personIds.map((pid) =>
-            this.personsSvc.removeHousehold(pid).catch(() => {
-              // best-effort; continue
-            }),
-          ),
-        );
-      } else if (choice === 'delete-people') {
-        // Delete all people in those households first
-        if (personIds.length) {
-          try {
-            await this.personsSvc.deleteMany(personIds);
-          } catch {
-            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
-            return true;
-          }
-        }
-      }
-
-      // Now delete the households themselves
-      try {
-        await this.householdsService.deleteMany(householdIds);
-        this.alertSvc.showSuccess('Households deleted successfully.');
-      } catch {
-        this.alertSvc.showError('Failed to delete one or more households.');
-      }
-      return true;
-    } else {
-      // No people attached — delegate to the standard flow
-      return false;
-    }
-  }
-
-  protected onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }) {
-    // Backend households import endpoint not implemented yet; show informative summary
-    const diag = 'Households import is not available yet.';
-    this.importSummary.set({ inserted: 0, errors: 0, skipped: payload.skipped, failed: true, message: diag });
-    this.importerOpen.set(false);
-  }
-
-  protected openImportDialog() {
-    this.importSummary.set(null);
-    this.tagsInput = '';
-    this.importerOpen.set(true);
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -35626,7 +33789,7 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
 export class AddConnectionDrawer {
   readonly personId = input.required<string>();
   readonly isOpen = input.required<boolean>();
-  readonly close = output<void>();
+  readonly closeDrawer = output<void>();
   readonly saved = output<any>();
 
   private readonly connectionsSvc = inject(ConnectionsService);
@@ -35713,9 +33876,9 @@ export class AddConnectionDrawer {
       this.alertSvc.showSuccess('Connection added');
       this.saved.emit(result);
       this.resetForm();
-      this.close.emit();
-    } catch (err: any) {
-      if (err?.message?.includes('already exists')) {
+      this.closeDrawer.emit();
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('already exists')) {
         this.alertSvc.showError('A connection of this type already exists between these contacts.');
       }
     } finally {
@@ -35725,7 +33888,7 @@ export class AddConnectionDrawer {
 
   protected onClose() {
     this.resetForm();
-    this.close.emit();
+    this.closeDrawer.emit();
   }
 
   private resetForm() {
@@ -35797,7 +33960,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
     <pc-add-connection-drawer
       [personId]="personId()"
       [isOpen]="showAddDrawer()"
-      (close)="showAddDrawer.set(false)"
+      (closeDrawer)="showAddDrawer.set(false)"
       (saved)="onConnectionAdded()"
     ></pc-add-connection-drawer>
   `,
@@ -35860,7 +34023,7 @@ export class PersonConnections implements OnInit {
 
 ```typescript
 import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked, OnInit } from '@angular/core';
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -35919,7 +34082,7 @@ interface SocialLinkDef {
   ],
   templateUrl: './person-view.html',
 })
-export class PersonView implements OnInit {
+export class PersonView {
   readonly id = input.required<string>();
 
   private readonly alertSvc = inject(AlertService);
@@ -36094,10 +34257,6 @@ export class PersonView implements OnInit {
     });
   }
 
-  public ngOnInit() {
-    // Standard Angular Init
-  }
-
   protected async loadAllData(id: string) {
     const end = this._loading.begin();
     try {
@@ -36255,8 +34414,8 @@ export class PersonView implements OnInit {
       } else {
         this.alertSvc.showError('Failed to initialize payment gateway.');
       }
-    } catch (err: any) {
-      this.alertSvc.showError(err.message || 'Verification check failed.');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Verification check failed.');
     } finally {
       this.isCheckingEligibility.set(false);
     }
@@ -36281,8 +34440,16 @@ export class PersonView implements OnInit {
       this.personsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Person deleted');
       await this.router.navigate(['/people']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete person';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete person';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -36330,6 +34497,507 @@ export class PersonView implements OnInit {
     const formatted = parts.join(', ').trim();
     return formatted || 'No Address Assigned';
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
+
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
+
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+
+import {
+  DATA_GRID_CONFIG,
+  DEFAULT_DATA_GRID_CONFIG,
+  provideDataGridConfig,
+} from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
+
+@Component({
+  selector: 'pc-persons-grid',
+  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
+  templateUrl: './persons-grid.html',
+  providers: [
+    { provide: AbstractAPIService, useExisting: PersonsService },
+    provideDataGridConfig({ messages: { exportEntity: 'persons', exportFileName: 'persons-export.csv' } }),
+  ],
+})
+export class PersonsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  private readonly personsService = inject(PersonsService);
+
+  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  public inline = input<boolean>(false);
+
+  private addressChangeModalId: string | null = null;
+  private importProgressTimer: ReturnType<typeof setInterval> | undefined;
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+
+  protected readonly mappableFields = [
+    'first_name',
+    'middle_names',
+    'last_name',
+    'email',
+    'email2',
+    'mobile',
+    'home_phone',
+    'street_num',
+    'street1',
+    'street2',
+    'apt',
+    'city',
+    'state',
+    'zip',
+    'country',
+    'notes',
+  ];
+
+  protected col: ColDef[] = [
+    { field: 'first_name', headerName: 'First Name', editable: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true },
+    { field: 'email', headerName: 'Email', editable: true },
+    { field: 'mobile', headerName: 'Mobile', editable: true },
+    { field: 'company_name', headerName: 'Company', editable: false },
+    {
+      field: 'home_phone',
+      headerName: 'Home phone',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'tags',
+      hide: true,
+      headerName: 'Tags',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      onCellClicked: this.onAddressCellClicked.bind(this),
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (locationParts.length) parts.push(locationParts.join(', ').trim());
+        return parts.join(', ').trim() || 'No household assigned';
+      },
+    },
+    {
+      field: 'street_num',
+      headerName: 'Street Number',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'apt',
+      headerName: 'Apt',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street2',
+      headerName: 'Street 2',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'state',
+      headerName: 'State/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'zip',
+      headerName: 'Zip/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'country',
+      headerName: 'Country',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+
+  // Generic CSV importer integration
+  protected importerOpen = signal(false);
+  protected importSummary = signal<CsvImportSummary | null>(null);
+
+  public listId = input<string | null>(null);
+
+  protected readonly narrowTypeOptions = [
+    { label: 'All', value: null, tags: [] },
+    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
+    { label: 'Donors', value: 'donor', tags: ['donor'] },
+  ];
+
+  protected tagsInput = '';
+
+  public ngOnInit() {
+    void this.initializeComponent();
+  }
+
+  private async initializeComponent(): Promise<void> {
+    try {
+      await this.loadTagOptions();
+      await this.loadIssueOptions();
+      // Any logic that depends on this data should go here
+    } catch (error) {
+      console.error('Initialization failed', error);
+    }
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected getPlusIcon(): PcIconNameType {
+    return 'user-plus';
+  }
+
+  // paging/preview managed by CsvImportComponent
+
+  protected confirmOpenEditOnDoubleClick(event: any) {
+    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
+    this.confirmAddressChange();
+  }
+
+  protected onAddressCellClicked(event: any) {
+    const householdId = event?.data?.household_id ?? event?.household_id;
+    if (householdId) {
+      void this.router.navigate(['households', householdId]);
+    }
+  }
+
+  protected getTitle() {
+    return 'People';
+  }
+
+  protected getDescription() {
+    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
+  }
+
+  // --- Import CSV Flow ---
+  protected openImportDialog() {
+    // Clear any prior summary to avoid stale dialogs
+    this.importSummary.set(null);
+    this.tagsInput = '';
+    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
+    this.importerOpen.set(true);
+  }
+
+  protected routeToHouseholds() {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.close();
+
+    if (this.addressChangeModalId !== null) {
+      void this.router.navigate(['households', this.addressChangeModalId]);
+    }
+  }
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+    const inputTags = this.tagsInput
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => !!t);
+    const tags = inputTags;
+
+    try {
+      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        tag: res?.tag ?? undefined,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.grid()?.refresh();
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
+  }
+
+  public autoMapHeader(h: string): string {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      firstname: 'first_name',
+      fname: 'first_name',
+      middlename: 'middle_names',
+      lastname: 'last_name',
+      lname: 'last_name',
+      name: 'first_name',
+      email: 'email',
+      emailaddress: 'email',
+      email1address: 'email',
+      email2: 'email2',
+      email2address: 'email2',
+      mobile: 'mobile',
+      mobilephone: 'mobile',
+      cellphone: 'mobile',
+      primaryphone: 'mobile',
+      businessphone: 'mobile',
+      homephone: 'home_phone',
+      streetnum: 'street_num',
+      streetnumber: 'street_num',
+      homestreet: 'street1',
+      homestreet1: 'street1',
+      homestreet2: 'street2',
+      homestreet3: 'street2',
+      homeaddress: 'street1',
+      homeaddresspobox: 'street2',
+      homecity: 'city',
+      homestate: 'state',
+      homepostalcode: 'zip',
+      homecountry: 'country',
+      businessstreet: 'street1',
+      businessstreet1: 'street1',
+      businessstreet2: 'street2',
+      businessstreet3: 'street2',
+      businessaddress: 'street1',
+      businessaddresspobox: 'street2',
+      businesscity: 'city',
+      businessstate: 'state',
+      businesspostalcode: 'zip',
+      businesscountry: 'country',
+      address1: 'street1',
+      address2: 'street2',
+      street1: 'street1',
+      street2: 'street2',
+      apt: 'apt',
+      apartment: 'apt',
+      city: 'city',
+      state: 'state',
+      province: 'state',
+      zip: 'zip',
+      postal: 'zip',
+      country: 'country',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  }
+
+  private confirmAddressChange(): void {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.showModal();
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    const ids = selected.map((r: any) => r.id);
+
+    // Show standard delete confirmation
+    const selectedCount = selected.length;
+    const dynamicMessage = selectedCount
+      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
+      : this.config.messages.deleteConfirmMessage;
+
+    const ok = await this.dialogs.confirm({
+      title: this.config.messages.deleteConfirmTitle,
+      message: dynamicMessage,
+      variant: this.config.messages.deleteConfirmVariant,
+      icon: this.config.messages.deleteConfirmIcon,
+      confirmText: this.config.messages.deleteConfirmText,
+      cancelText: this.config.messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return true; // Handled
+
+    const end = this._loading.begin();
+    try {
+      // Call deleteMany without force, skipping global error toast
+      await this.personsService.deleteMany(ids, undefined, true);
+      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+    } catch (err) {
+      // Check if it's the captain error message
+      const errMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : '';
+      if (errMsg.includes('team captains')) {
+        // Ask the user if they want to proceed despite being a team captain
+        const forceOk = await this.dialogs.confirm({
+          title: 'Team Captain Warning',
+          message: errMsg,
+          variant: 'warning',
+          confirmText: 'Yes, delete anyway',
+          cancelText: 'Cancel',
+        });
+        if (forceOk) {
+          try {
+            await this.personsService.deleteMany(ids, true, true);
+            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+          } catch (forceErr) {
+            const forceErrMsg =
+              forceErr instanceof Error && forceErr.message
+                ? forceErr.message
+                : isRecord(forceErr) &&
+                    isRecord(forceErr['data']) &&
+                    typeof forceErr['data']['message'] === 'string' &&
+                    forceErr['data']['message']
+                  ? forceErr['data']['message']
+                  : 'Delete failed';
+            this.alertSvc.showError(forceErrMsg);
+          }
+        }
+      } else {
+        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
+      }
+    } finally {
+      end();
+      this.grid()?.clearAllSelection();
+      await this.grid()?.refresh();
+    }
+    return true;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -36675,8 +35343,8 @@ export class DonationsSettingsComponent implements OnInit {
       this.newPeriodLimit.set(1000);
       this.showAddPeriod.set(false);
       await this.loadPeriods();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to create donation period');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to create donation period');
     } finally {
       this.isSavingPeriod.set(false);
     }
@@ -36686,8 +35354,8 @@ export class DonationsSettingsComponent implements OnInit {
     try {
       await this.donationsSvc.updateDonationPeriod({ id: period.id, is_active: !period.is_active });
       await this.loadPeriods();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to update period');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update period');
     }
   }
 
@@ -36704,8 +35372,8 @@ export class DonationsSettingsComponent implements OnInit {
       await this.donationsSvc.deleteDonationPeriod(period.id);
       this.alerts.showSuccess('Period deleted');
       await this.loadPeriods();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to delete period');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete period');
     }
   }
 
@@ -36853,8 +35521,10 @@ export class DonationsSettingsComponent implements OnInit {
 
       await this.settingsSvc.upsert(entries);
       this.alerts.showSuccess('Donations configuration saved successfully');
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to save donations configuration');
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to save donations configuration',
+      );
     } finally {
       this.isSaving.set(false);
     }
@@ -37208,7 +35878,7 @@ export class ShiftFormComponent {
   private readonly volunteerEventsSvc = inject(ShiftsService);
   private readonly volunteerSvc = inject(VolunteerService);
 
-  private slugTimeoutId: any = null;
+  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
   protected readonly publicUrl = computed(() => {
@@ -37346,8 +36016,8 @@ export class ShiftFormComponent {
       this.volunteerSearch.set('');
       this.alerts.showSuccess(`${person.first_name} added to roster`);
       await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to add volunteer');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add volunteer');
     }
   }
 
@@ -37374,8 +36044,8 @@ export class ShiftFormComponent {
       this.volunteerEventsSvc.triggerRefresh();
       this.alerts.showSuccess('Event deleted');
       await this.router.navigate(['/events/shifts']);
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to delete event');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
     } finally {
       this.saving.set(false);
     }
@@ -37429,8 +36099,8 @@ export class ShiftFormComponent {
       }
 
       await this.loadRoster();
-    } catch (err: any) {
-      this.error.set(err?.message || 'Failed to load event');
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
       this.alerts.showError(this.error()!);
     }
   }
@@ -37470,8 +36140,8 @@ export class ShiftFormComponent {
       await this.volunteerSvc.deleteShift(shift.id);
       this.alerts.showSuccess('Volunteer removed');
       await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to remove volunteer');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove volunteer');
     }
   }
 
@@ -37529,8 +36199,8 @@ export class ShiftFormComponent {
           await this.router.navigate(['/events/shifts', this.id()]);
         }
       }
-    } catch (err: any) {
-      this.error.set(err?.message || 'Failed to save event');
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
       this.alerts.showError(this.error()!);
     } finally {
       this.saving.set(false);
@@ -37546,8 +36216,8 @@ export class ShiftFormComponent {
       });
       this.alerts.showSuccess('Shift details saved');
       await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to save shift details');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to save shift details');
     }
   }
 
@@ -37584,8 +36254,8 @@ export class ShiftFormComponent {
       });
       this.alerts.showSuccess('Shift status updated');
       await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to update shift');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update shift');
     }
   }
 }
@@ -37687,8 +36357,10 @@ export class AddIssue {
 
           this.payload.set({ name: '', description: '', color: randomHexColor() });
           this.formActions()?.stayOrCancel();
-        } catch (err: any) {
-          this.alertSvc.showError(err.message || "We've hit an unknown error. Please try again.");
+        } catch (err) {
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
+          );
         } finally {
           end();
         }
@@ -37800,8 +36472,10 @@ export class AddTag {
           });
 
           this.formActions()?.stayOrCancel();
-        } catch (err: any) {
-          this.alertSvc.showError(err.message || "We've hit an unknown error. Please try again.");
+        } catch (err) {
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
+          );
         } finally {
           end();
         }
@@ -38682,6 +37356,81 @@ export class TaskView {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthUserDetail,
+  IAuthUserRecord,
+  InviteAuthUserType,
+  UpdateAuthUserType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Service()
+export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
+  protected override readonly endpointName = 'authusers';
+
+  public add(row: InviteAuthUserType) {
+    return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public addMany(_rows: InviteAuthUserType[]) {
+    return Promise.resolve([]);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.authusers.count.query();
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal }) as Promise<{
+      rows: Record<string, unknown>[];
+      count: number;
+    }>;
+  }
+
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public getById(id: string) {
+    return this.api.authusers.getById.query(id) as Promise<IAuthUserDetail>;
+  }
+
+  public getTags(_id: string) {
+    return Promise.resolve([]);
+  }
+
+  public update(id: string, data: UpdateAuthUserType) {
+    return this.api.authusers.update.mutate({ id, data }) as Promise<IAuthUserRecord>;
+  }
+
+  public adminTriggerPasswordReset(id: string): Promise<{ success: boolean }> {
+    return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
+  }
+
+  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return Promise.reject(new Error('User export is not available'));
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/users/ui/user-add.ts
 
 ```typescript
@@ -38909,8 +37658,16 @@ export class UserEditComponent {
       if (typeof done === 'function') {
         done();
       }
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to update user';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to update user';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -38933,8 +37690,16 @@ export class UserEditComponent {
     try {
       await this.users.adminTriggerPasswordReset(this.id());
       this.alerts.showSuccess('Password reset email sent to user');
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to trigger password reset';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to trigger password reset';
       this.alerts.showError(message);
     } finally {
       this.resettingPassword.set(false);
@@ -38958,8 +37723,8 @@ export class UserEditComponent {
       }
       this.alerts.showSuccess('User deleted');
       await this.router.navigate(['/users']);
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Unable to delete user');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
     } finally {
       this.saving.set(false);
     }
@@ -38973,8 +37738,16 @@ export class UserEditComponent {
       this.detail.set(user);
       this.setForm(user);
       this.form().reset();
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to load user';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load user';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -39006,6 +37779,10 @@ export class UserEditComponent {
       verified: Boolean(raw.verified),
     } as UpdateAuthUserType;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -39557,8 +38334,16 @@ export class WorkflowFormComponent implements OnInit {
       this.workflowsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Workflow deleted');
       await this.router.navigate(['/workflows']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete workflow';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete workflow';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -39619,8 +38404,10 @@ export class WorkflowFormComponent implements OnInit {
               void this.loadSteps();
             }
           }
-        } catch (err: any) {
-          this.alertSvc.showError(err.message || 'An error occurred while saving the workflow.');
+        } catch (err) {
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : 'An error occurred while saving the workflow.',
+          );
         } finally {
           end();
         }
@@ -39753,9 +38540,9 @@ export class WorkflowFormComponent implements OnInit {
       this.searchQuery.set('');
       this.searchResults.set([]);
       void this.loadEnrollments();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Enrollment failed', err);
-      this.alertSvc.showError(err.message || 'Failed to enroll contact.');
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to enroll contact.');
     } finally {
       end();
     }
@@ -39796,6 +38583,10 @@ export class WorkflowFormComponent implements OnInit {
     if (trigger === 'new_unsubscriber') return 'New Unsubscriber';
     return trigger;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -40065,6 +38856,385 @@ const DRAWER_STATE_KEY = 'pc-drawerState';
 const SIDEBAR_FAVOURITES_KEY = 'pc-sidebar-favourites';
 ```
 
+## File: apps/frontend/src/app/layout/sidebar/sidebar.html
+
+```html
+<ng-template #navLink let-nav>
+  <a
+    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
+    class="hover:font-bold hover:text-primary flex flex-auto items-center pb-1 pl-2 tracking-widest hover:rounded-lg !cursor-pointer"
+    (click)="this.closeMobile()"
+    [routerLink]="nav.route"
+    routerLinkActive="font-bold"
+    [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
+    [class.font-bold]="pendingRoute() === nav.route"
+  >
+    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
+    <span class="indicator pl-2 group-hover:md:visible text-sm" [class.invisible]="isEffectivelyNarrow()">
+      {{ nav.name }} @if (nav.indicator) {
+      <span class="indicator-item status status-primary"></span>
+      }
+    </span>
+  </a>
+</ng-template>
+
+<div
+  (mouseenter)="onSidebarHover(true)"
+  (mouseleave)="onSidebarHover(false)"
+  class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-44 transition-all duration-50"
+  [class.hidden]="!this.isMobileOpen()"
+  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
+  [class.w-18]="isEffectivelyNarrow() && !this.isMobileOpen()"
+>
+  <div
+    [class.hidden]="isEffectivelyNarrow()"
+    class="mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
+  >
+    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
+  </div>
+
+  <div
+    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
+    class="avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
+  >
+    <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
+  </div>
+
+  @for (item of items(); track item.name) {
+  <div class="flex-none pl-2" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
+    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
+    <div
+      class="text-base-400 font-medium flex items-center justify-between pl-2 capitalize text-xs hover:cursor-pointer"
+      (click)="toggleCollapse(item.name)"
+    >
+      <span [class.text-[10px]]="isEffectivelyNarrow() && !hoveringSidebar()">
+        @if (isEffectivelyNarrow() && !hoveringSidebar()) { {{ item.short_name || item.name }} } @else { {{ item.name }}
+        }
+      </span>
+      @if (item.children?.length) {
+      <pc-swap
+        class="rotate-90 invisible mr-2"
+        [class.visible]="!isEffectivelyNarrow() || hoveringSidebar()"
+        swapOnIcon="chevron-double-left"
+        swapOffIcon="chevron-double-right"
+        animation="rotate"
+        [size]="4"
+        [checked]="isCollapsed(item.name)"
+        (click)="toggleCollapse(item.name)"
+        aria-label="Toggle section"
+        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
+      ></pc-swap>
+      }
+    </div>
+
+    @if (item.children && !isCollapsed(item.name)) {
+    <div class="flex flex-col space-y-1">
+      @for (child of item.children; track child.name) {
+      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
+      }
+    </div>
+    } } @else {
+    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
+    }
+  </div>
+  }
+
+  <div class="hidden flex-auto grow flex-col sm:flex">
+    <span class="min-h-full grow"></span>
+    <pc-swap
+      class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
+      swapOffIcon="chevron-double-right"
+      swapOnIcon="chevron-double-left"
+      [checked]="isDrawerFull()"
+      animation="rotate"
+      (click)="toggleDrawer()"
+      aria-label="Toggle drawer"
+      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
+    ></pc-swap>
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
+
+```typescript
+import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NgTemplateOutlet } from '@angular/common';
+import {
+  NavigationCancel,
+  NavigationError,
+  NavigationStart,
+  Router,
+  RouterLink,
+  RouterLinkActive,
+} from '@angular/router';
+import { filter, map } from 'rxjs';
+import { Icon } from '@icons/icon';
+import { Swap } from '@uxcommon/components/swap/swap';
+
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { ISidebarItem } from './sidebar-items';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+
+@Component({
+  selector: 'pc-sidebar',
+  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
+  templateUrl: './sidebar.html',
+  styles: [
+    `
+      .tooltip:before {
+        z-index: 100 !important;
+      }
+    `,
+  ],
+})
+export class Sidebar {
+  private readonly sidebarSvc = inject(SidebarService);
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+
+  protected hoveringSidebar = signal(false);
+
+  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
+  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
+  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
+
+  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
+  protected readonly isEffectivelyNarrow = computed(
+    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
+  );
+
+  protected readonly pendingRoute = toSignal(
+    this.router.events.pipe(
+      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
+      map((e) => (e instanceof NavigationStart ? e.url : null)),
+    ),
+    { initialValue: null },
+  );
+
+  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
+
+  protected readonly items = computed(() => {
+    const role = this.auth.getUser()?.role;
+    const allItems = this.sidebarSvc.getItems()();
+    if (role === 'user') {
+      return allItems.map((item) => {
+        if (item.children) {
+          return {
+            ...item,
+            children: item.children.filter((child) => !child.adminOnly),
+          };
+        }
+        return item;
+      });
+    }
+    return allItems;
+  });
+
+  constructor() {
+    if (this._mql) {
+      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
+      this._mql.addEventListener('change', handler);
+      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
+    }
+
+    effect(() => {
+      const flatItems = this.flattenItems(this.items());
+      for (const item of flatItems) {
+        const key = this.getItemKey(item);
+        const visible = !item.hidden && !item.hiddenByFavourite;
+        const existing = this.visibilitySignals.get(key);
+        if (existing) {
+          existing.set(visible);
+        } else {
+          this.visibilitySignals.set(key, signal(visible));
+        }
+      }
+    });
+  }
+
+  protected closeMobile() {
+    this.sidebarSvc.closeMobile();
+  }
+
+  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
+    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
+  }
+
+  private getItemKey(item: ISidebarItem): string {
+    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
+    return prefix + item.name + (item.route ?? '');
+  }
+
+  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
+    const key = this.getItemKey(item);
+    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
+  }
+
+  protected isCollapsed(name: string): boolean {
+    return this.sidebarSvc.isCollapsed(name);
+  }
+
+  protected isDrawerFull() {
+    return this.sidebarSvc.isFull();
+  }
+
+  protected isDrawerHalf() {
+    return this.sidebarSvc.isHalf();
+  }
+
+  protected isMobileOpen() {
+    return this.sidebarSvc.isMobileOpen();
+  }
+
+  protected onSidebarHover(state: boolean) {
+    this.hoveringSidebar.set(state);
+  }
+
+  protected toggleCollapse(name: string) {
+    this.sidebarSvc.toggleCollapsed(name);
+  }
+
+  protected toggleDrawer() {
+    return this.sidebarSvc.toggleDrawer();
+  }
+}
+```
+
+## File: apps/frontend/src/app/routing/route-reuse-strategy.ts
+
+```typescript
+import { Injectable, inject, Injector } from '@angular/core';
+import {
+  ActivatedRouteSnapshot,
+  destroyDetachedRouteHandle,
+  DetachedRouteHandle,
+  NavigationEnd,
+  Router,
+  RouteReuseStrategy,
+} from '@angular/router';
+
+@Injectable()
+export class CustomRouteReuseStrategy implements RouteReuseStrategy {
+  private handlers = new Map<string, DetachedRouteHandle>();
+
+  private readonly maxCacheSize = 5;
+
+  private injector = inject(Injector);
+  private _router: Router | null = null;
+  private isSubscribedToRouterEvents = false;
+
+  private get router(): Router {
+    if (!this._router) {
+      this._router = this.injector.get(Router);
+    }
+    return this._router;
+  }
+
+  private ensureRouterSubscription(): void {
+    if (this.isSubscribedToRouterEvents) {
+      return;
+    }
+    this.isSubscribedToRouterEvents = true;
+    try {
+      this.router.events.subscribe((event) => {
+        if (event instanceof NavigationEnd) {
+          if (event.urlAfterRedirects.includes('/signin') || event.urlAfterRedirects.includes('/signup')) {
+            this.clearAllHandlers();
+          }
+        }
+      });
+    } catch (_e) {
+      // Reset flag if router couldn't be resolved yet
+      this.isSubscribedToRouterEvents = false;
+    }
+  }
+
+  private getKey(route: ActivatedRouteSnapshot): string {
+    return route.data['key'] || route.routeConfig?.path || 'unknown';
+  }
+
+  public retrieve(route: ActivatedRouteSnapshot): DetachedRouteHandle | null {
+    this.ensureRouterSubscription();
+    if (!route.data['shouldReuse']) {
+      return null;
+    }
+    const key = this.getKey(route);
+    const handle = this.handlers.get(key) || null;
+    if (handle) {
+      this.handlers.delete(key);
+    }
+    return handle;
+  }
+
+  public shouldAttach(route: ActivatedRouteSnapshot): boolean {
+    this.ensureRouterSubscription();
+    return !!route.data['shouldReuse'] && this.handlers.has(this.getKey(route));
+  }
+
+  public shouldDetach(route: ActivatedRouteSnapshot): boolean {
+    this.ensureRouterSubscription();
+    return !!route.data['shouldReuse'];
+  }
+
+  public shouldReuseRoute(future: ActivatedRouteSnapshot, curr: ActivatedRouteSnapshot): boolean {
+    this.ensureRouterSubscription();
+    return future.routeConfig === curr.routeConfig;
+  }
+
+  public store(route: ActivatedRouteSnapshot, handle: DetachedRouteHandle | null): void {
+    this.ensureRouterSubscription();
+    if (!route.data['shouldReuse']) {
+      return;
+    }
+    const key = this.getKey(route);
+
+    if (!handle) {
+      this.clearHandle(key);
+      return;
+    }
+
+    if (this.handlers.has(key)) {
+      const oldHandle = this.handlers.get(key);
+      if (oldHandle && oldHandle !== handle) {
+        destroyDetachedRouteHandle(oldHandle);
+      }
+      this.handlers.delete(key);
+    } else if (this.handlers.size >= this.maxCacheSize) {
+      // Evict oldest (Map maintains insertion order, so keys().next().value is the oldest)
+      const oldestKey = this.handlers.keys().next().value;
+      if (oldestKey !== undefined) {
+        const oldestHandle = this.handlers.get(oldestKey);
+        if (oldestHandle) {
+          destroyDetachedRouteHandle(oldestHandle);
+        }
+        this.handlers.delete(oldestKey);
+      }
+    }
+
+    this.handlers.set(key, handle);
+  }
+
+  private clearHandle(key: string): void {
+    const handle = this.handlers.get(key);
+    if (handle) {
+      destroyDetachedRouteHandle(handle);
+      this.handlers.delete(key);
+    }
+  }
+
+  public clearAllHandlers(): void {
+    this.handlers.forEach((handle) => {
+      destroyDetachedRouteHandle(handle);
+    });
+    this.handlers.clear();
+  }
+}
+```
+
 ## File: apps/frontend/src/app/services/api/trpc-service.ts
 
 ```typescript
@@ -40274,6 +39444,818 @@ export class UserService extends TRPCService<any> {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/editing.controller.ts
+
+```typescript
+import { Injectable, inject } from '@angular/core';
+import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import type { DataGrid } from '../datagrid';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import { GridStoreService } from '../services/grid-store.service';
+import { DataGridUtilsService } from '../services/utils.service';
+import type { GridRow } from '../types';
+import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
+
+@Injectable()
+export class EditingController {
+  private readonly store = inject(GridStoreService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly utilsSvc = inject(DataGridUtilsService);
+  private readonly gridSvc = inject(AbstractAPIService);
+
+  private get grid(): DataGrid<keyof Models, unknown> {
+    return this.store.grid as unknown as DataGrid<keyof Models, unknown>;
+  }
+
+  public coerceEditingValue(col: { cellDataType?: string }, raw: unknown): unknown {
+    const t = String(col?.cellDataType || '').toLowerCase();
+    if (t === 'number' || t === 'numeric') {
+      const n = typeof raw === 'number' ? raw : parseFloat(String(raw ?? '').trim());
+      return isNaN(n) ? null : n;
+    }
+    if (t === 'date' || t === 'datetime' || t === 'dateonly') {
+      const v = String(raw ?? '').trim();
+      return v.length > 10 ? v.slice(0, 10) : v;
+    }
+    if (t === 'color' || t === 'colour') {
+      const v = String(raw ?? '').trim();
+      const pattern = /^#([0-9a-fA-F]{6})$/;
+      return pattern.test(v) ? v.toLowerCase() : null;
+    }
+    return raw;
+  }
+
+  public async commitSingleCell(row: GridRow, col: ColDef, currentValue: unknown): Promise<boolean> {
+    if (!col.field) return false;
+    const id = this.grid.toId(row);
+    if (!id) return false;
+    const key = col.field;
+    const prev = row[key];
+    // If a valueSetter is provided on the col, let it handle assignment/normalization
+    let changed = false;
+    const before: Record<string, unknown> = { ...row };
+    if (typeof col.valueSetter === 'function') {
+      try {
+        const didSet = col.valueSetter({ data: row, newValue: currentValue, value: prev, colDef: col });
+        changed = !!didSet;
+      } catch {
+        changed = false;
+      }
+    } else {
+      const equal = prev === currentValue || (prev == null && (currentValue == null || currentValue === ''));
+      changed = !equal;
+      if (changed) Object.assign(row, { [key]: currentValue });
+    }
+    if (!changed) return true;
+    try {
+      if (this.shouldBlockEdit(row, key)) {
+        void this.grid.undoMgr.undo();
+        this.alertSvc.showError('Editing this field is blocked');
+        Object.assign(row, { [key]: before[key] });
+        return false;
+      }
+      const payload = this.utilsSvc.createPayload(row, key);
+      const edited = await this.gridSvc
+        .update(id, payload)
+        .then(() => true)
+        .catch(() => false);
+      if (!edited) {
+        void this.grid.undoMgr.undo();
+        Object.assign(row, { [key]: before[key] });
+        this.alertSvc.showError('Update failed');
+        return false;
+      }
+      this.grid.updateEditedRowInCaches(id, col.field, currentValue, before[key]);
+      this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
+      this.alertSvc.showSuccess('Row updated');
+      return true;
+    } catch {
+      Object.assign(row, { [key]: before[key] });
+      this.alertSvc.showError('Update failed');
+      return false;
+    }
+  }
+
+  public shouldBlockEdit(row: GridRow, key: string): boolean {
+    return !!(row && typeof row === 'object' && 'deletable' in row && row['deletable'] === false && key === 'name');
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/virtualizer.controller.ts
+
+```typescript
+import { Injectable, inject, effect, signal } from '@angular/core';
+import { Virtualizer, elementScroll, observeElementOffset, observeElementRect } from '@tanstack/virtual-core';
+import type { Row, Table } from '@tanstack/table-core';
+import { GridStoreService } from '../services/grid-store.service';
+import type { GridRow } from '../types';
+
+@Injectable()
+export class VirtualizerController {
+  private readonly store = inject(GridStoreService);
+
+  private virtualizer: Virtualizer<HTMLDivElement, Element> | undefined;
+  private scrollerEl: HTMLDivElement | null = null;
+  private rowHeight = 36;
+  private fetchingNext = false;
+  private canNextFn: (() => boolean) | null = null;
+  private isLoadingFn: (() => boolean) | null = null;
+  private nextPageFn: (() => Promise<void>) | null = null;
+  private tsTable: Table<GridRow> | null = null;
+
+  // Local viewport tracking used for fallback calculations
+  readonly viewportH = signal(0);
+
+  constructor() {
+    // Keep virtualizer count in sync with rows length
+    effect(() => {
+      const count = this.store.rows().length;
+      if (this.virtualizer) this.virtualizer.setOptions({ ...this.virtualizer.options, count });
+    });
+  }
+
+  attach(scroller: HTMLDivElement, rowHeight: number) {
+    this.scrollerEl = scroller;
+    this.rowHeight = rowHeight;
+    this.viewportH.set(scroller.clientHeight || 0);
+    this.virtualizer = new Virtualizer<HTMLDivElement, Element>({
+      count: this.store.rows().length,
+      getScrollElement: () => scroller,
+      estimateSize: () => this.rowHeight,
+      overscan: 6,
+      scrollToFn: elementScroll,
+      observeElementRect,
+      observeElementOffset,
+    });
+  }
+
+  attachTable(tsTable: Table<GridRow> | undefined) {
+    this.tsTable = tsTable ?? null;
+  }
+
+  configurePaging(opts: { canNext: () => boolean; isLoading: () => boolean; nextPage: () => Promise<void> }) {
+    this.canNextFn = opts.canNext;
+    this.isLoadingFn = opts.isLoading;
+    this.nextPageFn = opts.nextPage;
+  }
+
+  detach() {
+    this.virtualizer = undefined;
+    this.scrollerEl = null;
+    this.tsTable = null;
+  }
+
+  setCount(n: number) {
+    if (this.virtualizer) {
+      this.virtualizer.setOptions({ ...this.virtualizer.options, count: n });
+    }
+  }
+
+  onScroll(event: Event) {
+    const el = event.target as HTMLElement;
+    this.viewportH.set(el.clientHeight || this.viewportH());
+    this.virtualizer?.scrollToOffset?.(el.scrollTop || 0);
+    // Infinite append: when near bottom, fetch next page if available
+    try {
+      if (this.canNextFn && this.isLoadingFn && this.nextPageFn) {
+        if (this.canNextFn() && !this.isLoadingFn() && !this.fetchingNext) {
+          const nearBottom = this.endIndex() > this.store.rows().length - 10;
+          if (nearBottom) {
+            this.fetchingNext = true;
+            void this.nextPageFn().finally(() => (this.fetchingNext = false));
+          }
+        }
+      }
+    } catch {}
+  }
+
+  startIndex(): number {
+    const items = this.virtualizer?.getVirtualItems() ?? [];
+    if (items.length && items[0]) return items[0].index;
+    // Fallback before virtualizer initializes
+    const sc = this.scrollerEl;
+    const top = sc?.scrollTop || 0;
+    return Math.max(0, Math.floor(top / this.rowHeight));
+  }
+
+  endIndex(): number {
+    const items = this.virtualizer?.getVirtualItems() ?? [];
+    if (items.length && items[items.length - 1]) return items[items.length - 1]!.index + 1;
+    return Math.min(this.store.rows().length, this.startIndex() + this.visibleCount());
+  }
+
+  topPadHeight(): number {
+    const v = this.virtualizer;
+    if (v) {
+      const items = v.getVirtualItems();
+      if (items.length && items[0]) return items[0].start;
+    }
+    return this.startIndex() * this.rowHeight;
+  }
+
+  bottomPadHeight(): number {
+    const v = this.virtualizer;
+    if (v) {
+      const items = v.getVirtualItems();
+      const total = v.getTotalSize();
+      const renderedEnd = items.length ? items[items.length - 1].end : 0;
+      return Math.max(0, total - renderedEnd);
+    }
+    const total = this.store.rows().length * this.rowHeight;
+    const rendered = this.topPadHeight() + (this.endIndex() - this.startIndex()) * this.rowHeight;
+    return Math.max(0, total - rendered);
+  }
+
+  visibleTableRows(): Row<GridRow>[] {
+    const all = this.tsTable?.getRowModel().rows || [];
+    const start = this.startIndex();
+    const end = this.endIndex();
+    return all.slice(start, end);
+  }
+
+  visibleCount(): number {
+    const items = this.virtualizer?.getVirtualItems() ?? [];
+    if (items.length) return items.length;
+    const vp = this.viewportH() || 0;
+    return Math.max(1, Math.ceil(vp / this.rowHeight) + 6);
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/services/actions.service.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import type { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
+import type { AlertService } from '@uxcommon/components/alerts/alert-service';
+import type { loadingGate } from '@uxcommon/loading-gate';
+
+import { DataGridConfig } from '../datagrid.tokens';
+import type { GridRow } from '../types';
+
+@Injectable({ providedIn: 'root' })
+export class DataGridActionsService {
+  public async confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
+    const { messages } = ctx.config;
+
+    const selectedCount = ctx.getSelectedRows()?.length ?? 0;
+    const dynamicMessage = selectedCount
+      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
+      : ctx.config.messages.deleteConfirmMessage;
+
+    const ok = await ctx.dialogs.confirm({
+      title: messages.deleteConfirmTitle,
+      message: dynamicMessage,
+      variant: messages.deleteConfirmVariant,
+      icon: messages.deleteConfirmIcon,
+      confirmText: messages.deleteConfirmText,
+      cancelText: messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return;
+
+    const rows = ctx.getSelectedRows();
+    if (!rows.length) {
+      ctx.alertSvc.showError(messages.deleteNoneSelected);
+      return;
+    }
+
+    const isNonDeletable = (row: Record<string, unknown>) => {
+      if (!('deletable' in row)) return false;
+      const value = (row as { deletable?: unknown }).deletable;
+      if (typeof value === 'boolean') return value === false;
+      if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        return normalized === 'false' || normalized === '0';
+      }
+      if (typeof value === 'number') return value === 0;
+      return false;
+    };
+
+    const deletableRows = rows.filter((row) => !isNonDeletable(row as Record<string, unknown>));
+    const containsNonDeletable = deletableRows.length !== rows.length;
+    if (containsNonDeletable) {
+      ctx.alertSvc.showError(messages.deleteSystemValues);
+      return;
+    }
+    if (!deletableRows.length) {
+      return;
+    }
+
+    const end = ctx._loading.begin();
+    try {
+      const ids = deletableRows.map((r) => r.id);
+      const ok2 = await ctx.gridSvc.deleteMany(ids);
+      if (!ok2) {
+        ctx.alertSvc.showError(messages.deleteFailed);
+        return;
+      }
+      ctx.alertSvc.showSuccess(messages.deleteSuccess);
+    } finally {
+      end();
+    }
+  }
+
+  public async doExportCsv(deps: {
+    dialogs: ConfirmDialogService;
+    alertSvc: AlertService;
+    config: DataGridConfig;
+    getRowsForExport?: () => GridRow[];
+    requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
+    queueFullExport?: () => Promise<void>;
+    displayedCount?: number;
+    totalCount?: number;
+  }) {
+    const { messages } = deps.config;
+
+    const displayedCount = deps.displayedCount ?? 0;
+    const totalCount = deps.totalCount ?? displayedCount;
+    const hasAllRowsVisible = totalCount <= displayedCount;
+
+    let exportAllData = false;
+    if (!hasAllRowsVisible) {
+      const parts: string[] = [];
+      if (totalCount > 0 && displayedCount > 0) {
+        parts.push(`Only ${displayedCount} of ${totalCount} rows are currently displayed.`);
+      }
+      parts.push(messages.exportMessage);
+      parts.push(messages.exportNavigateWarning);
+      const wantsAll = await deps.dialogs.confirm({
+        title: messages.exportTitle,
+        message: parts.filter(Boolean).join('\n\n'),
+        variant: 'info',
+        icon: messages.exportIcon,
+        confirmText: messages.exportConfirmText,
+        cancelText: messages.exportCancelText,
+        allowBackdropClose: false,
+      });
+      exportAllData = wantsAll === true;
+    }
+
+    // --- "All rows" path: queue background job, return immediately ---
+    if (exportAllData) {
+      if (deps.queueFullExport) {
+        try {
+          await deps.queueFullExport();
+          deps.alertSvc.showSuccess('Export queued! Visit the Exports page to download when ready.');
+        } catch {
+          deps.alertSvc.showError(messages.exportFailed);
+        }
+        return;
+      }
+      // fallback: no queue callback, fall through to synchronous path
+    }
+
+    // --- "Displayed rows" path: synchronous, in-memory, direct download ---
+    if (!deps.getRowsForExport) return;
+
+    try {
+      const rows = deps.getRowsForExport();
+      if (!rows.length) {
+        deps.alertSvc.showInfo('No rows to export.');
+        return;
+      }
+      const rowCount = rows.length;
+      const headers = Object.keys(rows[0]!);
+      const escape = (v: unknown) => {
+        const s = v == null ? '' : String(v);
+        return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
+      const csv = [headers.join(',')].concat(rows.map((r) => headers.map((h) => escape(r[h])).join(','))).join('\n');
+
+      const fileName = messages.exportFileName || 'export.csv';
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      deps.alertSvc.showSuccess(`${messages.exportReady} (${rowCount} rows)`);
+    } catch {
+      deps.alertSvc.showError(messages.exportFailed);
+    }
+  }
+}
+
+type DeleteCtx = {
+  _loading: loadingGate;
+  alertSvc: AlertService;
+  config: DataGridConfig;
+  dialogs: ConfirmDialogService;
+  gridSvc: { deleteMany: (ids: string[]) => Promise<boolean> };
+
+  getSelectedRows: () => (Partial<GridRow> & { id: string })[];
+};
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/services/filters.service.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+
+export type Op =
+  | 'contains'
+  | 'equals'
+  | 'in'
+  | 'isEmpty'
+  | 'isNotEmpty'
+  | 'notContains'
+  | 'notEquals'
+  | 'startsWith'
+  | 'endsWith';
+
+export interface SelectOption {
+  value: string;
+  label: string;
+}
+
+export interface SelectEditorOptions {
+  choices: SelectOption[];
+  multiple: boolean;
+  size?: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+@Injectable({ providedIn: 'root' })
+export class DataGridFiltersService {
+  buildFilterModel(raw: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (v === undefined || v === null) continue;
+      if (isRecord(v) && 'value' in v) {
+        const op = v['op'] ?? 'contains';
+        const sv = String(v['value'] ?? '').trim();
+        if (op === 'isEmpty' || op === 'isNotEmpty') {
+          out[k] = { type: 'text', op, value: '' };
+        } else {
+          if (!sv) continue;
+          out[k] = { type: 'text', op, value: sv };
+        }
+      } else {
+        const sv = String(v).trim();
+        if (!sv) continue;
+        out[k] = { type: 'text', op: 'contains', value: sv };
+      }
+    }
+    return out;
+  }
+
+  getSelectEditorOptions(col: ColDef): SelectEditorOptions | null {
+    const cfg = this.resolveEditorConfig(col);
+    if (!cfg) return null;
+    const rawValues = Array.isArray(cfg['values']) ? (cfg['values'] as unknown[]) : [];
+    const labels = Array.isArray(cfg['labels']) ? (cfg['labels'] as unknown[]) : null;
+    const choices: SelectOption[] = [];
+    for (let i = 0; i < rawValues.length; i++) {
+      const entry = rawValues[i];
+      const fallbackLabel = labels && labels.length > i ? labels[i] : undefined;
+      if (entry && typeof entry === 'object') {
+        const obj = entry as Record<string, unknown>;
+        const value = 'value' in obj ? obj['value'] : entry;
+        const labelCandidate = 'label' in obj ? obj['label'] : 'name' in obj ? obj['name'] : fallbackLabel;
+        const valueStr = value != null ? String(value) : '';
+        const labelStr = labelCandidate != null ? String(labelCandidate) : valueStr;
+        choices.push({ value: valueStr, label: labelStr });
+      } else {
+        const valueStr = entry != null ? String(entry) : '';
+        const labelStr = fallbackLabel != null ? String(fallbackLabel) : valueStr;
+        choices.push({ value: valueStr, label: labelStr });
+      }
+    }
+    const multiple = !!cfg['multiple'];
+    if (!choices.length && !multiple) return null;
+    const sizeRaw = cfg['size'] ?? cfg['listSize'] ?? cfg['rows'] ?? cfg['lines'];
+    const parsed = Number(sizeRaw);
+    const size = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : multiple ? 5 : undefined;
+    return { choices, multiple, size };
+  }
+
+  getFilterOptionsForCol(col: ColDef): string[] | null {
+    const options = this.getSelectEditorOptions(col);
+    if (!options || !options.choices.length) return null;
+    return options.choices.map((c) => c.label);
+  }
+
+  getFilterValue(filterValues: Record<string, unknown>, field: string): string {
+    const fv = filterValues[field];
+    if (isRecord(fv) && !Array.isArray(fv) && 'value' in fv) return String(fv['value'] ?? '');
+    return fv ? String(fv) : '';
+  }
+
+  getFilterArray(filterValues: Record<string, unknown>, field: string): string[] {
+    const fv = filterValues[field];
+    if (isRecord(fv) && !Array.isArray(fv) && Array.isArray(fv['value'])) return fv['value'] as string[];
+    if (Array.isArray(fv)) return fv as string[];
+    const single = this.getFilterValue(filterValues, field);
+    return single ? [single] : [];
+  }
+
+  inlineFilterLabel(filterValues: Record<string, unknown>, field: string): string {
+    const arr = this.getFilterArray(filterValues, field);
+    if (!arr.length) return 'All';
+    if (arr.length === 1) return arr[0]!;
+    return `${arr.length} selected`;
+  }
+
+  preparePanelFilters(current: Record<string, unknown>): Record<string, { op: string; value: unknown }> {
+    const panel: Record<string, { op: string; value: unknown }> = {};
+    for (const [k, v] of Object.entries(current)) {
+      if (isRecord(v) && 'op' in v && 'value' in v) panel[k] = { op: String(v['op']), value: v['value'] };
+      else panel[k] = { op: 'contains', value: v };
+    }
+    return panel;
+  }
+
+  private resolveEditorConfig(col: ColDef): Record<string, unknown> | null {
+    const cep = col?.cellEditorParams;
+    if (!cep) return null;
+    try {
+      const resolved = typeof cep === 'function' ? (cep as () => unknown)() : cep;
+      return isRecord(resolved) ? resolved : null;
+    } catch {
+      return null;
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/services/grid-store.service.ts
+
+```typescript
+import { Injectable, computed, effect, signal, untracked, linkedSignal } from '@angular/core';
+import type { Table } from '@tanstack/table-core';
+import type { GridHost, GridRow, GridSnapshot } from '../types';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+@Injectable()
+export class GridStoreService {
+  public grid?: GridHost;
+  readonly rows = signal<GridRow[]>([]);
+  readonly sorting = signal<unknown[]>([]);
+  readonly colVisibility = signal<Record<string, boolean>>({});
+  readonly colWidths = signal<Record<string, number>>({});
+  readonly filterValues = signal<Record<string, unknown>>({});
+  readonly panelFilters = signal<Record<string, { op: string; value: unknown }>>({});
+  readonly selectedIdSet = linkedSignal<Record<string, unknown>, Set<string>>({
+    source: () => this.filterValues(),
+    computation: () => new Set<string>(),
+  });
+  readonly allSelected = linkedSignal<Record<string, unknown>, boolean>({
+    source: () => this.filterValues(),
+    computation: () => false,
+  });
+  readonly allSelectedIdSet = linkedSignal<Record<string, unknown>, Set<string>>({
+    source: () => this.filterValues(),
+    computation: () => new Set<string>(),
+  });
+  readonly allSelectedIds = linkedSignal<Record<string, unknown>, string[]>({
+    source: () => this.filterValues(),
+    computation: () => [],
+  });
+  readonly allSelectedCount = linkedSignal<Record<string, unknown>, number>({
+    source: () => this.filterValues(),
+    computation: () => 0,
+  });
+  readonly selectionStickyWidth = signal<number>(48);
+  readonly pageIndex = signal<number>(0);
+  readonly pageSize = signal<number>(25);
+
+  readonly displayedCount = computed(() => this.rows().length);
+
+  readonly editCommitCount = signal<number>(0);
+  private _lastSnapshot: GridSnapshot | null = null;
+
+  public recordSnapshotBeforeCommit(id: string, field: string, prevValue: unknown, newValue: unknown) {
+    let rowsCopy: GridRow[] = [];
+    try {
+      rowsCopy = JSON.parse(JSON.stringify(this.rows() || [])) as GridRow[];
+    } catch {
+      rowsCopy = (this.rows() || []).map((r) => {
+        const copy: GridRow = { ...r };
+        if (Array.isArray(r['tags'])) copy['tags'] = [...(r['tags'] as unknown[])];
+        if (Array.isArray(r['issues'])) copy['issues'] = [...(r['issues'] as unknown[])];
+        return copy;
+      });
+    }
+
+    const getRowId = this._getRowId || ((r: GridRow) => String(r?.['id'] || ''));
+    rowsCopy = rowsCopy.map((r) => {
+      if (getRowId(r) === id) {
+        return { ...r, [field]: prevValue };
+      }
+      return r;
+    });
+
+    this._lastSnapshot = {
+      rows: rowsCopy,
+      selectedIdSet: new Set(this.selectedIdSet()),
+      filterValues: { ...this.filterValues() },
+      sorting: [...this.sorting()],
+      pageIndex: this.pageIndex(),
+      pageSize: this.pageSize(),
+      editMeta: {
+        id,
+        field,
+        prevValue,
+        newValue,
+      },
+    };
+    this.editCommitCount.update((c) => c + 1);
+  }
+
+  private _persistKey = signal<string>('');
+  private _persistTick = signal<number>(0);
+  private _table: Table<GridRow> | null = null;
+  private _getRowId: ((row: GridRow) => string) | null = null;
+
+  constructor() {
+    effect(() => {
+      const count = this.editCommitCount();
+      if (count === 0) return;
+
+      untracked(() => {
+        if (this._lastSnapshot && this.grid?.undoMgr) {
+          this.grid.undoMgr.pushUndo(this._lastSnapshot);
+          this._lastSnapshot = null;
+        }
+      });
+    });
+
+    effect(() => {
+      const key = this._persistKey();
+      this.sorting();
+      this.colVisibility();
+      this.filterValues();
+      this.selectionStickyWidth();
+      this.colWidths();
+      this.pageSize();
+      this._persistTick();
+      if (!key) return;
+      try {
+        const state = this._table?.getState();
+        const st = {
+          sorting: state?.sorting as unknown[] | undefined,
+          columnVisibility: state?.columnVisibility,
+          columnPinning: state?.columnPinning,
+          columnSizing: state?.columnSizing,
+          columnOrder: state?.columnOrder,
+        };
+        const data = {
+          sorting: st.sorting || this.sorting(),
+          visibility: st.columnVisibility || this.colVisibility(),
+          pinning: st.columnPinning || { left: [], right: [] },
+          sizing: st.columnSizing || this.colWidths(),
+          order: st.columnOrder || [],
+          filters: this.filterValues() || {},
+          selectionWidth: this.selectionStickyWidth(),
+          pageSize: this.pageSize(),
+        };
+        localStorage.setItem(key, JSON.stringify(data));
+      } catch {}
+    });
+
+    // Attempt to load persisted state whenever key changes
+    effect(() => {
+      const key = this._persistKey();
+      if (!key) return;
+      this._loadFromStorage(key);
+    });
+
+    effect(() => {
+      const v = this.colVisibility();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
+        } catch {}
+      }
+    });
+
+    // Sync sorting state
+    effect(() => {
+      const s = this.sorting();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev) => ({
+            ...prev,
+            state: { ...prev.state, sorting: s as unknown as typeof prev.state.sorting },
+          }));
+        } catch {}
+      }
+    });
+
+    // Sync column sizing
+    effect(() => {
+      const sizing = this.colWidths();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
+        } catch {}
+      }
+    });
+
+    // Sync data
+    effect(() => {
+      const r = this.rows();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev) => ({ ...prev, data: r }));
+        } catch {}
+      }
+    });
+
+    // Sync row selection map for current rows
+    effect(() => {
+      const rows = this.rows();
+      const ids = this.selectedIdSet();
+      if (!this._table || !this._getRowId) return;
+      try {
+        const map: Record<string, boolean> = {};
+        for (const r of rows) {
+          const id = this._getRowId(r);
+          if (id && ids.has(id)) map[id] = true;
+        }
+        this._table.setOptions((prev) => ({ ...prev, state: { ...prev.state, rowSelection: map } }));
+      } catch {}
+    });
+  }
+
+  setPersistKey(key: string) {
+    this._persistKey.set(key || '');
+  }
+
+  attachTable(table: Table<GridRow> | undefined) {
+    this._table = table ?? null;
+  }
+
+  setGetRowId(fn: (row: GridRow) => string) {
+    this._getRowId = fn;
+  }
+
+  requestPersist() {
+    this._persistTick.update((v) => (v + 1) | 0);
+  }
+
+  loadState() {
+    const key = this._persistKey();
+    if (!key) return;
+    this._loadFromStorage(key);
+  }
+
+  private _loadFromStorage(key: string) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      type Persisted = {
+        sorting?: unknown[];
+        visibility?: Record<string, boolean>;
+        filters?: Record<string, unknown>;
+        selectionWidth?: number;
+        sizing?: Record<string, number>;
+        pinning?: { left: string[]; right: string[] };
+        order?: string[];
+        pageSize?: number;
+      };
+      const parsed: unknown = JSON.parse(raw || '{}');
+      const data: Persisted = isRecord(parsed) ? parsed : {};
+      if (data.sorting) this.sorting.set(data.sorting);
+      if (data.visibility) this.colVisibility.set({ ...untracked(() => this.colVisibility()), ...data.visibility });
+      if (data.filters) this.filterValues.set(data.filters);
+      if (typeof data.selectionWidth === 'number') this.selectionStickyWidth.set(data.selectionWidth);
+      if (typeof data.pageSize === 'number' && data.pageSize > 0) this.pageSize.set(data.pageSize);
+      const sizing = data.sizing || {};
+      queueMicrotask(() => {
+        if (this._table) {
+          this._table.setOptions((prev) => ({
+            ...prev,
+            state: {
+              ...prev.state,
+              sorting: (data.sorting as unknown as typeof prev.state.sorting) || prev.state?.sorting,
+              columnVisibility: data.visibility || prev.state?.columnVisibility,
+              columnPinning: data.pinning || prev.state?.columnPinning,
+              columnSizing: sizing || prev.state?.columnSizing,
+              columnOrder: data.order || prev.state?.columnOrder,
+            },
+          }));
+        }
+        this.colWidths.set({ ...(sizing || {}) });
+      });
+    } catch {}
+  }
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/services/grid-tag-filter.service.ts
 
 ```typescript
@@ -40405,6 +40387,110 @@ export class GridTagFilterService {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/services/table.service.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import {
+  createTable,
+  getCoreRowModel,
+  type Updater,
+  type SortingState,
+  type Table,
+  type TableState,
+  type ColumnDef as TSColumnDef,
+} from '@tanstack/table-core';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { GridRow } from '../types';
+
+@Injectable({ providedIn: 'root' })
+export class DataGridTableService {
+  updateTableWindow(
+    table: Table<GridRow> | undefined,
+    rows: GridRow[],
+    start: number,
+    end: number,
+    rowSelection: Record<string, boolean>,
+    sortCol: string | null,
+    sortDir: 'asc' | 'desc' | null,
+  ) {
+    const data = rows.slice(start, end);
+    if (!table) return;
+    table.setOptions((prev) => ({
+      ...prev,
+      data,
+      state: {
+        ...prev.state,
+        rowSelection,
+        sorting: sortCol && sortDir ? [{ id: sortCol, desc: sortDir === 'desc' }] : [],
+      },
+    }));
+  }
+
+  setTableData(
+    table: Table<GridRow> | undefined,
+    rows: GridRow[],
+    rowSelection: Record<string, boolean>,
+    sortCol: string | null,
+    sortDir: 'asc' | 'desc' | null,
+  ) {
+    if (!table) return;
+    table.setOptions((prev) => ({
+      ...prev,
+      data: rows,
+      state: {
+        ...prev.state,
+        rowSelection,
+        sorting: sortCol && sortDir ? [{ id: sortCol, desc: sortDir === 'desc' }] : [],
+      },
+    }));
+  }
+
+  createGridTable(params: {
+    rows: GridRow[];
+    columns: TSColumnDef<GridRow, unknown>[];
+    getRowId: (row: GridRow) => string;
+    state: Partial<TableState>;
+    onStateChange: () => void;
+    onSortingChange: (updater: Updater<SortingState>) => void;
+    onRowSelectionChange: (updater: Updater<Record<string, boolean>>) => void;
+    onColumnSizingChange: (updater: Updater<Record<string, number>>) => void;
+  }): Table<GridRow> {
+    return createTable({
+      data: params.rows,
+      columns: params.columns,
+      getCoreRowModel: getCoreRowModel(),
+      getRowId: params.getRowId,
+      // not in the formal type, supported by our usage
+      enableColumnResizing: true as unknown as boolean,
+      state: params.state,
+      initialState: {
+        columnPinning: { left: [], right: [] },
+        columnSizing: {},
+      },
+      onStateChange: params.onStateChange,
+      renderFallbackValue: null as unknown,
+      onSortingChange: params.onSortingChange,
+      onRowSelectionChange: params.onRowSelectionChange,
+      columnResizeMode: 'onChange',
+      onColumnSizingChange: params.onColumnSizingChange,
+    });
+  }
+
+  buildTsColumns(colDefs: ColDef[]): TSColumnDef<GridRow, unknown>[] {
+    return colDefs
+      .filter((c) => !!c.field)
+      .map((c) => ({
+        id: c.field as string,
+        header: c.headerName || (c.field as string),
+        accessorFn: (row: GridRow) => row?.[c.field as string],
+        enableSorting: true,
+        enableResizing: true,
+      })) as unknown as TSColumnDef<GridRow, unknown>[];
+  }
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-dropdown.ts
 
 ```typescript
@@ -40524,28 +40610,6 @@ export class DataGridFilterSectionComponent {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-row.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-
-@Component({
-  // eslint-disable-next-line @angular-eslint/component-selector
-  selector: 'tr[pc-dg-row]',
-  template: '',
-})
-export class DataGridRowComponent {
-  row = input<any>();
-  enableSelection = input<boolean>(true);
-  selectionStickyWidth = input<number>(48);
-  allSelected = input<boolean>(false);
-  allSelectedIdSet = input<Set<string>>(new Set());
-  toId = input<(row: any) => string>((r) => String(r?.id ?? ''));
-  onRowCheckboxChange = input<(row: any, checked: boolean) => void>((_r, _c) => undefined);
-  onMouseOverRow = input<(row: any) => void>((_r) => undefined);
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/multiselect-filter.ts
 
 ```typescript
@@ -40646,6 +40710,202 @@ export class SingleselectFilterComponent {
   maxHeight = input(9);
 
   select = output<string>();
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/undo-redo-mgr.ts
+
+```typescript
+import { computed, signal } from '@angular/core';
+import type { GridHost, GridRow, GridSnapshot } from './types';
+
+export class UndoManager {
+  private readonly isOperating = signal(false);
+
+  private readonly undoStack = signal<GridSnapshot[]>([]);
+  private readonly redoStack = signal<GridSnapshot[]>([]);
+  private grid: GridHost | null = null;
+
+  public readonly canRedo = computed(() => this.redoStack().length > 0 && !this.isOperating());
+  public readonly canUndo = computed(() => this.undoStack().length > 0 && !this.isOperating());
+
+  public getRedoSize(): number {
+    return this.redoStack().length;
+  }
+
+  public getUndoSize(): number {
+    return this.undoStack().length;
+  }
+
+  public initialize(api: GridHost): void {
+    this.grid = api;
+    this.isOperating.set(false);
+  }
+
+  public pushUndo(snapshot: GridSnapshot): void {
+    this.undoStack.update((s) => {
+      const next = [...s, snapshot];
+      return next.length > 50 ? next.slice(1) : next;
+    });
+    this.redoStack.set([]);
+  }
+
+  public async redo() {
+    const redoStack = this.redoStack();
+    if (this.isOperating() || redoStack.length === 0 || !this.grid) return;
+
+    const target = redoStack[redoStack.length - 1];
+    if (!target) return;
+
+    this.isOperating.set(true);
+    try {
+      this.redoStack.update((s) => s.slice(0, -1));
+
+      const current = this.captureCurrentState();
+      if (current && target.editMeta) {
+        current.editMeta = target.editMeta;
+      }
+      if (current) {
+        this.undoStack.update((s) => {
+          const next = [...s, current];
+          return next.length > 50 ? next.slice(1) : next;
+        });
+      }
+
+      await this.applySnapshot(target, 'redo');
+    } finally {
+      this.isOperating.set(false);
+    }
+  }
+
+  public async undo() {
+    const undoStack = this.undoStack();
+    if (this.isOperating() || undoStack.length === 0 || !this.grid) return;
+
+    const target = undoStack[undoStack.length - 1];
+    if (!target) return;
+
+    this.isOperating.set(true);
+    try {
+      this.undoStack.update((s) => s.slice(0, -1));
+
+      const current = this.captureCurrentState();
+      if (current && target.editMeta) {
+        current.editMeta = target.editMeta;
+      }
+      if (current) {
+        this.redoStack.update((s) => {
+          const next = [...s, current];
+          return next.length > 50 ? next.slice(1) : next;
+        });
+      }
+
+      await this.applySnapshot(target, 'undo');
+    } finally {
+      this.isOperating.set(false);
+    }
+  }
+
+  private captureCurrentState(): GridSnapshot | null {
+    const store = this.grid?.store;
+    if (!store) return null;
+
+    let rowsCopy: GridRow[] = [];
+    try {
+      rowsCopy = JSON.parse(JSON.stringify(store.rows() || [])) as GridRow[];
+    } catch {
+      rowsCopy = (store.rows() || []).map((r) => {
+        const copy: GridRow = { ...r };
+        if (Array.isArray(r['tags'])) copy['tags'] = [...(r['tags'] as unknown[])];
+        if (Array.isArray(r['issues'])) copy['issues'] = [...(r['issues'] as unknown[])];
+        return copy;
+      });
+    }
+
+    return {
+      rows: rowsCopy,
+      selectedIdSet: new Set(store.selectedIdSet()),
+      filterValues: { ...store.filterValues() },
+      sorting: [...store.sorting()],
+      pageIndex: store.pageIndex(),
+      pageSize: store.pageSize(),
+    };
+  }
+
+  private async applySnapshot(target: GridSnapshot, actionType: 'undo' | 'redo') {
+    if (!this.grid || !this.grid.store) return;
+    const store = this.grid.store;
+    const flashedCells: { id: string; field: string }[] = [];
+
+    if (target.editMeta) {
+      try {
+        const { id, field, prevValue, newValue } = target.editMeta;
+        const valToSet = actionType === 'undo' ? prevValue : newValue;
+        const payload = { [field]: valToSet };
+        await this.grid.gridSvc.update(id, payload);
+        flashedCells.push({ id: String(id), field });
+      } catch (err) {
+        console.error(`Failed to update backend on ${actionType}:`, err);
+        if (this.grid.alertSvc) {
+          this.grid.alertSvc.showError('Reverting changes on the server failed');
+        }
+      }
+    } else {
+      try {
+        const currentRows = store.rows() || [];
+        const diffs = this.findRowsDiff(currentRows, target.rows);
+        for (const diff of diffs) {
+          const payload = { [diff.field]: diff.newValue };
+          await this.grid.gridSvc.update(diff.id, payload);
+          flashedCells.push({ id: String(diff.id), field: diff.field });
+        }
+      } catch (err) {
+        console.error(`Failed to update backend on ${actionType} fallback:`, err);
+      }
+    }
+
+    store.rows.set(target.rows);
+    store.selectedIdSet.set(target.selectedIdSet);
+    store.filterValues.set(target.filterValues);
+    store.sorting.set(target.sorting);
+    store.pageIndex.set(target.pageIndex);
+    store.pageSize.set(target.pageSize);
+
+    this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
+
+    for (const item of flashedCells) {
+      if (typeof this.grid.triggerCellFlash === 'function') {
+        this.grid.triggerCellFlash(item.id, item.field);
+      }
+    }
+  }
+
+  private findRowsDiff(
+    oldRows: GridRow[],
+    newRows: GridRow[],
+  ): { id: string; field: string; prevValue: unknown; newValue: unknown }[] {
+    const diffs: { id: string; field: string; prevValue: unknown; newValue: unknown }[] = [];
+    const oldMap = new Map<string, GridRow>();
+    for (const r of oldRows) {
+      if (r && r['id']) oldMap.set(String(r['id']), r);
+    }
+    for (const r of newRows) {
+      if (!r || !r['id']) continue;
+      const idStr = String(r['id']);
+      const oldRow = oldMap.get(idStr);
+      if (oldRow) {
+        for (const key of Object.keys(r)) {
+          if (key === 'id') continue;
+          const val1 = oldRow[key];
+          const val2 = r[key];
+          if (JSON.stringify(val1) !== JSON.stringify(val2)) {
+            diffs.push({ id: idStr, field: key, prevValue: val1, newValue: val2 });
+          }
+        }
+      }
+    }
+    return diffs;
+  }
 }
 ```
 
@@ -41385,7 +41645,7 @@ export class EventFormComponent {
   private readonly eventsSvc = inject(EventsService);
   private readonly router = inject(Router);
 
-  private slugTimeoutId: any = null;
+  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly addingTicket = signal(false);
   protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
@@ -41511,8 +41771,8 @@ export class EventFormComponent {
       this.eventsFrontendSvc.triggerRefresh();
       this.alerts.showSuccess('Event deleted');
       await this.router.navigate(['/events/pages']);
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to delete event');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
     } finally {
       this.saving.set(false);
     }
@@ -41530,8 +41790,8 @@ export class EventFormComponent {
       await this.eventsSvc.deleteTicketType(id);
       this.alerts.showSuccess('Ticket type deleted');
       await this.loadTicketTypes();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to delete ticket type');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete ticket type');
     }
   }
 
@@ -41564,8 +41824,8 @@ export class EventFormComponent {
         this.selectedFields.set(event.fields);
       }
       await this.loadTicketTypes();
-    } catch (err: any) {
-      this.error.set(err?.message || 'Failed to load event');
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
       this.alerts.showError(this.error()!);
     }
   }
@@ -41635,8 +41895,8 @@ export class EventFormComponent {
           await this.router.navigate(['/events/pages', this.id()]);
         }
       }
-    } catch (err: any) {
-      this.error.set(err?.message || 'Failed to save event');
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
       this.alerts.showError(this.error()!);
     } finally {
       this.saving.set(false);
@@ -41660,8 +41920,8 @@ export class EventFormComponent {
       this.addingTicket.set(false);
       this.alerts.showSuccess('Ticket type added');
       await this.loadTicketTypes();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to add ticket type');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add ticket type');
     }
   }
 
@@ -42038,8 +42298,16 @@ export class HouseholdView {
       this.householdsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Household deleted');
       await this.router.navigate(['/households']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete household';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete household';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -42090,6 +42358,370 @@ export class HouseholdView {
   protected getUserName(id: string | null | undefined): string {
     if (!id) return '?';
     return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
+
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
+
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { HouseholdsService } from '../services/households-service';
+
+@Component({
+  selector: 'pc-households-grid',
+  imports: [DataGrid, CsvImportComponent, FormsModule],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        [showToolbar]="!inline()"
+        title="Households"
+        i18n-title
+        description="Manage household groups, track shared addresses, and organize family relationships."
+        i18n-description
+        [listId]="listId()"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableMerge]="false"
+        [disableView]="false"
+        [disableImport]="false"
+        [confirmDeleteOverride]="onConfirmDeleteBind"
+        [rowCanSelect]="rowCanSelectFn"
+        (importCSV)="openImportDialog()"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="add-home"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+
+    <!-- Reusable CSV Importer for Households -->
+    <pc-csv-importer
+      [open]="importerOpen()"
+      [title]="'Import Households from CSV'"
+      [mappableFields]="mappableFields"
+      [autoMapHeader]="autoMapHeader"
+      [summary]="importSummary()"
+      (submit)="onImportSubmit($event)"
+      (close)="importerOpen.set(false); importSummary.set(null)"
+      (closeSummary)="importSummary.set(null)"
+    >
+      <div pc-import-extras class="grid gap-2">
+        <label i18n class="font-semibold">3) Add tags to all imported rows (optional)</label>
+        <input
+          class="input input-bordered"
+          placeholder="Comma separated e.g. neighborhood, parish"
+          i18n-placeholder
+          [(ngModel)]="tagsInput"
+        />
+      </div>
+    </pc-csv-importer>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: HouseholdsService },
+    provideDataGridConfig({ messages: { exportEntity: 'households', exportFileName: 'households-export.csv' } }),
+  ],
+})
+export class HouseholdsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly householdsService = inject(HouseholdsService);
+
+  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
+
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
+
+  public inline = input<boolean>(false);
+
+  protected readonly mappableFields: string[] = [
+    'street_num',
+    'apt',
+    'street1',
+    'street2',
+    'city',
+    'state',
+    'zip',
+    'country',
+    'home_phone',
+    'notes',
+  ];
+
+  protected autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      streetnum: 'street_num',
+      streetnumber: 'street_num',
+      homestreet: 'street1',
+      homestreet1: 'street1',
+      homestreet2: 'street2',
+      homestreet3: 'street2',
+      homeaddress: 'street1',
+      homeaddresspobox: 'street2',
+      businessstreet: 'street1',
+      businessstreet1: 'street1',
+      businessstreet2: 'street2',
+      businessstreet3: 'street2',
+      businessaddress: 'street1',
+      businessaddresspobox: 'street2',
+      address1: 'street1',
+      address2: 'street2',
+      street1: 'street1',
+      street2: 'street2',
+      apt: 'apt',
+      apartment: 'apt',
+      city: 'city',
+      state: 'state',
+      province: 'state',
+      zip: 'zip',
+      postal: 'zip',
+      country: 'country',
+      homephone: 'home_phone',
+      phone: 'home_phone',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  };
+
+  protected col: ColDef[] = [
+    {
+      field: 'persons_count',
+      headerName: 'People',
+      onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
+    },
+    { field: 'street_num', headerName: 'Street Number', editable: true },
+    { field: 'apt', headerName: 'Apt', editable: true },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: true,
+      valueFormatter: (params: any) =>
+        params.data?.is_placeholder ? 'People with no addresses' : (params.value ?? ''),
+    },
+    { field: 'street2', headerName: 'Street 2', editable: true },
+    { field: 'city', headerName: 'City', editable: true },
+    {
+      field: 'tags',
+      headerName: 'Tags',
+      hide: true,
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    { field: 'state', headerName: 'State/Province', editable: true },
+    { field: 'zip', headerName: 'Zip/Province', editable: true },
+    { field: 'country', headerName: 'Country', editable: true },
+    { field: 'district', headerName: 'District / Riding', editable: false, minWidth: 140 },
+    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, minWidth: 180 },
+    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
+    { field: 'home_phone', headerName: 'Home phone', editable: true },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+  public listId = input<string | null>(null);
+  public showHeader = input<boolean>(true);
+
+  protected importSummary = signal<CsvImportSummary | null>(null);
+
+  // Importer state
+  protected importerOpen = signal(false);
+  protected tagsInput = '';
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadTagOptions();
+    await this.loadIssueOptions();
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected openEditOnDoubleClick(event: any) {
+    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
+      id: string;
+      persons_count?: number | string | null;
+      is_placeholder?: boolean;
+    }>;
+
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
+    if (selected.some((r) => r.is_placeholder)) {
+      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
+      return true;
+    }
+
+    // Collect IDs for households that have people
+    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
+    const householdIds = selected.map((r) => r.id);
+
+    if (populated.length > 0) {
+      // Fetch person IDs for all households-with-people so we can act on them
+      const personIdArrays = await Promise.all(
+        populated.map(async (h) => {
+          try {
+            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
+            return people.map((p) => p.id);
+          } catch {
+            return [];
+          }
+        }),
+      );
+      const personIds = personIdArrays.flat();
+      const peopleCount = personIds.length;
+
+      // Show the 3-option dialog and wait for user's choice
+      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+        title: 'Households have people',
+        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+        variant: 'warning',
+        choices: [
+          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+        ],
+        cancelText: 'Cancel',
+      });
+
+      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
+
+      if (choice === 'keep-people') {
+        // Detach each person from their household (moves to blank household)
+        await Promise.all(
+          personIds.map((pid) =>
+            this.personsSvc.removeHousehold(pid).catch(() => {
+              // best-effort; continue
+            }),
+          ),
+        );
+      } else if (choice === 'delete-people') {
+        // Delete all people in those households first
+        if (personIds.length) {
+          try {
+            await this.personsSvc.deleteMany(personIds);
+          } catch {
+            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
+            return true;
+          }
+        }
+      }
+
+      // Now delete the households themselves
+      try {
+        await this.householdsService.deleteMany(householdIds);
+        this.alertSvc.showSuccess('Households deleted successfully.');
+      } catch {
+        this.alertSvc.showError('Failed to delete one or more households.');
+      }
+      return true;
+    } else {
+      // No people attached — delegate to the standard flow
+      return false;
+    }
+  }
+
+  protected onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }) {
+    // Backend households import endpoint not implemented yet; show informative summary
+    const diag = 'Households import is not available yet.';
+    this.importSummary.set({ inserted: 0, errors: 0, skipped: payload.skipped, failed: true, message: diag });
+    this.importerOpen.set(false);
+  }
+
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.tagsInput = '';
+    this.importerOpen.set(true);
   }
 }
 ```
@@ -42172,7 +42804,7 @@ export class ListView implements OnDestroy {
     }
   }
 
-  private pollInterval: any = null;
+  private pollInterval: ReturnType<typeof setInterval> | null = null;
 
   protected async refreshList() {
     try {
@@ -42180,8 +42812,8 @@ export class ListView implements OnDestroy {
       await this.lists.refreshList(this.id());
       this.alerts.showSuccess('Refresh job scheduled in background');
       this.pollRefreshStatus();
-    } catch (e: any) {
-      this.alerts.showError(e?.message ?? String(e));
+    } catch (e) {
+      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
       this.refreshing.set(false);
     }
   }
@@ -42197,7 +42829,7 @@ export class ListView implements OnDestroy {
       const list = (await this.lists.getById(this.id())) as ListsType;
       this.listData.set(list);
       if (list.status !== 'refreshing') {
-        clearInterval(this.pollInterval);
+        if (this.pollInterval) clearInterval(this.pollInterval);
         this.pollInterval = null;
         this.refreshing.set(false);
         if (list.status === 'failed') {
@@ -42208,7 +42840,7 @@ export class ListView implements OnDestroy {
         await this.loadListDetails();
       }
     } catch (_e) {
-      clearInterval(this.pollInterval);
+      if (this.pollInterval) clearInterval(this.pollInterval);
       this.pollInterval = null;
       this.refreshing.set(false);
     }
@@ -42239,8 +42871,16 @@ export class ListView implements OnDestroy {
       this.lists.triggerRefresh();
       this.alerts.showSuccess('List deleted');
       await this.router.navigate(['/lists']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete list';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete list';
       this.alerts.showError(message);
     } finally {
       this.loading.set(false);
@@ -42258,6 +42898,10 @@ export class ListView implements OnDestroy {
     if (value == null) return '0%';
     return `${value.toFixed(1)}%`;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -42421,10 +43065,10 @@ export class ListsGridComponent implements OnDestroy {
       this.alerts.showSuccess('Refresh job scheduled in background');
       await this.listsSvc.refreshList(id);
       this.pollRefreshStatus(id);
-    } catch (e: any) {
+    } catch (e) {
       this.refreshingIds.delete(id);
       cellParams?.api?.refreshCells({ rowNodes: [cellParams.node], columns: ['refresh_action'], force: true });
-      this.alerts.showError(e?.message ?? String(e));
+      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
     }
   }
 
@@ -42773,8 +43417,16 @@ export class ShiftViewComponent {
       this.volunteerEventsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Event deleted');
       await this.router.navigate(['/events/shifts']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete event';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete event';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -42805,6 +43457,10 @@ export class ShiftViewComponent {
         return 'ghost';
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -43099,8 +43755,16 @@ export class TeamFormComponent implements OnInit {
       this.teams.triggerRefresh();
       this.alerts.showSuccess('Team deleted');
       await this.router.navigate(['/teams']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete team';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete team';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -43169,8 +43833,16 @@ export class TeamFormComponent implements OnInit {
       this.setForm(result);
       this.form().reset();
       this.alerts.showSuccess(this.isNew() ? 'Team created' : 'Team updated');
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to save team';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to save team';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -43232,8 +43904,16 @@ export class TeamFormComponent implements OnInit {
         filterModel: { team_id: { value: this.id() } },
       } as any);
       this.teamTasks.set(res?.rows ?? []);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to load team';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load team';
       this.error.set(message);
       this.alerts.showError(message);
     }
@@ -43280,6 +43960,10 @@ export class TeamFormComponent implements OnInit {
         return 'badge-ghost';
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -43381,383 +44065,209 @@ export class Breadcrumb {
 }
 ```
 
-## File: apps/frontend/src/app/layout/sidebar/sidebar.html
-
-```html
-<ng-template #navLink let-nav>
-  <a
-    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="hover:font-bold hover:text-primary flex flex-auto items-center pb-1 pl-2 tracking-widest hover:rounded-lg !cursor-pointer"
-    (click)="this.closeMobile()"
-    [routerLink]="nav.route"
-    routerLinkActive="font-bold"
-    [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
-    [class.font-bold]="pendingRoute() === nav.route"
-  >
-    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span class="indicator pl-2 group-hover:md:visible text-sm" [class.invisible]="isEffectivelyNarrow()">
-      {{ nav.name }} @if (nav.indicator) {
-      <span class="indicator-item status status-primary"></span>
-      }
-    </span>
-  </a>
-</ng-template>
-
-<div
-  (mouseenter)="onSidebarHover(true)"
-  (mouseleave)="onSidebarHover(false)"
-  class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-44 transition-all duration-50"
-  [class.hidden]="!this.isMobileOpen()"
-  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
-  [class.w-18]="isEffectivelyNarrow() && !this.isMobileOpen()"
->
-  <div
-    [class.hidden]="isEffectivelyNarrow()"
-    class="mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
-  >
-    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
-  </div>
-
-  <div
-    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
-    class="avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
-  >
-    <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
-  </div>
-
-  @for (item of items(); track item.name) {
-  <div class="flex-none pl-2" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
-    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
-    <div
-      class="text-base-400 font-medium flex items-center justify-between pl-2 capitalize text-xs hover:cursor-pointer"
-      (click)="toggleCollapse(item.name)"
-    >
-      <span [class.text-[10px]]="isEffectivelyNarrow() && !hoveringSidebar()">
-        @if (isEffectivelyNarrow() && !hoveringSidebar()) { {{ item.short_name || item.name }} } @else { {{ item.name }}
-        }
-      </span>
-      @if (item.children?.length) {
-      <pc-swap
-        class="rotate-90 invisible mr-2"
-        [class.visible]="!isEffectivelyNarrow() || hoveringSidebar()"
-        swapOnIcon="chevron-double-left"
-        swapOffIcon="chevron-double-right"
-        animation="rotate"
-        [size]="4"
-        [checked]="isCollapsed(item.name)"
-        (click)="toggleCollapse(item.name)"
-        aria-label="Toggle section"
-        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
-      ></pc-swap>
-      }
-    </div>
-
-    @if (item.children && !isCollapsed(item.name)) {
-    <div class="flex flex-col space-y-1">
-      @for (child of item.children; track child.name) {
-      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
-      }
-    </div>
-    } } @else {
-    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
-    }
-  </div>
-  }
-
-  <div class="hidden flex-auto grow flex-col sm:flex">
-    <span class="min-h-full grow"></span>
-    <pc-swap
-      class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
-      swapOffIcon="chevron-double-right"
-      swapOnIcon="chevron-double-left"
-      [checked]="isDrawerFull()"
-      animation="rotate"
-      (click)="toggleDrawer()"
-      aria-label="Toggle drawer"
-      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
-    ></pc-swap>
-  </div>
-</div>
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
+## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
 
 ```typescript
-import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { NgTemplateOutlet } from '@angular/common';
-import {
-  NavigationCancel,
-  NavigationError,
-  NavigationStart,
-  Router,
-  RouterLink,
-  RouterLinkActive,
-} from '@angular/router';
-import { filter, map } from 'rxjs';
-import { Icon } from '@icons/icon';
-import { Swap } from '@uxcommon/components/swap/swap';
+import type { PcIconNameType } from '@icons/icons.index';
 
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { ISidebarItem } from './sidebar-items';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-
-@Component({
-  selector: 'pc-sidebar',
-  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
-  templateUrl: './sidebar.html',
-  styles: [
-    `
-      .tooltip:before {
-        z-index: 100 !important;
-      }
-    `,
-  ],
-})
-export class Sidebar {
-  private readonly sidebarSvc = inject(SidebarService);
-  private readonly auth = inject(AuthService);
-  private readonly router = inject(Router);
-  private readonly destroyRef = inject(DestroyRef);
-
-  protected hoveringSidebar = signal(false);
-
-  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
-  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
-  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
-
-  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
-  protected readonly isEffectivelyNarrow = computed(
-    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
-  );
-
-  protected readonly pendingRoute = toSignal(
-    this.router.events.pipe(
-      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
-      map((e) => (e instanceof NavigationStart ? e.url : null)),
-    ),
-    { initialValue: null },
-  );
-
-  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
-
-  protected readonly items = computed(() => {
-    const role = this.auth.getUser()?.role;
-    const allItems = this.sidebarSvc.getItems()();
-    if (role === 'user') {
-      return allItems.map((item) => {
-        if (item.children) {
-          return {
-            ...item,
-            children: item.children.filter((child) => !child.adminOnly),
-          };
-        }
-        return item;
-      });
-    }
-    return allItems;
-  });
-
-  constructor() {
-    if (this._mql) {
-      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
-      this._mql.addEventListener('change', handler);
-      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
-    }
-
-    effect(() => {
-      const flatItems = this.flattenItems(this.items());
-      for (const item of flatItems) {
-        const key = this.getItemKey(item);
-        const visible = !item.hidden && !item.hiddenByFavourite;
-        const existing = this.visibilitySignals.get(key);
-        if (existing) {
-          existing.set(visible);
-        } else {
-          this.visibilitySignals.set(key, signal(visible));
-        }
-      }
-    });
-  }
-
-  protected closeMobile() {
-    this.sidebarSvc.closeMobile();
-  }
-
-  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
-    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
-  }
-
-  private getItemKey(item: ISidebarItem): string {
-    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
-    return prefix + item.name + (item.route ?? '');
-  }
-
-  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
-    const key = this.getItemKey(item);
-    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
-  }
-
-  protected isCollapsed(name: string): boolean {
-    return this.sidebarSvc.isCollapsed(name);
-  }
-
-  protected isDrawerFull() {
-    return this.sidebarSvc.isFull();
-  }
-
-  protected isDrawerHalf() {
-    return this.sidebarSvc.isHalf();
-  }
-
-  protected isMobileOpen() {
-    return this.sidebarSvc.isMobileOpen();
-  }
-
-  protected onSidebarHover(state: boolean) {
-    this.hoveringSidebar.set(state);
-  }
-
-  protected toggleCollapse(name: string) {
-    this.sidebarSvc.toggleCollapsed(name);
-  }
-
-  protected toggleDrawer() {
-    return this.sidebarSvc.toggleDrawer();
-  }
+export interface ISidebarItem {
+  adminOnly?: boolean;
+  children?: ISidebarItem[];
+  collapsed?: boolean;
+  favourite?: boolean;
+  hidden?: boolean;
+  hiddenByFavourite?: boolean;
+  icon?: PcIconNameType;
+  indicator?: boolean;
+  name: string;
+  parent?: ISidebarItem;
+  pathMatchExact?: boolean;
+  route?: string;
+  short_name?: string;
+  type?: 'item' | 'subheading' | 'bookmark';
 }
-```
 
-## File: apps/frontend/src/app/routing/route-reuse-strategy.ts
+export const SidebarItems: ISidebarItem[] = [
+  {
+    name: 'App',
+    route: '/',
+    hidden: true,
+  },
+  {
+    name: `Dashboard`,
+    route: '/summary',
+    icon: 'presentation-chart-line',
+    pathMatchExact: true,
+  },
+  {
+    name: `BOOKMARKS`,
+    short_name: 'PINS',
+    type: 'bookmark',
+    hidden: true,
+  },
+  {
+    name: `ENGAGE`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Inbox',
+        route: '/inbox',
+        icon: 'envelope',
+      },
+      {
+        name: 'Newsletters',
+        route: '/newsletters',
+        icon: 'megaphone',
+      },
 
-```typescript
-import { Injectable, inject, Injector } from '@angular/core';
-import {
-  ActivatedRouteSnapshot,
-  destroyDetachedRouteHandle,
-  DetachedRouteHandle,
-  NavigationEnd,
-  Router,
-  RouteReuseStrategy,
-} from '@angular/router';
+      {
+        name: 'Lists',
+        route: '/lists',
+        icon: 'queue-list',
+      },
+      {
+        name: `Automations`,
+        route: '/workflows',
+        icon: 'cog',
+      },
+    ],
+  },
+  {
+    name: `CONTACTS`,
+    type: 'subheading',
+    children: [
+      {
+        name: `People`,
+        route: '/people',
+        icon: 'identification',
+      },
+      {
+        name: `Households`,
+        route: '/households',
+        icon: 'house-modern',
+      },
+      {
+        name: `Companies`,
+        route: '/companies',
+        icon: 'briefcase',
+      },
+      {
+        name: `Duplicates`,
+        route: '/duplicates',
+        icon: 'document-duplicate',
+      },
+    ],
+  },
+  {
+    name: `CAMPAIGN`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Teams',
+        route: '/teams',
+        icon: 'user-group',
+      },
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+      },
+    ],
+  },
+  {
+    name: 'FORMS',
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      {
+        name: 'Forms',
+        route: '/forms',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Shifts',
+        route: '/events/shifts',
+        icon: 'add-schedule',
+      },
+      {
+        name: 'Events',
+        route: '/events/pages',
+        icon: 'ticket',
+      },
+      {
+        name: 'Fundraising',
+        route: '/donation-pages',
+        icon: 'currency-dollar',
+      },
+    ],
+  },
+  {
+    name: 'TOOLS',
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      {
+        name: `Tasks`,
+        route: '/tasks',
+        icon: 'task',
+      },
+      {
+        name: `Task Board`,
+        route: '/board',
+        icon: 'view-kanban',
+      },
+      {
+        name: 'Files',
+        route: '/files',
+        icon: 'document',
+      },
+      {
+        name: 'Imports',
+        route: '/imports',
+        icon: 'arrow-up-tray',
+      },
+      {
+        name: 'Exports',
+        route: '/exports',
+        icon: 'arrow-down-tray',
+      },
+    ],
+  },
 
-@Injectable()
-export class CustomRouteReuseStrategy implements RouteReuseStrategy {
-  private handlers = new Map<string, DetachedRouteHandle>();
-
-  private readonly maxCacheSize = 5;
-
-  private injector = inject(Injector);
-  private _router: Router | null = null;
-  private isSubscribedToRouterEvents = false;
-
-  private get router(): Router {
-    if (!this._router) {
-      this._router = this.injector.get(Router);
-    }
-    return this._router;
-  }
-
-  private ensureRouterSubscription(): void {
-    if (this.isSubscribedToRouterEvents) {
-      return;
-    }
-    this.isSubscribedToRouterEvents = true;
-    try {
-      this.router.events.subscribe((event) => {
-        if (event instanceof NavigationEnd) {
-          if (event.urlAfterRedirects.includes('/signin') || event.urlAfterRedirects.includes('/signup')) {
-            this.clearAllHandlers();
-          }
-        }
-      });
-    } catch (_e) {
-      // Reset flag if router couldn't be resolved yet
-      this.isSubscribedToRouterEvents = false;
-    }
-  }
-
-  private getKey(route: ActivatedRouteSnapshot): string {
-    return route.data['key'] || route.routeConfig?.path || 'unknown';
-  }
-
-  public retrieve(route: ActivatedRouteSnapshot): DetachedRouteHandle | null {
-    this.ensureRouterSubscription();
-    if (!route.data['shouldReuse']) {
-      return null;
-    }
-    const key = this.getKey(route);
-    const handle = this.handlers.get(key) || null;
-    if (handle) {
-      this.handlers.delete(key);
-    }
-    return handle;
-  }
-
-  public shouldAttach(route: ActivatedRouteSnapshot): boolean {
-    this.ensureRouterSubscription();
-    return !!route.data['shouldReuse'] && this.handlers.has(this.getKey(route));
-  }
-
-  public shouldDetach(route: ActivatedRouteSnapshot): boolean {
-    this.ensureRouterSubscription();
-    return !!route.data['shouldReuse'];
-  }
-
-  public shouldReuseRoute(future: ActivatedRouteSnapshot, curr: ActivatedRouteSnapshot): boolean {
-    this.ensureRouterSubscription();
-    return future.routeConfig === curr.routeConfig;
-  }
-
-  public store(route: ActivatedRouteSnapshot, handle: DetachedRouteHandle | null): void {
-    this.ensureRouterSubscription();
-    if (!route.data['shouldReuse']) {
-      return;
-    }
-    const key = this.getKey(route);
-
-    if (!handle) {
-      this.clearHandle(key);
-      return;
-    }
-
-    if (this.handlers.has(key)) {
-      const oldHandle = this.handlers.get(key);
-      if (oldHandle && oldHandle !== handle) {
-        destroyDetachedRouteHandle(oldHandle);
-      }
-      this.handlers.delete(key);
-    } else if (this.handlers.size >= this.maxCacheSize) {
-      // Evict oldest (Map maintains insertion order, so keys().next().value is the oldest)
-      const oldestKey = this.handlers.keys().next().value;
-      if (oldestKey !== undefined) {
-        const oldestHandle = this.handlers.get(oldestKey);
-        if (oldestHandle) {
-          destroyDetachedRouteHandle(oldestHandle);
-        }
-        this.handlers.delete(oldestKey);
-      }
-    }
-
-    this.handlers.set(key, handle);
-  }
-
-  private clearHandle(key: string): void {
-    const handle = this.handlers.get(key);
-    if (handle) {
-      destroyDetachedRouteHandle(handle);
-      this.handlers.delete(key);
-    }
-  }
-
-  public clearAllHandlers(): void {
-    this.handlers.forEach((handle) => {
-      destroyDetachedRouteHandle(handle);
-    });
-    this.handlers.clear();
-  }
-}
+  {
+    name: `SYSTEM`,
+    type: 'subheading',
+    adminOnly: true,
+    collapsed: true,
+    children: [
+      {
+        name: 'Activity Log',
+        route: '/activities',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Tags',
+        route: '/tags',
+        icon: 'label',
+      },
+      {
+        name: 'Issues',
+        route: '/issues',
+        icon: 'shield-exclamation',
+      },
+      {
+        name: 'Users',
+        route: '/users',
+        icon: 'users',
+      },
+      {
+        name: 'Configuration',
+        route: '/configuration',
+        icon: 'wrench-screwdriver',
+      },
+    ],
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
@@ -43914,6 +44424,87 @@ const trpcRetryClient = createTRPCClient<TRPCRouter>({
 });
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-row.ts
+
+```typescript
+import { Component, input } from '@angular/core';
+import type { GridRow } from '../types';
+
+@Component({
+  // eslint-disable-next-line @angular-eslint/component-selector
+  selector: 'tr[pc-dg-row]',
+  template: '',
+})
+export class DataGridRowComponent {
+  row = input<GridRow>();
+  enableSelection = input<boolean>(true);
+  selectionStickyWidth = input<number>(48);
+  allSelected = input<boolean>(false);
+  allSelectedIdSet = input<Set<string>>(new Set());
+  toId = input<(row: GridRow) => string>((r) => String(r?.['id'] ?? ''));
+  onRowCheckboxChange = input<(row: GridRow, checked: boolean) => void>((_r, _c) => undefined);
+  onMouseOverRow = input<(row: GridRow) => void>((_r) => undefined);
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/types.ts
+
+```typescript
+export type SortDir = 'asc' | 'desc' | 'none';
+
+/** Row shape served by the grid APIs: a dynamic record keyed by column field. */
+export type GridRow = Record<string, unknown>;
+
+export interface HeaderRef {
+  column: {
+    id: string;
+    getIsSorted?: () => 'asc' | 'desc' | false;
+    toggleSorting?: (desc?: boolean, multi?: boolean) => void;
+    clearSorting?: () => void;
+    pin?: (side: 'left' | 'right' | false) => void;
+    getIsPinned?: () => 'left' | 'right' | false;
+    getSize?: () => number;
+    setSize?: (px: number) => void;
+  };
+  table?: unknown;
+}
+
+/** Undo/redo snapshot of grid state, captured before/after an edit commits. */
+export interface GridSnapshot {
+  rows: GridRow[];
+  selectedIdSet: Set<string>;
+  filterValues: Record<string, unknown>;
+  sorting: unknown[];
+  pageIndex: number;
+  pageSize: number;
+  editMeta?: {
+    id: string;
+    field: string;
+    prevValue: unknown;
+    newValue: unknown;
+  };
+}
+
+/** Minimal shape of DataGrid that GridStoreService/UndoManager depend on (avoids importing DataGrid directly). */
+export interface GridHost {
+  undoMgr: { pushUndo(snapshot: GridSnapshot): void };
+  store: {
+    rows: { (): GridRow[]; set: (rows: GridRow[]) => void };
+    selectedIdSet: { (): Set<string>; set: (ids: Set<string>) => void };
+    filterValues: { (): Record<string, unknown>; set: (v: Record<string, unknown>) => void };
+    sorting: { (): unknown[]; set: (v: unknown[]) => void };
+    pageIndex: { (): number; set: (v: number) => void };
+    pageSize: { (): number; set: (v: number) => void };
+  };
+  gridSvc: { update(id: string, data: unknown): Promise<unknown> };
+  alertSvc: { showError(msg: string): void };
+  updateTableWindow(start: number, end: number): void;
+  startIndex(): number;
+  endIndex(): number;
+  triggerCellFlash(rowId: string, field: string): void;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
 
 ```typescript
@@ -44006,7 +44597,7 @@ export class CompanyForm implements OnInit {
         });
         this.form().reset();
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load company details:', err);
     } finally {
       end();
@@ -44028,8 +44619,16 @@ export class CompanyForm implements OnInit {
       this.companiesSvc.triggerRefresh();
       this.alertSvc.showSuccess('Company deleted');
       await this.router.navigate(['/companies']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete company';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete company';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -44055,7 +44654,15 @@ export class CompanyForm implements OnInit {
           }
         })
         .catch((err: any) => {
-          const message = err?.message || err?.data?.message || 'Unable to save company';
+          const message =
+            err instanceof Error && err.message
+              ? err.message
+              : isRecord(err) &&
+                  isRecord(err['data']) &&
+                  typeof err['data']['message'] === 'string' &&
+                  err['data']['message']
+                ? err['data']['message']
+                : 'Unable to save company';
           this.alertSvc.showError(message);
         })
         .finally(() => end());
@@ -44073,12 +44680,24 @@ export class CompanyForm implements OnInit {
           }
         })
         .catch((err: any) => {
-          const message = err?.message || err?.data?.message || 'Unable to save company';
+          const message =
+            err instanceof Error && err.message
+              ? err.message
+              : isRecord(err) &&
+                  isRecord(err['data']) &&
+                  typeof err['data']['message'] === 'string' &&
+                  err['data']['message']
+                ? err['data']['message']
+                : 'Unable to save company';
           this.alertSvc.showError(message);
         })
         .finally(() => end());
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -44228,8 +44847,8 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
       } else if (updatedGroups.length === 0 && this.totalGroups() > 0) {
         void this.loadDuplicates();
       }
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Merge failed');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Merge failed');
     }
   }
 
@@ -45152,7 +45771,7 @@ export class SettingsPage implements OnInit {
           notifState.form().reset();
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load user preferences in settings page', err);
     }
   }
@@ -45168,8 +45787,10 @@ export class SettingsPage implements OnInit {
       await this.householdsSvc.recomputeAddressFingerprints();
       this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
       await this.loadLastFingerprintRecomputeTime();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to trigger address fingerprint recomputation.');
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to trigger address fingerprint recomputation.',
+      );
     } finally {
       this.recomputingFingerprints.set(false);
     }
@@ -45232,8 +45853,16 @@ export class SettingsPage implements OnInit {
         }
       }
       this.alerts.showSuccess('Settings updated successfully');
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to save settings';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to save settings';
       this.alerts.showError(message);
     } finally {
       this.savingSectionId.set(null);
@@ -45266,8 +45895,8 @@ export class SettingsPage implements OnInit {
       this.alerts.showSuccess(
         `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
       );
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to send verification email.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to send verification email.');
     } finally {
       this.verifyingEmail.set(null);
     }
@@ -45450,6 +46079,10 @@ export class SettingsPage implements OnInit {
       }
     }, 1000);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -45777,8 +46410,13 @@ export class TasksGrid implements OnInit {
       });
       this.importerOpen.set(false);
       await this.grid()?.refresh();
-    } catch (e: any) {
-      const msg = e?.message || e?.data?.message || 'Import failed';
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
       this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
       this.importerOpen.set(false);
     }
@@ -46015,994 +46653,9 @@ export class TasksGrid implements OnInit {
     return this.usersById.get(key) ?? '';
   }
 }
-```
 
-## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-export interface ISidebarItem {
-  adminOnly?: boolean;
-  children?: ISidebarItem[];
-  collapsed?: boolean;
-  favourite?: boolean;
-  hidden?: boolean;
-  hiddenByFavourite?: boolean;
-  icon?: PcIconNameType;
-  indicator?: boolean;
-  name: string;
-  parent?: ISidebarItem;
-  pathMatchExact?: boolean;
-  route?: string;
-  short_name?: string;
-  type?: 'item' | 'subheading' | 'bookmark';
-}
-
-export const SidebarItems: ISidebarItem[] = [
-  {
-    name: 'App',
-    route: '/',
-    hidden: true,
-  },
-  {
-    name: `Dashboard`,
-    route: '/summary',
-    icon: 'presentation-chart-line',
-    pathMatchExact: true,
-  },
-  {
-    name: `BOOKMARKS`,
-    short_name: 'PINS',
-    type: 'bookmark',
-    hidden: true,
-  },
-  {
-    name: `ENGAGE`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Inbox',
-        route: '/inbox',
-        icon: 'envelope',
-      },
-      {
-        name: 'Newsletters',
-        route: '/newsletters',
-        icon: 'megaphone',
-      },
-
-      {
-        name: 'Lists',
-        route: '/lists',
-        icon: 'queue-list',
-      },
-      {
-        name: `Automations`,
-        route: '/workflows',
-        icon: 'cog',
-      },
-    ],
-  },
-  {
-    name: `CONTACTS`,
-    type: 'subheading',
-    children: [
-      {
-        name: `People`,
-        route: '/people',
-        icon: 'identification',
-      },
-      {
-        name: `Households`,
-        route: '/households',
-        icon: 'house-modern',
-      },
-      {
-        name: `Companies`,
-        route: '/companies',
-        icon: 'briefcase',
-      },
-      {
-        name: `Duplicates`,
-        route: '/duplicates',
-        icon: 'document-duplicate',
-      },
-    ],
-  },
-  {
-    name: `CAMPAIGN`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Teams',
-        route: '/teams',
-        icon: 'user-group',
-      },
-      {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
-      },
-    ],
-  },
-  {
-    name: 'FORMS',
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        name: 'Forms',
-        route: '/forms',
-        icon: 'clipboard-document-list',
-      },
-      {
-        name: 'Shifts',
-        route: '/events/shifts',
-        icon: 'add-schedule',
-      },
-      {
-        name: 'Events',
-        route: '/events/pages',
-        icon: 'ticket',
-      },
-      {
-        name: 'Fundraising',
-        route: '/donation-pages',
-        icon: 'currency-dollar',
-      },
-    ],
-  },
-  {
-    name: 'TOOLS',
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        name: `Tasks`,
-        route: '/tasks',
-        icon: 'task',
-      },
-      {
-        name: `Task Board`,
-        route: '/board',
-        icon: 'view-kanban',
-      },
-      {
-        name: 'Files',
-        route: '/files',
-        icon: 'document',
-      },
-      {
-        name: 'Imports',
-        route: '/imports',
-        icon: 'arrow-up-tray',
-      },
-      {
-        name: 'Exports',
-        route: '/exports',
-        icon: 'arrow-down-tray',
-      },
-    ],
-  },
-
-  {
-    name: `SYSTEM`,
-    type: 'subheading',
-    adminOnly: true,
-    collapsed: true,
-    children: [
-      {
-        name: 'Activity Log',
-        route: '/activities',
-        icon: 'clipboard-document-list',
-      },
-      {
-        name: 'Tags',
-        route: '/tags',
-        icon: 'label',
-      },
-      {
-        name: 'Issues',
-        route: '/issues',
-        icon: 'shield-exclamation',
-      },
-      {
-        name: 'Users',
-        route: '/users',
-        icon: 'users',
-      },
-      {
-        name: 'Configuration',
-        route: '/configuration',
-        icon: 'wrench-screwdriver',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-
-/**
- * Column visibility dropdown shared by the mobile and desktop toolbars.
- * Rendered as the projected content of a `pc-grid-tool-btn` dropdown, so it
- * uses `display: contents` to stay a direct child of the DaisyUI `<details>`.
- *
- * The grid is passed in as an input rather than injected: as projected
- * content it does not reliably resolve the same `DataGrid` instance.
- *
- * `getColDefsForToolbar()` returns a plain (non-signal) array that is filled
- * in after init, so as an isolated component this would render once and stay
- * empty. `cols` reads the reactive `getColVisibilityMap()` (the colVisibility
- * signal) to recompute once the columns are populated.
- */
-@Component({
-  selector: 'pc-dg-columns-dropdown',
-  template: `
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
-      <li class="px-2 py-1 flex gap-2">
-        <button i18n class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
-        <button i18n class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
-        <button i18n class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
-      </li>
-      @for (col of cols(); track col.field) {
-        @if (col.field) {
-          <li>
-            <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs"
-                [checked]="grid().getColVisibilityMap()[col.field!] !== false"
-                (change)="grid().toggleColPublic(col.field!, $any($event.target).checked)"
-              />
-              <span class="label-text">{{ col.headerName || col.field }}</span>
-            </label>
-          </li>
-        }
-      }
-    </ul>
-  `,
-  styles: [
-    `
-      :host {
-        display: contents;
-      }
-    `,
-  ],
-})
-export class DataGridColumnsDropdownComponent {
-  public readonly grid = input.required<any>();
-
-  protected readonly cols = computed<any[]>(() => {
-    // Establish a reactive dependency on the colVisibility signal so the list
-    // recomputes once the (non-signal) column defs are populated after init.
-    this.grid().getColVisibilityMap();
-    return this.grid().getColDefsForToolbar();
-  });
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
-
-```typescript
-import { Component, computed, inject } from '@angular/core';
-import { DataGrid } from '../datagrid';
-import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
-import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
-import { DataGridFilterSectionComponent } from './datagrid-filter-section';
-import { GridActionComponent } from '../tool-button';
-import { Icon } from '@icons/icon';
-import { MultiselectFilterComponent } from './multiselect-filter';
-import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
-
-@Component({
-  selector: 'pc-dg-toolbar',
-  imports: [
-    GridActionComponent,
-    Icon,
-    MultiselectFilterComponent,
-    SingleselectFilterComponent,
-    DataGridColumnsDropdownComponent,
-    DataGridFilterDropdownComponent,
-    DataGridFilterSectionComponent,
-  ],
-  templateUrl: 'datagrid-toolbar.html',
-})
-export class DataGridToolbarComponent {
-  public readonly grid: any = inject(DataGrid);
-
-  readonly narrowTypeOptions = computed<SingleSelectOption[]>(() => this.grid.narrowTypeOptions());
-  readonly listOptions = computed<SingleSelectOption[]>(() =>
-    this.grid.availableLists().map((l: any) => ({ value: l.id, label: l.name })),
-  );
-
-  public onAdd() {
-    this.grid.doAdd();
-  }
-
-  public onClone() {
-    this.grid.doClone();
-  }
-
-  public onMergeSelected() {
-    this.grid.doConfirmMerge();
-  }
-
-  public onDeleteSelected() {
-    this.grid.doConfirmDelete();
-  }
-
-  public onExportCsv() {
-    this.grid.doConfirmExport();
-  }
-
-  public onImportCsv() {
-    this.grid.doImportCSV();
-  }
-
-  public onRedo() {
-    this.grid.redo();
-  }
-
-  public onRefresh() {
-    this.grid.doRefresh();
-  }
-
-  public onToggleArchive() {
-    this.grid.toggleArchiveModePublic();
-  }
-
-  public onToggleFilters() {
-    this.grid.filter();
-  }
-
-  public onUndo() {
-    this.grid.undo();
-  }
-
-  public onResetAllWidths() {
-    this.grid.resetAllWidthsPublic();
-  }
-
-  public onHideAllCols() {
-    this.grid.hideAllColsPublic();
-  }
-
-  public onShowAllCols() {
-    this.grid.showAllColsPublic();
-  }
-
-  public onToggleCol(colId: string, visible: boolean) {
-    this.grid.toggleColPublic(colId, visible);
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
-
-```html
-@if (displayTitle()) {
-<pc-grid-header
-  [title]="displayTitle()!"
-  [open]="showDescription()"
-  [description]="description() || ''"
-></pc-grid-header>
-}
-
-<div class="flex h-full w-full flex-col">
-  @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
-  <progress class="progress h-1"></progress>
-  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
-      >All {{ displayedCount() }} rows on this page are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="selectAllMatching()"
-      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
-      >Select all {{ totalCountAll() }} rows</a
-    >
-  </div>
-  } @if (allSelected()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
-      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="clearAllSelection()"
-      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
-      >Clear selection</a
-    >
-  </div>
-  }
-  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
-    <table #gridTable class="table w-full">
-      <thead>
-        <tr>
-          @if (enableSelection()) {
-          <th
-            class="border-r border-base-300 pl-2 selection-col"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <input
-              type="checkbox"
-              class="checkbox checkbox-sm"
-              [checked]="!allSelected() && tableAllPageSelected()"
-              [indeterminate]="!allSelected() && tableSomePageSelected()"
-              (change)="onHeaderCheckbox($any($event.target).checked)"
-            />
-          </th>
-          } @for (h of leafHeaders(); track h.id) {
-          <th
-            role="columnheader"
-            class="cursor-grab border-r border-base-300 pl-2 relative"
-            [attr.data-col-id]="h.column.id"
-            [attr.aria-sort]="ariaSortHeader(h)"
-            [draggable]="true"
-            (dragstart)="onHeaderDragStart(h, $event)"
-            (dragover)="onHeaderDragOver(h, $event)"
-            (drop)="onHeaderDrop(h, $event)"
-            [style.width.px]="columnWidthPx(h.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
-          >
-            <div class="flex items-center gap-2" data-header-content>
-              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
-                {{ h.column.columnDef.header || h.column.id }}
-              </span>
-              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
-              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
-                <label
-                  tabindex="0"
-                  class="btn btn-xs"
-                  [class.btn-ghost]="!isColFiltered(h.column.id)"
-                  [class.btn-primary]="isColFiltered(h.column.id)"
-                  title="Column options"
-                  i18n-title="@@datagrid.columns.optionsTitle"
-                >
-                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
-                </label>
-                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
-                  @let col = getColDefById(h.column.id);
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
-                      track opt) {
-                      <li>
-                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
-                          <input
-                            type="checkbox"
-                            class="checkbox checkbox-xs"
-                            [checked]="isOptionChecked(h.column.id, opt)"
-                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
-                          />
-                          <span class="label-text">{{ opt }}</span>
-                        </label>
-                      </li>
-                      }
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      } @else {
-                      <li class="px-2 py-1">
-                        <input
-                          class="input input-bordered input-xs w-full"
-                          type="text"
-                          placeholder="Filter value"
-                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
-                          [value]="getFilterValue(h.column.id)"
-                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
-                        />
-                      </li>
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      }
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
-                      <li>
-                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
-                          >Sort asc</a
-                        >
-                      </li>
-                      <li>
-                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
-                          >Sort desc</a
-                        >
-                      </li>
-                      <li>
-                        <a
-                          (click)="clearSort(h)"
-                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
-                          >Clear sort</a
-                        >
-                      </li>
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
-                        >Column</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      <li>
-                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
-                          >Hide</a
-                        >
-                      </li>
-                      <li class="dropdown dropdown-right">
-                        <label tabindex="0" class="flex w-full items-center justify-between"
-                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
-                            >Columns</span
-                          ><span>▸</span></label
-                        >
-                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                          @for (cid of hiddenColumns(); track cid) {
-                          <li>
-                            <a (click)="showColumnById(cid)"
-                              ><ng-container
-                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
-                                >Show</ng-container
-                              >
-                              {{ columnLabelFor(cid) }}</a
-                            >
-                          </li>
-                          } @if (!hiddenColumns().length) {
-                          <li
-                            class="opacity-60 px-2 py-1"
-                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
-                          >
-                            None hidden
-                          </li>
-                          }
-                        </ul>
-                      </li>
-                    </ul>
-                  </li>
-                </ul>
-              </div>
-              <span
-                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
-                title="Resize column"
-                i18n-title="@@datagrid.columns.resizeTitle"
-                [pcHeaderResize]="headerResizeConfig(h)"
-              ></span>
-            </div>
-          </th>
-          }
-        </tr>
-      </thead>
-      <tbody class="bg-base-100">
-        @if (hasActiveFilters() && !visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
-                >No results match your filters</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
-                >Try clearing or adjusting your filters</span
-              >
-            </div>
-          </td>
-        </tr>
-        } @else if (!visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
-                >Nothing here yet</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
-                >Add your first record using the + button above</span
-              >
-            </div>
-          </td>
-        </tr>
-        } @for (r of visibleTableRows(); let i = $index; track r.id) {
-        <tr
-          class="group hover:bg-base-300"
-          [class.cursor-pointer]="rowNavigatesToDetail()"
-          (mouseover)="onCellMouseOver(r.original)"
-          [attr.data-row-id]="toId(r.original)"
-          [class.bg-base-200]="(i % 2) === 1"
-        >
-          @if (enableSelection()) {
-          <td
-            class="sticky left-0 z-20 border-r border-base-300 pl-2"
-            [style.background]="rowBgForIndex(i)"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <div class="flex items-center gap-2">
-              @if (rowCanSelect()(r.original)) {
-              <input
-                type="checkbox"
-                class="checkbox checkbox-sm"
-                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
-                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
-              />
-              } @let rowId = toId(r.original); @if (!disableView() && rowId) {
-              <span
-                title="Open detail"
-                i18n-title="@@datagrid.rows.openDetailTitle"
-                aria-label="Open detail"
-                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
-                (click)="openEdit(rowId); $event.stopPropagation();"
-              >
-                <pc-icon
-                  name="arrow-top-right-on-square"
-                  class="hover:text-primary cursor-pointer text-neutral invisible group-hover:visible pb-1"
-                ></pc-icon>
-              </span>
-              }
-            </div>
-          </td>
-          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
-          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
-          === col.field;
-          <td
-            [pcEditable]="editableCfg(r.original, col)"
-            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
-            tabindex="0"
-            (keydown)="onCellKeydown($event)"
-            (click)="handleCellClick(r.original, col)"
-            (dblclick)="handleCellDblClick(r.original, col)"
-            [class.sticky]="pinState(cell) !== false"
-            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
-            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
-            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
-            [style.zIndex]="pinState(cell) !== false ? 10 : null"
-            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
-            [class.overflow-visible]="isTagColumn(col) && isEditing"
-            class="min-w-0 px-2 border-r border-base-300 relative"
-            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
-            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
-            [attr.data-col-id]="cell.column.id"
-            [style.width.px]="columnWidthPx(cell.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
-          >
-            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
-            (isTagColumn(col)) {
-            <!-- Tag column: checkbox multi-select panel -->
-            <div
-              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
-              (click)="$event.stopPropagation()"
-            >
-              <!-- Search box — pinned, never scrolls -->
-              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
-                <input
-                  type="text"
-                  class="input input-bordered input-xs w-full"
-                  placeholder="Search tags…"
-                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
-                  [ngModel]="tagSearch()"
-                  (ngModelChange)="tagSearch.set($event)"
-                  autofocus
-                />
-              </div>
-              <!-- Scrollable tag list -->
-              <div class="flex-1 overflow-y-auto py-1">
-                @for (tag of filteredTagChoices(col); track tag) {
-                <label
-                  tabindex="-1"
-                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
-                >
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="isTagChecked(tag)"
-                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
-                  />
-                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
-                </label>
-                } @if (!filteredTagChoices(col).length) {
-                <div class="text-xs text-base-content/50 px-3 py-2 italic">
-                  @if (tagSearch()) {
-                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
-                    >No tags match "{{ tagSearch() }}"</ng-container
-                  >
-                  } @else {
-                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
-                    >No tags available</ng-container
-                  >
-                  }
-                </div>
-                }
-              </div>
-              <!-- Done button — pinned, never scrolls -->
-              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
-                <button
-                  class="btn btn-primary btn-xs"
-                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
-                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-            } @else if (editorCfg) { @if (editorCfg.multiple) {
-            <select
-              class="select select-bordered w-full"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              multiple
-              [attr.size]="editorCfg.size ?? null"
-              [style.height]="multiSelectHeight(editorCfg)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value">{{ opt.label }}</option>
-              }
-            </select>
-            } @else {
-            <select
-              class="select select-bordered w-full select-xs"
-              [ngModel]="editingValue()"
-              (ngModelChange)="onSelectChange(r.original, col, $event)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value">{{ opt.label }}</option>
-              }
-            </select>
-            } } @else if (textCfg.textarea) {
-            <textarea
-              class="textarea textarea-bordered textarea-sm w-full"
-              [rows]="textCfg.rows"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              autofocus
-            ></textarea>
-            } @else {
-            <input
-              [type]="inputTypeFor(col)"
-              class="input input-bordered input-xs w-full"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              autofocus
-            />
-            } } @else if (hasCellRenderer(col)) {
-            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
-            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
-            (isTagColumn(col) && tagList.length) {
-            <pc-tags
-              [tags]="tagList"
-              [type]="tagTypeFor(col)"
-              [readonly]="true"
-              [canDelete]="false"
-              [compact]="true"
-              [limit]="2"
-              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
-            ></pc-tags>
-            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
-            === null || formattedVal === undefined || formattedVal === '') {
-            <span class="text-base-content/30">—</span>
-            } @else { {{ formattedVal }} } } @else { @if (col.field === 'address') {
-            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
-              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
-            </div>
-            } @else {
-            <span class="flex items-center gap-1 w-full">
-              @if (rawValue === null || rawValue === undefined || rawValue === '') {
-              <span class="flex-1 truncate text-base-content/30">—</span>
-              } @else {
-              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
-              }
-            </span>
-            } } }
-          </td>
-          } }
-        </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
-    <div class="flex items-center gap-2 whitespace-nowrap">
-      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
-        >Page Size:</span
-      >
-      <select
-        class="select select-bordered select-xs"
-        [ngModel]="pageSize()"
-        (ngModelChange)="onPageSizeChange($event)"
-      >
-        @if (![25,50,100].includes(pageSize())) {
-        <option [value]="pageSize()">{{ pageSize() }}</option>
-        } @for (opt of pageSizeChoices(); track opt) {
-        <option [value]="opt">{{ opt }}</option>
-        }
-      </select>
-    </div>
-    <div
-      class="whitespace-nowrap"
-      i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
-    >
-      <span class="font-normal">{{ displayStartIndex() }}</span> to
-      <span class="font-normal">{{ displayEndIndex() }}</span> of
-      <span class="font-normal">{{ totalCountAll() }}</span>
-    </div>
-    <div class="join whitespace-nowrap">
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="First"
-        i18n-title="@@datagrid.pagination.firstTitle"
-        [disabled]="!canPrev()"
-        (click)="firstPage()"
-      >
-        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="Prev"
-        i18n-title="@@datagrid.pagination.prevTitle"
-        [disabled]="!canPrev()"
-        (click)="prevPage()"
-      >
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn font-light btn-sm join-item btn-ghost pointer-events-none whitespace-nowrap"
-        i18n="Datagrid|Current page number out of total pages@@datagrid.pagination.currentPage"
-      >
-        Page <span class="font-normal">{{ pageIndex() + 1 }}</span> of
-        <span class="font-normal">{{ totalPages() }}</span>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="Next"
-        i18n-title="@@datagrid.pagination.nextTitle"
-        [disabled]="!canNext()"
-        (click)="nextPage()"
-      >
-        <pc-icon name="chevron-right" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="Last"
-        i18n-title="@@datagrid.pagination.lastTitle"
-        [disabled]="!canNext()"
-        (click)="lastPage()"
-      >
-        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
-      </button>
-    </div>
-  </div>
-  @if (isLoading()) {
-  <pc-icon name="loading" class="absolute inset-0 grid place-items-center animate-pulse" [size]="24"></pc-icon>
-  }
-</div>
-
-<!-- Right-side Filter Panel -->
-@if (showFilterPanel()) {
-<pc-dg-filter-panel
-  [panelFields]="panelFields()"
-  [panelFilters]="panelFilters()"
-  [labelFor]="labelForFn"
-  [optionsFor]="optionsForFn"
-  [hasActiveFilters]="hasActiveFilters()"
-  (close)="closePanel()"
-  (apply)="applyPanelFilters()"
-  (clear)="clearPanelFilters()"
-  (changeOp)="onPanelOpChange($event.field, $event.op)"
-  (changeValue)="onPanelValueChange($event.field, $event.value)"
-  (openAdvanced)="switchToAdvancedFilter()"
-/>
-}
-
-<!-- Advanced Filter Builder Modal -->
-@if (showAdvancedFilterBuilder()) {
-<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
-  <div
-    class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]"
-  >
-    <div class="flex justify-between items-center pb-4 border-b border-base-200">
-      <div>
-        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
-          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
-          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
-            >Advanced Filter Builder</ng-container
-          >
-        </h3>
-        <p
-          class="text-xs text-neutral-400 mt-1"
-          i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
-        >
-          Build complex matching rules with custom operators and conjunction logic.
-        </p>
-      </div>
-      <button
-        class="btn btn-ghost btn-circle btn-sm"
-        (click)="showAdvancedFilterBuilder.set(false)"
-        aria-label="Close modal"
-        i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel"
-      >
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <!-- Scrollable Body containing the rules -->
-    <div class="flex-1 overflow-y-auto py-6">
-      <pc-query-builder
-        [group]="advFilterRoot()"
-        [fields]="advancedFilterFields()"
-        [tagSvc]="tagsSvc ?? undefined"
-        [showSummary]="true"
-        (changed)="onAdvancedFilterChanged()"
-      ></pc-query-builder>
-    </div>
-
-    <!-- Modal Footer Actions -->
-    <div class="flex justify-between items-center pt-4 border-t border-base-200">
-      <button
-        class="btn btn-outline btn-error btn-sm"
-        (click)="clearAdvancedFilter()"
-        i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
-      >
-        Clear Filters
-      </button>
-      <div class="flex gap-2">
-        <button
-          class="btn btn-ghost btn-sm"
-          (click)="showAdvancedFilterBuilder.set(false)"
-          i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
-        >
-          Cancel
-        </button>
-        <button
-          class="btn btn-primary btn-sm px-6"
-          (click)="applyAdvancedFilter()"
-          i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
-        >
-          Apply
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -47373,8 +47026,16 @@ export class HouseholdForm implements OnInit {
       this.householdsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Household deleted');
       await this.router.navigate(['/households']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete household';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete household';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -47520,6 +47181,77 @@ export class HouseholdForm implements OnInit {
       })
       .finally(() => end());
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
+
+```typescript
+import { Component, computed, input } from '@angular/core';
+import type { DataGrid } from '../datagrid';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
+
+/**
+ * Column visibility dropdown shared by the mobile and desktop toolbars.
+ * Rendered as the projected content of a `pc-grid-tool-btn` dropdown, so it
+ * uses `display: contents` to stay a direct child of the DaisyUI `<details>`.
+ *
+ * The grid is passed in as an input rather than injected: as projected
+ * content it does not reliably resolve the same `DataGrid` instance.
+ *
+ * `getColDefsForToolbar()` returns a plain (non-signal) array that is filled
+ * in after init, so as an isolated component this would render once and stay
+ * empty. `cols` reads the reactive `getColVisibilityMap()` (the colVisibility
+ * signal) to recompute once the columns are populated.
+ */
+@Component({
+  selector: 'pc-dg-columns-dropdown',
+  template: `
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
+      <li class="px-2 py-1 flex gap-2">
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
+      </li>
+      @for (col of cols(); track col.field) {
+        @if (col.field) {
+          <li>
+            <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs"
+                [checked]="grid().getColVisibilityMap()[col.field!] !== false"
+                (change)="grid().toggleColPublic(col.field!, $any($event.target).checked)"
+              />
+              <span class="label-text">{{ col.headerName || col.field }}</span>
+            </label>
+          </li>
+        }
+      }
+    </ul>
+  `,
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+    `,
+  ],
+})
+export class DataGridColumnsDropdownComponent {
+  public readonly grid = input.required<DataGrid<keyof Models, unknown>>();
+
+  protected readonly cols = computed<ColDef[]>(() => {
+    // Establish a reactive dependency on the colVisibility signal so the list
+    // recomputes once the (non-signal) column defs are populated after init.
+    this.grid().getColVisibilityMap();
+    return this.grid().getColDefsForToolbar();
+  });
 }
 ```
 
@@ -47883,6 +47615,107 @@ export class HouseholdForm implements OnInit {
     (action)="onToggleArchive()"
   />
 </ul>
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
+
+```typescript
+import { Component, computed, inject } from '@angular/core';
+import { DataGrid } from '../datagrid';
+import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
+import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
+import { DataGridFilterSectionComponent } from './datagrid-filter-section';
+import { GridActionComponent } from '../tool-button';
+import { Icon } from '@icons/icon';
+import { MultiselectFilterComponent } from './multiselect-filter';
+import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
+
+@Component({
+  selector: 'pc-dg-toolbar',
+  imports: [
+    GridActionComponent,
+    Icon,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
+    DataGridColumnsDropdownComponent,
+    DataGridFilterDropdownComponent,
+    DataGridFilterSectionComponent,
+  ],
+  templateUrl: 'datagrid-toolbar.html',
+})
+export class DataGridToolbarComponent {
+  public readonly grid = inject(DataGrid);
+
+  // narrowTypeOptions may include a null "All" sentinel value; SingleSelectOption
+  // types value as string, but the sentinel must round-trip unchanged for the
+  // datagrid's own `o.value === selected` matching to keep working.
+  readonly narrowTypeOptions = computed<SingleSelectOption[]>(
+    () => this.grid.narrowTypeOptions() as unknown as SingleSelectOption[],
+  );
+  readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
+  );
+
+  public onAdd() {
+    this.grid.doAdd();
+  }
+
+  public onClone() {
+    this.grid.doClone();
+  }
+
+  public onMergeSelected() {
+    this.grid.doConfirmMerge();
+  }
+
+  public onDeleteSelected() {
+    this.grid.doConfirmDelete();
+  }
+
+  public onExportCsv() {
+    this.grid.doConfirmExport();
+  }
+
+  public onImportCsv() {
+    this.grid.doImportCSV();
+  }
+
+  public onRedo() {
+    this.grid.redo();
+  }
+
+  public onRefresh() {
+    void this.grid.doRefresh();
+  }
+
+  public onToggleArchive() {
+    this.grid.toggleArchiveModePublic();
+  }
+
+  public onToggleFilters() {
+    this.grid.filter();
+  }
+
+  public onUndo() {
+    this.grid.undo();
+  }
+
+  public onResetAllWidths() {
+    this.grid.resetAllWidthsPublic();
+  }
+
+  public onHideAllCols() {
+    this.grid.hideAllColsPublic();
+  }
+
+  public onShowAllCols() {
+    this.grid.showAllColsPublic();
+  }
+
+  public onToggleCol(colId: string, visible: boolean) {
+    this.grid.toggleColPublic(colId, visible);
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/auth/signin-page/signin-page.html
@@ -48929,7 +48762,16 @@ export class ListForm implements OnInit {
       })
       .catch((err: any) => {
         const message =
-          err?.message || err?.data?.message || (this.isNew() ? 'Failed to add list' : 'Failed to update list');
+          err instanceof Error && err.message
+            ? err.message
+            : isRecord(err) &&
+                isRecord(err['data']) &&
+                typeof err['data']['message'] === 'string' &&
+                err['data']['message']
+              ? err['data']['message']
+              : this.isNew()
+                ? 'Failed to add list'
+                : 'Failed to update list';
         this.alertSvc.showError(message);
         doneFn();
       })
@@ -48953,8 +48795,16 @@ export class ListForm implements OnInit {
       this.listsRefresh.trigger();
       this.alertSvc.showSuccess('List deleted');
       await this.router.navigate(['/lists']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete list';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete list';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -49058,6 +48908,10 @@ export class ListForm implements OnInit {
     }
     return false;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -49267,8 +49121,16 @@ export class PersonForm implements OnInit {
       this.personsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Person deleted');
       await this.router.navigate(['/people']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete person';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete person';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -49681,6 +49543,634 @@ export class PersonForm implements OnInit {
     }
   }
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
+
+```html
+@if (displayTitle()) {
+<pc-grid-header
+  [title]="displayTitle()!"
+  [open]="showDescription()"
+  [description]="description() || ''"
+></pc-grid-header>
+}
+
+<div class="flex h-full w-full flex-col">
+  @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
+  <progress class="progress h-1"></progress>
+  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
+      >All {{ displayedCount() }} rows on this page are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="selectAllMatching()"
+      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
+      >Select all {{ totalCountAll() }} rows</a
+    >
+  </div>
+  } @if (allSelected()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
+      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="clearAllSelection()"
+      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
+      >Clear selection</a
+    >
+  </div>
+  }
+  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
+    <table #gridTable class="table w-full">
+      <thead>
+        <tr>
+          @if (enableSelection()) {
+          <th
+            class="border-r border-base-300 pl-2 selection-col"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              [checked]="!allSelected() && tableAllPageSelected()"
+              [indeterminate]="!allSelected() && tableSomePageSelected()"
+              (change)="onHeaderCheckbox($any($event.target).checked)"
+            />
+          </th>
+          } @for (h of leafHeaders(); track h.id) {
+          <th
+            role="columnheader"
+            class="cursor-grab border-r border-base-300 pl-2 relative"
+            [attr.data-col-id]="h.column.id"
+            [attr.aria-sort]="ariaSortHeader(h)"
+            [draggable]="true"
+            (dragstart)="onHeaderDragStart(h, $event)"
+            (dragover)="onHeaderDragOver(h, $event)"
+            (drop)="onHeaderDrop(h, $event)"
+            [style.width.px]="columnWidthPx(h.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
+          >
+            <div class="flex items-center gap-2" data-header-content>
+              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
+                {{ h.column.columnDef.header || h.column.id }}
+              </span>
+              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
+              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
+                <label
+                  tabindex="0"
+                  class="btn btn-xs"
+                  [class.btn-ghost]="!isColFiltered(h.column.id)"
+                  [class.btn-primary]="isColFiltered(h.column.id)"
+                  title="Column options"
+                  i18n-title="@@datagrid.columns.optionsTitle"
+                >
+                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
+                </label>
+                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
+                  @let col = getColDefById(h.column.id);
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
+                      track opt) {
+                      <li>
+                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
+                          <input
+                            type="checkbox"
+                            class="checkbox checkbox-xs"
+                            [checked]="isOptionChecked(h.column.id, opt)"
+                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
+                          />
+                          <span class="label-text">{{ opt }}</span>
+                        </label>
+                      </li>
+                      }
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      } @else {
+                      <li class="px-2 py-1">
+                        <input
+                          class="input input-bordered input-xs w-full"
+                          type="text"
+                          placeholder="Filter value"
+                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
+                          [value]="getFilterValue(h.column.id)"
+                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
+                        />
+                      </li>
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      }
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
+                      <li>
+                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
+                          >Sort asc</a
+                        >
+                      </li>
+                      <li>
+                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
+                          >Sort desc</a
+                        >
+                      </li>
+                      <li>
+                        <a
+                          (click)="clearSort(h)"
+                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
+                          >Clear sort</a
+                        >
+                      </li>
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
+                        >Column</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      <li>
+                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
+                          >Hide</a
+                        >
+                      </li>
+                      <li class="dropdown dropdown-right">
+                        <label tabindex="0" class="flex w-full items-center justify-between"
+                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
+                            >Columns</span
+                          ><span>▸</span></label
+                        >
+                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                          @for (cid of hiddenColumns(); track cid) {
+                          <li>
+                            <a (click)="showColumnById(cid)"
+                              ><ng-container
+                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
+                                >Show</ng-container
+                              >
+                              {{ columnLabelFor(cid) }}</a
+                            >
+                          </li>
+                          } @if (!hiddenColumns().length) {
+                          <li
+                            class="opacity-60 px-2 py-1"
+                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
+                          >
+                            None hidden
+                          </li>
+                          }
+                        </ul>
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+              </div>
+              <span
+                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                title="Resize column"
+                i18n-title="@@datagrid.columns.resizeTitle"
+                [pcHeaderResize]="headerResizeConfig(h)"
+              ></span>
+            </div>
+          </th>
+          }
+        </tr>
+      </thead>
+      <tbody class="bg-base-100">
+        @if (hasActiveFilters() && !visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
+                >No results match your filters</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
+                >Try clearing or adjusting your filters</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @else if (!visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
+                >Nothing here yet</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
+                >Add your first record using the + button above</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @for (r of visibleTableRows(); let i = $index; track r.id) {
+        <tr
+          class="group hover:bg-base-300"
+          [class.cursor-pointer]="rowNavigatesToDetail()"
+          (mouseover)="onCellMouseOver(r.original)"
+          [attr.data-row-id]="toId(r.original)"
+          [class.bg-base-200]="(i % 2) === 1"
+        >
+          @if (enableSelection()) {
+          <td
+            class="sticky left-0 z-20 border-r border-base-300 pl-2"
+            [style.background]="rowBgForIndex(i)"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <div class="flex items-center gap-2">
+              @if (rowCanSelect()(r.original)) {
+              <input
+                type="checkbox"
+                class="checkbox checkbox-sm"
+                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
+                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
+              />
+              } @let rowId = toId(r.original); @if (!disableView() && rowId) {
+              <span
+                title="Open detail"
+                i18n-title="@@datagrid.rows.openDetailTitle"
+                aria-label="Open detail"
+                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
+                (click)="openEdit(rowId); $event.stopPropagation();"
+              >
+                <pc-icon
+                  name="arrow-top-right-on-square"
+                  class="hover:text-primary cursor-pointer text-neutral invisible group-hover:visible pb-1"
+                ></pc-icon>
+              </span>
+              }
+            </div>
+          </td>
+          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
+          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
+          === col.field;
+          <td
+            [pcEditable]="editableCfg(r.original, col)"
+            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
+            tabindex="0"
+            (keydown)="onCellKeydown($event)"
+            (click)="handleCellClick(r.original, col)"
+            (dblclick)="handleCellDblClick(r.original, col)"
+            [class.sticky]="pinState(cell) !== false"
+            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
+            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
+            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
+            [style.zIndex]="pinState(cell) !== false ? 10 : null"
+            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
+            [class.overflow-visible]="isTagColumn(col) && isEditing"
+            class="min-w-0 px-2 border-r border-base-300 relative"
+            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
+            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
+            [attr.data-col-id]="cell.column.id"
+            [style.width.px]="columnWidthPx(cell.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
+          >
+            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
+            (isTagColumn(col)) {
+            <!-- Tag column: checkbox multi-select panel -->
+            <div
+              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
+              (click)="$event.stopPropagation()"
+            >
+              <!-- Search box — pinned, never scrolls -->
+              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
+                <input
+                  type="text"
+                  class="input input-bordered input-xs w-full"
+                  placeholder="Search tags…"
+                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
+                  [ngModel]="tagSearch()"
+                  (ngModelChange)="tagSearch.set($event)"
+                  autofocus
+                />
+              </div>
+              <!-- Scrollable tag list -->
+              <div class="flex-1 overflow-y-auto py-1">
+                @for (tag of filteredTagChoices(col); track tag) {
+                <label
+                  tabindex="-1"
+                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="isTagChecked(tag)"
+                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
+                  />
+                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
+                </label>
+                } @if (!filteredTagChoices(col).length) {
+                <div class="text-xs text-base-content/50 px-3 py-2 italic">
+                  @if (tagSearch()) {
+                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
+                    >No tags match "{{ tagSearch() }}"</ng-container
+                  >
+                  } @else {
+                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
+                    >No tags available</ng-container
+                  >
+                  }
+                </div>
+                }
+              </div>
+              <!-- Done button — pinned, never scrolls -->
+              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
+                <button
+                  class="btn btn-primary btn-xs"
+                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
+                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+            } @else if (editorCfg) { @if (editorCfg.multiple) {
+            <select
+              class="select select-bordered w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              multiple
+              [attr.size]="editorCfg.size ?? null"
+              [style.height]="multiSelectHeight(editorCfg)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            } @else {
+            <select
+              class="select select-bordered w-full select-xs"
+              [ngModel]="editingValue()"
+              (ngModelChange)="onSelectChange(r.original, col, $event)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            } } @else if (textCfg.textarea) {
+            <textarea
+              class="textarea textarea-bordered textarea-sm w-full"
+              [rows]="textCfg.rows"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              autofocus
+            ></textarea>
+            } @else {
+            <input
+              [type]="inputTypeFor(col)"
+              class="input input-bordered input-xs w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              autofocus
+            />
+            } } @else if (hasCellRenderer(col)) {
+            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
+            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
+            (isTagColumn(col) && tagList.length) {
+            <pc-tags
+              [tags]="tagList"
+              [type]="tagTypeFor(col)"
+              [readonly]="true"
+              [canDelete]="false"
+              [compact]="true"
+              [limit]="2"
+              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
+            ></pc-tags>
+            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
+            === null || formattedVal === undefined || formattedVal === '') {
+            <span class="text-base-content/30">—</span>
+            } @else { {{ formattedVal }} } } @else { @if (col.field === 'address') {
+            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
+              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
+            </div>
+            } @else {
+            <span class="flex items-center gap-1 w-full">
+              @if (rawValue === null || rawValue === undefined || rawValue === '') {
+              <span class="flex-1 truncate text-base-content/30">—</span>
+              } @else {
+              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
+              }
+            </span>
+            } } }
+          </td>
+          } }
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
+    <div class="flex items-center gap-2 whitespace-nowrap">
+      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
+        >Page Size:</span
+      >
+      <select
+        class="select select-bordered select-xs"
+        [ngModel]="pageSize()"
+        (ngModelChange)="onPageSizeChange($event)"
+      >
+        @if (![25,50,100].includes(pageSize())) {
+        <option [value]="pageSize()">{{ pageSize() }}</option>
+        } @for (opt of pageSizeChoices(); track opt) {
+        <option [value]="opt">{{ opt }}</option>
+        }
+      </select>
+    </div>
+    <div
+      class="whitespace-nowrap"
+      i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
+    >
+      <span class="font-normal">{{ displayStartIndex() }}</span> to
+      <span class="font-normal">{{ displayEndIndex() }}</span> of
+      <span class="font-normal">{{ totalCountAll() }}</span>
+    </div>
+    <div class="join whitespace-nowrap">
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="First"
+        i18n-title="@@datagrid.pagination.firstTitle"
+        [disabled]="!canPrev()"
+        (click)="firstPage()"
+      >
+        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="Prev"
+        i18n-title="@@datagrid.pagination.prevTitle"
+        [disabled]="!canPrev()"
+        (click)="prevPage()"
+      >
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn font-light btn-sm join-item btn-ghost pointer-events-none whitespace-nowrap"
+        i18n="Datagrid|Current page number out of total pages@@datagrid.pagination.currentPage"
+      >
+        Page <span class="font-normal">{{ pageIndex() + 1 }}</span> of
+        <span class="font-normal">{{ totalPages() }}</span>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="Next"
+        i18n-title="@@datagrid.pagination.nextTitle"
+        [disabled]="!canNext()"
+        (click)="nextPage()"
+      >
+        <pc-icon name="chevron-right" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="Last"
+        i18n-title="@@datagrid.pagination.lastTitle"
+        [disabled]="!canNext()"
+        (click)="lastPage()"
+      >
+        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
+      </button>
+    </div>
+  </div>
+  @if (isLoading()) {
+  <pc-icon name="loading" class="absolute inset-0 grid place-items-center animate-pulse" [size]="24"></pc-icon>
+  }
+</div>
+
+<!-- Right-side Filter Panel -->
+@if (showFilterPanel()) {
+<pc-dg-filter-panel
+  [panelFields]="panelFields()"
+  [panelFilters]="panelFilters()"
+  [labelFor]="labelForFn"
+  [optionsFor]="optionsForFn"
+  [hasActiveFilters]="hasActiveFilters()"
+  (closePanel)="closePanel()"
+  (apply)="applyPanelFilters()"
+  (clear)="clearPanelFilters()"
+  (changeOp)="onPanelOpChange($event.field, $event.op)"
+  (changeValue)="onPanelValueChange($event.field, $event.value)"
+  (openAdvanced)="switchToAdvancedFilter()"
+/>
+}
+
+<!-- Advanced Filter Builder Modal -->
+@if (showAdvancedFilterBuilder()) {
+<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
+  <div
+    class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]"
+  >
+    <div class="flex justify-between items-center pb-4 border-b border-base-200">
+      <div>
+        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
+          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
+          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
+            >Advanced Filter Builder</ng-container
+          >
+        </h3>
+        <p
+          class="text-xs text-neutral-400 mt-1"
+          i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
+        >
+          Build complex matching rules with custom operators and conjunction logic.
+        </p>
+      </div>
+      <button
+        class="btn btn-ghost btn-circle btn-sm"
+        (click)="showAdvancedFilterBuilder.set(false)"
+        aria-label="Close modal"
+        i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel"
+      >
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <!-- Scrollable Body containing the rules -->
+    <div class="flex-1 overflow-y-auto py-6">
+      <pc-query-builder
+        [group]="advFilterRoot()"
+        [fields]="advancedFilterFields()"
+        [tagSvc]="tagsSvc ?? undefined"
+        [showSummary]="true"
+        (changed)="onAdvancedFilterChanged()"
+      ></pc-query-builder>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div class="flex justify-between items-center pt-4 border-t border-base-200">
+      <button
+        class="btn btn-outline btn-error btn-sm"
+        (click)="clearAdvancedFilter()"
+        i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
+      >
+        Clear Filters
+      </button>
+      <div class="flex gap-2">
+        <button
+          class="btn btn-ghost btn-sm"
+          (click)="showAdvancedFilterBuilder.set(false)"
+          i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
+        >
+          Cancel
+        </button>
+        <button
+          class="btn btn-primary btn-sm px-6"
+          (click)="applyAdvancedFilter()"
+          i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+}
 ```
 
 ## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
@@ -49849,8 +50339,8 @@ export class SignInPage implements OnInit, OnDestroy {
         return;
       }
       if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
-    } catch (err: any) {
-      if (err?.name === 'NotAllowedError') {
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') {
         this.step.set('password');
         return;
       }
@@ -49898,7 +50388,7 @@ export class SignInPage implements OnInit, OnDestroy {
             }
             this.suppressNavigation.set(false);
           }
-        } catch (err: any) {
+        } catch (err) {
           this.suppressNavigation.set(false);
           this.handleError(err, emailVal);
         } finally {
@@ -49932,7 +50422,7 @@ export class SignInPage implements OnInit, OnDestroy {
             code: codeVal,
             rememberMe: this.persistence(),
           });
-        } catch (err: any) {
+        } catch (err) {
           this.handleError(err);
         } finally {
           end();
@@ -49960,9 +50450,9 @@ export class SignInPage implements OnInit, OnDestroy {
       if (result.verified) {
         this.alertSvc.showSuccess('Passkey set up successfully!');
       }
-    } catch (err: any) {
-      if (err?.name !== 'NotAllowedError') {
-        this.alertSvc.showError(err.message || 'Failed to set up passkey.');
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
+        this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to set up passkey.');
       }
     } finally {
       this.settingUpPasskey.set(false);
@@ -49994,14 +50484,17 @@ export class SignInPage implements OnInit, OnDestroy {
       await this.authService.resendVerificationEmail(emailVal);
       this.alertSvc.showSuccess('Verification email sent successfully!');
       this.startResendCooldown(60);
-    } catch (err: any) {
-      const tRPCData = err?.originalError?.data ?? err?.data;
+    } catch (err) {
+      const tRPCData = getTRPCData(err);
       const retryAfterSec =
-        (tRPCData?.retryAfterSec as number | undefined) ?? this.parseRetryAfterSec(err.message || '');
+        (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+        this.parseRetryAfterSec(err instanceof Error && err.message ? err.message : '');
       if (retryAfterSec) {
         this.startResendCooldown(retryAfterSec);
       } else {
-        this.alertSvc.showError(err.message || 'Failed to resend verification email.');
+        this.alertSvc.showError(
+          err instanceof Error && err.message ? err.message : 'Failed to resend verification email.',
+        );
       }
     } finally {
       this.resending.set(false);
@@ -50036,15 +50529,17 @@ export class SignInPage implements OnInit, OnDestroy {
     }, 1000);
   }
 
-  private handleError(err: any, emailVal?: string) {
-    const tRPCData = err?.originalError?.data ?? err?.data;
-    const message = err.message || String(err);
-    const retryAfterSec = (tRPCData?.retryAfterSec as number | undefined) ?? this.parseRetryAfterSec(message);
+  private handleError(err: unknown, emailVal?: string) {
+    const tRPCData = getTRPCData(err);
+    const message = err instanceof Error && err.message ? err.message : String(err);
+    const retryAfterSec =
+      (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+      this.parseRetryAfterSec(message);
     if (retryAfterSec) {
       this.startRateLimitCountdown(retryAfterSec);
       return;
     }
-    const code = tRPCData?.code as string | undefined;
+    const code = typeof tRPCData?.['code'] === 'string' ? tRPCData['code'] : undefined;
     if (emailVal && message.toLowerCase().includes('not verified')) {
       this.verificationPending.set(true);
       this.pendingEmail.set(emailVal);
@@ -50084,6 +50579,18 @@ export function emailSafeValidator(): ValidatorFn {
 }
 
 const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** Extract the tRPC error `data` payload (e.g. rate-limit metadata) from a caught error. */
+function getTRPCData(err: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(err)) return undefined;
+  const originalError = err['originalError'];
+  if (isRecord(originalError) && isRecord(originalError['data'])) return originalError['data'];
+  return isRecord(err['data']) ? err['data'] : undefined;
+}
 ```
 
 ## File: apps/frontend/src/app/auth/auth-service.ts
@@ -50244,8 +50751,8 @@ export class AuthService extends TRPCService<'authusers'> {
     let response: any;
     try {
       response = await startAuthentication({ optionsJSON: options });
-    } catch (err: any) {
-      if (err?.name === 'NotAllowedError') return { user: null, cancelled: true };
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
       throw err;
     }
     const token = await (
@@ -50460,7 +50967,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Virtualizer disabled for paginated grid
 
   // Injected Services
-  protected readonly alertSvc = inject(AlertService);
+  public readonly alertSvc = inject(AlertService);
   private readonly dateFormatSvc = inject(DateFormatService);
   private readonly columnsSvc = inject(DataGridColumnsService);
   private readonly dataSvc = inject(DataGridDataService);
@@ -50470,7 +50977,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly actionsSvc = inject(DataGridActionsService);
   private readonly navSvc = inject(DataGridNavService);
   private readonly utilsSvc = inject(DataGridUtilsService);
-  private readonly store = inject(GridStoreService);
+  public readonly store = inject(GridStoreService);
   private readonly rctrl = inject(ResizingController);
   private readonly kctrl = inject(KeyboardController);
   private readonly editingCtrl = inject(EditingController);
@@ -50546,7 +51053,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return val !== undefined && val !== null && val !== '';
   }
   protected readonly hasInitiatedLoad = signal(false);
-  protected readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
+  public readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
   protected readonly hasSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,
   );
@@ -50664,9 +51171,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     getCellValue: (r: GridRow, c: ColDef) => this.getCellValue(r, c),
     getEditingDisplayValue: (r: GridRow, c: ColDef) => this.getEditingDisplayValue(r, c),
     createPayload: this.createPayloadFn,
-    applyEdit: (id: string, data: U) =>
+    applyEdit: (id: string, data: Partial<GridRow>) =>
       this.gridSvc
-        .update(id, data)
+        .update(id, data as unknown as U)
         .then(() => true)
         .catch(() => false),
     updateEditedRow: this.updateEditedRowInCachesFn,

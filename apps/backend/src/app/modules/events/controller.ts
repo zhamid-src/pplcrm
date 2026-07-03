@@ -1,12 +1,12 @@
 import { TRPCError } from '@trpc/server';
 import type { Transaction } from 'kysely';
 import { sql } from 'kysely';
-import { BaseController } from '../../lib/base.controller';
-import { EventsRepo } from './repositories/events.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { WorkflowsController } from '../workflows/controller';
+import { BaseController } from '../../lib/base.controller';
 import { logger } from '../../logger';
+import { WorkflowsController } from '../workflows/controller';
+import { EventsRepo } from './repositories/events.repo';
 
 const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
@@ -69,6 +69,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
 
   public async getEventBySlug(slug: string) {
     // NOTE: unscoped by design — public registration page: tenant is unknown until the event is resolved by slug
+    // eslint-disable-next-line local/no-unscoped-db-query
     return this.getRepo()
       .db.selectFrom('events')
       .selectAll()
