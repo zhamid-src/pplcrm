@@ -87,6 +87,7 @@ apps/
           oauth-state.ts
           password-hash.ts
           rate-limiter.ts
+          signed-download.ts
           storage.service.ts
           token-hash.ts
           user-activity.repo.ts
@@ -503,6 +504,56 @@ export function isIncompleteAddress(input: {
   const zip = (input.zip ?? '').trim();
 
   return !street1 || (!city && !zip);
+}
+```
+
+## File: apps/backend/src/app/lib/signed-download.ts
+
+```typescript
+import { createSigner, createVerifier } from 'fast-jwt';
+import { env } from '../../env';
+import { UnauthorizedError } from '../errors/app-errors';
+
+const DOWNLOAD_SCOPE = 'file-download';
+// Long enough that cached user lists keep rendering avatars, short enough
+// that a URL leaked from history or logs goes stale quickly.
+const DOWNLOAD_URL_TTL = '24h';
+
+interface SignedDownloadPayload {
+  scope: typeof DOWNLOAD_SCOPE;
+  file_id: string;
+  tenant_id: string;
+}
+
+const signer = createSigner({ algorithm: 'HS256', key: env.sharedSecret, expiresIn: DOWNLOAD_URL_TTL });
+const verifier = createVerifier({ algorithms: ['HS256'], key: env.sharedSecret, ignoreExpiration: false });
+
+/**
+ * Build a relative download URL carrying a short-lived token scoped to a
+ * single file. Safe to embed in <img> tags: unlike a session JWT it cannot
+ * be replayed against other endpoints and it expires quickly.
+ */
+export function signedFileDownloadUrl(fileId: string, tenantId: string): string {
+  const st = signer({ scope: DOWNLOAD_SCOPE, file_id: String(fileId), tenant_id: String(tenantId) });
+  return `/api/files/download/${fileId}?st=${encodeURIComponent(st)}`;
+}
+
+/**
+ * Verify a signed download token and confirm it was minted for the file
+ * being requested. Throws UnauthorizedError on any mismatch.
+ */
+export function verifyFileDownloadToken(st: string, fileId: string): SignedDownloadPayload {
+  let payload: unknown;
+  try {
+    payload = verifier(st);
+  } catch (err) {
+    throw new UnauthorizedError('Unauthorized: Invalid or expired download token', undefined, { cause: err });
+  }
+  const parsed = payload as Partial<SignedDownloadPayload> | null;
+  if (!parsed || parsed.scope !== DOWNLOAD_SCOPE || !parsed.tenant_id || String(parsed.file_id) !== String(fileId)) {
+    throw new UnauthorizedError('Unauthorized: Invalid download token');
+  }
+  return parsed as SignedDownloadPayload;
 }
 ```
 
@@ -11048,6 +11099,11 @@ export async function verifyAuthToken(token: string | null): Promise<IAuthKeyPay
     if (!verifierResult || typeof verifierResult !== 'object') {
       throw new Error('Invalid token payload');
     }
+    // Scoped tokens (e.g. signed download URLs) share the signing key but
+    // must never be accepted as session tokens.
+    if ('scope' in verifierResult) {
+      throw new Error('Invalid token payload');
+    }
     return verifierResult as IAuthKeyPayload;
   } catch (err) {
     throw new UnauthorizedError('Unauthorized: Invalid or expired token', undefined, { cause: err });
@@ -12597,11 +12653,9 @@ const exportsRepo = new ExportsRepo();
 
 const exportsDownloadRoute: FastifyPluginCallback = (fastify, _, done) => {
   fastify.get('/download/:id', async (req: any, reply) => {
-    // Accept token from Authorization header or query param (for direct-link downloads)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
-    }
+    // Authorization header only — session JWTs in the query string are
+    // deliberately not accepted because URLs leak into history and logs.
+    const token = req.headers.authorization ? req.headers.authorization.split(' ')[1] : null;
     if (!token) {
       return reply.status(401).send({ error: 'Unauthorized: Missing token' });
     }
@@ -23157,32 +23211,36 @@ import type { FastifyPluginCallback } from 'fastify';
 import { StorageService } from '../../../lib/storage.service';
 import { BaseRepository } from '../../../lib/base.repo';
 import { verifyAuthToken } from '../../../lib/auth-util';
+import { verifyFileDownloadToken } from '../../../lib/signed-download';
 import { attachmentDisposition } from '../../../lib/download-headers';
 
 const storageService = new StorageService();
 
 const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
   fastify.get('/download/:id', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
-    }
+    const { id } = req.params;
 
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    let payload: any = null;
+    // Authenticate via the Authorization header (app-initiated downloads) or
+    // a short-lived token scoped to this one file (avatar <img> URLs).
+    // Session JWTs in the query string are deliberately not accepted — URLs
+    // leak into browser history, proxies, and logs.
+    let tenantId: string | null = null;
     try {
-      payload = await verifyAuthToken(token);
+      if (req.query.st) {
+        tenantId = verifyFileDownloadToken(req.query.st, String(id)).tenant_id;
+      } else if (req.headers.authorization) {
+        const payload = await verifyAuthToken(req.headers.authorization.split(' ')[1]);
+        tenantId = payload.tenant_id;
+      }
     } catch (_err) {
       return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
     }
 
-    const tenantId = payload.tenant_id;
+    if (!tenantId) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
+    }
+
     const db = (BaseRepository as any)['_db'];
-    const { id } = req.params;
 
     const file = await db
       .selectFrom('files')
@@ -40233,6 +40291,7 @@ export class ZapierService {
 ```typescript
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { createSigner, createVerifier } from 'fast-jwt';
+import { signedFileDownloadUrl } from '../../lib/signed-download';
 import type { QueryResult, Transaction } from 'kysely';
 
 import type {
@@ -40510,7 +40569,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
       const typedUser = user as { id: string; verified: boolean; passkey_setup_dismissed_at: Date | null };
       const profile = (await this.profiles.getOneByAuthId(String(typedUser.id))) as Models['profiles'] | undefined;
-      const avatar_url = profile?.['avatar_file_id'] ? `/api/files/download/${profile['avatar_file_id']}` : null;
+      const avatar_url = profile?.['avatar_file_id']
+        ? signedFileDownloadUrl(String(profile['avatar_file_id']), auth.tenant_id)
+        : null;
 
       let tenant_deletion_scheduled_at: Date | null = null;
       let tenant_paused_at: Date | null = null;
@@ -40708,7 +40769,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return {
       rows: result.rows.map((row) => ({
         ...this.sanitizeUser(row),
-        avatar_url: row['avatar_file_id'] ? `/api/files/download/${row['avatar_file_id']}` : null,
+        avatar_url: row['avatar_file_id'] ? signedFileDownloadUrl(String(row['avatar_file_id']), auth.tenant_id) : null,
       })),
       count: result.count,
     };
@@ -40742,7 +40803,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const profile = (await this.profiles.getOneByAuthId(String(authUser.id))) as Models['profiles'] | undefined;
     const stats = await this.buildUserStats(auth, String(authUser.id));
     const sanitized = this.sanitizeUser({ ...authUser, profile });
-    const avatar_url = profile?.['avatar_file_id'] ? `/api/files/download/${profile['avatar_file_id']}` : null;
+    const avatar_url = profile?.['avatar_file_id']
+      ? signedFileDownloadUrl(String(profile['avatar_file_id']), auth.tenant_id)
+      : null;
     return { ...sanitized, avatar_url, stats };
   }
 
@@ -40752,7 +40815,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     });
     return result.rows.map((row) => ({
       ...this.sanitizeUser(row),
-      avatar_url: row['avatar_file_id'] ? `/api/files/download/${row['avatar_file_id']}` : null,
+      avatar_url: row['avatar_file_id'] ? signedFileDownloadUrl(String(row['avatar_file_id']), auth.tenant_id) : null,
     }));
   }
 
@@ -41671,7 +41734,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         }
       });
 
-    return { file_id: finalFileId, avatar_url: `/api/files/download/${finalFileId}` };
+    return { file_id: finalFileId, avatar_url: signedFileDownloadUrl(String(finalFileId), auth.tenant_id) };
   }
 
   public async verify2FA(email: string, code: string, ipAddress?: string, userAgent?: string, rememberMe?: boolean) {

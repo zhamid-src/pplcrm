@@ -14133,37 +14133,6 @@ export class EventsService extends TRPCService<'events'> {
 }
 ```
 
-## File: apps/frontend/src/app/services/api/http-download.ts
-
-```typescript
-/**
- * Download a protected file by fetching it with an Authorization header and
- * saving the resulting blob via a temporary object URL. Keeps the auth token
- * out of the URL, where it would leak into browser history, proxy/server
- * logs, and Referer headers.
- */
-export async function downloadWithAuthHeader(url: string, token: string | null, filename: string): Promise<void> {
-  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-  const res = await fetch(url, { headers });
-  if (!res.ok) {
-    throw new Error(`Download failed with status ${res.status}`);
-  }
-  const blob = await res.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = objectUrl;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  // Revoke on a delay: Safari can still be streaming the blob into the
-  // download when click() returns, and revoking immediately truncates it.
-  setTimeout(() => URL.revokeObjectURL(objectUrl), OBJECT_URL_REVOKE_DELAY_MS);
-}
-
-const OBJECT_URL_REVOKE_DELAY_MS = 10_000;
-```
-
 ## File: apps/frontend/src/app/services/api/notifications-service.ts
 
 ```typescript
@@ -20703,109 +20672,6 @@ export class EmailCreateTaskDialog {
       .split(' ')
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
       .join(' ');
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/exports/ui/exports-page.ts
-
-```typescript
-import { Component, inject, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { downloadWithAuthHeader } from '../../../services/api/http-download';
-import { TokenService } from '../../../services/api/token-service';
-import { TRPCService } from '../../../services/api/trpc-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import type { DataExportRecordType } from '../../../../../../../libs/common/src';
-import { environment } from '../../../../environments/environment';
-
-@Component({
-  selector: 'pc-exports-page',
-  imports: [Icon, SpinOnClickDirective],
-  templateUrl: './exports-page.html',
-})
-export class ExportsPage extends TRPCService<any> {
-  private readonly alertSvc = inject(AlertService);
-  private readonly tokenSvc = inject(TokenService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly jobs = signal<DataExportRecordType[]>([]);
-  protected readonly _loading = createLoadingGate();
-
-  constructor() {
-    super();
-    void this.load();
-  }
-
-  protected refresh() {
-    void this.load();
-  }
-
-  protected formatDate(dateStr: string) {
-    try {
-      return new Date(dateStr).toLocaleString();
-    } catch {
-      return '';
-    }
-  }
-
-  protected isExpired(job: DataExportRecordType): boolean {
-    const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
-    return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
-  }
-
-  protected async downloadJob(job: DataExportRecordType) {
-    if (this.isExpired(job)) {
-      this.alertSvc.showError('This export has expired (30+ days old).');
-      return;
-    }
-    if (job.status !== 'completed') {
-      this.alertSvc.showError('Export is not ready yet.');
-      return;
-    }
-    // Stream download via the protected REST endpoint
-    try {
-      const token = this.tokenSvc.getAuthToken();
-      await downloadWithAuthHeader(`${environment.apiUrl}/api/exports/download/${job.id}`, token, job.file_name);
-    } catch {
-      this.alertSvc.showError('Failed to download export');
-    }
-  }
-
-  protected async deleteJob(job: DataExportRecordType) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Export',
-      message: `Are you sure you want to delete "${job.file_name}"? This will permanently delete the file from the server.`,
-      variant: 'danger',
-    });
-
-    if (!confirmed) return;
-
-    const end = this._loading.begin();
-    try {
-      await (this.api as any).exports.delete.mutate({ id: job.id });
-      this.alertSvc.showSuccess('Export deleted successfully.');
-      await this.load();
-    } catch {
-      this.alertSvc.showError('Failed to delete export. Please try again.');
-    } finally {
-      end();
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    try {
-      const list = await (this.api as any).exports.list.query();
-      this.jobs.set(list ?? []);
-    } catch {
-      this.alertSvc.showError('Failed to load exports. Please try again.');
-    } finally {
-      end();
-    }
   }
 }
 ```
@@ -27388,186 +27254,6 @@ export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuth
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/users-grid.ts
-
-```typescript
-import { Component, inject } from '@angular/core';
-import { escapeHtml } from '../../../../../../../libs/common/src';
-import { UserService } from '@frontend/services/user.service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { UserAdminService } from '../services/useradmin-service';
-
-@Component({
-  selector: 'pc-users-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Users"
-        i18n-title
-        description="Manage administrator and staff user accounts, assign security roles, and monitor system access."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="true"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="true"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="add-users"
-        i18n-plusIcon
-        [isCellEditableOverride]="isCellEditableBind"
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: UserAdminService },
-    provideDataGridConfig({ messages: { exportEntity: 'users', exportFileName: 'users-export.csv' } }),
-  ],
-})
-export class UsersGridComponent {
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
-  protected col = [
-    {
-      field: 'email',
-      headerName: 'Email',
-      editable: true,
-      cellRenderer: (p: any) => {
-        let avatarUrl: string | null = p.data?.avatar_url ?? null;
-        const firstName: string = p.data?.first_name ?? '';
-        const lastName: string = p.data?.last_name ?? '';
-        const name = [firstName, lastName].filter(Boolean).join(' ') || p.value || '?';
-        const emailVal = p.value || '';
-
-        let avatarHtml = '';
-        if (avatarUrl) {
-          avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-          // Names and avatar URLs are user-controlled — escape before interpolating into HTML
-          avatarHtml = `<img src="${escapeHtml(avatarUrl ?? '')}" alt="${escapeHtml(name)}" class="w-5 h-5 rounded-full object-cover ring-1 ring-base-200" />`;
-        } else {
-          const PALETTES = [
-            'bg-indigo-500/20 text-indigo-700',
-            'bg-teal-500/20 text-teal-700',
-            'bg-purple-500/20 text-purple-700',
-            'bg-rose-500/20 text-rose-700',
-            'bg-amber-500/20 text-amber-700',
-            'bg-emerald-500/20 text-emerald-700',
-            'bg-blue-500/20 text-blue-700',
-            'bg-orange-500/20 text-orange-700',
-            'bg-pink-500/20 text-pink-700',
-            'bg-cyan-500/20 text-cyan-700',
-          ];
-          let sum = 0;
-          for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
-          const colorClass = PALETTES[sum % PALETTES.length];
-          const parts = name.split(/\s+/);
-          const initials =
-            parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : name[0].toUpperCase();
-          avatarHtml = `<div class="w-5 h-5 rounded-full ${colorClass} flex items-center justify-center font-bold text-[10px] ring-1 ring-base-200">
-            <span>${escapeHtml(initials)}</span>
-          </div>`;
-        }
-
-        return `<div class="flex items-center gap-2 py-0.5 h-full">
-          ${avatarHtml}
-          <span>${escapeHtml(emailVal)}</span>
-        </div>`;
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true },
-    {
-      field: 'role',
-      headerName: 'Role',
-      editable: true,
-      cellEditorParams: () => {
-        const currentUserRole = this.auth.getUser()?.role;
-        const values = [];
-        if (currentUserRole !== 'admin') {
-          values.push({ value: 'owner', label: 'Owner' });
-        }
-        values.push({ value: 'admin', label: 'Admin' });
-        values.push({ value: 'user', label: 'User' });
-        values.push({ value: 'viewer', label: 'Viewer' });
-        return { values };
-      },
-      valueFormatter: (p: any) => {
-        const val = p.value ?? p.data?.role;
-        if (val === 'owner') return 'Owner';
-        if (val === 'admin') return 'Admin';
-        if (val === 'user') return 'User';
-        if (val === 'viewer') return 'Viewer';
-        return val || '';
-      },
-    },
-    {
-      field: 'verified',
-      headerName: 'Verified',
-      editable: false,
-      valueFormatter: (p: any) => (this.coerceBoolean(p.value ?? p.data?.verified) ? 'Yes' : 'No'),
-      cellRenderer: (p: any) => (this.coerceBoolean(p.value ?? p.data?.verified) ? 'Yes' : 'No'),
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Updated',
-      hide: true,
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.updated_at),
-    },
-    {
-      field: 'created_at',
-      headerName: 'Created',
-      hide: true,
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.created_at),
-    },
-  ];
-
-  public readonly isCellEditableBind = (row: any, col: any): boolean => {
-    if (!col.editable) return false;
-
-    const currentUserRole = this.auth.getUser()?.role;
-
-    if (currentUserRole === 'admin') {
-      if (row.role === 'owner') {
-        if (col.field === 'role' || col.field === 'verified') {
-          return false;
-        }
-      }
-    }
-
-    return true;
-  };
-
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
-  }
-
-  private coerceBoolean(value: unknown): boolean {
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    if (typeof value === 'string') {
-      const normalized = value.trim().toLowerCase();
-      if (['yes', 'true', '1'].includes(normalized)) return true;
-      if (['no', 'false', '0'].includes(normalized)) return false;
-    }
-    return false;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.html
 
 ```html
@@ -28880,166 +28566,35 @@ export class Navbar implements OnDestroy {
 }
 ```
 
-## File: apps/frontend/src/app/services/api/trpc-service.ts
+## File: apps/frontend/src/app/services/api/http-download.ts
 
 ```typescript
-import { inject, Service } from '@angular/core';
-import { Router } from '@angular/router';
-import { getAllOptionsType } from '../../../../../../libs/common/src';
-import { ErrorService } from '../error.service';
-import {
-  TRPCClient,
-  TRPCClientError,
-  TRPCLink,
-  createTRPCClient,
-  httpLink as trpcHttpLink,
-  loggerLink,
-} from '@trpc/client';
-import { observable } from '@trpc/server/observable';
-import superjson from 'superjson';
-
-import { get, set } from 'idb-keyval';
-
-import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
-import { environment } from '../../../environments/environment';
-import { TokenService } from './token-service';
-import { refreshLink } from './trpc-refreshlink';
-import { ApiError } from './api-error';
-
-@Service()
-export class TRPCService<T> {
-  protected readonly errorSvc = inject(ErrorService);
-
-  protected readonly router = inject(Router);
-
-  protected readonly tokenService = inject(TokenService);
-
-  protected ac = new AbortController();
-
-  public readonly api: TRPCClient<TRPCRouter>;
-
-  constructor() {
-    this.api = createTRPCClient<TRPCRouter>({
-      links: [
-        loggerLink(),
-        refreshLink(this.tokenService, this.router),
-        errorLink(this.errorSvc),
-        httpUnbatchedLink(this.tokenService, () => this.ac.signal),
-      ],
-    });
+/**
+ * Download a protected file by fetching it with an Authorization header and
+ * saving the resulting blob via a temporary object URL. Keeps the auth token
+ * out of the URL, where it would leak into browser history, proxy/server
+ * logs, and Referer headers.
+ */
+export async function downloadWithAuthHeader(url: string, token: string | null, filename: string): Promise<void> {
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    throw new Error(`Download failed with status ${res.status}`);
   }
-
-  public abort() {
-    this.ac.abort();
-    this.ac = new AbortController(); // create a fresh controller so future calls are not auto-aborted
-  }
-
-  protected async runCachedCall(
-    apiCall: Promise<Partial<T>[]>,
-    apiName: string,
-    options: getAllOptionsType,
-    refresh: boolean,
-  ) {
-    const keyToHash = JSON.stringify({ apiName, ...options });
-    const hashedKey = this.hash(keyToHash);
-    const payload = await get(hashedKey);
-    let data = payload?.expires > Date.now() ? payload.data : null;
-
-    if (refresh || !data || data.length === 0) {
-      data = await apiCall;
-      await set(hashedKey, { expires: this.addDays(1), data });
-    }
-
-    return data;
-  }
-
-  private addDays(days: number) {
-    const date = new Date(Date.now());
-    date.setDate(date.getDate() + days);
-    return date;
-  }
-
-  private hash(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash |= 0;
-    }
-    return (hash >>> 0).toString(36);
-  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  // Revoke on a delay: Safari can still be streaming the blob into the
+  // download when click() returns, and revoking immediately truncates it.
+  setTimeout(() => URL.revokeObjectURL(objectUrl), OBJECT_URL_REVOKE_DELAY_MS);
 }
 
-function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
-  const GENERIC_LOGIN_MSG = 'Please check your email and password and try again';
-  const GENERIC_INPUT_MSG = 'Please check your input and try again';
-
-  return () =>
-    ({ next, op }) =>
-      observable((observer) => {
-        const unsubscribe = next(op).subscribe({
-          next: (value) => observer.next(value),
-          error: (err) => {
-            const meta = op.context as { skipErrorHandler?: boolean } | undefined;
-            let finalErr: any = err;
-
-            if (err instanceof TRPCClientError) {
-              const code = err.data?.code as string | undefined;
-              const path = op.path ?? '';
-              const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
-
-              let msg = err.message;
-              if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
-                // Server formatter should already do this; this is just a client fallback
-                msg = GENERIC_LOGIN_MSG;
-              } else if (code === 'BAD_REQUEST') {
-                const isValidationError = (err.data as { isZodError?: boolean })?.isZodError;
-                if (isValidationError) {
-                  msg = GENERIC_INPUT_MSG;
-                }
-              }
-              finalErr = new ApiError(msg, err);
-            }
-
-            // Aborted requests (component teardown, superseded loads) are not
-            // user-facing failures — never toast them.
-            if (!meta?.skipErrorHandler && !isAbortError(err)) {
-              errorSvc.handle(finalErr);
-            }
-
-            observer.error(finalErr);
-          },
-          complete: () => observer.complete(),
-        });
-        return unsubscribe;
-      });
-}
-
-function isAbortError(err: unknown): boolean {
-  if (err instanceof DOMException && err.name === 'AbortError') return true;
-  if (err instanceof TRPCClientError) {
-    const cause: unknown = err.cause;
-    return cause instanceof DOMException && cause.name === 'AbortError';
-  }
-  return false;
-}
-
-function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSignal) {
-  return trpcHttpLink({
-    url: environment.apiUrl,
-    transformer: superjson,
-    // Combine the per-request signal tRPC provides with the service-level
-    // controller so TRPCService.abort() actually cancels in-flight requests.
-    fetch(input, init) {
-      const signals: AbortSignal[] = [getAbortSignal()];
-      if (init?.signal) signals.push(init.signal);
-      return globalThis.fetch(input, { ...init, signal: AbortSignal.any(signals) });
-    },
-    headers() {
-      const authToken = tokenSvc.getAuthToken();
-      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
-    },
-  });
-}
+const OBJECT_URL_REVOKE_DELAY_MS = 10_000;
 ```
 
 ## File: apps/frontend/src/app/services/api/trpc-types.ts
@@ -29258,18 +28813,12 @@ export class UserService extends TRPCService<any> {
 
   public resolveAvatarUrl(url: string | null | undefined): string | null {
     if (!url) return null;
-    let resolved = url;
+    // Backend avatar URLs arrive pre-signed (short-lived, single-file scope),
+    // so no session token is appended — tokens in URLs leak into history/logs.
     if (url.startsWith('/') && !url.startsWith('//')) {
-      resolved = environment.apiUrl + url;
+      return environment.apiUrl + url;
     }
-    if (!resolved.includes('token=')) {
-      const token = this.tokenService.getAuthToken();
-      if (token) {
-        const separator = resolved.includes('?') ? '&' : '?';
-        resolved = `${resolved}${separator}token=${encodeURIComponent(token)}`;
-      }
-    }
-    return resolved;
+    return url;
   }
 }
 ```
@@ -30528,65 +30077,6 @@ export class DateFormatService {
     }
   }
 }
-```
-
-## File: apps/frontend/src/app/app.config.ts
-
-```typescript
-import type { ApplicationConfig } from '@angular/core';
-import { ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
-import { provideTanStackQuery, QueryClient } from '@tanstack/angular-query-experimental';
-import { ENVIRONMENT } from './environment-token';
-import { RouteReuseStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
-import { Loader } from '@googlemaps/js-api-loader';
-import { environment } from '../environments/environment';
-
-import { appRoutes } from './app.routes';
-import { CustomRouteReuseStrategy } from './routing/route-reuse-strategy';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { jsendInterceptor } from './services/jsend.interceptor';
-import { GlobalErrorHandler } from './services/global-error-handler';
-
-export function initSession(authService: AuthService) {
-  return async () => {
-    await authService.init();
-  };
-}
-
-export const appConfig: ApplicationConfig = {
-  providers: [
-    { provide: ENVIRONMENT, useValue: environment },
-    provideTanStackQuery(new QueryClient()),
-    {
-      provide: Loader,
-      useFactory: () => {
-        const env = inject(ENVIRONMENT);
-        return new Loader({
-          apiKey: env.googleMapsApiKey,
-          libraries: ['places'],
-        });
-      },
-    },
-
-    {
-      provide: RouteReuseStrategy,
-      useClass: CustomRouteReuseStrategy,
-    },
-    provideRouter(appRoutes, withComponentInputBinding()),
-
-    provideZonelessChangeDetection(),
-
-    provideAppInitializer(() => {
-      const initializerFn = initSession(inject(AuthService));
-      return initializerFn();
-    }),
-
-    provideHttpClient(withInterceptors([jsendInterceptor])),
-
-    { provide: ErrorHandler, useClass: GlobalErrorHandler },
-  ],
-};
 ```
 
 ## File: apps/frontend/src/app/app.routes.ts
@@ -32922,149 +32412,104 @@ export class EventViewComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
+## File: apps/frontend/src/app/experiences/exports/ui/exports-page.ts
 
 ```typescript
-import { DatePipe } from '@angular/common';
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { environment } from '../../../../environments/environment';
 import { downloadWithAuthHeader } from '../../../services/api/http-download';
 import { TokenService } from '../../../services/api/token-service';
+import { TRPCService } from '../../../services/api/trpc-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { FilesService } from '../services/files.service';
+import type { DataExportRecordType } from '../../../../../../../libs/common/src';
+import { environment } from '../../../../environments/environment';
 
 @Component({
-  selector: 'pc-files-grid',
-  imports: [DatePipe, Icon],
-  templateUrl: './files-grid.html',
-  styles: [
-    `
-      :host {
-        display: block;
-        min-height: 100%;
-      }
-    `,
-  ],
+  selector: 'pc-exports-page',
+  imports: [Icon, SpinOnClickDirective],
+  templateUrl: './exports-page.html',
 })
-export class FilesGrid implements OnInit {
-  private readonly filesSvc = inject(FilesService);
+export class ExportsPage extends TRPCService<any> {
   private readonly alertSvc = inject(AlertService);
   private readonly tokenSvc = inject(TokenService);
   private readonly dialogs = inject(ConfirmDialogService);
 
-  protected readonly files = signal<any[]>([]);
-  protected readonly filteredFiles = signal<any[]>([]);
-  protected readonly isLoading = signal(false);
-  protected readonly isUploading = signal(false);
-  protected readonly searchQuery = signal('');
+  protected readonly jobs = signal<DataExportRecordType[]>([]);
+  protected readonly _loading = createLoadingGate();
 
-  public ngOnInit() {
-    void this.loadFiles();
+  constructor() {
+    super();
+    void this.load();
   }
 
-  protected async onFileSelectedForUpload(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input?.files?.[0];
-    if (!file) return;
+  protected refresh() {
+    void this.load();
+  }
 
-    this.isUploading.set(true);
+  protected formatDate(dateStr: string) {
     try {
-      await this.filesSvc.uploadFileDirectly(file);
-      this.alertSvc.showSuccess('File uploaded successfully via SAS URL');
-      await this.loadFiles();
-    } catch (err) {
-      console.error(err);
-      this.alertSvc.showError('Failed to upload file');
-    } finally {
-      this.isUploading.set(false);
-      input.value = '';
+      return new Date(dateStr).toLocaleString();
+    } catch {
+      return '';
     }
   }
 
-  protected async loadFiles() {
-    this.isLoading.set(true);
-    try {
-      const res = await this.filesSvc.getAll();
-      this.files.set(res.rows || []);
-      this.applyFilter();
-    } catch (_err) {
-      this.alertSvc.showError('Failed to load files');
-    } finally {
-      this.isLoading.set(false);
-    }
+  protected isExpired(job: DataExportRecordType): boolean {
+    const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
+    return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
   }
 
-  protected onSearch(event: Event) {
-    const val = (event.target as HTMLInputElement).value;
-    this.searchQuery.set(val);
-    this.applyFilter();
-  }
-
-  private applyFilter() {
-    const q = this.searchQuery().toLowerCase().trim();
-    if (!q) {
-      this.filteredFiles.set(this.files());
+  protected async downloadJob(job: DataExportRecordType) {
+    if (this.isExpired(job)) {
+      this.alertSvc.showError('This export has expired (30+ days old).');
       return;
     }
-
-    const filtered = this.files().filter(
-      (f) => f.filename?.toLowerCase().includes(q) || f.mime_type?.toLowerCase().includes(q),
-    );
-    this.filteredFiles.set(filtered);
-  }
-
-  protected formatBytes(bytes: number | null | undefined): string {
-    if (bytes == null) return '—';
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  }
-
-  protected getFileIcon(mime: string | null | undefined): PcIconNameType {
-    if (!mime) return 'document';
-    if (mime.includes('image')) return 'file-image';
-    if (mime.includes('pdf')) return 'file-pdf';
-    if (mime.includes('audio')) return 'file-audio';
-    if (mime.includes('video')) return 'file-video';
-    if (mime.includes('zip') || mime.includes('tar') || mime.includes('gz')) return 'file-archive';
-    return 'document';
-  }
-
-  protected async downloadFile(file: any) {
+    if (job.status !== 'completed') {
+      this.alertSvc.showError('Export is not ready yet.');
+      return;
+    }
+    // Stream download via the protected REST endpoint
     try {
       const token = this.tokenSvc.getAuthToken();
-      await downloadWithAuthHeader(
-        `${environment.apiUrl}/api/files/download/${file.id}`,
-        token,
-        file.filename || 'download',
-      );
+      await downloadWithAuthHeader(`${environment.apiUrl}/api/exports/download/${job.id}`, token, job.file_name);
     } catch {
-      this.alertSvc.showError('Failed to download file');
+      this.alertSvc.showError('Failed to download export');
     }
   }
 
-  protected async deleteFile(file: any) {
+  protected async deleteJob(job: DataExportRecordType) {
     const confirmed = await this.dialogs.confirm({
-      title: 'Confirm Delete',
-      message: `Are you sure you want to permanently delete "${file.filename}"? This will clean up the database record and delete the file from cloud storage.`,
+      title: 'Delete Export',
+      message: `Are you sure you want to delete "${job.file_name}"? This will permanently delete the file from the server.`,
       variant: 'danger',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
     });
 
     if (!confirmed) return;
 
+    const end = this._loading.begin();
     try {
-      await this.filesSvc.delete(file.id);
-      this.alertSvc.showSuccess('File deleted successfully');
-      await this.loadFiles();
-    } catch (_err) {
-      this.alertSvc.showError('Failed to delete file');
+      await (this.api as any).exports.delete.mutate({ id: job.id });
+      this.alertSvc.showSuccess('Export deleted successfully.');
+      await this.load();
+    } catch {
+      this.alertSvc.showError('Failed to delete export. Please try again.');
+    } finally {
+      end();
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    try {
+      const list = await (this.api as any).exports.list.query();
+      this.jobs.set(list ?? []);
+    } catch {
+      this.alertSvc.showError('Failed to load exports. Please try again.');
+    } finally {
+      end();
     }
   }
 }
@@ -38798,6 +38243,186 @@ export class UserEditComponent {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/users/ui/users-grid.ts
+
+```typescript
+import { Component, inject } from '@angular/core';
+import { escapeHtml } from '../../../../../../../libs/common/src';
+import { UserService } from '@frontend/services/user.service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { UserAdminService } from '../services/useradmin-service';
+
+@Component({
+  selector: 'pc-users-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Users"
+        i18n-title
+        description="Manage administrator and staff user accounts, assign security roles, and monitor system access."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="true"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="true"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        plusIcon="add-users"
+        i18n-plusIcon
+        [isCellEditableOverride]="isCellEditableBind"
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: UserAdminService },
+    provideDataGridConfig({ messages: { exportEntity: 'users', exportFileName: 'users-export.csv' } }),
+  ],
+})
+export class UsersGridComponent {
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
+  protected col = [
+    {
+      field: 'email',
+      headerName: 'Email',
+      editable: true,
+      cellRenderer: (p: any) => {
+        let avatarUrl: string | null = p.data?.avatar_url ?? null;
+        const firstName: string = p.data?.first_name ?? '';
+        const lastName: string = p.data?.last_name ?? '';
+        const name = [firstName, lastName].filter(Boolean).join(' ') || p.value || '?';
+        const emailVal = p.value || '';
+
+        let avatarHtml = '';
+        if (avatarUrl) {
+          avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+          // Names and avatar URLs are user-controlled — escape before interpolating into HTML
+          avatarHtml = `<img src="${escapeHtml(avatarUrl ?? '')}" alt="${escapeHtml(name)}" class="w-5 h-5 rounded-full object-cover ring-1 ring-base-200" />`;
+        } else {
+          const PALETTES = [
+            'bg-indigo-500/20 text-indigo-700',
+            'bg-teal-500/20 text-teal-700',
+            'bg-purple-500/20 text-purple-700',
+            'bg-rose-500/20 text-rose-700',
+            'bg-amber-500/20 text-amber-700',
+            'bg-emerald-500/20 text-emerald-700',
+            'bg-blue-500/20 text-blue-700',
+            'bg-orange-500/20 text-orange-700',
+            'bg-pink-500/20 text-pink-700',
+            'bg-cyan-500/20 text-cyan-700',
+          ];
+          let sum = 0;
+          for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+          const colorClass = PALETTES[sum % PALETTES.length];
+          const parts = name.split(/\s+/);
+          const initials =
+            parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : name[0].toUpperCase();
+          avatarHtml = `<div class="w-5 h-5 rounded-full ${colorClass} flex items-center justify-center font-bold text-[10px] ring-1 ring-base-200">
+            <span>${escapeHtml(initials)}</span>
+          </div>`;
+        }
+
+        return `<div class="flex items-center gap-2 py-0.5 h-full">
+          ${avatarHtml}
+          <span>${escapeHtml(emailVal)}</span>
+        </div>`;
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true },
+    {
+      field: 'role',
+      headerName: 'Role',
+      editable: true,
+      cellEditorParams: () => {
+        const currentUserRole = this.auth.getUser()?.role;
+        const values = [];
+        if (currentUserRole !== 'admin') {
+          values.push({ value: 'owner', label: 'Owner' });
+        }
+        values.push({ value: 'admin', label: 'Admin' });
+        values.push({ value: 'user', label: 'User' });
+        values.push({ value: 'viewer', label: 'Viewer' });
+        return { values };
+      },
+      valueFormatter: (p: any) => {
+        const val = p.value ?? p.data?.role;
+        if (val === 'owner') return 'Owner';
+        if (val === 'admin') return 'Admin';
+        if (val === 'user') return 'User';
+        if (val === 'viewer') return 'Viewer';
+        return val || '';
+      },
+    },
+    {
+      field: 'verified',
+      headerName: 'Verified',
+      editable: false,
+      valueFormatter: (p: any) => (this.coerceBoolean(p.value ?? p.data?.verified) ? 'Yes' : 'No'),
+      cellRenderer: (p: any) => (this.coerceBoolean(p.value ?? p.data?.verified) ? 'Yes' : 'No'),
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Updated',
+      hide: true,
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.updated_at),
+    },
+    {
+      field: 'created_at',
+      headerName: 'Created',
+      hide: true,
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.created_at),
+    },
+  ];
+
+  public readonly isCellEditableBind = (row: any, col: any): boolean => {
+    if (!col.editable) return false;
+
+    const currentUserRole = this.auth.getUser()?.role;
+
+    if (currentUserRole === 'admin') {
+      if (row.role === 'owner') {
+        if (col.field === 'role' || col.field === 'verified') {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
+  private formatDate(value: unknown): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '';
+    return this.dateFormatter.format(date);
+  }
+
+  private coerceBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['yes', 'true', '1'].includes(normalized)) return true;
+      if (['no', 'false', '0'].includes(normalized)) return false;
+    }
+    return false;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.ts
 
 ```typescript
@@ -39674,158 +39299,166 @@ const DRAWER_STATE_KEY = 'pc-drawerState';
 const SIDEBAR_FAVOURITES_KEY = 'pc-sidebar-favourites';
 ```
 
-## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
+## File: apps/frontend/src/app/services/api/trpc-service.ts
 
 ```typescript
-import type { Router } from '@angular/router';
-import type { TRPCLink } from '@trpc/client';
-import { type Operation, TRPCClientError, createTRPCClient, httpLink } from '@trpc/client';
-import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
+import { inject, Service } from '@angular/core';
+import { Router } from '@angular/router';
+import { getAllOptionsType } from '../../../../../../libs/common/src';
+import { ErrorService } from '../error.service';
+import {
+  TRPCClient,
+  TRPCClientError,
+  TRPCLink,
+  createTRPCClient,
+  httpLink as trpcHttpLink,
+  loggerLink,
+} from '@trpc/client';
+import { observable } from '@trpc/server/observable';
 import superjson from 'superjson';
 
-import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
+import { get, set } from 'idb-keyval';
+
+import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
 import { environment } from '../../../environments/environment';
-import type { TokenService } from './token-service';
+import { TokenService } from './token-service';
+import { refreshLink } from './trpc-refreshlink';
+import { ApiError } from './api-error';
 
-interface JwtPayload {
-  exp?: number;
+@Service()
+export class TRPCService<T> {
+  protected readonly errorSvc = inject(ErrorService);
 
-  [key: string]: unknown;
-}
+  protected readonly router = inject(Router);
 
-type NextLink = (op: Operation) => ObservableLike;
+  protected readonly tokenService = inject(TokenService);
 
-/* ------------------------------------------------------------------ */
-/* Local helper types                                                 */
-/* ------------------------------------------------------------------ */
-type ObservableLike<T = unknown, E = unknown> = {
-  subscribe(args: Observer<T, E>): Unsubscribable;
-};
+  protected ac = new AbortController();
 
-/* ------------------------------------------------------------------ */
-/* Core helpers                                                       */
-/* ------------------------------------------------------------------ */
+  public readonly api: TRPCClient<TRPCRouter>;
 
-function forwardOp(op: Operation, next: NextLink, observer: Observer<unknown, unknown>): void {
-  next(op).subscribe({
-    next: (value) => observer.next(value),
-    error: (err) => observer.error(err),
-    complete: () => observer.complete(),
-  });
-}
+  constructor() {
+    this.api = createTRPCClient<TRPCRouter>({
+      links: [
+        loggerLink(),
+        refreshLink(this.tokenService, this.router),
+        errorLink(this.errorSvc),
+        httpUnbatchedLink(this.tokenService, () => this.ac.signal),
+      ],
+    });
+  }
 
-let activeRefreshPromise: Promise<string | null> | null = null;
+  public abort() {
+    this.ac.abort();
+    this.ac = new AbortController(); // create a fresh controller so future calls are not auto-aborted
+  }
 
-async function getValidAuthToken(tokenSvc: TokenService): Promise<string | null> {
-  const authToken = tokenSvc.getAuthToken();
-  if (!authToken) return null;
+  protected async runCachedCall(
+    apiCall: Promise<Partial<T>[]>,
+    apiName: string,
+    options: getAllOptionsType,
+    refresh: boolean,
+  ) {
+    const keyToHash = JSON.stringify({ apiName, ...options });
+    const hashedKey = this.hash(keyToHash);
+    const payload = await get(hashedKey);
+    let data = payload?.expires > Date.now() ? payload.data : null;
 
-  if (isTokenExpired(authToken)) {
-    if (activeRefreshPromise) {
-      return activeRefreshPromise;
+    if (refresh || !data || data.length === 0) {
+      data = await apiCall;
+      await set(hashedKey, { expires: this.addDays(1), data });
     }
 
-    const refreshToken = tokenSvc.getRefreshToken();
-    if (!refreshToken) throw new TRPCClientError('No refresh token available');
-
-    activeRefreshPromise = (async () => {
-      try {
-        const payload = await trpcRetryClient.auth.renewAuthToken.mutate({
-          auth_token: authToken,
-          refresh_token: refreshToken,
-        });
-
-        tokenSvc.set({
-          auth_token: payload.auth_token,
-          refresh_token: payload.refresh_token,
-        });
-        return payload.auth_token;
-      } finally {
-        activeRefreshPromise = null;
-      }
-    })();
-
-    return activeRefreshPromise;
+    return data;
   }
-  return authToken;
-}
 
-function handleRefreshFailure(
-  err: unknown,
-  tokenSvc: TokenService,
-  router: Router,
-  observer: Observer<unknown, unknown>,
-): void {
-  tokenSvc.clearAll();
-  void router.navigate(['/signin'], { queryParams: { returnUrl: router.url } });
-  observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
-}
+  private addDays(days: number) {
+    const date = new Date(Date.now());
+    date.setDate(date.getDate() + days);
+    return date;
+  }
 
-function isTokenExpired(token: string | null | undefined, leewaySeconds = 30): boolean {
-  if (!token) return true;
-
-  const payload = parseJwt(token);
-  if (!payload?.exp) return true;
-
-  const now = Math.floor(Date.now() / 1000);
-  return payload.exp < now + leewaySeconds;
-}
-
-function parseJwt(token: string): JwtPayload | null {
-  try {
-    const [, payload = ''] = token.split('.');
-    // JWT payloads are base64url-encoded and unpadded; atob only accepts
-    // standard base64, so convert the alphabet and restore padding first.
-    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
-    return JSON.parse(atob(padded)) as JwtPayload;
-  } catch {
-    return null;
+  private hash(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return (hash >>> 0).toString(36);
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Public TRPC link                                                   */
-/* ------------------------------------------------------------------ */
+function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
+  const GENERIC_LOGIN_MSG = 'Please check your email and password and try again';
+  const GENERIC_INPUT_MSG = 'Please check your input and try again';
 
-export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouter> {
-  return () => {
-    return ({ op, next }: { op: Operation; next: NextLink }) =>
-      observable<unknown, unknown>((observer) => {
-        void (async () => {
-          try {
-            const authToken = await getValidAuthToken(tokenSvc);
+  return () =>
+    ({ next, op }) =>
+      observable((observer) => {
+        const unsubscribe = next(op).subscribe({
+          next: (value) => observer.next(value),
+          error: (err) => {
+            const meta = op.context as { skipErrorHandler?: boolean } | undefined;
+            let finalErr: any = err;
 
-            // Guest user — just forward.
-            if (!authToken) {
-              forwardOp(op, next, observer);
-              return;
+            if (err instanceof TRPCClientError) {
+              const code = err.data?.code as string | undefined;
+              const path = op.path ?? '';
+              const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
+
+              let msg = err.message;
+              if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
+                // Server formatter should already do this; this is just a client fallback
+                msg = GENERIC_LOGIN_MSG;
+              } else if (code === 'BAD_REQUEST') {
+                const isValidationError = (err.data as { isZodError?: boolean })?.isZodError;
+                if (isValidationError) {
+                  msg = GENERIC_INPUT_MSG;
+                }
+              }
+              finalErr = new ApiError(msg, err);
             }
 
-            // Authenticated user — forward with (possibly refreshed) token.
-            forwardOp(op, next, observer);
-          } catch (err) {
-            handleRefreshFailure(err, tokenSvc, router, observer);
-          }
-        })();
+            // Aborted requests (component teardown, superseded loads) are not
+            // user-facing failures — never toast them.
+            if (!meta?.skipErrorHandler && !isAbortError(err)) {
+              errorSvc.handle(finalErr);
+            }
 
-        // No teardown logic needed.
-        return;
+            observer.error(finalErr);
+          },
+          complete: () => observer.complete(),
+        });
+        return unsubscribe;
       });
-  };
 }
 
-/* ------------------------------------------------------------------ */
-/* Dedicated client for token refreshes only                          */
-/* ------------------------------------------------------------------ */
-const trpcRetryClient = createTRPCClient<TRPCRouter>({
-  links: [
-    httpLink({
-      url: environment.apiUrl,
-      transformer: superjson,
-    }),
-  ],
-});
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  if (err instanceof TRPCClientError) {
+    const cause: unknown = err.cause;
+    return cause instanceof DOMException && cause.name === 'AbortError';
+  }
+  return false;
+}
+
+function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSignal) {
+  return trpcHttpLink({
+    url: environment.apiUrl,
+    transformer: superjson,
+    // Combine the per-request signal tRPC provides with the service-level
+    // controller so TRPCService.abort() actually cancels in-flight requests.
+    fetch(input, init) {
+      const signals: AbortSignal[] = [getAbortSignal()];
+      if (init?.signal) signals.push(init.signal);
+      return globalThis.fetch(input, { ...init, signal: AbortSignal.any(signals) });
+    },
+    headers() {
+      const authToken = tokenSvc.getAuthToken();
+      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+    },
+  });
+}
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/grid-tag-filter.service.ts
@@ -40201,6 +39834,65 @@ export class SingleselectFilterComponent {
 
   select = output<string>();
 }
+```
+
+## File: apps/frontend/src/app/app.config.ts
+
+```typescript
+import type { ApplicationConfig } from '@angular/core';
+import { ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
+import { provideTanStackQuery, QueryClient } from '@tanstack/angular-query-experimental';
+import { ENVIRONMENT } from './environment-token';
+import { RouteReuseStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { Loader } from '@googlemaps/js-api-loader';
+import { environment } from '../environments/environment';
+
+import { appRoutes } from './app.routes';
+import { CustomRouteReuseStrategy } from './routing/route-reuse-strategy';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { jsendInterceptor } from './services/jsend.interceptor';
+import { GlobalErrorHandler } from './services/global-error-handler';
+
+export function initSession(authService: AuthService) {
+  return async () => {
+    await authService.init();
+  };
+}
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    { provide: ENVIRONMENT, useValue: environment },
+    provideTanStackQuery(new QueryClient()),
+    {
+      provide: Loader,
+      useFactory: () => {
+        const env = inject(ENVIRONMENT);
+        return new Loader({
+          apiKey: env.googleMapsApiKey,
+          libraries: ['places'],
+        });
+      },
+    },
+
+    {
+      provide: RouteReuseStrategy,
+      useClass: CustomRouteReuseStrategy,
+    },
+    provideRouter(appRoutes, withComponentInputBinding()),
+
+    provideZonelessChangeDetection(),
+
+    provideAppInitializer(() => {
+      const initializerFn = initSession(inject(AuthService));
+      return initializerFn();
+    }),
+
+    provideHttpClient(withInterceptors([jsendInterceptor])),
+
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
+  ],
+};
 ```
 
 ## File: apps/frontend/eslint.config.cjs
@@ -41180,6 +40872,154 @@ export class EventFormComponent {
     if (Number.isNaN(date.getTime())) return '';
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { environment } from '../../../../environments/environment';
+import { downloadWithAuthHeader } from '../../../services/api/http-download';
+import { TokenService } from '../../../services/api/token-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { FilesService } from '../services/files.service';
+
+@Component({
+  selector: 'pc-files-grid',
+  imports: [DatePipe, Icon],
+  templateUrl: './files-grid.html',
+  styles: [
+    `
+      :host {
+        display: block;
+        min-height: 100%;
+      }
+    `,
+  ],
+})
+export class FilesGrid implements OnInit {
+  private readonly filesSvc = inject(FilesService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly tokenSvc = inject(TokenService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly files = signal<any[]>([]);
+  protected readonly filteredFiles = signal<any[]>([]);
+  protected readonly isLoading = signal(false);
+  protected readonly isUploading = signal(false);
+  protected readonly searchQuery = signal('');
+
+  public ngOnInit() {
+    void this.loadFiles();
+  }
+
+  protected async onFileSelectedForUpload(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input?.files?.[0];
+    if (!file) return;
+
+    this.isUploading.set(true);
+    try {
+      await this.filesSvc.uploadFileDirectly(file);
+      this.alertSvc.showSuccess('File uploaded successfully via SAS URL');
+      await this.loadFiles();
+    } catch (err) {
+      console.error(err);
+      this.alertSvc.showError('Failed to upload file');
+    } finally {
+      this.isUploading.set(false);
+      input.value = '';
+    }
+  }
+
+  protected async loadFiles() {
+    this.isLoading.set(true);
+    try {
+      const res = await this.filesSvc.getAll();
+      this.files.set(res.rows || []);
+      this.applyFilter();
+    } catch (_err) {
+      this.alertSvc.showError('Failed to load files');
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  protected onSearch(event: Event) {
+    const val = (event.target as HTMLInputElement).value;
+    this.searchQuery.set(val);
+    this.applyFilter();
+  }
+
+  private applyFilter() {
+    const q = this.searchQuery().toLowerCase().trim();
+    if (!q) {
+      this.filteredFiles.set(this.files());
+      return;
+    }
+
+    const filtered = this.files().filter(
+      (f) => f.filename?.toLowerCase().includes(q) || f.mime_type?.toLowerCase().includes(q),
+    );
+    this.filteredFiles.set(filtered);
+  }
+
+  protected formatBytes(bytes: number | null | undefined): string {
+    if (bytes == null) return '—';
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  protected getFileIcon(mime: string | null | undefined): PcIconNameType {
+    if (!mime) return 'document';
+    if (mime.includes('image')) return 'file-image';
+    if (mime.includes('pdf')) return 'file-pdf';
+    if (mime.includes('audio')) return 'file-audio';
+    if (mime.includes('video')) return 'file-video';
+    if (mime.includes('zip') || mime.includes('tar') || mime.includes('gz')) return 'file-archive';
+    return 'document';
+  }
+
+  protected async downloadFile(file: any) {
+    try {
+      const token = this.tokenSvc.getAuthToken();
+      await downloadWithAuthHeader(
+        `${environment.apiUrl}/api/files/download/${file.id}`,
+        token,
+        file.filename || 'download',
+      );
+    } catch {
+      this.alertSvc.showError('Failed to download file');
+    }
+  }
+
+  protected async deleteFile(file: any) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Confirm Delete',
+      message: `Are you sure you want to permanently delete "${file.filename}"? This will clean up the database record and delete the file from cloud storage.`,
+      variant: 'danger',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+    });
+
+    if (!confirmed) return;
+
+    try {
+      await this.filesSvc.delete(file.id);
+      this.alertSvc.showSuccess('File deleted successfully');
+      await this.loadFiles();
+    } catch (_err) {
+      this.alertSvc.showError('Failed to delete file');
+    }
   }
 }
 ```
@@ -42584,438 +42424,6 @@ export class ShiftsGridComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-grid.ts
-
-```typescript
-import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { TasksService } from '@experiences/tasks/services/tasks-service';
-import { UserService } from '@frontend/services/user.service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Component({
-  selector: 'pc-tasks-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Tasks"
-        i18n-title
-        description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableImport]="false"
-        [showArchiveIcon]="true"
-        (importCSV)="openImportDialog()"
-        plusIcon="add-task"
-        i18n-plusIcon
-        addRoute="add"
-        i18n-addRoute
-      ></pc-datagrid>
-    </div>
-
-    <pc-csv-importer
-      [open]="importerOpen()"
-      [title]="'Import Tasks from CSV'"
-      [mappableFields]="mappableFields"
-      [autoMapHeader]="autoMapHeader"
-      [summary]="importSummary()"
-      (submit)="onImportSubmit($event)"
-      (close)="importerOpen.set(false); importSummary.set(null)"
-      (closeSummary)="importSummary.set(null)"
-    />
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: TasksService },
-    provideDataGridConfig({ messages: { exportEntity: 'tasks', exportFileName: 'tasks-export.csv' } }),
-  ],
-})
-export class TasksGrid implements OnInit {
-  private readonly userService = inject(UserService);
-  private readonly tasksService = inject(TasksService);
-  public readonly _loading = createLoadingGate();
-  private readonly grid = viewChild<DataGrid<'tasks', UpdateTaskType>>('grid');
-
-  private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
-  private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
-  private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
-  private readonly statusOptions = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
-
-  private readonly unassignedLabel = 'Not Assigned';
-
-  // Users for Assigned To (populated via AuthService on init)
-  private userIds: string[] = [];
-  private userLabels: string[] = [];
-  private usersById = new Map<string, string>();
-  private usersAvatarById = new Map<string, string | null>();
-
-  // Fields we will accept from CSV for future import support
-  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
-
-  protected col = [
-    { field: 'id', headerName: 'ID' },
-    {
-      field: 'assigned_to',
-      headerName: 'Assigned To',
-      editable: true,
-      valueGetter: (p: any) => this.assignedToValueGetter(p),
-      valueFormatter: (p: any) => this.assignedToValueFormatter(p),
-      cellRenderer: (p: any) => this.renderAssignedCell(p.data?.assigned_to),
-      cellEditorParams: () => ({
-        values: [null, ...this.userIds],
-        labels: [this.unassignedLabel, ...this.userLabels],
-      }),
-      valueSetter: (p: any) => this.assignToValueSetter(p),
-    },
-    { field: 'name', headerName: 'Task', editable: true },
-    {
-      field: 'status',
-      headerName: 'Status',
-      editable: true,
-      cellRenderer: (p: any) => this.renderStatusBadge(p.value),
-      cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
-      valueSetter: (p: any) => this.statusValueSetter(p),
-    },
-    {
-      field: 'priority',
-      headerName: 'Priority',
-      editable: true,
-      cellRenderer: (p: any) => this.renderPriorityBadge(p.value),
-      cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
-      valueSetter: (p: any) => this.priorityValueSetter(p),
-    },
-    {
-      field: 'due_at',
-      headerName: 'Due',
-      editable: true,
-      valueGetter: (p: any) => this.toDateOnly(p.data?.due_at ?? p.value),
-      valueSetter: (p: any) => this.dueAtValueSetter(p),
-      valueFormatter: (p: any) => this.formatDate(p.value),
-      cellClass: (p: any) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
-    },
-    {
-      field: 'createdby_id',
-      headerName: 'Created By',
-      editable: false,
-      valueFormatter: (p: any) => this.userNameForId(p.value),
-      cellRenderer: (p: any) => this.renderCreatedByCell(p.data?.createdby_id),
-      // Provide filter options using known user labels
-      cellEditorParams: () => ({ values: this.userLabels }),
-    },
-  ];
-  protected importSummary = signal<CsvImportSummary | null>(null);
-  protected importerOpen = signal(false);
-  protected isArchiveMode = signal(false);
-
-  public ngOnInit() {
-    void this.initialize();
-  }
-
-  private async initialize() {
-    // Load users to drive Assigned To options and name mapping
-    try {
-      const users = await this.userService.getUsers();
-      this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
-      this.usersAvatarById = new Map(users.map((u) => [String(u.id), (u as any).avatar_url ?? null]));
-      this.userIds = users.map((u) => String(u.id));
-      this.userLabels = users.map((u) => `${u.first_name}`);
-    } catch {
-      /* no op */
-    }
-  }
-
-  protected readonly autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      task: 'name',
-      title: 'name',
-      subject: 'name',
-      status: 'status',
-      priority: 'priority',
-      due: 'due_at',
-      duedate: 'due_at',
-      dueat: 'due_at',
-      assignedto: 'assigned_to',
-      assignee: 'assigned_to',
-      owner: 'assigned_to',
-    };
-    return map[key] || '';
-  };
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-
-    try {
-      const res = await this.tasksService.import(rows, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e: any) {
-      const msg = e?.message || e?.data?.message || 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  protected openImportDialog() {
-    this.importSummary.set(null);
-    this.importerOpen.set(true);
-  }
-
-  private assignToValueSetter(p: any) {
-    const val =
-      p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
-        ? null
-        : String(p.newValue);
-    if ((p.data as Record<string, any>)['assigned_to'] !== val) {
-      (p.data as Record<string, any>)['assigned_to'] = val;
-      return true;
-    }
-    return false;
-  }
-
-  private assignedToValueFormatter(p: any) {
-    const v = p.value;
-    if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
-    return this.usersById.get(String(v)) ?? String(v ?? '');
-  }
-
-  private assignedToValueGetter(p: any) {
-    const id = p.data?.assigned_to ?? p.value;
-    if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
-    return String(id);
-  }
-
-  private dueAtValueSetter(p: any) {
-    const val: string = p.newValue || p.value || '';
-    // ensure only YYYY-MM-DD is stored
-    const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
-    if ((p.data as Record<string, any>)['due_at'] !== dateOnly) {
-      (p.data as Record<string, any>)['due_at'] = dateOnly;
-      return true;
-    }
-    return false;
-  }
-
-  private formatDate(value: any) {
-    if (!value) return '';
-    const d = new Date(this.toDateOnly(value));
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString();
-  }
-
-  private isOverdue(row: any): boolean {
-    if (!row) return false;
-
-    const status = String(row.status ?? '').toLowerCase();
-    if (status === 'done' || status === 'canceled') return false;
-
-    const due = this.toDateOnly(row.due_at);
-    if (!due) return false;
-
-    const today = this.toDateOnly(new Date());
-    // Simple lexical compare works for YYYY-MM-DD
-    return due < today;
-  }
-
-  private normalizeChoice(value: string) {
-    return value.replace(/[_\s-]+/g, '').toLowerCase();
-  }
-
-  private parsePriorityLabel(label: string) {
-    const norm = this.normalizeChoice(label);
-    const idx = this.priorityLabels.findIndex((l) => this.normalizeChoice(l) === norm);
-    if (idx >= 0) return this.priorityOptions[idx];
-    const optionIdx = this.priorityOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
-    return optionIdx >= 0 ? this.priorityOptions[optionIdx] : label;
-  }
-
-  private parseStatusLabel(label: string) {
-    const norm = this.normalizeChoice(label);
-    const idx = this.statusLabels.findIndex((l) => this.normalizeChoice(l) === norm);
-    if (idx >= 0) return this.statusOptions[idx];
-    const optionIdx = this.statusOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
-    return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
-  }
-
-  private priorityValueSetter(p: any) {
-    const v = this.parsePriorityLabel(p.newValue);
-    if ((p.data as Record<string, any>)['priority'] !== v) {
-      (p.data as Record<string, any>)['priority'] = v;
-      return true;
-    }
-    return false;
-  }
-
-  private renderAssignedCell(value: string | null | undefined) {
-    const v = value == null ? '' : String(value);
-    const isUnassigned = !v || v === this.unassignedLabel;
-    const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
-    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
-    const safeLabel = escapeHtml(label);
-    if (isUnassigned) {
-      return `<span class="badge badge-error badge-sm">${safeLabel}</span>`;
-    }
-    let avatarUrl = this.usersAvatarById.get(v);
-    if (avatarUrl) {
-      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-      return `
-        <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeLabel}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${safeLabel}</span>
-        </div>
-      `;
-    }
-    const initial = escapeHtml(label.slice(0, 1).toUpperCase() || '?');
-    const colors = [
-      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
-      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
-      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
-      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
-      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-    ];
-    let sum = 0;
-    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
-    const colorClass = colors[sum % colors.length];
-
-    return `
-      <div class="flex items-center gap-1.5 py-0.5">
-        <div class="avatar placeholder">
-          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
-            <span>${initial}</span>
-          </div>
-        </div>
-        <span class="text-xs font-medium">${safeLabel}</span>
-      </div>
-    `;
-  }
-
-  private renderCreatedByCell(value: string | null | undefined) {
-    const label = value == null ? '' : String(value);
-    if (!label) {
-      return `<span class="text-base-content/30">—</span>`;
-    }
-    const resolvedName = this.usersById.get(label) ?? label;
-    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
-    const safeName = escapeHtml(resolvedName);
-    let avatarUrl = this.usersAvatarById.get(label);
-    if (avatarUrl) {
-      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-      return `
-        <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeName}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${safeName}</span>
-        </div>
-      `;
-    }
-    const initial = escapeHtml(resolvedName.slice(0, 1).toUpperCase() || '?');
-    const colors = [
-      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      'bg-violet-500/20 text-violet-700 dark:text-violet-300',
-      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
-      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
-    ];
-    let sum = 0;
-    for (let i = 0; i < resolvedName.length; i++) sum += resolvedName.charCodeAt(i);
-    const colorClass = colors[sum % colors.length];
-
-    return `
-      <div class="flex items-center gap-1.5 py-0.5">
-        <div class="avatar placeholder">
-          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
-            <span>${initial}</span>
-          </div>
-        </div>
-        <span class="text-xs font-medium">${safeName}</span>
-      </div>
-    `;
-  }
-
-  private renderPriorityBadge(value: string | null | undefined) {
-    if (!value) return '';
-    const v = String(value);
-    const cls =
-      v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
-    const label = this.toTitle(v);
-    return `<span class="badge ${cls} badge-sm">${label}</span>`;
-  }
-
-  private renderStatusBadge(value: string | null | undefined) {
-    if (!value) return '';
-    const v = String(value);
-    const cls =
-      v === 'done'
-        ? 'badge-success'
-        : v === 'in_progress'
-          ? 'badge-info'
-          : v === 'blocked'
-            ? 'badge-error'
-            : v === 'canceled'
-              ? 'badge-neutral'
-              : 'badge-ghost';
-    const label = this.toTitle(v);
-    return `<span class="badge ${cls} badge-sm">${label}</span>`;
-  }
-
-  private statusValueSetter(p: any) {
-    const v = this.parseStatusLabel(p.newValue);
-    if ((p.data as Record<string, any>)['status'] !== v) {
-      (p.data as Record<string, any>)['status'] = v;
-      return true;
-    }
-    return false;
-  }
-
-  private toDateOnly(v: any): string {
-    if (!v) return '';
-    const str = typeof v === 'string' ? v : new Date(v).toISOString();
-    return str.length > 10 ? str.slice(0, 10) : str;
-  }
-
-  private toTitle(v: string) {
-    return v
-      .replace(/[_-]+/g, ' ')
-      .split(' ')
-      .map((s) => (s ? s[0]!.toUpperCase() + s.slice(1) : s))
-      .join(' ');
-  }
-
-  private userNameForId(id: string | number | null | undefined) {
-    if (id === null || id === undefined || id === '') return '';
-    const key = String(id);
-    return this.usersById.get(key) ?? '';
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/teams/ui/team-form.ts
 
 ```typescript
@@ -43880,6 +43288,160 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
     this.handlers.clear();
   }
 }
+```
+
+## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
+
+```typescript
+import type { Router } from '@angular/router';
+import type { TRPCLink } from '@trpc/client';
+import { type Operation, TRPCClientError, createTRPCClient, httpLink } from '@trpc/client';
+import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
+import superjson from 'superjson';
+
+import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
+import { environment } from '../../../environments/environment';
+import type { TokenService } from './token-service';
+
+interface JwtPayload {
+  exp?: number;
+
+  [key: string]: unknown;
+}
+
+type NextLink = (op: Operation) => ObservableLike;
+
+/* ------------------------------------------------------------------ */
+/* Local helper types                                                 */
+/* ------------------------------------------------------------------ */
+type ObservableLike<T = unknown, E = unknown> = {
+  subscribe(args: Observer<T, E>): Unsubscribable;
+};
+
+/* ------------------------------------------------------------------ */
+/* Core helpers                                                       */
+/* ------------------------------------------------------------------ */
+
+function forwardOp(op: Operation, next: NextLink, observer: Observer<unknown, unknown>): void {
+  next(op).subscribe({
+    next: (value) => observer.next(value),
+    error: (err) => observer.error(err),
+    complete: () => observer.complete(),
+  });
+}
+
+let activeRefreshPromise: Promise<string | null> | null = null;
+
+async function getValidAuthToken(tokenSvc: TokenService): Promise<string | null> {
+  const authToken = tokenSvc.getAuthToken();
+  if (!authToken) return null;
+
+  if (isTokenExpired(authToken)) {
+    if (activeRefreshPromise) {
+      return activeRefreshPromise;
+    }
+
+    const refreshToken = tokenSvc.getRefreshToken();
+    if (!refreshToken) throw new TRPCClientError('No refresh token available');
+
+    activeRefreshPromise = (async () => {
+      try {
+        const payload = await trpcRetryClient.auth.renewAuthToken.mutate({
+          auth_token: authToken,
+          refresh_token: refreshToken,
+        });
+
+        tokenSvc.set({
+          auth_token: payload.auth_token,
+          refresh_token: payload.refresh_token,
+        });
+        return payload.auth_token;
+      } finally {
+        activeRefreshPromise = null;
+      }
+    })();
+
+    return activeRefreshPromise;
+  }
+  return authToken;
+}
+
+function handleRefreshFailure(
+  err: unknown,
+  tokenSvc: TokenService,
+  router: Router,
+  observer: Observer<unknown, unknown>,
+): void {
+  tokenSvc.clearAll();
+  void router.navigate(['/signin'], { queryParams: { returnUrl: router.url } });
+  observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
+}
+
+function isTokenExpired(token: string | null | undefined, leewaySeconds = 30): boolean {
+  if (!token) return true;
+
+  const payload = parseJwt(token);
+  if (!payload?.exp) return true;
+
+  const now = Math.floor(Date.now() / 1000);
+  return payload.exp < now + leewaySeconds;
+}
+
+function parseJwt(token: string): JwtPayload | null {
+  try {
+    const [, payload = ''] = token.split('.');
+    // JWT payloads are base64url-encoded and unpadded; atob only accepts
+    // standard base64, so convert the alphabet and restore padding first.
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    return JSON.parse(atob(padded)) as JwtPayload;
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Public TRPC link                                                   */
+/* ------------------------------------------------------------------ */
+
+export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouter> {
+  return () => {
+    return ({ op, next }: { op: Operation; next: NextLink }) =>
+      observable<unknown, unknown>((observer) => {
+        void (async () => {
+          try {
+            const authToken = await getValidAuthToken(tokenSvc);
+
+            // Guest user — just forward.
+            if (!authToken) {
+              forwardOp(op, next, observer);
+              return;
+            }
+
+            // Authenticated user — forward with (possibly refreshed) token.
+            forwardOp(op, next, observer);
+          } catch (err) {
+            handleRefreshFailure(err, tokenSvc, router, observer);
+          }
+        })();
+
+        // No teardown logic needed.
+        return;
+      });
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Dedicated client for token refreshes only                          */
+/* ------------------------------------------------------------------ */
+const trpcRetryClient = createTRPCClient<TRPCRouter>({
+  links: [
+    httpLink({
+      url: environment.apiUrl,
+      transformer: superjson,
+    }),
+  ],
+});
 ```
 
 ## File: apps/frontend/src/app/dashboard.routes.ts
@@ -46000,6 +45562,438 @@ const STATUS_LABEL: Record<string, string> = {
   done: 'Done',
   canceled: 'Canceled',
 };
+```
+
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-grid.ts
+
+```typescript
+import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { TasksService } from '@experiences/tasks/services/tasks-service';
+import { UserService } from '@frontend/services/user.service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Component({
+  selector: 'pc-tasks-grid',
+  imports: [DataGrid, CsvImportComponent, FormsModule],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Tasks"
+        i18n-title
+        description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableImport]="false"
+        [showArchiveIcon]="true"
+        (importCSV)="openImportDialog()"
+        plusIcon="add-task"
+        i18n-plusIcon
+        addRoute="add"
+        i18n-addRoute
+      ></pc-datagrid>
+    </div>
+
+    <pc-csv-importer
+      [open]="importerOpen()"
+      [title]="'Import Tasks from CSV'"
+      [mappableFields]="mappableFields"
+      [autoMapHeader]="autoMapHeader"
+      [summary]="importSummary()"
+      (submit)="onImportSubmit($event)"
+      (close)="importerOpen.set(false); importSummary.set(null)"
+      (closeSummary)="importSummary.set(null)"
+    />
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: TasksService },
+    provideDataGridConfig({ messages: { exportEntity: 'tasks', exportFileName: 'tasks-export.csv' } }),
+  ],
+})
+export class TasksGrid implements OnInit {
+  private readonly userService = inject(UserService);
+  private readonly tasksService = inject(TasksService);
+  public readonly _loading = createLoadingGate();
+  private readonly grid = viewChild<DataGrid<'tasks', UpdateTaskType>>('grid');
+
+  private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
+  private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
+  private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
+  private readonly statusOptions = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+
+  private readonly unassignedLabel = 'Not Assigned';
+
+  // Users for Assigned To (populated via AuthService on init)
+  private userIds: string[] = [];
+  private userLabels: string[] = [];
+  private usersById = new Map<string, string>();
+  private usersAvatarById = new Map<string, string | null>();
+
+  // Fields we will accept from CSV for future import support
+  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
+
+  protected col = [
+    { field: 'id', headerName: 'ID' },
+    {
+      field: 'assigned_to',
+      headerName: 'Assigned To',
+      editable: true,
+      valueGetter: (p: any) => this.assignedToValueGetter(p),
+      valueFormatter: (p: any) => this.assignedToValueFormatter(p),
+      cellRenderer: (p: any) => this.renderAssignedCell(p.data?.assigned_to),
+      cellEditorParams: () => ({
+        values: [null, ...this.userIds],
+        labels: [this.unassignedLabel, ...this.userLabels],
+      }),
+      valueSetter: (p: any) => this.assignToValueSetter(p),
+    },
+    { field: 'name', headerName: 'Task', editable: true },
+    {
+      field: 'status',
+      headerName: 'Status',
+      editable: true,
+      cellRenderer: (p: any) => this.renderStatusBadge(p.value),
+      cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
+      valueSetter: (p: any) => this.statusValueSetter(p),
+    },
+    {
+      field: 'priority',
+      headerName: 'Priority',
+      editable: true,
+      cellRenderer: (p: any) => this.renderPriorityBadge(p.value),
+      cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
+      valueSetter: (p: any) => this.priorityValueSetter(p),
+    },
+    {
+      field: 'due_at',
+      headerName: 'Due',
+      editable: true,
+      valueGetter: (p: any) => this.toDateOnly(p.data?.due_at ?? p.value),
+      valueSetter: (p: any) => this.dueAtValueSetter(p),
+      valueFormatter: (p: any) => this.formatDate(p.value),
+      cellClass: (p: any) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
+    },
+    {
+      field: 'createdby_id',
+      headerName: 'Created By',
+      editable: false,
+      valueFormatter: (p: any) => this.userNameForId(p.value),
+      cellRenderer: (p: any) => this.renderCreatedByCell(p.data?.createdby_id),
+      // Provide filter options using known user labels
+      cellEditorParams: () => ({ values: this.userLabels }),
+    },
+  ];
+  protected importSummary = signal<CsvImportSummary | null>(null);
+  protected importerOpen = signal(false);
+  protected isArchiveMode = signal(false);
+
+  public ngOnInit() {
+    void this.initialize();
+  }
+
+  private async initialize() {
+    // Load users to drive Assigned To options and name mapping
+    try {
+      const users = await this.userService.getUsers();
+      this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
+      this.usersAvatarById = new Map(users.map((u) => [String(u.id), (u as any).avatar_url ?? null]));
+      this.userIds = users.map((u) => String(u.id));
+      this.userLabels = users.map((u) => `${u.first_name}`);
+    } catch {
+      /* no op */
+    }
+  }
+
+  protected readonly autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      task: 'name',
+      title: 'name',
+      subject: 'name',
+      status: 'status',
+      priority: 'priority',
+      due: 'due_at',
+      duedate: 'due_at',
+      dueat: 'due_at',
+      assignedto: 'assigned_to',
+      assignee: 'assigned_to',
+      owner: 'assigned_to',
+    };
+    return map[key] || '';
+  };
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+
+    try {
+      const res = await this.tasksService.import(rows, skippedReported, fileName || undefined);
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.grid()?.refresh();
+    } catch (e: any) {
+      const msg = e?.message || e?.data?.message || 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
+  }
+
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.importerOpen.set(true);
+  }
+
+  private assignToValueSetter(p: any) {
+    const val =
+      p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
+        ? null
+        : String(p.newValue);
+    if ((p.data as Record<string, any>)['assigned_to'] !== val) {
+      (p.data as Record<string, any>)['assigned_to'] = val;
+      return true;
+    }
+    return false;
+  }
+
+  private assignedToValueFormatter(p: any) {
+    const v = p.value;
+    if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
+    return this.usersById.get(String(v)) ?? String(v ?? '');
+  }
+
+  private assignedToValueGetter(p: any) {
+    const id = p.data?.assigned_to ?? p.value;
+    if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
+    return String(id);
+  }
+
+  private dueAtValueSetter(p: any) {
+    const val: string = p.newValue || p.value || '';
+    // ensure only YYYY-MM-DD is stored
+    const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
+    if ((p.data as Record<string, any>)['due_at'] !== dateOnly) {
+      (p.data as Record<string, any>)['due_at'] = dateOnly;
+      return true;
+    }
+    return false;
+  }
+
+  private formatDate(value: any) {
+    if (!value) return '';
+    const d = new Date(this.toDateOnly(value));
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString();
+  }
+
+  private isOverdue(row: any): boolean {
+    if (!row) return false;
+
+    const status = String(row.status ?? '').toLowerCase();
+    if (status === 'done' || status === 'canceled') return false;
+
+    const due = this.toDateOnly(row.due_at);
+    if (!due) return false;
+
+    const today = this.toDateOnly(new Date());
+    // Simple lexical compare works for YYYY-MM-DD
+    return due < today;
+  }
+
+  private normalizeChoice(value: string) {
+    return value.replace(/[_\s-]+/g, '').toLowerCase();
+  }
+
+  private parsePriorityLabel(label: string) {
+    const norm = this.normalizeChoice(label);
+    const idx = this.priorityLabels.findIndex((l) => this.normalizeChoice(l) === norm);
+    if (idx >= 0) return this.priorityOptions[idx];
+    const optionIdx = this.priorityOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
+    return optionIdx >= 0 ? this.priorityOptions[optionIdx] : label;
+  }
+
+  private parseStatusLabel(label: string) {
+    const norm = this.normalizeChoice(label);
+    const idx = this.statusLabels.findIndex((l) => this.normalizeChoice(l) === norm);
+    if (idx >= 0) return this.statusOptions[idx];
+    const optionIdx = this.statusOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
+    return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
+  }
+
+  private priorityValueSetter(p: any) {
+    const v = this.parsePriorityLabel(p.newValue);
+    if ((p.data as Record<string, any>)['priority'] !== v) {
+      (p.data as Record<string, any>)['priority'] = v;
+      return true;
+    }
+    return false;
+  }
+
+  private renderAssignedCell(value: string | null | undefined) {
+    const v = value == null ? '' : String(value);
+    const isUnassigned = !v || v === this.unassignedLabel;
+    const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
+    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
+    const safeLabel = escapeHtml(label);
+    if (isUnassigned) {
+      return `<span class="badge badge-error badge-sm">${safeLabel}</span>`;
+    }
+    let avatarUrl = this.usersAvatarById.get(v);
+    if (avatarUrl) {
+      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+      return `
+        <div class="flex items-center gap-1.5 py-0.5">
+          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeLabel}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${safeLabel}</span>
+        </div>
+      `;
+    }
+    const initial = escapeHtml(label.slice(0, 1).toUpperCase() || '?');
+    const colors = [
+      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
+      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
+      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
+      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
+      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
+      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+    ];
+    let sum = 0;
+    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
+    const colorClass = colors[sum % colors.length];
+
+    return `
+      <div class="flex items-center gap-1.5 py-0.5">
+        <div class="avatar placeholder">
+          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
+            <span>${initial}</span>
+          </div>
+        </div>
+        <span class="text-xs font-medium">${safeLabel}</span>
+      </div>
+    `;
+  }
+
+  private renderCreatedByCell(value: string | null | undefined) {
+    const label = value == null ? '' : String(value);
+    if (!label) {
+      return `<span class="text-base-content/30">—</span>`;
+    }
+    const resolvedName = this.usersById.get(label) ?? label;
+    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
+    const safeName = escapeHtml(resolvedName);
+    let avatarUrl = this.usersAvatarById.get(label);
+    if (avatarUrl) {
+      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+      return `
+        <div class="flex items-center gap-1.5 py-0.5">
+          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeName}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${safeName}</span>
+        </div>
+      `;
+    }
+    const initial = escapeHtml(resolvedName.slice(0, 1).toUpperCase() || '?');
+    const colors = [
+      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
+      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+      'bg-violet-500/20 text-violet-700 dark:text-violet-300',
+      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
+      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
+    ];
+    let sum = 0;
+    for (let i = 0; i < resolvedName.length; i++) sum += resolvedName.charCodeAt(i);
+    const colorClass = colors[sum % colors.length];
+
+    return `
+      <div class="flex items-center gap-1.5 py-0.5">
+        <div class="avatar placeholder">
+          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
+            <span>${initial}</span>
+          </div>
+        </div>
+        <span class="text-xs font-medium">${safeName}</span>
+      </div>
+    `;
+  }
+
+  private renderPriorityBadge(value: string | null | undefined) {
+    if (!value) return '';
+    const v = String(value);
+    const cls =
+      v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
+    const label = this.toTitle(v);
+    return `<span class="badge ${cls} badge-sm">${label}</span>`;
+  }
+
+  private renderStatusBadge(value: string | null | undefined) {
+    if (!value) return '';
+    const v = String(value);
+    const cls =
+      v === 'done'
+        ? 'badge-success'
+        : v === 'in_progress'
+          ? 'badge-info'
+          : v === 'blocked'
+            ? 'badge-error'
+            : v === 'canceled'
+              ? 'badge-neutral'
+              : 'badge-ghost';
+    const label = this.toTitle(v);
+    return `<span class="badge ${cls} badge-sm">${label}</span>`;
+  }
+
+  private statusValueSetter(p: any) {
+    const v = this.parseStatusLabel(p.newValue);
+    if ((p.data as Record<string, any>)['status'] !== v) {
+      (p.data as Record<string, any>)['status'] = v;
+      return true;
+    }
+    return false;
+  }
+
+  private toDateOnly(v: any): string {
+    if (!v) return '';
+    const str = typeof v === 'string' ? v : new Date(v).toISOString();
+    return str.length > 10 ? str.slice(0, 10) : str;
+  }
+
+  private toTitle(v: string) {
+    return v
+      .replace(/[_-]+/g, ' ')
+      .split(' ')
+      .map((s) => (s ? s[0]!.toUpperCase() + s.slice(1) : s))
+      .join(' ');
+  }
+
+  private userNameForId(id: string | number | null | undefined) {
+    if (id === null || id === undefined || id === '') return '';
+    const key = String(id);
+    return this.usersById.get(key) ?? '';
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts

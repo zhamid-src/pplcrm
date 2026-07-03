@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { createSigner, createVerifier } from 'fast-jwt';
+import { signedFileDownloadUrl } from '../../lib/signed-download';
 import type { QueryResult, Transaction } from 'kysely';
 
 import type {
@@ -277,7 +278,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
       const typedUser = user as { id: string; verified: boolean; passkey_setup_dismissed_at: Date | null };
       const profile = (await this.profiles.getOneByAuthId(String(typedUser.id))) as Models['profiles'] | undefined;
-      const avatar_url = profile?.['avatar_file_id'] ? `/api/files/download/${profile['avatar_file_id']}` : null;
+      const avatar_url = profile?.['avatar_file_id']
+        ? signedFileDownloadUrl(String(profile['avatar_file_id']), auth.tenant_id)
+        : null;
 
       let tenant_deletion_scheduled_at: Date | null = null;
       let tenant_paused_at: Date | null = null;
@@ -475,7 +478,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return {
       rows: result.rows.map((row) => ({
         ...this.sanitizeUser(row),
-        avatar_url: row['avatar_file_id'] ? `/api/files/download/${row['avatar_file_id']}` : null,
+        avatar_url: row['avatar_file_id'] ? signedFileDownloadUrl(String(row['avatar_file_id']), auth.tenant_id) : null,
       })),
       count: result.count,
     };
@@ -509,7 +512,9 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const profile = (await this.profiles.getOneByAuthId(String(authUser.id))) as Models['profiles'] | undefined;
     const stats = await this.buildUserStats(auth, String(authUser.id));
     const sanitized = this.sanitizeUser({ ...authUser, profile });
-    const avatar_url = profile?.['avatar_file_id'] ? `/api/files/download/${profile['avatar_file_id']}` : null;
+    const avatar_url = profile?.['avatar_file_id']
+      ? signedFileDownloadUrl(String(profile['avatar_file_id']), auth.tenant_id)
+      : null;
     return { ...sanitized, avatar_url, stats };
   }
 
@@ -519,7 +524,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     });
     return result.rows.map((row) => ({
       ...this.sanitizeUser(row),
-      avatar_url: row['avatar_file_id'] ? `/api/files/download/${row['avatar_file_id']}` : null,
+      avatar_url: row['avatar_file_id'] ? signedFileDownloadUrl(String(row['avatar_file_id']), auth.tenant_id) : null,
     }));
   }
 
@@ -1438,7 +1443,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         }
       });
 
-    return { file_id: finalFileId, avatar_url: `/api/files/download/${finalFileId}` };
+    return { file_id: finalFileId, avatar_url: signedFileDownloadUrl(String(finalFileId), auth.tenant_id) };
   }
 
   public async verify2FA(email: string, code: string, ipAddress?: string, userAgent?: string, rememberMe?: boolean) {
