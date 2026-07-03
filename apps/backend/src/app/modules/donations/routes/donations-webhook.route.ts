@@ -1,7 +1,7 @@
 import type { FastifyPluginCallback } from 'fastify';
 import Stripe from 'stripe';
-import { BaseRepository } from '../../../lib/base.repo';
 import { env } from '../../../../env';
+import { BaseRepository } from '../../../lib/base.repo';
 import { logger } from '../../../logger';
 
 const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
@@ -16,6 +16,7 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
     let tenantId = 'unknown';
     try {
       // Look up tenant setting donations.webhook_token with matching value
+      // eslint-disable-next-line local/no-unscoped-db-query
       const tokenRow = await BaseRepository.dbInstance
         .selectFrom('settings')
         .select('tenant_id')
@@ -52,7 +53,11 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 
       const stripeKey = (keyRow?.value as string | undefined) || env.stripeSecretKey;
 
-      const isMock = !stripeKey || stripeKey.includes('MockKey') || stripeKey === '';
+      // Mock mode (unsigned payload parsing) is ONLY permitted outside production.
+      // In production we must never accept an unauthenticated webhook body, or an
+      // attacker who knows the tenant's webhook token could forge payment events.
+      const isProduction = process.env['NODE_ENV'] === 'production';
+      const isMock = !isProduction && (!stripeKey || stripeKey.includes('MockKey') || stripeKey === '');
 
       let event: Stripe.Event;
 
@@ -60,6 +65,9 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
         // Direct parse in mock/local dev mode
         event = JSON.parse(payload);
       } else {
+        if (!stripeKey || stripeKey.includes('MockKey')) {
+          throw new Error('Tenant donations stripe secret key not configured.');
+        }
         if (!webhookSecret) {
           throw new Error('Tenant donations stripe webhook secret not configured.');
         }
