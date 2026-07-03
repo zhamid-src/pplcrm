@@ -192,3 +192,32 @@ npx nx test backend
 ```
 
 All lint errors and warnings must be resolved — do not suppress them with disable comments unless there is no alternative, and always explain why in an inline comment.
+
+### Pre-commit hook — what actually gates a commit
+
+A Husky `pre-commit` hook runs `lint-staged` on every commit, which for staged files runs:
+
+```jsonc
+"*.{ts,html}": "eslint --fix --report-unused-disable-directives-severity=off",
+"*.{ts,html,css,json,md}": "prettier --write"
+```
+
+**`nx lint <project>` and the pre-commit hook are NOT equivalent.** `nx lint` skips some files (notably `*.spec.ts`) and does not report every type-aware rule the flat ESLint config enforces. It is entirely possible for `npx nx lint backend` to pass while the pre-commit hook rejects the same code. A green `nx lint` is necessary but **not sufficient**.
+
+Before committing, verify with the _same_ command the hook uses, on the files you actually changed:
+
+```bash
+npx eslint <changed-file-1> <changed-file-2> --report-unused-disable-directives-severity=off
+```
+
+This is the authoritative check — if it exits 0, the pre-commit hook will pass.
+
+### Type-aware rules that most often block commits
+
+These are enforced on **all** `.ts` files, including tests and mocks, and are the usual reason a commit is rejected after `nx lint` looked clean:
+
+- **`@typescript-eslint/no-misused-promises`** — do not pass an `async`/Promise-returning function where a `void`-returning callback is expected (event handlers, `mockImplementation`, array callbacks, Fastify hooks). Give the callback an explicit `: void` return type and do the async work another way, or make the surrounding API accept a Promise.
+- **`@typescript-eslint/no-floating-promises`** — every Promise must be `await`-ed, `.catch()`-ed, or explicitly discarded with the `void` operator.
+- **`@typescript-eslint/require-await`** — no `async` on a function that never `await`s.
+
+When adding test mocks, prefer a synchronous callback with an explicit `: void` return over `async () => {}` or `() => Promise.resolve()` — both of the latter trip `no-misused-promises` in a void-return context.
