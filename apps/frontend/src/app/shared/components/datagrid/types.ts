@@ -1,5 +1,8 @@
 export type SortDir = 'asc' | 'desc' | 'none';
 
+/** Row shape served by the grid APIs: a dynamic record keyed by column field. */
+export type GridRow = Record<string, unknown>;
+
 export interface HeaderRef {
   column: {
     id: string;
