@@ -68,6 +68,6 @@ describe('TasksBoard', () => {
 
     expect(mockTasksSvc.update).toHaveBeenCalledWith('t1', { status: 'in_progress' });
     expect(mockTasksSvc.triggerRefresh).toHaveBeenCalled();
-    expect(component['tasks']()[0].status).toBe('in_progress');
+    expect(component['tasks']()[0]?.status).toBe('in_progress');
   });
 });
