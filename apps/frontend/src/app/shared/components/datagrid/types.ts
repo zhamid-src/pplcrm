@@ -14,5 +14,5 @@ export interface HeaderRef {
     getSize?: () => number;
     setSize?: (px: number) => void;
   };
-  table?: any;
+  table?: unknown;
 }

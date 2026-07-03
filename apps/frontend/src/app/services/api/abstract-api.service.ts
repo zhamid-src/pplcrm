@@ -21,7 +21,7 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
   public triggerRefresh() {
     this.refreshCount.update((n) => n + 1);
   }
-  public abstract add(row: U, options?: any): Promise<Partial<T> | unknown>;
+  public abstract add(row: U, options?: unknown): Promise<Partial<T> | unknown>;
 
   public abstract addMany(rows: U[]): Promise<Partial<T>[] | unknown>;
 
@@ -54,21 +54,19 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
     return results.every(Boolean);
   }
 
-  public abstract detachTag(
-    id: string,
-    tag_name: string,
-    type?: 'tag' | 'issue',
-  ): Promise<unknown>;
+  public abstract detachTag(id: string, tag_name: string, type?: 'tag' | 'issue'): Promise<unknown>;
 
-  public abstract getAll(options?: getAllOptionsType): Promise<{ rows: { [x: string]: any }[]; count: number }>;
+  public abstract getAll(options?: getAllOptionsType): Promise<{ rows: Record<string, unknown>[]; count: number }>;
 
-  public abstract getAllArchived(options?: getAllOptionsType): Promise<{ rows: { [x: string]: any }[]; count: number }>;
+  public abstract getAllArchived(
+    options?: getAllOptionsType,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }>;
 
-  public abstract getById(id: string): Promise<any>;
+  public abstract getById(id: string): Promise<unknown>;
 
   public abstract getTags(id: string, type?: 'tag' | 'issue'): Promise<string[]>;
 
-  public abstract update(id: string, data: U, options?: any): Promise<Partial<T>[] | unknown>;
+  public abstract update(id: string, data: U, options?: unknown): Promise<Partial<T>[] | unknown>;
 
   public abstract exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType>;
 

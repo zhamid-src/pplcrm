@@ -13955,7 +13955,7 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
   public triggerRefresh() {
     this.refreshCount.update((n) => n + 1);
   }
-  public abstract add(row: U, options?: any): Promise<Partial<T> | unknown>;
+  public abstract add(row: U, options?: unknown): Promise<Partial<T> | unknown>;
 
   public abstract addMany(rows: U[]): Promise<Partial<T>[] | unknown>;
 
@@ -13990,15 +13990,17 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
 
   public abstract detachTag(id: string, tag_name: string, type?: 'tag' | 'issue'): Promise<unknown>;
 
-  public abstract getAll(options?: getAllOptionsType): Promise<{ rows: { [x: string]: any }[]; count: number }>;
+  public abstract getAll(options?: getAllOptionsType): Promise<{ rows: Record<string, unknown>[]; count: number }>;
 
-  public abstract getAllArchived(options?: getAllOptionsType): Promise<{ rows: { [x: string]: any }[]; count: number }>;
+  public abstract getAllArchived(
+    options?: getAllOptionsType,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }>;
 
-  public abstract getById(id: string): Promise<any>;
+  public abstract getById(id: string): Promise<unknown>;
 
   public abstract getTags(id: string, type?: 'tag' | 'issue'): Promise<string[]>;
 
-  public abstract update(id: string, data: U, options?: any): Promise<Partial<T>[] | unknown>;
+  public abstract update(id: string, data: U, options?: unknown): Promise<Partial<T>[] | unknown>;
 
   public abstract exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType>;
 
@@ -15389,264 +15391,6 @@ export class DataGridDataService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/services/grid-store.service.ts
-
-```typescript
-import { Injectable, computed, effect, signal, untracked, linkedSignal } from '@angular/core';
-import type { GridRow } from '../types';
-
-@Injectable()
-export class GridStoreService {
-  public grid?: any;
-  readonly rows = signal<GridRow[]>([]);
-  readonly sorting = signal<any[]>([]);
-  readonly colVisibility = signal<Record<string, boolean>>({});
-  readonly colWidths = signal<Record<string, number>>({});
-  readonly filterValues = signal<Record<string, any>>({});
-  readonly panelFilters = signal<Record<string, { op: string; value: any }>>({});
-  readonly selectedIdSet = linkedSignal<Record<string, any>, Set<string>>({
-    source: () => this.filterValues(),
-    computation: () => new Set<string>(),
-  });
-  readonly allSelected = linkedSignal<Record<string, any>, boolean>({
-    source: () => this.filterValues(),
-    computation: () => false,
-  });
-  readonly allSelectedIdSet = linkedSignal<Record<string, any>, Set<string>>({
-    source: () => this.filterValues(),
-    computation: () => new Set<string>(),
-  });
-  readonly allSelectedIds = linkedSignal<Record<string, any>, string[]>({
-    source: () => this.filterValues(),
-    computation: () => [],
-  });
-  readonly allSelectedCount = linkedSignal<Record<string, any>, number>({
-    source: () => this.filterValues(),
-    computation: () => 0,
-  });
-  readonly selectionStickyWidth = signal<number>(48);
-  readonly pageIndex = signal<number>(0);
-  readonly pageSize = signal<number>(25);
-
-  readonly displayedCount = computed(() => this.rows().length);
-
-  readonly editCommitCount = signal<number>(0);
-  private _lastSnapshot: any = null;
-
-  public recordSnapshotBeforeCommit(id: string, field: string, prevValue: any, newValue: any) {
-    let rowsCopy: any[] = [];
-    try {
-      rowsCopy = JSON.parse(JSON.stringify(this.rows() || []));
-    } catch {
-      rowsCopy = (this.rows() || []).map((r: any) => {
-        const copy = { ...r };
-        if (Array.isArray(r.tags)) copy.tags = [...r.tags];
-        if (Array.isArray(r.issues)) copy.issues = [...r.issues];
-        return copy;
-      });
-    }
-
-    const getRowId = this._getRowId || ((r: any) => String(r?.id || ''));
-    rowsCopy = rowsCopy.map((r: any) => {
-      if (getRowId(r) === id) {
-        return { ...r, [field]: prevValue };
-      }
-      return r;
-    });
-
-    this._lastSnapshot = {
-      rows: rowsCopy,
-      selectedIdSet: new Set(this.selectedIdSet()),
-      filterValues: { ...this.filterValues() },
-      sorting: [...this.sorting()],
-      pageIndex: this.pageIndex(),
-      pageSize: this.pageSize(),
-      editMeta: {
-        id,
-        field,
-        prevValue,
-        newValue,
-      },
-    };
-    this.editCommitCount.update((c) => c + 1);
-  }
-
-  private _persistKey = signal<string>('');
-  private _persistTick = signal<number>(0);
-  private _table: any = null;
-  private _getRowId: ((row: any) => string) | null = null;
-
-  constructor() {
-    effect(() => {
-      const count = this.editCommitCount();
-      if (count === 0) return;
-
-      untracked(() => {
-        if (this._lastSnapshot && this.grid?.undoMgr) {
-          this.grid.undoMgr.pushUndo(this._lastSnapshot);
-          this._lastSnapshot = null;
-        }
-      });
-    });
-
-    effect(() => {
-      const key = this._persistKey();
-      this.sorting();
-      this.colVisibility();
-      this.filterValues();
-      this.selectionStickyWidth();
-      this.colWidths();
-      this.pageSize();
-      this._persistTick();
-      if (!key) return;
-      try {
-        const st = (this._table?.getState?.() ?? {}) as unknown as {
-          sorting?: any[];
-          columnVisibility?: Record<string, boolean>;
-          columnPinning?: { left: string[]; right: string[] };
-          columnSizing?: Record<string, number>;
-          columnOrder?: string[];
-        };
-        const data = {
-          sorting: st.sorting || this.sorting(),
-          visibility: st.columnVisibility || this.colVisibility(),
-          pinning: st.columnPinning || { left: [], right: [] },
-          sizing: st.columnSizing || this.colWidths(),
-          order: st.columnOrder || [],
-          filters: this.filterValues() || {},
-          selectionWidth: this.selectionStickyWidth(),
-          pageSize: this.pageSize(),
-        };
-        localStorage.setItem(key, JSON.stringify(data));
-      } catch {}
-    });
-
-    // Attempt to load persisted state whenever key changes
-    effect(() => {
-      const key = this._persistKey();
-      if (!key) return;
-      this._loadFromStorage(key);
-    });
-
-    effect(() => {
-      const v = this.colVisibility();
-      if (this._table) {
-        try {
-          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
-        } catch {}
-      }
-    });
-
-    // Sync sorting state
-    effect(() => {
-      const s = this.sorting();
-      if (this._table) {
-        try {
-          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, sorting: s } }));
-        } catch {}
-      }
-    });
-
-    // Sync column sizing
-    effect(() => {
-      const sizing = this.colWidths();
-      if (this._table) {
-        try {
-          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
-        } catch {}
-      }
-    });
-
-    // Sync data
-    effect(() => {
-      const r = this.rows();
-      if (this._table) {
-        try {
-          this._table.setOptions((prev: any) => ({ ...prev, data: r }));
-        } catch {}
-      }
-    });
-
-    // Sync row selection map for current rows
-    effect(() => {
-      const rows = this.rows();
-      const ids = this.selectedIdSet();
-      if (!this._table || !this._getRowId) return;
-      try {
-        const map: Record<string, boolean> = {};
-        for (const r of rows) {
-          const id = this._getRowId(r);
-          if (id && ids.has(id)) map[id] = true;
-        }
-        this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, rowSelection: map } }));
-      } catch {}
-    });
-  }
-
-  setPersistKey(key: string) {
-    this._persistKey.set(key || '');
-  }
-
-  attachTable(table: any) {
-    this._table = table;
-  }
-
-  setGetRowId(fn: (row: any) => string) {
-    this._getRowId = fn;
-  }
-
-  requestPersist() {
-    this._persistTick.update((v) => (v + 1) | 0);
-  }
-
-  loadState() {
-    const key = this._persistKey();
-    if (!key) return;
-    this._loadFromStorage(key);
-  }
-
-  private _loadFromStorage(key: string) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return;
-      type Persisted = {
-        sorting?: any[];
-        visibility?: Record<string, boolean>;
-        filters?: Record<string, any>;
-        selectionWidth?: number;
-        sizing?: Record<string, number>;
-        pinning?: { left: string[]; right: string[] };
-        order?: string[];
-        pageSize?: number;
-      };
-      const data = JSON.parse(raw || '{}') as unknown as Persisted;
-      if (data.sorting) this.sorting.set(data.sorting);
-      if (data.visibility) this.colVisibility.set({ ...untracked(() => this.colVisibility()), ...data.visibility });
-      if (data.filters) this.filterValues.set(data.filters);
-      if (typeof data.selectionWidth === 'number') this.selectionStickyWidth.set(data.selectionWidth);
-      if (typeof data.pageSize === 'number' && data.pageSize > 0) this.pageSize.set(data.pageSize);
-      const sizing = data.sizing || {};
-      queueMicrotask(() => {
-        if (this._table?.setOptions) {
-          this._table.setOptions((prev: any) => ({
-            ...prev,
-            state: {
-              ...prev.state,
-              sorting: data.sorting || prev.state?.sorting,
-              columnVisibility: data.visibility || prev.state?.columnVisibility,
-              columnPinning: data.pinning || prev.state?.columnPinning,
-              columnSizing: sizing || prev.state?.columnSizing,
-              columnOrder: data.order || prev.state?.columnOrder,
-            },
-          }));
-        }
-        this.colWidths.set({ ...(sizing || {}) });
-      });
-    } catch {}
-  }
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/services/selection.service.ts
 
 ```typescript
@@ -15679,108 +15423,6 @@ export class DataGridSelectionService {
   updateAllSelectedIdSet(set: Set<string>, id: string, checked: boolean): void {
     if (!checked) set.delete(id);
     else set.add(id);
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/services/table.service.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-import {
-  createTable,
-  getCoreRowModel,
-  type Updater,
-  type SortingState,
-  type ColumnDef as TSColumnDef,
-} from '@tanstack/table-core';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-import type { GridRow } from '../types';
-
-@Injectable({ providedIn: 'root' })
-export class DataGridTableService {
-  updateTableWindow(
-    table: any,
-    rows: any[],
-    start: number,
-    end: number,
-    rowSelection: Record<string, boolean>,
-    sortCol: string | null,
-    sortDir: 'asc' | 'desc' | null,
-  ) {
-    const data = rows.slice(start, end);
-    if (!table) return;
-    table.setOptions((prev: any) => ({
-      ...prev,
-      data,
-      state: {
-        ...prev.state,
-        rowSelection,
-        sorting: sortCol && sortDir ? [{ id: sortCol, desc: sortDir === 'desc' }] : [],
-      },
-    }));
-  }
-
-  setTableData(
-    table: any,
-    rows: any[],
-    rowSelection: Record<string, boolean>,
-    sortCol: string | null,
-    sortDir: 'asc' | 'desc' | null,
-  ) {
-    if (!table) return;
-    table.setOptions((prev: any) => ({
-      ...prev,
-      data: rows,
-      state: {
-        ...prev.state,
-        rowSelection,
-        sorting: sortCol && sortDir ? [{ id: sortCol, desc: sortDir === 'desc' }] : [],
-      },
-    }));
-  }
-
-  createGridTable(params: {
-    rows: any[];
-    columns: TSColumnDef<any, any>[];
-    getRowId: (row: any) => string;
-    state: any;
-    onStateChange: () => void;
-    onSortingChange: (updater: Updater<SortingState>) => void;
-    onRowSelectionChange: (updater: Updater<any>) => void;
-    onColumnSizingChange: (updater: Updater<Record<string, number>>) => void;
-  }): any {
-    return createTable({
-      data: params.rows,
-      columns: params.columns,
-      getCoreRowModel: getCoreRowModel(),
-      getRowId: params.getRowId,
-      // not in the formal type, supported by our usage
-      enableColumnResizing: true as unknown as boolean,
-      state: params.state,
-      initialState: {
-        columnPinning: { left: [], right: [] },
-        columnSizing: {},
-      },
-      onStateChange: params.onStateChange,
-      renderFallbackValue: null as unknown,
-      onSortingChange: params.onSortingChange,
-      onRowSelectionChange: params.onRowSelectionChange,
-      columnResizeMode: 'onChange',
-      onColumnSizingChange: params.onColumnSizingChange,
-    });
-  }
-
-  buildTsColumns(colDefs: ColDef[]): TSColumnDef<GridRow, unknown>[] {
-    return colDefs
-      .filter((c) => !!c.field)
-      .map((c) => ({
-        id: c.field as string,
-        header: c.headerName || (c.field as string),
-        accessorFn: (row: GridRow) => row?.[c.field as string],
-        enableSorting: true,
-        enableResizing: true,
-      })) as unknown as TSColumnDef<GridRow, unknown>[];
   }
 }
 ```
@@ -16227,28 +15869,38 @@ export class DataGridInlineFiltersRowComponent {
 ## File: apps/frontend/src/app/shared/components/datagrid/grid-defaults.ts
 
 ```typescript
+import type { GridRow } from './types';
+
+/** Params passed to colDef callbacks (cellRenderer, valueFormatter, valueGetter, valueSetter, ...). */
+export interface CellParams {
+  data?: GridRow;
+  value?: unknown;
+  newValue?: unknown;
+  colDef?: ColumnDef;
+}
+
 // Lightweight column definition used by DataGrid
 export interface ColumnDef {
-  cellClass?: string | ((p: any) => string | undefined);
+  cellClass?: string | ((p: CellParams) => string | undefined);
   cellDataType?: string;
-  cellEditorParams?: any;
-  cellRenderer?: (p: { data: any; value: any; colDef: ColumnDef }) => CellRendererResult;
-  cellRendererParams?: any;
-  comparator?: (a: any, b: any) => number;
+  cellEditorParams?: unknown;
+  cellRenderer?: (p: CellParams) => CellRendererResult;
+  cellRendererParams?: unknown;
+  comparator?: (a: unknown, b: unknown) => number;
   editable?: boolean;
-  equals?: (a: any, b: any) => boolean;
+  equals?: (a: unknown, b: unknown) => boolean;
   field?: string;
   headerName?: string;
   hide?: boolean;
-  onCellClicked?: (event: any) => void;
-  onCellDoubleClicked?: (event: any) => void;
-  isCellInteractive?: (row: any) => boolean;
+  onCellClicked?: (event: CellParams) => void;
+  onCellDoubleClicked?: (event: CellParams) => void;
+  isCellInteractive?: (row: GridRow) => boolean;
   tagColumn?: boolean;
-  valueFormatter?: (p: { data: any; value: any; colDef: ColumnDef }) => any;
+  valueFormatter?: (p: CellParams) => unknown;
 
   // Compatibility props (ignored by current table but kept for typing)
-  valueGetter?: (p: any) => any;
-  valueSetter?: (p: any) => boolean;
+  valueGetter?: (p: CellParams) => unknown;
+  valueSetter?: (p: CellParams) => boolean;
   minWidth?: number;
 }
 
@@ -16365,29 +16017,6 @@ export class GridActionComponent {
       detailsEl.removeAttribute('open');
     }
   }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/types.ts
-
-```typescript
-export type SortDir = 'asc' | 'desc' | 'none';
-
-/** Row shape served by the grid APIs: a dynamic record keyed by column field. */
-export type GridRow = Record<string, unknown>;
-
-export interface HeaderRef {
-  column: {
-    id: string;
-    getIsSorted?: () => 'asc' | 'desc' | false;
-    toggleSorting?: (desc?: boolean, multi?: boolean) => void;
-    clearSorting?: () => void;
-    pin?: (side: 'left' | 'right' | false) => void;
-    getIsPinned?: () => 'left' | 'right' | false;
-    getSize?: () => number;
-    setSize?: (px: number) => void;
-  };
-  table?: any;
 }
 ```
 
@@ -23656,7 +23285,7 @@ import { PcIconNameType } from '@icons/icons.index';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
 
-import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 
 import {
   DATA_GRID_CONFIG,
@@ -23668,10 +23297,6 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { DATA_TYPE, PersonsService } from '../services/persons-service';
-
-interface ParamsType {
-  value: string[];
-}
 
 @Component({
   selector: 'pc-persons-grid',
@@ -23749,9 +23374,12 @@ export class PersonsGrid implements OnInit {
         tagType: 'tag',
       },
       cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
     },
     {
       field: 'issues',
@@ -23767,9 +23395,12 @@ export class PersonsGrid implements OnInit {
         tagType: 'issue',
       },
       cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
     },
     {
       field: 'address',
@@ -27626,7 +27257,7 @@ export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuth
 
   public getAll(options?: getAllOptionsType) {
     return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal }) as Promise<{
-      rows: IAuthUserRecord[];
+      rows: Record<string, unknown>[];
       count: number;
     }>;
   }
@@ -29980,6 +29611,264 @@ export class GridAdvancedFilterService {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/services/grid-store.service.ts
+
+```typescript
+import { Injectable, computed, effect, signal, untracked, linkedSignal } from '@angular/core';
+import type { GridRow } from '../types';
+
+@Injectable()
+export class GridStoreService {
+  public grid?: any;
+  readonly rows = signal<GridRow[]>([]);
+  readonly sorting = signal<any[]>([]);
+  readonly colVisibility = signal<Record<string, boolean>>({});
+  readonly colWidths = signal<Record<string, number>>({});
+  readonly filterValues = signal<Record<string, any>>({});
+  readonly panelFilters = signal<Record<string, { op: string; value: any }>>({});
+  readonly selectedIdSet = linkedSignal<Record<string, any>, Set<string>>({
+    source: () => this.filterValues(),
+    computation: () => new Set<string>(),
+  });
+  readonly allSelected = linkedSignal<Record<string, any>, boolean>({
+    source: () => this.filterValues(),
+    computation: () => false,
+  });
+  readonly allSelectedIdSet = linkedSignal<Record<string, any>, Set<string>>({
+    source: () => this.filterValues(),
+    computation: () => new Set<string>(),
+  });
+  readonly allSelectedIds = linkedSignal<Record<string, any>, string[]>({
+    source: () => this.filterValues(),
+    computation: () => [],
+  });
+  readonly allSelectedCount = linkedSignal<Record<string, any>, number>({
+    source: () => this.filterValues(),
+    computation: () => 0,
+  });
+  readonly selectionStickyWidth = signal<number>(48);
+  readonly pageIndex = signal<number>(0);
+  readonly pageSize = signal<number>(25);
+
+  readonly displayedCount = computed(() => this.rows().length);
+
+  readonly editCommitCount = signal<number>(0);
+  private _lastSnapshot: any = null;
+
+  public recordSnapshotBeforeCommit(id: string, field: string, prevValue: any, newValue: any) {
+    let rowsCopy: any[] = [];
+    try {
+      rowsCopy = JSON.parse(JSON.stringify(this.rows() || []));
+    } catch {
+      rowsCopy = (this.rows() || []).map((r: any) => {
+        const copy = { ...r };
+        if (Array.isArray(r.tags)) copy.tags = [...r.tags];
+        if (Array.isArray(r.issues)) copy.issues = [...r.issues];
+        return copy;
+      });
+    }
+
+    const getRowId = this._getRowId || ((r: any) => String(r?.id || ''));
+    rowsCopy = rowsCopy.map((r: any) => {
+      if (getRowId(r) === id) {
+        return { ...r, [field]: prevValue };
+      }
+      return r;
+    });
+
+    this._lastSnapshot = {
+      rows: rowsCopy,
+      selectedIdSet: new Set(this.selectedIdSet()),
+      filterValues: { ...this.filterValues() },
+      sorting: [...this.sorting()],
+      pageIndex: this.pageIndex(),
+      pageSize: this.pageSize(),
+      editMeta: {
+        id,
+        field,
+        prevValue,
+        newValue,
+      },
+    };
+    this.editCommitCount.update((c) => c + 1);
+  }
+
+  private _persistKey = signal<string>('');
+  private _persistTick = signal<number>(0);
+  private _table: any = null;
+  private _getRowId: ((row: any) => string) | null = null;
+
+  constructor() {
+    effect(() => {
+      const count = this.editCommitCount();
+      if (count === 0) return;
+
+      untracked(() => {
+        if (this._lastSnapshot && this.grid?.undoMgr) {
+          this.grid.undoMgr.pushUndo(this._lastSnapshot);
+          this._lastSnapshot = null;
+        }
+      });
+    });
+
+    effect(() => {
+      const key = this._persistKey();
+      this.sorting();
+      this.colVisibility();
+      this.filterValues();
+      this.selectionStickyWidth();
+      this.colWidths();
+      this.pageSize();
+      this._persistTick();
+      if (!key) return;
+      try {
+        const st = (this._table?.getState?.() ?? {}) as unknown as {
+          sorting?: any[];
+          columnVisibility?: Record<string, boolean>;
+          columnPinning?: { left: string[]; right: string[] };
+          columnSizing?: Record<string, number>;
+          columnOrder?: string[];
+        };
+        const data = {
+          sorting: st.sorting || this.sorting(),
+          visibility: st.columnVisibility || this.colVisibility(),
+          pinning: st.columnPinning || { left: [], right: [] },
+          sizing: st.columnSizing || this.colWidths(),
+          order: st.columnOrder || [],
+          filters: this.filterValues() || {},
+          selectionWidth: this.selectionStickyWidth(),
+          pageSize: this.pageSize(),
+        };
+        localStorage.setItem(key, JSON.stringify(data));
+      } catch {}
+    });
+
+    // Attempt to load persisted state whenever key changes
+    effect(() => {
+      const key = this._persistKey();
+      if (!key) return;
+      this._loadFromStorage(key);
+    });
+
+    effect(() => {
+      const v = this.colVisibility();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
+        } catch {}
+      }
+    });
+
+    // Sync sorting state
+    effect(() => {
+      const s = this.sorting();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, sorting: s } }));
+        } catch {}
+      }
+    });
+
+    // Sync column sizing
+    effect(() => {
+      const sizing = this.colWidths();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
+        } catch {}
+      }
+    });
+
+    // Sync data
+    effect(() => {
+      const r = this.rows();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev: any) => ({ ...prev, data: r }));
+        } catch {}
+      }
+    });
+
+    // Sync row selection map for current rows
+    effect(() => {
+      const rows = this.rows();
+      const ids = this.selectedIdSet();
+      if (!this._table || !this._getRowId) return;
+      try {
+        const map: Record<string, boolean> = {};
+        for (const r of rows) {
+          const id = this._getRowId(r);
+          if (id && ids.has(id)) map[id] = true;
+        }
+        this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, rowSelection: map } }));
+      } catch {}
+    });
+  }
+
+  setPersistKey(key: string) {
+    this._persistKey.set(key || '');
+  }
+
+  attachTable(table: any) {
+    this._table = table;
+  }
+
+  setGetRowId(fn: (row: any) => string) {
+    this._getRowId = fn;
+  }
+
+  requestPersist() {
+    this._persistTick.update((v) => (v + 1) | 0);
+  }
+
+  loadState() {
+    const key = this._persistKey();
+    if (!key) return;
+    this._loadFromStorage(key);
+  }
+
+  private _loadFromStorage(key: string) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      type Persisted = {
+        sorting?: any[];
+        visibility?: Record<string, boolean>;
+        filters?: Record<string, any>;
+        selectionWidth?: number;
+        sizing?: Record<string, number>;
+        pinning?: { left: string[]; right: string[] };
+        order?: string[];
+        pageSize?: number;
+      };
+      const data = JSON.parse(raw || '{}') as unknown as Persisted;
+      if (data.sorting) this.sorting.set(data.sorting);
+      if (data.visibility) this.colVisibility.set({ ...untracked(() => this.colVisibility()), ...data.visibility });
+      if (data.filters) this.filterValues.set(data.filters);
+      if (typeof data.selectionWidth === 'number') this.selectionStickyWidth.set(data.selectionWidth);
+      if (typeof data.pageSize === 'number' && data.pageSize > 0) this.pageSize.set(data.pageSize);
+      const sizing = data.sizing || {};
+      queueMicrotask(() => {
+        if (this._table?.setOptions) {
+          this._table.setOptions((prev: any) => ({
+            ...prev,
+            state: {
+              ...prev.state,
+              sorting: data.sorting || prev.state?.sorting,
+              columnVisibility: data.visibility || prev.state?.columnVisibility,
+              columnPinning: data.pinning || prev.state?.columnPinning,
+              columnSizing: sizing || prev.state?.columnSizing,
+              columnOrder: data.order || prev.state?.columnOrder,
+            },
+          }));
+        }
+        this.colWidths.set({ ...(sizing || {}) });
+      });
+    } catch {}
+  }
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/services/nav.service.ts
 
 ```typescript
@@ -30006,6 +29895,108 @@ export class DataGridNavService {
   }) {
     if (args.id) return args.navigate(args.id);
     if (!args.disableView) args.navigate(args.lastRowHovered);
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/services/table.service.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import {
+  createTable,
+  getCoreRowModel,
+  type Updater,
+  type SortingState,
+  type ColumnDef as TSColumnDef,
+} from '@tanstack/table-core';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { GridRow } from '../types';
+
+@Injectable({ providedIn: 'root' })
+export class DataGridTableService {
+  updateTableWindow(
+    table: any,
+    rows: any[],
+    start: number,
+    end: number,
+    rowSelection: Record<string, boolean>,
+    sortCol: string | null,
+    sortDir: 'asc' | 'desc' | null,
+  ) {
+    const data = rows.slice(start, end);
+    if (!table) return;
+    table.setOptions((prev: any) => ({
+      ...prev,
+      data,
+      state: {
+        ...prev.state,
+        rowSelection,
+        sorting: sortCol && sortDir ? [{ id: sortCol, desc: sortDir === 'desc' }] : [],
+      },
+    }));
+  }
+
+  setTableData(
+    table: any,
+    rows: any[],
+    rowSelection: Record<string, boolean>,
+    sortCol: string | null,
+    sortDir: 'asc' | 'desc' | null,
+  ) {
+    if (!table) return;
+    table.setOptions((prev: any) => ({
+      ...prev,
+      data: rows,
+      state: {
+        ...prev.state,
+        rowSelection,
+        sorting: sortCol && sortDir ? [{ id: sortCol, desc: sortDir === 'desc' }] : [],
+      },
+    }));
+  }
+
+  createGridTable(params: {
+    rows: any[];
+    columns: TSColumnDef<any, any>[];
+    getRowId: (row: any) => string;
+    state: any;
+    onStateChange: () => void;
+    onSortingChange: (updater: Updater<SortingState>) => void;
+    onRowSelectionChange: (updater: Updater<any>) => void;
+    onColumnSizingChange: (updater: Updater<Record<string, number>>) => void;
+  }): any {
+    return createTable({
+      data: params.rows,
+      columns: params.columns,
+      getCoreRowModel: getCoreRowModel(),
+      getRowId: params.getRowId,
+      // not in the formal type, supported by our usage
+      enableColumnResizing: true as unknown as boolean,
+      state: params.state,
+      initialState: {
+        columnPinning: { left: [], right: [] },
+        columnSizing: {},
+      },
+      onStateChange: params.onStateChange,
+      renderFallbackValue: null as unknown,
+      onSortingChange: params.onSortingChange,
+      onRowSelectionChange: params.onRowSelectionChange,
+      columnResizeMode: 'onChange',
+      onColumnSizingChange: params.onColumnSizingChange,
+    });
+  }
+
+  buildTsColumns(colDefs: ColDef[]): TSColumnDef<GridRow, unknown>[] {
+    return colDefs
+      .filter((c) => !!c.field)
+      .map((c) => ({
+        id: c.field as string,
+        header: c.headerName || (c.field as string),
+        accessorFn: (row: GridRow) => row?.[c.field as string],
+        enableSorting: true,
+        enableResizing: true,
+      })) as unknown as TSColumnDef<GridRow, unknown>[];
   }
 }
 ```
@@ -30102,6 +30093,29 @@ export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
     exportEntity: '',
   },
 };
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/types.ts
+
+```typescript
+export type SortDir = 'asc' | 'desc' | 'none';
+
+/** Row shape served by the grid APIs: a dynamic record keyed by column field. */
+export type GridRow = Record<string, unknown>;
+
+export interface HeaderRef {
+  column: {
+    id: string;
+    getIsSorted?: () => 'asc' | 'desc' | false;
+    toggleSorting?: (desc?: boolean, multi?: boolean) => void;
+    clearSorting?: () => void;
+    pin?: (side: 'left' | 'right' | false) => void;
+    getIsPinned?: () => 'left' | 'right' | false;
+    getSize?: () => number;
+    setSize?: (px: number) => void;
+  };
+  table?: unknown;
+}
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/undo-redo-mgr.ts
@@ -34637,7 +34651,7 @@ export class FundraisingFormComponent implements OnInit {
 import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
@@ -34650,10 +34664,6 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { HouseholdsService } from '../services/households-service';
-
-interface ParamsType {
-  value: string[];
-}
 
 @Component({
   selector: 'pc-households-grid',
@@ -34810,9 +34820,12 @@ export class HouseholdsGrid implements OnInit {
         tagType: 'tag',
       },
       cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
     },
     {
       field: 'issues',
@@ -34828,9 +34841,12 @@ export class HouseholdsGrid implements OnInit {
         tagType: 'issue',
       },
       cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
     },
     { field: 'state', headerName: 'State/Province', editable: true },
     { field: 'zip', headerName: 'Zip/Province', editable: true },
@@ -43898,630 +43914,6 @@ const trpcRetryClient = createTRPCClient<TRPCRouter>({
 });
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
-
-```html
-@if (displayTitle()) {
-<pc-grid-header
-  [title]="displayTitle()!"
-  [open]="showDescription()"
-  [description]="description() || ''"
-></pc-grid-header>
-}
-
-<div class="flex h-full w-full flex-col">
-  @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
-  <progress class="progress h-1"></progress>
-  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
-      >All {{ displayedCount() }} rows on this page are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="selectAllMatching()"
-      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
-      >Select all {{ totalCountAll() }} rows</a
-    >
-  </div>
-  } @if (allSelected()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
-      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="clearAllSelection()"
-      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
-      >Clear selection</a
-    >
-  </div>
-  }
-  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
-    <table #gridTable class="table w-full">
-      <thead>
-        <tr>
-          @if (enableSelection()) {
-          <th
-            class="border-r border-base-300 pl-2 selection-col"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <input
-              type="checkbox"
-              class="checkbox checkbox-sm"
-              [checked]="!allSelected() && tableAllPageSelected()"
-              [indeterminate]="!allSelected() && tableSomePageSelected()"
-              (change)="onHeaderCheckbox($any($event.target).checked)"
-            />
-          </th>
-          } @for (h of leafHeaders(); track h.id) {
-          <th
-            role="columnheader"
-            class="cursor-grab border-r border-base-300 pl-2 relative"
-            [attr.data-col-id]="h.column.id"
-            [attr.aria-sort]="ariaSortHeader(h)"
-            [draggable]="true"
-            (dragstart)="onHeaderDragStart(h, $event)"
-            (dragover)="onHeaderDragOver(h, $event)"
-            (drop)="onHeaderDrop(h, $event)"
-            [style.width.px]="columnWidthPx(h.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
-          >
-            <div class="flex items-center gap-2" data-header-content>
-              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
-                {{ h.column.columnDef.header || h.column.id }}
-              </span>
-              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
-              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
-                <label
-                  tabindex="0"
-                  class="btn btn-xs"
-                  [class.btn-ghost]="!isColFiltered(h.column.id)"
-                  [class.btn-primary]="isColFiltered(h.column.id)"
-                  title="Column options"
-                  i18n-title="@@datagrid.columns.optionsTitle"
-                >
-                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
-                </label>
-                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
-                  @let col = getColDefById(h.column.id);
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
-                      track opt) {
-                      <li>
-                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
-                          <input
-                            type="checkbox"
-                            class="checkbox checkbox-xs"
-                            [checked]="isOptionChecked(h.column.id, opt)"
-                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
-                          />
-                          <span class="label-text">{{ opt }}</span>
-                        </label>
-                      </li>
-                      }
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      } @else {
-                      <li class="px-2 py-1">
-                        <input
-                          class="input input-bordered input-xs w-full"
-                          type="text"
-                          placeholder="Filter value"
-                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
-                          [value]="getFilterValue(h.column.id)"
-                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
-                        />
-                      </li>
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      }
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
-                      <li>
-                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
-                          >Sort asc</a
-                        >
-                      </li>
-                      <li>
-                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
-                          >Sort desc</a
-                        >
-                      </li>
-                      <li>
-                        <a
-                          (click)="clearSort(h)"
-                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
-                          >Clear sort</a
-                        >
-                      </li>
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
-                        >Column</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      <li>
-                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
-                          >Hide</a
-                        >
-                      </li>
-                      <li class="dropdown dropdown-right">
-                        <label tabindex="0" class="flex w-full items-center justify-between"
-                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
-                            >Columns</span
-                          ><span>▸</span></label
-                        >
-                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                          @for (cid of hiddenColumns(); track cid) {
-                          <li>
-                            <a (click)="showColumnById(cid)"
-                              ><ng-container
-                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
-                                >Show</ng-container
-                              >
-                              {{ columnLabelFor(cid) }}</a
-                            >
-                          </li>
-                          } @if (!hiddenColumns().length) {
-                          <li
-                            class="opacity-60 px-2 py-1"
-                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
-                          >
-                            None hidden
-                          </li>
-                          }
-                        </ul>
-                      </li>
-                    </ul>
-                  </li>
-                </ul>
-              </div>
-              <span
-                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
-                title="Resize column"
-                i18n-title="@@datagrid.columns.resizeTitle"
-                [pcHeaderResize]="headerResizeConfig(h)"
-              ></span>
-            </div>
-          </th>
-          }
-        </tr>
-      </thead>
-      <tbody class="bg-base-100">
-        @if (hasActiveFilters() && !visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
-                >No results match your filters</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
-                >Try clearing or adjusting your filters</span
-              >
-            </div>
-          </td>
-        </tr>
-        } @else if (!visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
-                >Nothing here yet</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
-                >Add your first record using the + button above</span
-              >
-            </div>
-          </td>
-        </tr>
-        } @for (r of visibleTableRows(); let i = $index; track r.id) {
-        <tr
-          class="group hover:bg-base-300"
-          [class.cursor-pointer]="rowNavigatesToDetail()"
-          (mouseover)="onCellMouseOver(r.original)"
-          [attr.data-row-id]="toId(r.original)"
-          [class.bg-base-200]="(i % 2) === 1"
-        >
-          @if (enableSelection()) {
-          <td
-            class="sticky left-0 z-20 border-r border-base-300 pl-2"
-            [style.background]="rowBgForIndex(i)"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <div class="flex items-center gap-2">
-              @if (rowCanSelect()(r.original)) {
-              <input
-                type="checkbox"
-                class="checkbox checkbox-sm"
-                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
-                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
-              />
-              } @let rowId = toId(r.original); @if (!disableView() && rowId) {
-              <span
-                title="Open detail"
-                i18n-title="@@datagrid.rows.openDetailTitle"
-                aria-label="Open detail"
-                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
-                (click)="openEdit(rowId); $event.stopPropagation();"
-              >
-                <pc-icon
-                  name="arrow-top-right-on-square"
-                  class="hover:text-primary cursor-pointer text-neutral invisible group-hover:visible pb-1"
-                ></pc-icon>
-              </span>
-              }
-            </div>
-          </td>
-          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
-          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
-          === col.field;
-          <td
-            [pcEditable]="editableCfg(r.original, col)"
-            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
-            tabindex="0"
-            (keydown)="onCellKeydown($event)"
-            (click)="handleCellClick(r.original, col)"
-            (dblclick)="handleCellDblClick(r.original, col)"
-            [class.sticky]="pinState(cell) !== false"
-            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
-            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
-            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
-            [style.zIndex]="pinState(cell) !== false ? 10 : null"
-            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
-            [class.overflow-visible]="isTagColumn(col) && isEditing"
-            class="min-w-0 px-2 border-r border-base-300 relative"
-            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
-            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
-            [attr.data-col-id]="cell.column.id"
-            [style.width.px]="columnWidthPx(cell.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
-          >
-            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
-            (isTagColumn(col)) {
-            <!-- Tag column: checkbox multi-select panel -->
-            <div
-              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
-              (click)="$event.stopPropagation()"
-            >
-              <!-- Search box — pinned, never scrolls -->
-              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
-                <input
-                  type="text"
-                  class="input input-bordered input-xs w-full"
-                  placeholder="Search tags…"
-                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
-                  [ngModel]="tagSearch()"
-                  (ngModelChange)="tagSearch.set($event)"
-                  autofocus
-                />
-              </div>
-              <!-- Scrollable tag list -->
-              <div class="flex-1 overflow-y-auto py-1">
-                @for (tag of filteredTagChoices(col); track tag) {
-                <label
-                  tabindex="-1"
-                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
-                >
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="isTagChecked(tag)"
-                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
-                  />
-                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
-                </label>
-                } @if (!filteredTagChoices(col).length) {
-                <div class="text-xs text-base-content/50 px-3 py-2 italic">
-                  @if (tagSearch()) {
-                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
-                    >No tags match "{{ tagSearch() }}"</ng-container
-                  >
-                  } @else {
-                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
-                    >No tags available</ng-container
-                  >
-                  }
-                </div>
-                }
-              </div>
-              <!-- Done button — pinned, never scrolls -->
-              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
-                <button
-                  class="btn btn-primary btn-xs"
-                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
-                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-            } @else if (editorCfg) { @if (editorCfg.multiple) {
-            <select
-              class="select select-bordered w-full"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              multiple
-              [attr.size]="editorCfg.size ?? null"
-              [style.height]="multiSelectHeight(editorCfg)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value">{{ opt.label }}</option>
-              }
-            </select>
-            } @else {
-            <select
-              class="select select-bordered w-full select-xs"
-              [ngModel]="editingValue()"
-              (ngModelChange)="onSelectChange(r.original, col, $event)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value">{{ opt.label }}</option>
-              }
-            </select>
-            } } @else if (textCfg.textarea) {
-            <textarea
-              class="textarea textarea-bordered textarea-sm w-full"
-              [rows]="textCfg.rows"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              autofocus
-            ></textarea>
-            } @else {
-            <input
-              [type]="inputTypeFor(col)"
-              class="input input-bordered input-xs w-full"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              autofocus
-            />
-            } } @else if (hasCellRenderer(col)) {
-            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
-            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
-            (isTagColumn(col) && tagList.length) {
-            <pc-tags
-              [tags]="tagList"
-              [type]="col.cellRendererParams?.tagType || 'tag'"
-              [readonly]="true"
-              [canDelete]="false"
-              [compact]="true"
-              [limit]="2"
-              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
-            ></pc-tags>
-            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
-            === null || formattedVal === undefined || formattedVal === '') {
-            <span class="text-base-content/30">—</span>
-            } @else { {{ formattedVal }} } } @else { @if (col.field === 'address') {
-            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
-              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
-            </div>
-            } @else {
-            <span class="flex items-center gap-1 w-full">
-              @if (rawValue === null || rawValue === undefined || rawValue === '') {
-              <span class="flex-1 truncate text-base-content/30">—</span>
-              } @else {
-              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
-              }
-            </span>
-            } } }
-          </td>
-          } }
-        </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
-    <div class="flex items-center gap-2 whitespace-nowrap">
-      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
-        >Page Size:</span
-      >
-      <select
-        class="select select-bordered select-xs"
-        [ngModel]="pageSize()"
-        (ngModelChange)="onPageSizeChange($event)"
-      >
-        @if (![25,50,100].includes(pageSize())) {
-        <option [value]="pageSize()">{{ pageSize() }}</option>
-        } @for (opt of pageSizeChoices(); track opt) {
-        <option [value]="opt">{{ opt }}</option>
-        }
-      </select>
-    </div>
-    <div
-      class="whitespace-nowrap"
-      i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
-    >
-      <span class="font-normal">{{ displayStartIndex() }}</span> to
-      <span class="font-normal">{{ displayEndIndex() }}</span> of
-      <span class="font-normal">{{ totalCountAll() }}</span>
-    </div>
-    <div class="join whitespace-nowrap">
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="First"
-        i18n-title="@@datagrid.pagination.firstTitle"
-        [disabled]="!canPrev()"
-        (click)="firstPage()"
-      >
-        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="Prev"
-        i18n-title="@@datagrid.pagination.prevTitle"
-        [disabled]="!canPrev()"
-        (click)="prevPage()"
-      >
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn font-light btn-sm join-item btn-ghost pointer-events-none whitespace-nowrap"
-        i18n="Datagrid|Current page number out of total pages@@datagrid.pagination.currentPage"
-      >
-        Page <span class="font-normal">{{ pageIndex() + 1 }}</span> of
-        <span class="font-normal">{{ totalPages() }}</span>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="Next"
-        i18n-title="@@datagrid.pagination.nextTitle"
-        [disabled]="!canNext()"
-        (click)="nextPage()"
-      >
-        <pc-icon name="chevron-right" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="Last"
-        i18n-title="@@datagrid.pagination.lastTitle"
-        [disabled]="!canNext()"
-        (click)="lastPage()"
-      >
-        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
-      </button>
-    </div>
-  </div>
-  @if (isLoading()) {
-  <pc-icon name="loading" class="absolute inset-0 grid place-items-center animate-pulse" [size]="24"></pc-icon>
-  }
-</div>
-
-<!-- Right-side Filter Panel -->
-@if (showFilterPanel()) {
-<pc-dg-filter-panel
-  [panelFields]="panelFields()"
-  [panelFilters]="panelFilters()"
-  [labelFor]="labelForFn"
-  [optionsFor]="optionsForFn"
-  [hasActiveFilters]="hasActiveFilters()"
-  (close)="closePanel()"
-  (apply)="applyPanelFilters()"
-  (clear)="clearPanelFilters()"
-  (changeOp)="onPanelOpChange($event.field, $event.op)"
-  (changeValue)="onPanelValueChange($event.field, $event.value)"
-  (openAdvanced)="switchToAdvancedFilter()"
-/>
-}
-
-<!-- Advanced Filter Builder Modal -->
-@if (showAdvancedFilterBuilder()) {
-<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
-  <div
-    class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]"
-  >
-    <div class="flex justify-between items-center pb-4 border-b border-base-200">
-      <div>
-        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
-          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
-          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
-            >Advanced Filter Builder</ng-container
-          >
-        </h3>
-        <p
-          class="text-xs text-neutral-400 mt-1"
-          i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
-        >
-          Build complex matching rules with custom operators and conjunction logic.
-        </p>
-      </div>
-      <button
-        class="btn btn-ghost btn-circle btn-sm"
-        (click)="showAdvancedFilterBuilder.set(false)"
-        aria-label="Close modal"
-        i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel"
-      >
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <!-- Scrollable Body containing the rules -->
-    <div class="flex-1 overflow-y-auto py-6">
-      <pc-query-builder
-        [group]="advFilterRoot()"
-        [fields]="advancedFilterFields()"
-        [tagSvc]="tagsSvc ?? undefined"
-        [showSummary]="true"
-        (changed)="onAdvancedFilterChanged()"
-      ></pc-query-builder>
-    </div>
-
-    <!-- Modal Footer Actions -->
-    <div class="flex justify-between items-center pt-4 border-t border-base-200">
-      <button
-        class="btn btn-outline btn-error btn-sm"
-        (click)="clearAdvancedFilter()"
-        i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
-      >
-        Clear Filters
-      </button>
-      <div class="flex gap-2">
-        <button
-          class="btn btn-ghost btn-sm"
-          (click)="showAdvancedFilterBuilder.set(false)"
-          i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
-        >
-          Cancel
-        </button>
-        <button
-          class="btn btn-primary btn-sm px-6"
-          (click)="applyAdvancedFilter()"
-          i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
-        >
-          Apply
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-}
-```
-
 ## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
 
 ```typescript
@@ -46625,6 +46017,211 @@ export class TasksGrid implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
+
+```typescript
+import type { PcIconNameType } from '@icons/icons.index';
+
+export interface ISidebarItem {
+  adminOnly?: boolean;
+  children?: ISidebarItem[];
+  collapsed?: boolean;
+  favourite?: boolean;
+  hidden?: boolean;
+  hiddenByFavourite?: boolean;
+  icon?: PcIconNameType;
+  indicator?: boolean;
+  name: string;
+  parent?: ISidebarItem;
+  pathMatchExact?: boolean;
+  route?: string;
+  short_name?: string;
+  type?: 'item' | 'subheading' | 'bookmark';
+}
+
+export const SidebarItems: ISidebarItem[] = [
+  {
+    name: 'App',
+    route: '/',
+    hidden: true,
+  },
+  {
+    name: `Dashboard`,
+    route: '/summary',
+    icon: 'presentation-chart-line',
+    pathMatchExact: true,
+  },
+  {
+    name: `BOOKMARKS`,
+    short_name: 'PINS',
+    type: 'bookmark',
+    hidden: true,
+  },
+  {
+    name: `ENGAGE`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Inbox',
+        route: '/inbox',
+        icon: 'envelope',
+      },
+      {
+        name: 'Newsletters',
+        route: '/newsletters',
+        icon: 'megaphone',
+      },
+
+      {
+        name: 'Lists',
+        route: '/lists',
+        icon: 'queue-list',
+      },
+      {
+        name: `Automations`,
+        route: '/workflows',
+        icon: 'cog',
+      },
+    ],
+  },
+  {
+    name: `CONTACTS`,
+    type: 'subheading',
+    children: [
+      {
+        name: `People`,
+        route: '/people',
+        icon: 'identification',
+      },
+      {
+        name: `Households`,
+        route: '/households',
+        icon: 'house-modern',
+      },
+      {
+        name: `Companies`,
+        route: '/companies',
+        icon: 'briefcase',
+      },
+      {
+        name: `Duplicates`,
+        route: '/duplicates',
+        icon: 'document-duplicate',
+      },
+    ],
+  },
+  {
+    name: `CAMPAIGN`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Teams',
+        route: '/teams',
+        icon: 'user-group',
+      },
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+      },
+    ],
+  },
+  {
+    name: 'FORMS',
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      {
+        name: 'Forms',
+        route: '/forms',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Shifts',
+        route: '/events/shifts',
+        icon: 'add-schedule',
+      },
+      {
+        name: 'Events',
+        route: '/events/pages',
+        icon: 'ticket',
+      },
+      {
+        name: 'Fundraising',
+        route: '/donation-pages',
+        icon: 'currency-dollar',
+      },
+    ],
+  },
+  {
+    name: 'TOOLS',
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      {
+        name: `Tasks`,
+        route: '/tasks',
+        icon: 'task',
+      },
+      {
+        name: `Task Board`,
+        route: '/board',
+        icon: 'view-kanban',
+      },
+      {
+        name: 'Files',
+        route: '/files',
+        icon: 'document',
+      },
+      {
+        name: 'Imports',
+        route: '/imports',
+        icon: 'arrow-up-tray',
+      },
+      {
+        name: 'Exports',
+        route: '/exports',
+        icon: 'arrow-down-tray',
+      },
+    ],
+  },
+
+  {
+    name: `SYSTEM`,
+    type: 'subheading',
+    adminOnly: true,
+    collapsed: true,
+    children: [
+      {
+        name: 'Activity Log',
+        route: '/activities',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Tags',
+        route: '/tags',
+        icon: 'label',
+      },
+      {
+        name: 'Issues',
+        route: '/issues',
+        icon: 'shield-exclamation',
+      },
+      {
+        name: 'Users',
+        route: '/users',
+        icon: 'users',
+      },
+      {
+        name: 'Configuration',
+        route: '/configuration',
+        icon: 'wrench-screwdriver',
+      },
+    ],
+  },
+];
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
 
 ```typescript
@@ -46782,6 +46379,630 @@ export class DataGridToolbarComponent {
   public onToggleCol(colId: string, visible: boolean) {
     this.grid.toggleColPublic(colId, visible);
   }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
+
+```html
+@if (displayTitle()) {
+<pc-grid-header
+  [title]="displayTitle()!"
+  [open]="showDescription()"
+  [description]="description() || ''"
+></pc-grid-header>
+}
+
+<div class="flex h-full w-full flex-col">
+  @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
+  <progress class="progress h-1"></progress>
+  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
+      >All {{ displayedCount() }} rows on this page are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="selectAllMatching()"
+      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
+      >Select all {{ totalCountAll() }} rows</a
+    >
+  </div>
+  } @if (allSelected()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
+      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="clearAllSelection()"
+      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
+      >Clear selection</a
+    >
+  </div>
+  }
+  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
+    <table #gridTable class="table w-full">
+      <thead>
+        <tr>
+          @if (enableSelection()) {
+          <th
+            class="border-r border-base-300 pl-2 selection-col"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              [checked]="!allSelected() && tableAllPageSelected()"
+              [indeterminate]="!allSelected() && tableSomePageSelected()"
+              (change)="onHeaderCheckbox($any($event.target).checked)"
+            />
+          </th>
+          } @for (h of leafHeaders(); track h.id) {
+          <th
+            role="columnheader"
+            class="cursor-grab border-r border-base-300 pl-2 relative"
+            [attr.data-col-id]="h.column.id"
+            [attr.aria-sort]="ariaSortHeader(h)"
+            [draggable]="true"
+            (dragstart)="onHeaderDragStart(h, $event)"
+            (dragover)="onHeaderDragOver(h, $event)"
+            (drop)="onHeaderDrop(h, $event)"
+            [style.width.px]="columnWidthPx(h.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
+          >
+            <div class="flex items-center gap-2" data-header-content>
+              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
+                {{ h.column.columnDef.header || h.column.id }}
+              </span>
+              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
+              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
+                <label
+                  tabindex="0"
+                  class="btn btn-xs"
+                  [class.btn-ghost]="!isColFiltered(h.column.id)"
+                  [class.btn-primary]="isColFiltered(h.column.id)"
+                  title="Column options"
+                  i18n-title="@@datagrid.columns.optionsTitle"
+                >
+                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
+                </label>
+                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
+                  @let col = getColDefById(h.column.id);
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
+                      track opt) {
+                      <li>
+                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
+                          <input
+                            type="checkbox"
+                            class="checkbox checkbox-xs"
+                            [checked]="isOptionChecked(h.column.id, opt)"
+                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
+                          />
+                          <span class="label-text">{{ opt }}</span>
+                        </label>
+                      </li>
+                      }
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      } @else {
+                      <li class="px-2 py-1">
+                        <input
+                          class="input input-bordered input-xs w-full"
+                          type="text"
+                          placeholder="Filter value"
+                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
+                          [value]="getFilterValue(h.column.id)"
+                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
+                        />
+                      </li>
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      }
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
+                      <li>
+                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
+                          >Sort asc</a
+                        >
+                      </li>
+                      <li>
+                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
+                          >Sort desc</a
+                        >
+                      </li>
+                      <li>
+                        <a
+                          (click)="clearSort(h)"
+                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
+                          >Clear sort</a
+                        >
+                      </li>
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
+                        >Column</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      <li>
+                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
+                          >Hide</a
+                        >
+                      </li>
+                      <li class="dropdown dropdown-right">
+                        <label tabindex="0" class="flex w-full items-center justify-between"
+                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
+                            >Columns</span
+                          ><span>▸</span></label
+                        >
+                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                          @for (cid of hiddenColumns(); track cid) {
+                          <li>
+                            <a (click)="showColumnById(cid)"
+                              ><ng-container
+                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
+                                >Show</ng-container
+                              >
+                              {{ columnLabelFor(cid) }}</a
+                            >
+                          </li>
+                          } @if (!hiddenColumns().length) {
+                          <li
+                            class="opacity-60 px-2 py-1"
+                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
+                          >
+                            None hidden
+                          </li>
+                          }
+                        </ul>
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+              </div>
+              <span
+                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                title="Resize column"
+                i18n-title="@@datagrid.columns.resizeTitle"
+                [pcHeaderResize]="headerResizeConfig(h)"
+              ></span>
+            </div>
+          </th>
+          }
+        </tr>
+      </thead>
+      <tbody class="bg-base-100">
+        @if (hasActiveFilters() && !visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
+                >No results match your filters</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
+                >Try clearing or adjusting your filters</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @else if (!visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
+                >Nothing here yet</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
+                >Add your first record using the + button above</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @for (r of visibleTableRows(); let i = $index; track r.id) {
+        <tr
+          class="group hover:bg-base-300"
+          [class.cursor-pointer]="rowNavigatesToDetail()"
+          (mouseover)="onCellMouseOver(r.original)"
+          [attr.data-row-id]="toId(r.original)"
+          [class.bg-base-200]="(i % 2) === 1"
+        >
+          @if (enableSelection()) {
+          <td
+            class="sticky left-0 z-20 border-r border-base-300 pl-2"
+            [style.background]="rowBgForIndex(i)"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <div class="flex items-center gap-2">
+              @if (rowCanSelect()(r.original)) {
+              <input
+                type="checkbox"
+                class="checkbox checkbox-sm"
+                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
+                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
+              />
+              } @let rowId = toId(r.original); @if (!disableView() && rowId) {
+              <span
+                title="Open detail"
+                i18n-title="@@datagrid.rows.openDetailTitle"
+                aria-label="Open detail"
+                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
+                (click)="openEdit(rowId); $event.stopPropagation();"
+              >
+                <pc-icon
+                  name="arrow-top-right-on-square"
+                  class="hover:text-primary cursor-pointer text-neutral invisible group-hover:visible pb-1"
+                ></pc-icon>
+              </span>
+              }
+            </div>
+          </td>
+          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
+          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
+          === col.field;
+          <td
+            [pcEditable]="editableCfg(r.original, col)"
+            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
+            tabindex="0"
+            (keydown)="onCellKeydown($event)"
+            (click)="handleCellClick(r.original, col)"
+            (dblclick)="handleCellDblClick(r.original, col)"
+            [class.sticky]="pinState(cell) !== false"
+            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
+            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
+            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
+            [style.zIndex]="pinState(cell) !== false ? 10 : null"
+            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
+            [class.overflow-visible]="isTagColumn(col) && isEditing"
+            class="min-w-0 px-2 border-r border-base-300 relative"
+            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
+            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
+            [attr.data-col-id]="cell.column.id"
+            [style.width.px]="columnWidthPx(cell.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
+          >
+            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
+            (isTagColumn(col)) {
+            <!-- Tag column: checkbox multi-select panel -->
+            <div
+              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
+              (click)="$event.stopPropagation()"
+            >
+              <!-- Search box — pinned, never scrolls -->
+              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
+                <input
+                  type="text"
+                  class="input input-bordered input-xs w-full"
+                  placeholder="Search tags…"
+                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
+                  [ngModel]="tagSearch()"
+                  (ngModelChange)="tagSearch.set($event)"
+                  autofocus
+                />
+              </div>
+              <!-- Scrollable tag list -->
+              <div class="flex-1 overflow-y-auto py-1">
+                @for (tag of filteredTagChoices(col); track tag) {
+                <label
+                  tabindex="-1"
+                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="isTagChecked(tag)"
+                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
+                  />
+                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
+                </label>
+                } @if (!filteredTagChoices(col).length) {
+                <div class="text-xs text-base-content/50 px-3 py-2 italic">
+                  @if (tagSearch()) {
+                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
+                    >No tags match "{{ tagSearch() }}"</ng-container
+                  >
+                  } @else {
+                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
+                    >No tags available</ng-container
+                  >
+                  }
+                </div>
+                }
+              </div>
+              <!-- Done button — pinned, never scrolls -->
+              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
+                <button
+                  class="btn btn-primary btn-xs"
+                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
+                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+            } @else if (editorCfg) { @if (editorCfg.multiple) {
+            <select
+              class="select select-bordered w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              multiple
+              [attr.size]="editorCfg.size ?? null"
+              [style.height]="multiSelectHeight(editorCfg)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            } @else {
+            <select
+              class="select select-bordered w-full select-xs"
+              [ngModel]="editingValue()"
+              (ngModelChange)="onSelectChange(r.original, col, $event)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            } } @else if (textCfg.textarea) {
+            <textarea
+              class="textarea textarea-bordered textarea-sm w-full"
+              [rows]="textCfg.rows"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              autofocus
+            ></textarea>
+            } @else {
+            <input
+              [type]="inputTypeFor(col)"
+              class="input input-bordered input-xs w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              autofocus
+            />
+            } } @else if (hasCellRenderer(col)) {
+            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
+            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
+            (isTagColumn(col) && tagList.length) {
+            <pc-tags
+              [tags]="tagList"
+              [type]="tagTypeFor(col)"
+              [readonly]="true"
+              [canDelete]="false"
+              [compact]="true"
+              [limit]="2"
+              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
+            ></pc-tags>
+            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
+            === null || formattedVal === undefined || formattedVal === '') {
+            <span class="text-base-content/30">—</span>
+            } @else { {{ formattedVal }} } } @else { @if (col.field === 'address') {
+            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
+              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
+            </div>
+            } @else {
+            <span class="flex items-center gap-1 w-full">
+              @if (rawValue === null || rawValue === undefined || rawValue === '') {
+              <span class="flex-1 truncate text-base-content/30">—</span>
+              } @else {
+              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
+              }
+            </span>
+            } } }
+          </td>
+          } }
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
+    <div class="flex items-center gap-2 whitespace-nowrap">
+      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
+        >Page Size:</span
+      >
+      <select
+        class="select select-bordered select-xs"
+        [ngModel]="pageSize()"
+        (ngModelChange)="onPageSizeChange($event)"
+      >
+        @if (![25,50,100].includes(pageSize())) {
+        <option [value]="pageSize()">{{ pageSize() }}</option>
+        } @for (opt of pageSizeChoices(); track opt) {
+        <option [value]="opt">{{ opt }}</option>
+        }
+      </select>
+    </div>
+    <div
+      class="whitespace-nowrap"
+      i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
+    >
+      <span class="font-normal">{{ displayStartIndex() }}</span> to
+      <span class="font-normal">{{ displayEndIndex() }}</span> of
+      <span class="font-normal">{{ totalCountAll() }}</span>
+    </div>
+    <div class="join whitespace-nowrap">
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="First"
+        i18n-title="@@datagrid.pagination.firstTitle"
+        [disabled]="!canPrev()"
+        (click)="firstPage()"
+      >
+        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="Prev"
+        i18n-title="@@datagrid.pagination.prevTitle"
+        [disabled]="!canPrev()"
+        (click)="prevPage()"
+      >
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn font-light btn-sm join-item btn-ghost pointer-events-none whitespace-nowrap"
+        i18n="Datagrid|Current page number out of total pages@@datagrid.pagination.currentPage"
+      >
+        Page <span class="font-normal">{{ pageIndex() + 1 }}</span> of
+        <span class="font-normal">{{ totalPages() }}</span>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="Next"
+        i18n-title="@@datagrid.pagination.nextTitle"
+        [disabled]="!canNext()"
+        (click)="nextPage()"
+      >
+        <pc-icon name="chevron-right" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="Last"
+        i18n-title="@@datagrid.pagination.lastTitle"
+        [disabled]="!canNext()"
+        (click)="lastPage()"
+      >
+        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
+      </button>
+    </div>
+  </div>
+  @if (isLoading()) {
+  <pc-icon name="loading" class="absolute inset-0 grid place-items-center animate-pulse" [size]="24"></pc-icon>
+  }
+</div>
+
+<!-- Right-side Filter Panel -->
+@if (showFilterPanel()) {
+<pc-dg-filter-panel
+  [panelFields]="panelFields()"
+  [panelFilters]="panelFilters()"
+  [labelFor]="labelForFn"
+  [optionsFor]="optionsForFn"
+  [hasActiveFilters]="hasActiveFilters()"
+  (close)="closePanel()"
+  (apply)="applyPanelFilters()"
+  (clear)="clearPanelFilters()"
+  (changeOp)="onPanelOpChange($event.field, $event.op)"
+  (changeValue)="onPanelValueChange($event.field, $event.value)"
+  (openAdvanced)="switchToAdvancedFilter()"
+/>
+}
+
+<!-- Advanced Filter Builder Modal -->
+@if (showAdvancedFilterBuilder()) {
+<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
+  <div
+    class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]"
+  >
+    <div class="flex justify-between items-center pb-4 border-b border-base-200">
+      <div>
+        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
+          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
+          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
+            >Advanced Filter Builder</ng-container
+          >
+        </h3>
+        <p
+          class="text-xs text-neutral-400 mt-1"
+          i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
+        >
+          Build complex matching rules with custom operators and conjunction logic.
+        </p>
+      </div>
+      <button
+        class="btn btn-ghost btn-circle btn-sm"
+        (click)="showAdvancedFilterBuilder.set(false)"
+        aria-label="Close modal"
+        i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel"
+      >
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <!-- Scrollable Body containing the rules -->
+    <div class="flex-1 overflow-y-auto py-6">
+      <pc-query-builder
+        [group]="advFilterRoot()"
+        [fields]="advancedFilterFields()"
+        [tagSvc]="tagsSvc ?? undefined"
+        [showSummary]="true"
+        (changed)="onAdvancedFilterChanged()"
+      ></pc-query-builder>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div class="flex justify-between items-center pt-4 border-t border-base-200">
+      <button
+        class="btn btn-outline btn-error btn-sm"
+        (click)="clearAdvancedFilter()"
+        i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
+      >
+        Clear Filters
+      </button>
+      <div class="flex gap-2">
+        <button
+          class="btn btn-ghost btn-sm"
+          (click)="showAdvancedFilterBuilder.set(false)"
+          i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
+        >
+          Cancel
+        </button>
+        <button
+          class="btn btn-primary btn-sm px-6"
+          (click)="applyAdvancedFilter()"
+          i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 }
 ```
 
@@ -47300,211 +47521,6 @@ export class HouseholdForm implements OnInit {
       .finally(() => end());
   }
 }
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-export interface ISidebarItem {
-  adminOnly?: boolean;
-  children?: ISidebarItem[];
-  collapsed?: boolean;
-  favourite?: boolean;
-  hidden?: boolean;
-  hiddenByFavourite?: boolean;
-  icon?: PcIconNameType;
-  indicator?: boolean;
-  name: string;
-  parent?: ISidebarItem;
-  pathMatchExact?: boolean;
-  route?: string;
-  short_name?: string;
-  type?: 'item' | 'subheading' | 'bookmark';
-}
-
-export const SidebarItems: ISidebarItem[] = [
-  {
-    name: 'App',
-    route: '/',
-    hidden: true,
-  },
-  {
-    name: `Dashboard`,
-    route: '/summary',
-    icon: 'presentation-chart-line',
-    pathMatchExact: true,
-  },
-  {
-    name: `BOOKMARKS`,
-    short_name: 'PINS',
-    type: 'bookmark',
-    hidden: true,
-  },
-  {
-    name: `ENGAGE`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Inbox',
-        route: '/inbox',
-        icon: 'envelope',
-      },
-      {
-        name: 'Newsletters',
-        route: '/newsletters',
-        icon: 'megaphone',
-      },
-
-      {
-        name: 'Lists',
-        route: '/lists',
-        icon: 'queue-list',
-      },
-      {
-        name: `Automations`,
-        route: '/workflows',
-        icon: 'cog',
-      },
-    ],
-  },
-  {
-    name: `CONTACTS`,
-    type: 'subheading',
-    children: [
-      {
-        name: `People`,
-        route: '/people',
-        icon: 'identification',
-      },
-      {
-        name: `Households`,
-        route: '/households',
-        icon: 'house-modern',
-      },
-      {
-        name: `Companies`,
-        route: '/companies',
-        icon: 'briefcase',
-      },
-      {
-        name: `Duplicates`,
-        route: '/duplicates',
-        icon: 'document-duplicate',
-      },
-    ],
-  },
-  {
-    name: `CAMPAIGN`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Teams',
-        route: '/teams',
-        icon: 'user-group',
-      },
-      {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
-      },
-    ],
-  },
-  {
-    name: 'FORMS',
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        name: 'Forms',
-        route: '/forms',
-        icon: 'clipboard-document-list',
-      },
-      {
-        name: 'Shifts',
-        route: '/events/shifts',
-        icon: 'add-schedule',
-      },
-      {
-        name: 'Events',
-        route: '/events/pages',
-        icon: 'ticket',
-      },
-      {
-        name: 'Fundraising',
-        route: '/donation-pages',
-        icon: 'currency-dollar',
-      },
-    ],
-  },
-  {
-    name: 'TOOLS',
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        name: `Tasks`,
-        route: '/tasks',
-        icon: 'task',
-      },
-      {
-        name: `Task Board`,
-        route: '/board',
-        icon: 'view-kanban',
-      },
-      {
-        name: 'Files',
-        route: '/files',
-        icon: 'document',
-      },
-      {
-        name: 'Imports',
-        route: '/imports',
-        icon: 'arrow-up-tray',
-      },
-      {
-        name: 'Exports',
-        route: '/exports',
-        icon: 'arrow-down-tray',
-      },
-    ],
-  },
-
-  {
-    name: `SYSTEM`,
-    type: 'subheading',
-    adminOnly: true,
-    collapsed: true,
-    children: [
-      {
-        name: 'Activity Log',
-        route: '/activities',
-        icon: 'clipboard-document-list',
-      },
-      {
-        name: 'Tags',
-        route: '/tags',
-        icon: 'label',
-      },
-      {
-        name: 'Issues',
-        route: '/issues',
-        icon: 'shield-exclamation',
-      },
-      {
-        name: 'Users',
-        route: '/users',
-        icon: 'users',
-      },
-      {
-        name: 'Configuration',
-        route: '/configuration',
-        icon: 'wrench-screwdriver',
-      },
-    ],
-  },
-];
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
@@ -51641,7 +51657,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   /** Resolve whether a column edits tags or issues from its renderer params. */
-  private tagTypeFor(col?: ColDef): 'tag' | 'issue' {
+  protected tagTypeFor(col?: ColDef): 'tag' | 'issue' {
     const params: unknown = col?.cellRendererParams;
     return isRecord(params) && params['tagType'] === 'issue' ? 'issue' : 'tag';
   }

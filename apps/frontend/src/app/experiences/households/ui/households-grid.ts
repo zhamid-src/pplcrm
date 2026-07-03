@@ -1,7 +1,7 @@
 import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
@@ -14,10 +14,6 @@ import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { HouseholdsService } from '../services/households-service';
-
-interface ParamsType {
-  value: string[];
-}
 
 @Component({
   selector: 'pc-households-grid',
@@ -174,9 +170,12 @@ export class HouseholdsGrid implements OnInit {
         tagType: 'tag',
       },
       cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
     },
     {
       field: 'issues',
@@ -192,9 +191,12 @@ export class HouseholdsGrid implements OnInit {
         tagType: 'issue',
       },
       cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB) === 0,
-      valueFormatter: (params: ParamsType) => this.utils.tagsToString(params.value),
-      comparator: (tagsA: string[], tagsB: string[]) => this.utils.tagArrayEquals(tagsA, tagsB),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
     },
     { field: 'state', headerName: 'State/Province', editable: true },
     { field: 'zip', headerName: 'Zip/Province', editable: true },
@@ -220,11 +222,8 @@ export class HouseholdsGrid implements OnInit {
   protected tagsInput = '';
 
   public ngOnInit(): void {
-
     void this.loadOnInit();
-
   }
-
 
   private async loadOnInit(): Promise<void> {
     await this.loadTagOptions();
