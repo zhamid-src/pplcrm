@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import type { HeaderRef } from '../types';
 
 @Injectable()
 export class ResizingController {
@@ -8,10 +9,10 @@ export class ResizingController {
   private _selStartW = 48;
 
   beginHeaderResize(
-    h: any,
+    h: HeaderRef,
     clientX: number,
     getColWidth: (id: string) => number | null,
-    applySize: (col: any, id: string, w: number) => void,
+    applySize: (col: HeaderRef['column'], id: string, w: number) => void,
     onDone: () => void,
   ) {
     const col = h?.column;
@@ -35,10 +36,10 @@ export class ResizingController {
   }
 
   beginHeaderResizeTouch(
-    h: any,
+    h: HeaderRef,
     clientX: number,
     getColWidth: (id: string) => number | null,
-    applySize: (col: any, id: string, w: number) => void,
+    applySize: (col: HeaderRef['column'], id: string, w: number) => void,
     onDone: () => void,
   ) {
     const col = h?.column;

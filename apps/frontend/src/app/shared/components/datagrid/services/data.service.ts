@@ -14,12 +14,12 @@ export class DataGridDataService {
     endRow: number;
     tags: string[];
     issues?: string[];
-    filterModel: Record<string, any>;
+    filterModel: Record<string, unknown>;
     sortState: Array<{ id: string; desc?: boolean }>;
     sortCol: string | null;
     sortDir: 'asc' | 'desc' | null;
     includeArchived?: boolean;
-    advancedFilterModel?: any;
+    advancedFilterModel?: NonNullable<getAllOptionsType>['advancedFilterModel'];
     listId?: string | null;
   }): Partial<getAllOptionsType> {
     const {
