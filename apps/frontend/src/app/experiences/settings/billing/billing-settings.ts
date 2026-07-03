@@ -40,7 +40,9 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     await this.loadBilling();
 
     // Listen to query params for mock successes or redirect callbacks
-    this.route.queryParams.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => void this.handleQueryParams(params));
+    this.route.queryParams
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((params) => void this.handleQueryParams(params));
   }
 
   protected async loadBilling() {
@@ -48,9 +50,9 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     try {
       const data = await this.api.billing.getDetails.query();
       this.details.set(data);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      this.alerts.showError(err.message || 'Failed to load subscription details.');
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load subscription details.');
     } finally {
       end();
     }
@@ -78,8 +80,8 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       } else {
         throw new Error('No redirect URL returned from billing engine.');
       }
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Checkout failed. Please try again.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Checkout failed. Please try again.');
       this.actionPending.set(false);
     }
   }
@@ -93,8 +95,8 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       } else {
         throw new Error('No redirect URL returned from billing portal.');
       }
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Could not open billing portal.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not open billing portal.');
       this.actionPending.set(false);
     }
   }
@@ -105,8 +107,8 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       await this.api.billing.activateMockPlan.mutate({ plan });
       this.alerts.showSuccess(`Success! [Mock Mode] activated your "${plan.toUpperCase()}" plan.`);
       await this.loadBilling();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Mock plan activation failed.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Mock plan activation failed.');
     } finally {
       end();
       this.clearQueryParams();
@@ -119,8 +121,8 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
       await this.api.billing.cancelMockPlan.mutate();
       this.alerts.showSuccess('Mock subscription has been canceled.');
       await this.loadBilling();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to cancel mock plan.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel mock plan.');
     } finally {
       end();
     }

@@ -60,8 +60,8 @@ export class ResetPasswordPage {
           );
           this.emailSent.set(true);
           void this.router.navigateByUrl('signin');
-        } catch (err: any) {
-          this.alertSvc.showError(err.message || String(err));
+        } catch (err) {
+          this.alertSvc.showError(err instanceof Error && err.message ? err.message : String(err));
         } finally {
           end();
         }

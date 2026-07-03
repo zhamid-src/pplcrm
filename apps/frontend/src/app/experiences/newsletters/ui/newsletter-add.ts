@@ -294,9 +294,9 @@ export class NewsletterAddComponent implements OnInit {
         );
       }
       this.close();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to save or send newsletter', err);
-      this.alertSvc.showError(err.message || 'Failed to save or send newsletter.');
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to save or send newsletter.');
     }
   }
 

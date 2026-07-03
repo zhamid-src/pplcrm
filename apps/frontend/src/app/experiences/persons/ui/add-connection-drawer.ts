@@ -157,7 +157,7 @@ type PersonSearchResult = { id: string; first_name: string | null; last_name: st
 export class AddConnectionDrawer {
   readonly personId = input.required<string>();
   readonly isOpen = input.required<boolean>();
-  readonly close = output<void>();
+  readonly closeDrawer = output<void>();
   readonly saved = output<any>();
 
   private readonly connectionsSvc = inject(ConnectionsService);
@@ -244,9 +244,9 @@ export class AddConnectionDrawer {
       this.alertSvc.showSuccess('Connection added');
       this.saved.emit(result);
       this.resetForm();
-      this.close.emit();
-    } catch (err: any) {
-      if (err?.message?.includes('already exists')) {
+      this.closeDrawer.emit();
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('already exists')) {
         this.alertSvc.showError('A connection of this type already exists between these contacts.');
       }
     } finally {
@@ -256,7 +256,7 @@ export class AddConnectionDrawer {
 
   protected onClose() {
     this.resetForm();
-    this.close.emit();
+    this.closeDrawer.emit();
   }
 
   private resetForm() {

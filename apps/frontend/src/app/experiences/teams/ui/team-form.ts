@@ -200,8 +200,16 @@ export class TeamFormComponent implements OnInit {
       this.teams.triggerRefresh();
       this.alerts.showSuccess('Team deleted');
       await this.router.navigate(['/teams']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete team';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete team';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -270,8 +278,16 @@ export class TeamFormComponent implements OnInit {
       this.setForm(result);
       this.form().reset();
       this.alerts.showSuccess(this.isNew() ? 'Team created' : 'Team updated');
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to save team';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to save team';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -333,8 +349,16 @@ export class TeamFormComponent implements OnInit {
         filterModel: { team_id: { value: this.id() } },
       } as any);
       this.teamTasks.set(res?.rows ?? []);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to load team';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load team';
       this.error.set(message);
       this.alerts.showError(message);
     }
@@ -381,4 +405,8 @@ export class TeamFormComponent implements OnInit {
         return 'badge-ghost';
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

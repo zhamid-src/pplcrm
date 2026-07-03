@@ -488,10 +488,10 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 
       if (isJson) return reply.status(200).send({ success: true });
       return reply.redirect('/api/event-pages/rsvp-success');
-    } catch (err: any) {
+    } catch (err) {
       fastify.log.error(err);
       const status = getStatusFromError(err);
-      const message = err.message || 'An unexpected error occurred.';
+      const message = err instanceof Error && err.message ? err.message : 'An unexpected error occurred.';
 
       if (isJson) return reply.status(status).send({ error: message });
 

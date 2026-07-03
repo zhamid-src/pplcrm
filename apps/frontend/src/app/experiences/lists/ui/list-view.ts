@@ -73,7 +73,7 @@ export class ListView implements OnDestroy {
     }
   }
 
-  private pollInterval: any = null;
+  private pollInterval: ReturnType<typeof setInterval> | null = null;
 
   protected async refreshList() {
     try {
@@ -81,8 +81,8 @@ export class ListView implements OnDestroy {
       await this.lists.refreshList(this.id());
       this.alerts.showSuccess('Refresh job scheduled in background');
       this.pollRefreshStatus();
-    } catch (e: any) {
-      this.alerts.showError(e?.message ?? String(e));
+    } catch (e) {
+      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
       this.refreshing.set(false);
     }
   }
@@ -98,7 +98,7 @@ export class ListView implements OnDestroy {
       const list = (await this.lists.getById(this.id())) as ListsType;
       this.listData.set(list);
       if (list.status !== 'refreshing') {
-        clearInterval(this.pollInterval);
+        if (this.pollInterval) clearInterval(this.pollInterval);
         this.pollInterval = null;
         this.refreshing.set(false);
         if (list.status === 'failed') {
@@ -109,7 +109,7 @@ export class ListView implements OnDestroy {
         await this.loadListDetails();
       }
     } catch (_e) {
-      clearInterval(this.pollInterval);
+      if (this.pollInterval) clearInterval(this.pollInterval);
       this.pollInterval = null;
       this.refreshing.set(false);
     }
@@ -140,8 +140,16 @@ export class ListView implements OnDestroy {
       this.lists.triggerRefresh();
       this.alerts.showSuccess('List deleted');
       await this.router.navigate(['/lists']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete list';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete list';
       this.alerts.showError(message);
     } finally {
       this.loading.set(false);
@@ -159,4 +167,8 @@ export class ListView implements OnDestroy {
     if (value == null) return '0%';
     return `${value.toFixed(1)}%`;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

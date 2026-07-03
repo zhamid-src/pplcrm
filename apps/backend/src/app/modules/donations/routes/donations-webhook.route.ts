@@ -91,9 +91,10 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
         .execute();
 
       return reply.code(200).send({ received: true });
-    } catch (err: any) {
-      logger.error({ err: err.message }, `Donations Webhook error for Tenant ${tenantId}`);
-      return reply.code(400).send({ error: err.message });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, `Donations Webhook error for Tenant ${tenantId}`);
+      return reply.code(400).send({ error: message });
     }
   });
 

@@ -40,11 +40,8 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
   private sessionPollInterval: ReturnType<typeof setInterval> | null = null;
 
   public ngOnInit(): void {
-
     void this.loadOnInit();
-
   }
-
 
   private async loadOnInit(): Promise<void> {
     this.tenantId = this.route.snapshot.queryParamMap.get('tid');
@@ -81,9 +78,13 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
       this.status.set('success');
       // Refresh so authGuard doesn't re-redirect on subsequent navigation
       await this.auth.getCurrentUser().catch(() => null);
-    } catch (err: any) {
+    } catch (err) {
       this.status.set('error');
-      this.errorMessage.set(err.message || 'This link is invalid or the deletion window has already passed.');
+      this.errorMessage.set(
+        err instanceof Error && err.message
+          ? err.message
+          : 'This link is invalid or the deletion window has already passed.',
+      );
     } finally {
       end();
     }
@@ -96,8 +97,10 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
       // Refresh user so guard clears and we can navigate
       await this.auth.getCurrentUser();
       void this.router.navigate(['/']);
-    } catch (err: any) {
-      this.errorMessage.set(err.message || 'Failed to cancel deletion. Please try again.');
+    } catch (err) {
+      this.errorMessage.set(
+        err instanceof Error && err.message ? err.message : 'Failed to cancel deletion. Please try again.',
+      );
     } finally {
       this.actionPending.set(false);
     }

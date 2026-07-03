@@ -59,8 +59,8 @@ export class EventsController extends BaseController<'events', EventsRepo> {
 
     try {
       return await this.add(row);
-    } catch (err: any) {
-      if (err?.message?.includes('events_end_after_start_check')) {
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
       }
       throw err;
@@ -138,8 +138,8 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     let result;
     try {
       result = await this.update({ tenant_id: auth.tenant_id, id, row });
-    } catch (err: any) {
-      if (err?.message?.includes('events_end_after_start_check')) {
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
       }
       throw err;

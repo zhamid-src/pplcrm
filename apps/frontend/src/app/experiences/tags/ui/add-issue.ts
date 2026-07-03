@@ -91,8 +91,10 @@ export class AddIssue {
 
           this.payload.set({ name: '', description: '', color: randomHexColor() });
           this.formActions()?.stayOrCancel();
-        } catch (err: any) {
-          this.alertSvc.showError(err.message || "We've hit an unknown error. Please try again.");
+        } catch (err) {
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
+          );
         } finally {
           end();
         }

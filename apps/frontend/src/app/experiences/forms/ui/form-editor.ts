@@ -401,8 +401,16 @@ ${
       this.formsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Web form deleted');
       await this.router.navigate(['/forms']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete web form';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete web form';
       this.alertSvc.showError(message);
     } finally {
       this.saving.set(false);
@@ -465,8 +473,8 @@ ${
               void this.router.navigate(['/forms', id]);
             }
           }
-        } catch (err: any) {
-          const msg = err.message || 'An error occurred while saving the form.';
+        } catch (err) {
+          const msg = err instanceof Error && err.message ? err.message : 'An error occurred while saving the form.';
           this.error.set(msg);
           this.alertSvc.showError(msg);
         } finally {
@@ -534,4 +542,8 @@ ${
       end();
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

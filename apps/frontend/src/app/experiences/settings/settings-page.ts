@@ -149,11 +149,8 @@ export class SettingsPage implements OnInit {
   }
 
   public ngOnInit(): void {
-
     void this.loadOnInit();
-
   }
-
 
   private async loadOnInit(): Promise<void> {
     await this.settingsSvc.load();
@@ -292,7 +289,7 @@ export class SettingsPage implements OnInit {
           notifState.form().reset();
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load user preferences in settings page', err);
     }
   }
@@ -308,8 +305,10 @@ export class SettingsPage implements OnInit {
       await this.householdsSvc.recomputeAddressFingerprints();
       this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
       await this.loadLastFingerprintRecomputeTime();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to trigger address fingerprint recomputation.');
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to trigger address fingerprint recomputation.',
+      );
     } finally {
       this.recomputingFingerprints.set(false);
     }
@@ -372,8 +371,16 @@ export class SettingsPage implements OnInit {
         }
       }
       this.alerts.showSuccess('Settings updated successfully');
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to save settings';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to save settings';
       this.alerts.showError(message);
     } finally {
       this.savingSectionId.set(null);
@@ -406,8 +413,8 @@ export class SettingsPage implements OnInit {
       this.alerts.showSuccess(
         `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
       );
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to send verification email.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to send verification email.');
     } finally {
       this.verifyingEmail.set(null);
     }
@@ -590,4 +597,8 @@ export class SettingsPage implements OnInit {
       }
     }, 1000);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

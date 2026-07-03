@@ -41,8 +41,8 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
         suspended_at: data.suspended_at ? new Date(data.suspended_at) : null,
         paused_at: data.paused_at ? new Date(data.paused_at) : null,
       });
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to load account status.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load account status.');
     } finally {
       end();
     }
@@ -63,8 +63,8 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
     try {
       await this.api.auth.pauseTenant.mutate();
       await this.auth.signOut();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to pause account.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to pause account.');
       this.actionPending.set(false);
     }
   }
@@ -84,8 +84,8 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
       await this.api.auth.resumeTenant.mutate();
       await this.loadStatus();
       this.alerts.showSuccess('Account reactivated. Welcome back!');
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to reactivate account.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to reactivate account.');
     } finally {
       this.actionPending.set(false);
     }
@@ -128,8 +128,8 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
       await this.api.auth.scheduleTenantDeletion.mutate();
       // All sessions are wiped server-side — sign out locally and redirect to login
       await this.auth.signOut();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to schedule account deletion.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to schedule account deletion.');
       this.actionPending.set(false);
     }
   }
@@ -149,8 +149,8 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
       await this.api.auth.cancelTenantDeletion.mutate();
       await this.loadStatus();
       this.alerts.showSuccess('Account deletion cancelled. Your data is safe.');
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to cancel deletion.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel deletion.');
     } finally {
       this.actionPending.set(false);
     }

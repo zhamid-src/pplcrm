@@ -340,9 +340,9 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     for (const wf of activeWorkflows) {
       try {
         await this.enrollPerson(tenantId, personId, String(wf.id), creatorId, trx as any);
-      } catch (err: any) {
+      } catch (err) {
         // Safe check in case they're already enrolled
-        if (err.message?.includes('already enrolled')) {
+        if (err instanceof Error && err.message.includes('already enrolled')) {
           logger.info(`Person ${personId} is already enrolled in workflow ${wf.id}. Skipping.`);
         } else {
           logger.error({ err }, `Failed to enroll person ${personId} in workflow ${wf.id}`);

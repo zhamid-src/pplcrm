@@ -48,7 +48,7 @@ export class PersonsGrid implements OnInit {
   public inline = input<boolean>(false);
 
   private addressChangeModalId: string | null = null;
-  private importProgressTimer: any;
+  private importProgressTimer: ReturnType<typeof setInterval> | undefined;
   private tagOptionValues: string[] = [];
   private issueOptionValues: string[] = [];
 
@@ -329,8 +329,13 @@ export class PersonsGrid implements OnInit {
       });
       this.importerOpen.set(false);
       await this.grid()?.refresh();
-    } catch (e: any) {
-      const msg = e?.message || e?.data?.message || 'Import failed';
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
       this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
       this.importerOpen.set(false);
     }
@@ -433,9 +438,17 @@ export class PersonsGrid implements OnInit {
       // Call deleteMany without force, skipping global error toast
       await this.personsService.deleteMany(ids, undefined, true);
       this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-    } catch (err: any) {
+    } catch (err) {
       // Check if it's the captain error message
-      const errMsg = err?.message || err?.data?.message || '';
+      const errMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : '';
       if (errMsg.includes('team captains')) {
         // Ask the user if they want to proceed despite being a team captain
         const forceOk = await this.dialogs.confirm({
@@ -449,8 +462,16 @@ export class PersonsGrid implements OnInit {
           try {
             await this.personsService.deleteMany(ids, true, true);
             this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-          } catch (forceErr: any) {
-            const forceErrMsg = forceErr?.message || forceErr?.data?.message || 'Delete failed';
+          } catch (forceErr) {
+            const forceErrMsg =
+              forceErr instanceof Error && forceErr.message
+                ? forceErr.message
+                : isRecord(forceErr) &&
+                    isRecord(forceErr['data']) &&
+                    typeof forceErr['data']['message'] === 'string' &&
+                    forceErr['data']['message']
+                  ? forceErr['data']['message']
+                  : 'Delete failed';
             this.alertSvc.showError(forceErrMsg);
           }
         }
@@ -464,4 +485,8 @@ export class PersonsGrid implements OnInit {
     }
     return true;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

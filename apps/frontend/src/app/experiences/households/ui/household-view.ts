@@ -196,8 +196,16 @@ export class HouseholdView {
       this.householdsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Household deleted');
       await this.router.navigate(['/households']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete household';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete household';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -249,4 +257,8 @@ export class HouseholdView {
     if (!id) return '?';
     return this.usersById.get(String(id))?.first_name ?? '?';
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

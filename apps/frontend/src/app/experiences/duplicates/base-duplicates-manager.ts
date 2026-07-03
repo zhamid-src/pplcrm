@@ -141,8 +141,8 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
       } else if (updatedGroups.length === 0 && this.totalGroups() > 0) {
         void this.loadDuplicates();
       }
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Merge failed');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Merge failed');
     }
   }
 

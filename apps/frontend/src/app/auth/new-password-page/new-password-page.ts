@@ -80,9 +80,11 @@ export class NewPasswordPage implements OnInit {
 
           this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
           void this.router.navigateByUrl('signin');
-        } catch (err: any) {
+        } catch (err) {
           // Catch backend/network rejections properly
-          this.alertSvc.showError(err?.message || 'Failed to reset password. Please try again.');
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : 'Failed to reset password. Please try again.',
+          );
           this.error.set(true);
         } finally {
           end();

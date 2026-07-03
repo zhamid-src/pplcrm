@@ -162,8 +162,16 @@ export class ProfilePage implements OnInit {
       this.alerts.showSuccess('Profile updated successfully');
       await this.load();
       this.form().reset();
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to update profile';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to update profile';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -178,8 +186,16 @@ export class ProfilePage implements OnInit {
       await this.auth.cancelEmailChange();
       this.alerts.showSuccess('Email change canceled and reverted');
       await this.load();
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to cancel email change';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to cancel email change';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -309,8 +325,8 @@ export class ProfilePage implements OnInit {
       const data = await this.auth.uploadAvatar(webpFile);
       this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
       this.alerts.showSuccess('Profile picture updated successfully');
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to crop/upload avatar');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
     } finally {
       this.uploadingAvatar.set(false);
     }
@@ -322,8 +338,8 @@ export class ProfilePage implements OnInit {
       await this.auth.deleteAvatar();
       this.avatarUrl.set(null);
       this.alerts.showSuccess('Profile picture removed');
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to remove avatar');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
     } finally {
       this.uploadingAvatar.set(false);
     }
@@ -345,8 +361,16 @@ export class ProfilePage implements OnInit {
       this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
       this.setForm(user);
       this.form().reset();
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to load profile';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load profile';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -396,4 +420,8 @@ export class ProfilePage implements OnInit {
       },
     } as UpdateAuthUserType;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
