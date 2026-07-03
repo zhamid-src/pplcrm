@@ -1,32 +1,37 @@
 import { Injectable, computed, effect, signal, untracked, linkedSignal } from '@angular/core';
-import type { GridRow } from '../types';
+import type { Table } from '@tanstack/table-core';
+import type { GridHost, GridRow, GridSnapshot } from '../types';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
 @Injectable()
 export class GridStoreService {
-  public grid?: any;
+  public grid?: GridHost;
   readonly rows = signal<GridRow[]>([]);
-  readonly sorting = signal<any[]>([]);
+  readonly sorting = signal<unknown[]>([]);
   readonly colVisibility = signal<Record<string, boolean>>({});
   readonly colWidths = signal<Record<string, number>>({});
-  readonly filterValues = signal<Record<string, any>>({});
-  readonly panelFilters = signal<Record<string, { op: string; value: any }>>({});
-  readonly selectedIdSet = linkedSignal<Record<string, any>, Set<string>>({
+  readonly filterValues = signal<Record<string, unknown>>({});
+  readonly panelFilters = signal<Record<string, { op: string; value: unknown }>>({});
+  readonly selectedIdSet = linkedSignal<Record<string, unknown>, Set<string>>({
     source: () => this.filterValues(),
     computation: () => new Set<string>(),
   });
-  readonly allSelected = linkedSignal<Record<string, any>, boolean>({
+  readonly allSelected = linkedSignal<Record<string, unknown>, boolean>({
     source: () => this.filterValues(),
     computation: () => false,
   });
-  readonly allSelectedIdSet = linkedSignal<Record<string, any>, Set<string>>({
+  readonly allSelectedIdSet = linkedSignal<Record<string, unknown>, Set<string>>({
     source: () => this.filterValues(),
     computation: () => new Set<string>(),
   });
-  readonly allSelectedIds = linkedSignal<Record<string, any>, string[]>({
+  readonly allSelectedIds = linkedSignal<Record<string, unknown>, string[]>({
     source: () => this.filterValues(),
     computation: () => [],
   });
-  readonly allSelectedCount = linkedSignal<Record<string, any>, number>({
+  readonly allSelectedCount = linkedSignal<Record<string, unknown>, number>({
     source: () => this.filterValues(),
     computation: () => 0,
   });
@@ -37,23 +42,23 @@ export class GridStoreService {
   readonly displayedCount = computed(() => this.rows().length);
 
   readonly editCommitCount = signal<number>(0);
-  private _lastSnapshot: any = null;
+  private _lastSnapshot: GridSnapshot | null = null;
 
-  public recordSnapshotBeforeCommit(id: string, field: string, prevValue: any, newValue: any) {
-    let rowsCopy: any[] = [];
+  public recordSnapshotBeforeCommit(id: string, field: string, prevValue: unknown, newValue: unknown) {
+    let rowsCopy: GridRow[] = [];
     try {
-      rowsCopy = JSON.parse(JSON.stringify(this.rows() || []));
+      rowsCopy = JSON.parse(JSON.stringify(this.rows() || [])) as GridRow[];
     } catch {
-      rowsCopy = (this.rows() || []).map((r: any) => {
-        const copy = { ...r };
-        if (Array.isArray(r.tags)) copy.tags = [...r.tags];
-        if (Array.isArray(r.issues)) copy.issues = [...r.issues];
+      rowsCopy = (this.rows() || []).map((r) => {
+        const copy: GridRow = { ...r };
+        if (Array.isArray(r['tags'])) copy['tags'] = [...(r['tags'] as unknown[])];
+        if (Array.isArray(r['issues'])) copy['issues'] = [...(r['issues'] as unknown[])];
         return copy;
       });
     }
 
-    const getRowId = this._getRowId || ((r: any) => String(r?.id || ''));
-    rowsCopy = rowsCopy.map((r: any) => {
+    const getRowId = this._getRowId || ((r: GridRow) => String(r?.['id'] || ''));
+    rowsCopy = rowsCopy.map((r) => {
       if (getRowId(r) === id) {
         return { ...r, [field]: prevValue };
       }
@@ -79,8 +84,8 @@ export class GridStoreService {
 
   private _persistKey = signal<string>('');
   private _persistTick = signal<number>(0);
-  private _table: any = null;
-  private _getRowId: ((row: any) => string) | null = null;
+  private _table: Table<GridRow> | null = null;
+  private _getRowId: ((row: GridRow) => string) | null = null;
 
   constructor() {
     effect(() => {
@@ -106,12 +111,13 @@ export class GridStoreService {
       this._persistTick();
       if (!key) return;
       try {
-        const st = (this._table?.getState?.() ?? {}) as unknown as {
-          sorting?: any[];
-          columnVisibility?: Record<string, boolean>;
-          columnPinning?: { left: string[]; right: string[] };
-          columnSizing?: Record<string, number>;
-          columnOrder?: string[];
+        const state = this._table?.getState();
+        const st = {
+          sorting: state?.sorting as unknown[] | undefined,
+          columnVisibility: state?.columnVisibility,
+          columnPinning: state?.columnPinning,
+          columnSizing: state?.columnSizing,
+          columnOrder: state?.columnOrder,
         };
         const data = {
           sorting: st.sorting || this.sorting(),
@@ -138,7 +144,7 @@ export class GridStoreService {
       const v = this.colVisibility();
       if (this._table) {
         try {
-          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
+          this._table.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
         } catch {}
       }
     });
@@ -148,7 +154,10 @@ export class GridStoreService {
       const s = this.sorting();
       if (this._table) {
         try {
-          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, sorting: s } }));
+          this._table.setOptions((prev) => ({
+            ...prev,
+            state: { ...prev.state, sorting: s as unknown as typeof prev.state.sorting },
+          }));
         } catch {}
       }
     });
@@ -158,7 +167,7 @@ export class GridStoreService {
       const sizing = this.colWidths();
       if (this._table) {
         try {
-          this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
+          this._table.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
         } catch {}
       }
     });
@@ -168,7 +177,7 @@ export class GridStoreService {
       const r = this.rows();
       if (this._table) {
         try {
-          this._table.setOptions((prev: any) => ({ ...prev, data: r }));
+          this._table.setOptions((prev) => ({ ...prev, data: r }));
         } catch {}
       }
     });
@@ -184,7 +193,7 @@ export class GridStoreService {
           const id = this._getRowId(r);
           if (id && ids.has(id)) map[id] = true;
         }
-        this._table.setOptions((prev: any) => ({ ...prev, state: { ...prev.state, rowSelection: map } }));
+        this._table.setOptions((prev) => ({ ...prev, state: { ...prev.state, rowSelection: map } }));
       } catch {}
     });
   }
@@ -193,11 +202,11 @@ export class GridStoreService {
     this._persistKey.set(key || '');
   }
 
-  attachTable(table: any) {
-    this._table = table;
+  attachTable(table: Table<GridRow> | undefined) {
+    this._table = table ?? null;
   }
 
-  setGetRowId(fn: (row: any) => string) {
+  setGetRowId(fn: (row: GridRow) => string) {
     this._getRowId = fn;
   }
 
@@ -216,16 +225,17 @@ export class GridStoreService {
       const raw = localStorage.getItem(key);
       if (!raw) return;
       type Persisted = {
-        sorting?: any[];
+        sorting?: unknown[];
         visibility?: Record<string, boolean>;
-        filters?: Record<string, any>;
+        filters?: Record<string, unknown>;
         selectionWidth?: number;
         sizing?: Record<string, number>;
         pinning?: { left: string[]; right: string[] };
         order?: string[];
         pageSize?: number;
       };
-      const data = JSON.parse(raw || '{}') as unknown as Persisted;
+      const parsed: unknown = JSON.parse(raw || '{}');
+      const data: Persisted = isRecord(parsed) ? parsed : {};
       if (data.sorting) this.sorting.set(data.sorting);
       if (data.visibility) this.colVisibility.set({ ...untracked(() => this.colVisibility()), ...data.visibility });
       if (data.filters) this.filterValues.set(data.filters);
@@ -233,12 +243,12 @@ export class GridStoreService {
       if (typeof data.pageSize === 'number' && data.pageSize > 0) this.pageSize.set(data.pageSize);
       const sizing = data.sizing || {};
       queueMicrotask(() => {
-        if (this._table?.setOptions) {
-          this._table.setOptions((prev: any) => ({
+        if (this._table) {
+          this._table.setOptions((prev) => ({
             ...prev,
             state: {
               ...prev.state,
-              sorting: data.sorting || prev.state?.sorting,
+              sorting: (data.sorting as unknown as typeof prev.state.sorting) || prev.state?.sorting,
               columnVisibility: data.visibility || prev.state?.columnVisibility,
               columnPinning: data.pinning || prev.state?.columnPinning,
               columnSizing: sizing || prev.state?.columnSizing,

@@ -1,5 +1,7 @@
 import { Directive, ElementRef, inject, input } from '@angular/core';
 import { EditingController } from '../controllers/editing.controller';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { GridRow } from '../types';
 
 @Directive({
   selector: '[pcEditable]',
@@ -31,25 +33,25 @@ export class EditableCellDirective {
   }
 
   public readonly pcEditable = input.required<{
-    row: any;
-    col: any;
-    toId: (r: any) => string;
-    coerce: (col: any, raw: any) => any;
-    value: () => any; // current editingValue()
+    row: GridRow;
+    col: ColDef;
+    toId(r: unknown): string;
+    coerce(col: ColDef, raw: unknown): unknown;
+    value(): unknown; // current editingValue()
     setEditingCell: (v: { id: string; field: string } | null) => void;
-    setEditingValue: (v: any) => void;
-    getCellValue: (row: any, col: any) => any;
-    getEditingDisplayValue: (row: any, col: any) => any;
-    createPayload: (row: any, key: string) => any;
-    applyEdit: (id: string, data: any) => Promise<boolean>;
-    updateEditedRow: (id: string, field: string | undefined, v: any) => void;
+    setEditingValue: (v: unknown) => void;
+    getCellValue(row: GridRow, col: ColDef): unknown;
+    getEditingDisplayValue(row: GridRow, col: ColDef): unknown;
+    createPayload(row: GridRow, key: string): Partial<GridRow>;
+    applyEdit(id: string, data: Partial<GridRow>): Promise<boolean>;
+    updateEditedRow(id: string, field: string | undefined, v: unknown): void;
     updateWindow: (s: number, e: number) => void;
     startIndex: () => number;
     endIndex: () => number;
     showSuccess: (m: string) => void;
     showError: (m: string) => void;
     undo: () => void;
-    customCommit?: (currentValue: any) => Promise<unknown>;
+    customCommit?(currentValue: unknown): Promise<unknown>;
     isEditable?: () => boolean;
     isEditingCell?: () => boolean;
   }>();

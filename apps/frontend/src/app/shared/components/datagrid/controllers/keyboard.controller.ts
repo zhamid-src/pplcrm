@@ -1,14 +1,16 @@
 import { Injectable } from '@angular/core';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { GridRow } from '../types';
 
 @Injectable()
 export class KeyboardController {
   handleCellKeydown(
     ev: KeyboardEvent,
     helpers: {
-      getColDefById: (id: string) => any | undefined;
-      isEditable: (col: any) => boolean;
-      startEdit: (row: any, col: any) => void;
-      rows: () => any[];
+      getColDefById: (id: string) => ColDef | undefined;
+      isEditable: (col: ColDef) => boolean;
+      startEdit: (row: GridRow, col: ColDef) => void;
+      rows: () => GridRow[];
     },
   ) {
     const td = (ev.target as HTMLElement).closest('td') as HTMLElement | null;
@@ -24,7 +26,7 @@ export class KeyboardController {
       if (!rowId) return;
       const col = helpers.getColDefById(colId);
       if (!col) return;
-      const row = helpers.rows().find((r: any) => String(r?.id) === rowId);
+      const row = helpers.rows().find((r) => String(r?.['id']) === rowId);
       if (!row) return;
       if (helpers.isEditable(col)) helpers.startEdit(row, col);
       return;

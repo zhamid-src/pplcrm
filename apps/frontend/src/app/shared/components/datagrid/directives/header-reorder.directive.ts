@@ -1,5 +1,7 @@
 import { Directive, inject, input } from '@angular/core';
+import type { Header } from '@tanstack/table-core';
 import { DataGrid } from '../datagrid';
+import type { GridRow } from '../types';
 
 @Directive({
   selector: '[pcHeaderReorder]',
@@ -10,9 +12,9 @@ import { DataGrid } from '../datagrid';
   },
 })
 export class HeaderReorderDirective {
-  public readonly header = input<any>(undefined, { alias: 'pcHeaderReorder' });
+  public readonly header = input<Header<GridRow, unknown> | undefined>(undefined, { alias: 'pcHeaderReorder' });
 
-  private readonly grid: any = inject(DataGrid);
+  private readonly grid = inject(DataGrid);
 
   protected onDragStart(ev: DragEvent) {
     try {

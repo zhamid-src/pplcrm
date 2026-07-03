@@ -4,6 +4,8 @@ import {
   getCoreRowModel,
   type Updater,
   type SortingState,
+  type Table,
+  type TableState,
   type ColumnDef as TSColumnDef,
 } from '@tanstack/table-core';
 import type { ColumnDef as ColDef } from '../grid-defaults';
@@ -12,8 +14,8 @@ import type { GridRow } from '../types';
 @Injectable({ providedIn: 'root' })
 export class DataGridTableService {
   updateTableWindow(
-    table: any,
-    rows: any[],
+    table: Table<GridRow> | undefined,
+    rows: GridRow[],
     start: number,
     end: number,
     rowSelection: Record<string, boolean>,
@@ -22,7 +24,7 @@ export class DataGridTableService {
   ) {
     const data = rows.slice(start, end);
     if (!table) return;
-    table.setOptions((prev: any) => ({
+    table.setOptions((prev) => ({
       ...prev,
       data,
       state: {
@@ -34,14 +36,14 @@ export class DataGridTableService {
   }
 
   setTableData(
-    table: any,
-    rows: any[],
+    table: Table<GridRow> | undefined,
+    rows: GridRow[],
     rowSelection: Record<string, boolean>,
     sortCol: string | null,
     sortDir: 'asc' | 'desc' | null,
   ) {
     if (!table) return;
-    table.setOptions((prev: any) => ({
+    table.setOptions((prev) => ({
       ...prev,
       data: rows,
       state: {
@@ -53,15 +55,15 @@ export class DataGridTableService {
   }
 
   createGridTable(params: {
-    rows: any[];
-    columns: TSColumnDef<any, any>[];
-    getRowId: (row: any) => string;
-    state: any;
+    rows: GridRow[];
+    columns: TSColumnDef<GridRow, unknown>[];
+    getRowId: (row: GridRow) => string;
+    state: Partial<TableState>;
     onStateChange: () => void;
     onSortingChange: (updater: Updater<SortingState>) => void;
-    onRowSelectionChange: (updater: Updater<any>) => void;
+    onRowSelectionChange: (updater: Updater<Record<string, boolean>>) => void;
     onColumnSizingChange: (updater: Updater<Record<string, number>>) => void;
-  }): any {
+  }): Table<GridRow> {
     return createTable({
       data: params.rows,
       columns: params.columns,

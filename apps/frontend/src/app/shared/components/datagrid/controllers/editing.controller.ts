@@ -2,8 +2,11 @@ import { Injectable, inject } from '@angular/core';
 import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import type { DataGrid } from '../datagrid';
+import type { ColumnDef as ColDef } from '../grid-defaults';
 import { GridStoreService } from '../services/grid-store.service';
 import { DataGridUtilsService } from '../services/utils.service';
+import type { GridRow } from '../types';
+import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
 
 @Injectable()
 export class EditingController {
@@ -12,11 +15,11 @@ export class EditingController {
   private readonly utilsSvc = inject(DataGridUtilsService);
   private readonly gridSvc = inject(AbstractAPIService);
 
-  private get grid(): DataGrid<any, any> {
-    return this.store.grid;
+  private get grid(): DataGrid<keyof Models, unknown> {
+    return this.store.grid as unknown as DataGrid<keyof Models, unknown>;
   }
 
-  public coerceEditingValue(col: { cellDataType?: string }, raw: any): any {
+  public coerceEditingValue(col: { cellDataType?: string }, raw: unknown): unknown {
     const t = String(col?.cellDataType || '').toLowerCase();
     if (t === 'number' || t === 'numeric') {
       const n = typeof raw === 'number' ? raw : parseFloat(String(raw ?? '').trim());
@@ -34,19 +37,15 @@ export class EditingController {
     return raw;
   }
 
-  public async commitSingleCell(
-    row: any,
-    col: { field?: string; cellDataType?: string; valueSetter?: (p: any) => boolean },
-    currentValue: any,
-  ): Promise<boolean> {
+  public async commitSingleCell(row: GridRow, col: ColDef, currentValue: unknown): Promise<boolean> {
     if (!col.field) return false;
     const id = this.grid.toId(row);
     if (!id) return false;
-    const key = col.field as string;
-    const prev = (row as Record<string, unknown>)[key];
+    const key = col.field;
+    const prev = row[key];
     // If a valueSetter is provided on the col, let it handle assignment/normalization
     let changed = false;
-    const before: Record<string, unknown> = { ...(row || {}) };
+    const before: Record<string, unknown> = { ...row };
     if (typeof col.valueSetter === 'function') {
       try {
         const didSet = col.valueSetter({ data: row, newValue: currentValue, value: prev, colDef: col });
@@ -57,14 +56,14 @@ export class EditingController {
     } else {
       const equal = prev === currentValue || (prev == null && (currentValue == null || currentValue === ''));
       changed = !equal;
-      if (changed) Object.assign(row as object, { [key]: currentValue });
+      if (changed) Object.assign(row, { [key]: currentValue });
     }
     if (!changed) return true;
     try {
       if (this.shouldBlockEdit(row, key)) {
         void this.grid.undoMgr.undo();
         this.alertSvc.showError('Editing this field is blocked');
-        Object.assign(row as object, { [key]: before[key] });
+        Object.assign(row, { [key]: before[key] });
         return false;
       }
       const payload = this.utilsSvc.createPayload(row, key);
@@ -74,7 +73,7 @@ export class EditingController {
         .catch(() => false);
       if (!edited) {
         void this.grid.undoMgr.undo();
-        Object.assign(row as object, { [key]: before[key] });
+        Object.assign(row, { [key]: before[key] });
         this.alertSvc.showError('Update failed');
         return false;
       }
@@ -83,19 +82,13 @@ export class EditingController {
       this.alertSvc.showSuccess('Row updated');
       return true;
     } catch {
-      Object.assign(row as object, { [key]: before[key] });
+      Object.assign(row, { [key]: before[key] });
       this.alertSvc.showError('Update failed');
       return false;
     }
   }
 
-  public shouldBlockEdit(row: any, key: string): boolean {
-    return !!(
-      row &&
-      typeof row === 'object' &&
-      'deletable' in row &&
-      (row as { deletable?: boolean }).deletable === false &&
-      key === 'name'
-    );
+  public shouldBlockEdit(row: GridRow, key: string): boolean {
+    return !!(row && typeof row === 'object' && 'deletable' in row && row['deletable'] === false && key === 'name');
   }
 }

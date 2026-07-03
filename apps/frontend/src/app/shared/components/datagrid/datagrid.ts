@@ -161,7 +161,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   // Virtualizer disabled for paginated grid
 
   // Injected Services
-  protected readonly alertSvc = inject(AlertService);
+  public readonly alertSvc = inject(AlertService);
   private readonly dateFormatSvc = inject(DateFormatService);
   private readonly columnsSvc = inject(DataGridColumnsService);
   private readonly dataSvc = inject(DataGridDataService);
@@ -171,7 +171,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly actionsSvc = inject(DataGridActionsService);
   private readonly navSvc = inject(DataGridNavService);
   private readonly utilsSvc = inject(DataGridUtilsService);
-  private readonly store = inject(GridStoreService);
+  public readonly store = inject(GridStoreService);
   private readonly rctrl = inject(ResizingController);
   private readonly kctrl = inject(KeyboardController);
   private readonly editingCtrl = inject(EditingController);
@@ -247,7 +247,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return val !== undefined && val !== null && val !== '';
   }
   protected readonly hasInitiatedLoad = signal(false);
-  protected readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
+  public readonly gridSvc = inject<AbstractAPIService<T, U>>(AbstractAPIService);
   protected readonly hasSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() > 0 : this.selectedIdSet().size > 0,
   );
@@ -365,9 +365,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     getCellValue: (r: GridRow, c: ColDef) => this.getCellValue(r, c),
     getEditingDisplayValue: (r: GridRow, c: ColDef) => this.getEditingDisplayValue(r, c),
     createPayload: this.createPayloadFn,
-    applyEdit: (id: string, data: U) =>
+    applyEdit: (id: string, data: Partial<GridRow>) =>
       this.gridSvc
-        .update(id, data)
+        .update(id, data as unknown as U)
         .then(() => true)
         .catch(() => false),
     updateEditedRow: this.updateEditedRowInCachesFn,

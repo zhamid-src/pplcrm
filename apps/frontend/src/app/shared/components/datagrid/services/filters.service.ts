@@ -23,16 +23,19 @@ export interface SelectEditorOptions {
   size?: number;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class DataGridFiltersService {
-  buildFilterModel(raw: Record<string, any>): Record<string, any> {
-    const out: Record<string, any> = {};
+  buildFilterModel(raw: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(raw)) {
       if (v === undefined || v === null) continue;
-      if (typeof v === 'object' && v && 'value' in v) {
-        const vv = v as { op?: Op; value?: unknown };
-        const op = vv.op ?? 'contains';
-        const sv = String(vv.value ?? '').trim();
+      if (isRecord(v) && 'value' in v) {
+        const op = v['op'] ?? 'contains';
+        const sv = String(v['value'] ?? '').trim();
         if (op === 'isEmpty' || op === 'isNotEmpty') {
           out[k] = { type: 'text', op, value: '' };
         } else {
@@ -51,8 +54,8 @@ export class DataGridFiltersService {
   getSelectEditorOptions(col: ColDef): SelectEditorOptions | null {
     const cfg = this.resolveEditorConfig(col);
     if (!cfg) return null;
-    const rawValues = Array.isArray(cfg.values) ? (cfg.values as unknown[]) : [];
-    const labels = Array.isArray(cfg.labels) ? cfg.labels : null;
+    const rawValues = Array.isArray(cfg['values']) ? (cfg['values'] as unknown[]) : [];
+    const labels = Array.isArray(cfg['labels']) ? (cfg['labels'] as unknown[]) : null;
     const choices: SelectOption[] = [];
     for (let i = 0; i < rawValues.length; i++) {
       const entry = rawValues[i];
@@ -70,9 +73,9 @@ export class DataGridFiltersService {
         choices.push({ value: valueStr, label: labelStr });
       }
     }
-    const multiple = !!cfg.multiple;
+    const multiple = !!cfg['multiple'];
     if (!choices.length && !multiple) return null;
-    const sizeRaw = cfg.size ?? cfg.listSize ?? cfg.rows ?? cfg.lines;
+    const sizeRaw = cfg['size'] ?? cfg['listSize'] ?? cfg['rows'] ?? cfg['lines'];
     const parsed = Number(sizeRaw);
     const size = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : multiple ? 5 : undefined;
     return { choices, multiple, size };
@@ -84,42 +87,42 @@ export class DataGridFiltersService {
     return options.choices.map((c) => c.label);
   }
 
-  getFilterValue(filterValues: Record<string, any>, field: string): string {
-    const fv: any = filterValues[field];
-    if (fv && typeof fv === 'object' && 'value' in fv) return String(fv.value ?? '');
+  getFilterValue(filterValues: Record<string, unknown>, field: string): string {
+    const fv = filterValues[field];
+    if (isRecord(fv) && !Array.isArray(fv) && 'value' in fv) return String(fv['value'] ?? '');
     return fv ? String(fv) : '';
   }
 
-  getFilterArray(filterValues: Record<string, any>, field: string): string[] {
-    const fv: any = filterValues[field];
-    if (fv && typeof fv === 'object' && Array.isArray(fv.value)) return fv.value as string[];
+  getFilterArray(filterValues: Record<string, unknown>, field: string): string[] {
+    const fv = filterValues[field];
+    if (isRecord(fv) && !Array.isArray(fv) && Array.isArray(fv['value'])) return fv['value'] as string[];
+    if (Array.isArray(fv)) return fv as string[];
     const single = this.getFilterValue(filterValues, field);
     return single ? [single] : [];
   }
 
-  inlineFilterLabel(filterValues: Record<string, any>, field: string): string {
+  inlineFilterLabel(filterValues: Record<string, unknown>, field: string): string {
     const arr = this.getFilterArray(filterValues, field);
     if (!arr.length) return 'All';
     if (arr.length === 1) return arr[0]!;
     return `${arr.length} selected`;
   }
 
-  preparePanelFilters(current: Record<string, any>): Record<string, { op: string; value: any }> {
-    const panel: Record<string, { op: string; value: any }> = {};
+  preparePanelFilters(current: Record<string, unknown>): Record<string, { op: string; value: unknown }> {
+    const panel: Record<string, { op: string; value: unknown }> = {};
     for (const [k, v] of Object.entries(current)) {
-      const entry = v as { op?: string; value?: any };
-      if (entry && typeof entry === 'object' && 'op' in entry && 'value' in entry)
-        panel[k] = entry as { op: string; value: any };
+      if (isRecord(v) && 'op' in v && 'value' in v) panel[k] = { op: String(v['op']), value: v['value'] };
       else panel[k] = { op: 'contains', value: v };
     }
     return panel;
   }
 
-  private resolveEditorConfig(col: ColDef): any {
+  private resolveEditorConfig(col: ColDef): Record<string, unknown> | null {
     const cep = col?.cellEditorParams;
     if (!cep) return null;
     try {
-      return typeof cep === 'function' ? cep() : cep;
+      const resolved = typeof cep === 'function' ? (cep as () => unknown)() : cep;
+      return isRecord(resolved) ? resolved : null;
     } catch {
       return null;
     }

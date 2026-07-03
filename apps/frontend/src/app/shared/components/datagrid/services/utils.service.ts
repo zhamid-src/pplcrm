@@ -1,14 +1,18 @@
 import { Injectable } from '@angular/core';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class DataGridUtilsService {
-  bucketByRoute(nodes: any[]): Map<string, any[]> {
-    const map = new Map<string, any[]>();
+  bucketByRoute(nodes: unknown[]): Map<string, unknown[]> {
+    const map = new Map<string, unknown[]>();
     for (const n of nodes) {
-      const routeArr = (n as { route?: unknown[] }).route ?? [];
+      const routeArr = isRecord(n) && Array.isArray(n['route']) ? n['route'] : [];
       const key = JSON.stringify(routeArr);
       const list = map.get(key) ?? [];
-      if (n.data) list.push(n.data);
+      if (isRecord(n) && n['data']) list.push(n['data']);
       map.set(key, list);
     }
     return map;

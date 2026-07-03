@@ -22,11 +22,16 @@ import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-
   templateUrl: 'datagrid-toolbar.html',
 })
 export class DataGridToolbarComponent {
-  public readonly grid: any = inject(DataGrid);
+  public readonly grid = inject(DataGrid);
 
-  readonly narrowTypeOptions = computed<SingleSelectOption[]>(() => this.grid.narrowTypeOptions());
+  // narrowTypeOptions may include a null "All" sentinel value; SingleSelectOption
+  // types value as string, but the sentinel must round-trip unchanged for the
+  // datagrid's own `o.value === selected` matching to keep working.
+  readonly narrowTypeOptions = computed<SingleSelectOption[]>(
+    () => this.grid.narrowTypeOptions() as unknown as SingleSelectOption[],
+  );
   readonly listOptions = computed<SingleSelectOption[]>(() =>
-    this.grid.availableLists().map((l: any) => ({ value: l.id, label: l.name })),
+    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
   );
 
   public onAdd() {
@@ -58,7 +63,7 @@ export class DataGridToolbarComponent {
   }
 
   public onRefresh() {
-    this.grid.doRefresh();
+    void this.grid.doRefresh();
   }
 
   public onToggleArchive() {

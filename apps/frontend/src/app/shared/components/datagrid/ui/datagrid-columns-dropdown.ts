@@ -1,4 +1,7 @@
 import { Component, computed, input } from '@angular/core';
+import type { DataGrid } from '../datagrid';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
 
 /**
  * Column visibility dropdown shared by the mobile and desktop toolbars.
@@ -48,9 +51,9 @@ import { Component, computed, input } from '@angular/core';
   ],
 })
 export class DataGridColumnsDropdownComponent {
-  public readonly grid = input.required<any>();
+  public readonly grid = input.required<DataGrid<keyof Models, unknown>>();
 
-  protected readonly cols = computed<any[]>(() => {
+  protected readonly cols = computed<ColDef[]>(() => {
     // Establish a reactive dependency on the colVisibility signal so the list
     // recomputes once the (non-signal) column defs are populated after init.
     this.grid().getColVisibilityMap();
