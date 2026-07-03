@@ -20,6 +20,11 @@ export async function verifyAuthToken(token: string | null): Promise<IAuthKeyPay
     if (!verifierResult || typeof verifierResult !== 'object') {
       throw new Error('Invalid token payload');
     }
+    // Scoped tokens (e.g. signed download URLs) share the signing key but
+    // must never be accepted as session tokens.
+    if ('scope' in verifierResult) {
+      throw new Error('Invalid token payload');
+    }
     return verifierResult as IAuthKeyPayload;
   } catch (err) {
     throw new UnauthorizedError('Unauthorized: Invalid or expired token', undefined, { cause: err });

@@ -9,11 +9,9 @@ const exportsRepo = new ExportsRepo();
 
 const exportsDownloadRoute: FastifyPluginCallback = (fastify, _, done) => {
   fastify.get('/download/:id', async (req: any, reply) => {
-    // Accept token from Authorization header or query param (for direct-link downloads)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
-    }
+    // Authorization header only — session JWTs in the query string are
+    // deliberately not accepted because URLs leak into history and logs.
+    const token = req.headers.authorization ? req.headers.authorization.split(' ')[1] : null;
     if (!token) {
       return reply.status(401).send({ error: 'Unauthorized: Missing token' });
     }
