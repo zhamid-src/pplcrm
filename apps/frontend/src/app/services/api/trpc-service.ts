@@ -39,7 +39,7 @@ export class TRPCService<T> {
         loggerLink(),
         refreshLink(this.tokenService, this.router),
         errorLink(this.errorSvc),
-        httpUnbatchedLink(this.tokenService),
+        httpUnbatchedLink(this.tokenService, () => this.ac.signal),
       ],
     });
   }
@@ -115,7 +115,9 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
               finalErr = new ApiError(msg, err);
             }
 
-            if (!meta?.skipErrorHandler) {
+            // Aborted requests (component teardown, superseded loads) are not
+            // user-facing failures — never toast them.
+            if (!meta?.skipErrorHandler && !isAbortError(err)) {
               errorSvc.handle(finalErr);
             }
 
@@ -127,10 +129,26 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
       });
 }
 
-function httpUnbatchedLink(tokenSvc: TokenService) {
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  if (err instanceof TRPCClientError) {
+    const cause: unknown = err.cause;
+    return cause instanceof DOMException && cause.name === 'AbortError';
+  }
+  return false;
+}
+
+function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSignal) {
   return trpcHttpLink({
     url: environment.apiUrl,
     transformer: superjson,
+    // Combine the per-request signal tRPC provides with the service-level
+    // controller so TRPCService.abort() actually cancels in-flight requests.
+    fetch(input, init) {
+      const signals: AbortSignal[] = [getAbortSignal()];
+      if (init?.signal) signals.push(init.signal);
+      return globalThis.fetch(input, { ...init, signal: AbortSignal.any(signals) });
+    },
     headers() {
       const authToken = tokenSvc.getAuthToken();
       return authToken ? { Authorization: `Bearer ${authToken}` } : {};

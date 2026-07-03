@@ -1,4 +1,5 @@
 import { Component, inject } from '@angular/core';
+import { escapeHtml } from '../../../../../../../libs/common/src';
 import { UserService } from '@frontend/services/user.service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
@@ -59,7 +60,8 @@ export class UsersGridComponent {
         let avatarHtml = '';
         if (avatarUrl) {
           avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-          avatarHtml = `<img src="${avatarUrl}" alt="${name}" class="w-5 h-5 rounded-full object-cover ring-1 ring-base-200" />`;
+          // Names and avatar URLs are user-controlled — escape before interpolating into HTML
+          avatarHtml = `<img src="${escapeHtml(avatarUrl ?? '')}" alt="${escapeHtml(name)}" class="w-5 h-5 rounded-full object-cover ring-1 ring-base-200" />`;
         } else {
           const PALETTES = [
             'bg-indigo-500/20 text-indigo-700',
@@ -80,13 +82,13 @@ export class UsersGridComponent {
           const initials =
             parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : name[0].toUpperCase();
           avatarHtml = `<div class="w-5 h-5 rounded-full ${colorClass} flex items-center justify-center font-bold text-[10px] ring-1 ring-base-200">
-            <span>${initials}</span>
+            <span>${escapeHtml(initials)}</span>
           </div>`;
         }
 
         return `<div class="flex items-center gap-2 py-0.5 h-full">
           ${avatarHtml}
-          <span>${emailVal}</span>
+          <span>${escapeHtml(emailVal)}</span>
         </div>`;
       },
     },

@@ -78,7 +78,7 @@ function handleRefreshFailure(
   observer: Observer<unknown, unknown>,
 ): void {
   tokenSvc.clearAll();
-  void router.navigate([router.url]);
+  void router.navigate(['/signin'], { queryParams: { returnUrl: router.url } });
   observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
 }
 
@@ -95,7 +95,11 @@ function isTokenExpired(token: string | null | undefined, leewaySeconds = 30): b
 function parseJwt(token: string): JwtPayload | null {
   try {
     const [, payload = ''] = token.split('.');
-    return JSON.parse(atob(payload)) as JwtPayload;
+    // JWT payloads are base64url-encoded and unpadded; atob only accepts
+    // standard base64, so convert the alphabet and restore padding first.
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    return JSON.parse(atob(padded)) as JwtPayload;
   } catch {
     return null;
   }

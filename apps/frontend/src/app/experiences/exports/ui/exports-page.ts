@@ -1,6 +1,7 @@
 import { Component, inject, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { downloadWithAuthHeader } from '../../../services/api/http-download';
 import { TokenService } from '../../../services/api/token-service';
 import { TRPCService } from '../../../services/api/trpc-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -44,7 +45,7 @@ export class ExportsPage extends TRPCService<any> {
     return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
   }
 
-  protected downloadJob(job: DataExportRecordType) {
+  protected async downloadJob(job: DataExportRecordType) {
     if (this.isExpired(job)) {
       this.alertSvc.showError('This export has expired (30+ days old).');
       return;
@@ -54,14 +55,12 @@ export class ExportsPage extends TRPCService<any> {
       return;
     }
     // Stream download via the protected REST endpoint
-    const token = this.tokenSvc.getAuthToken();
-    const url = `${environment.apiUrl}/api/exports/download/${job.id}?token=${encodeURIComponent(token ?? '')}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = job.file_name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      const token = this.tokenSvc.getAuthToken();
+      await downloadWithAuthHeader(`${environment.apiUrl}/api/exports/download/${job.id}`, token, job.file_name);
+    } catch {
+      this.alertSvc.showError('Failed to download export');
+    }
   }
 
   protected async deleteJob(job: DataExportRecordType) {
