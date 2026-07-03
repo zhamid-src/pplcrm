@@ -166,9 +166,11 @@ function deleteOne() {
 }
 
 function verifyEmail() {
-  return publicProcedure
-    .input(z.object({ code: z.string() }))
-    .mutation(({ input }) => controller.verifyEmail(input.code));
+  return publicProcedure.input(z.object({ code: z.string() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:verifyEmail`, 10, MIN15);
+    return controller.verifyEmail(input.code);
+  });
 }
 
 function resendVerificationEmail() {

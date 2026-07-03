@@ -730,9 +730,17 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async resendVerificationEmail(email: string) {
-    const user = await this.getUserByEmail(email);
+    // Never reveal whether an account exists (or is already verified): return a
+    // uniform success for unknown/verified addresses to prevent enumeration.
+    let user: AuthUsersType;
+    try {
+      user = await this.getUserByEmail(email);
+    } catch (err) {
+      if (err instanceof NotFoundError) return { success: true };
+      throw err;
+    }
     if (user.verified) {
-      throw new BadRequestError('Email is already verified.');
+      return { success: true };
     }
     return await this.getRepo()
       .transaction()
@@ -939,7 +947,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   public async sendPasswordResetEmail(email: string) {
-    const user = await this.getUserByEmail(email);
+    // Never reveal whether an account exists: return success uniformly so an
+    // attacker cannot enumerate registered emails via this endpoint.
+    let user: AuthUsersType;
+    try {
+      user = await this.getUserByEmail(email);
+    } catch (err) {
+      if (err instanceof NotFoundError) return true;
+      throw err;
+    }
     await this.getRepo()
       .transaction()
       .execute(async (trx) => {
@@ -993,7 +1009,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.getRepo()
         .db.updateTable('authusers')
         .set({
-          two_factor_code: otpCode,
+          // Store only the hash; the plaintext OTP is emailed to the user.
+          two_factor_code: hashToken(otpCode),
           two_factor_expires_at: new Date(Date.now() + 5 * 60 * 1000),
         })
         .where('id', '=', user.id)
@@ -1427,13 +1444,14 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   public async verify2FA(email: string, code: string, ipAddress?: string, userAgent?: string, rememberMe?: boolean) {
     const user = await this.getUserByEmail(email.toLowerCase());
 
-    // Use timing-safe comparison to eliminate OTP brute-force side-channel
+    // The OTP is stored hashed; hash the input and compare with a timing-safe
+    // equality to eliminate the brute-force side-channel.
     const storedCode = user.two_factor_code ?? '';
-    const inputCode = String(code ?? '');
+    const inputHash = code ? hashToken(String(code)) : '';
     const codeMatch =
       storedCode.length > 0 &&
-      storedCode.length === inputCode.length &&
-      timingSafeEqual(Buffer.from(storedCode), Buffer.from(inputCode));
+      storedCode.length === inputHash.length &&
+      timingSafeEqual(Buffer.from(storedCode), Buffer.from(inputHash));
     if (!codeMatch) {
       throw new BadRequestError('Invalid verification code.');
     }

@@ -14,11 +14,7 @@ export function attachmentDisposition(filename: string | null | undefined): stri
 
   // ASCII fallback: keep only printable ASCII, then neutralize quote/backslash
   // so nothing can terminate or escape the quoted-string (or inject CR/LF).
-  const asciiFallback =
-    name
-      // eslint-disable-next-line no-control-regex
-      .replace(/[^\x20-\x7e]/g, '_')
-      .replace(/["\\]/g, '_') || DEFAULT_FILENAME;
+  const asciiFallback = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_') || DEFAULT_FILENAME;
 
   // RFC 5987 encoded form for Unicode-aware clients.
   const encoded = encodeURIComponent(name).replace(/['()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());

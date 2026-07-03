@@ -460,6 +460,14 @@ describe('AuthController Integration', () => {
     // Enable 2FA on the user
     await db.updateTable('authusers').set({ two_factor_enabled: true }).where('id', '=', user.id).execute();
 
+    // Capture the plaintext OTP from the outgoing mail; it is only emailed, never
+    // stored in cleartext (the DB holds a hash of it).
+    let sentOtp = '';
+    const mailSpy = vi.spyOn((controller as any).mailService, 'sendMail').mockImplementation((msg: any): void => {
+      const match = String(msg?.text ?? '').match(/\b(\d{6})\b/);
+      if (match) sentOtp = match[1];
+    });
+
     // Attempt sign-in
     const signInResult = (await controller.signIn(
       { email, password: 'StrongPassword123!' },
@@ -467,18 +475,19 @@ describe('AuthController Integration', () => {
       'Vitest',
     )) as any;
     expect(signInResult).toEqual({ requires2FA: true, email });
+    expect(mailSpy).toHaveBeenCalled();
+    expect(sentOtp).toMatch(/^\d{6}$/);
 
     const userWithOtp = await db
       .selectFrom('authusers')
       .selectAll()
       .where('email', '=', email)
       .executeTakeFirstOrThrow();
-    expect(userWithOtp.two_factor_code).toBeTypeOf('string');
-    expect(userWithOtp.two_factor_code).toHaveLength(6);
-    if (!userWithOtp.two_factor_code) throw new Error('two_factor_code was not set');
+    // Stored value must be the hash of the emailed OTP, not the raw code.
+    expect(userWithOtp.two_factor_code).toBe(hashToken(sentOtp));
 
-    // Verify OTP
-    const verifyResult = await controller.verify2FA(email, userWithOtp.two_factor_code, '127.0.0.1', 'Vitest');
+    // Verify OTP using the plaintext code the user received
+    const verifyResult = await controller.verify2FA(email, sentOtp, '127.0.0.1', 'Vitest');
     expect(verifyResult.auth_token).toBeTypeOf('string');
     expect(verifyResult.refresh_token).toBeTypeOf('string');
 
