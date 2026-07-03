@@ -342,7 +342,10 @@ describe('AuthController Integration', () => {
 
     const user = await db.selectFrom('authusers').selectAll().where('email', '=', email).executeTakeFirstOrThrow();
 
-    // Verify background job was enqueued
+    // Verify background job was enqueued. These tests run against a live DB:
+    // if a dev backend is running, its worker may pick the job up (and move it
+    // to processing/completed) before we read it, so assert the job exists
+    // with the right payload rather than the transient 'pending' status.
     const signupJob = await db
       .selectFrom('background_jobs')
       .selectAll()
@@ -350,7 +353,7 @@ describe('AuthController Integration', () => {
       .executeTakeFirst();
 
     expect(signupJob).toBeDefined();
-    expect(signupJob.status).toBe('pending');
+    expect(['pending', 'processing', 'completed']).toContain(signupJob.status);
     expect(signupJob.max_attempts).toBe(5);
 
     const payload = typeof signupJob.payload === 'string' ? JSON.parse(signupJob.payload) : signupJob.payload;
