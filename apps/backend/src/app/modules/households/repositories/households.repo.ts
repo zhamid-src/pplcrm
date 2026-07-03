@@ -1,10 +1,10 @@
 import type { ReferenceExpression, Selectable, SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
 import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
 import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
 import { logger } from '../../../logger';
 
@@ -470,6 +470,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 
   public async getDuplicateCount(tenant_id: string): Promise<number> {
     // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -494,6 +495,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const pageSize = options?.pageSize ?? 20;
 
     // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb

@@ -1,16 +1,16 @@
-import type { FastifyPluginCallback } from 'fastify';
-import { StorageService } from '../../../lib/storage.service';
-import { BaseRepository } from '../../../lib/base.repo';
-import { verifyAuthToken } from '../../../lib/auth-util';
-import { env } from '../../../../env';
-import crypto from 'crypto';
 import { Client } from '@microsoft/microsoft-graph-client';
-import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
-import { MsSyncService } from '../../ms-sync/ms-sync.service';
+import crypto from 'crypto';
+import type { FastifyPluginCallback } from 'fastify';
+import { env } from '../../../../env';
+import { verifyAuthToken } from '../../../lib/auth-util';
+import { BaseRepository } from '../../../lib/base.repo';
+import { attachmentDisposition } from '../../../lib/download-headers';
+import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+import { StorageService } from '../../../lib/storage.service';
 import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
 import { GoogleSyncService } from '../../google-sync/google-sync.service';
-import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
-import { attachmentDisposition } from '../../../lib/download-headers';
+import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
+import { MsSyncService } from '../../ms-sync/ms-sync.service';
 
 function buildRawMime(options: {
   fromName: string;
@@ -104,6 +104,7 @@ export async function saveLocalEmail(
     // alone. onConflict guards against a concurrent/global row already present.
 
     // NOTE: unscoped by design — email_folders uses global hardcoded IDs; FK references id only, not tenant_id
+    // eslint-disable-next-line local/no-unscoped-db-query
     const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
 
     if (!existingOutbox) {

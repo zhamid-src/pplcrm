@@ -147,6 +147,7 @@ export class PasskeyController {
     if (!challenge) throw new UnauthorizedError('Authentication challenge expired. Please try again.');
 
     // NOTE: unscoped by design — credential_id lookup happens before tenant is known; passkey row carries tenant_id for post-auth scoping
+    // eslint-disable-next-line local/no-unscoped-db-query
     const passkey = await this.db
       .selectFrom('passkeys')
       .selectAll()

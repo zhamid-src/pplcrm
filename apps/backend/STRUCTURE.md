@@ -408,6 +408,1934 @@ apps/
 }
 ```
 
+## File: apps/backend/src/app/lib/address-normalize.ts
+
+```typescript
+function norm(text?: string | null): string {
+  const v = (text ?? '').toString().trim().toLowerCase();
+  if (!v) return '';
+  // Basic punctuation removal, keep letters/numbers/spaces
+  let t = v.replace(/[^a-z0-9\s]/g, ' ');
+
+  // Expand common street abbreviations
+  const reps: Array<[RegExp, string]> = [
+    [/\bst\.?\b/g, 'street'],
+    [/\brd\.?\b/g, 'road'],
+    [/\bave\.?\b/g, 'avenue'],
+    [/\bav\.?\b/g, 'avenue'],
+    [/\bblvd\.?\b/g, 'boulevard'],
+    [/\bdr\.?\b/g, 'drive'],
+    [/\bhwy\.?\b/g, 'highway'],
+    [/\bwy\.?\b/g, 'way'],
+    [/\bln\.?\b/g, 'lane'],
+    [/\bct\.?\b/g, 'court'],
+    [/\bcir\.?\b/g, 'circle'],
+    [/\bpl\.?\b/g, 'place'],
+    [/\bter\.?\b/g, 'terrace'],
+    [/\bpkwy\.?\b/g, 'parkway'],
+    // Directions
+    [/\bn\b/g, 'north'],
+    [/\bs\b/g, 'south'],
+    [/\be\b/g, 'east'],
+    [/\bw\b/g, 'west'],
+  ];
+  for (const [re, to] of reps) t = t.replace(re, to);
+
+  // Collapse whitespace
+  t = t.replace(/\s{2,}/g, ' ').trim();
+  return t;
+}
+
+export function fingerprintStreet(input: {
+  street_num?: string | null;
+  street1?: string | null;
+  street2?: string | null;
+}): string | null {
+  const parts = [norm(input.street_num), norm(input.street1), norm(input.street2)].filter(Boolean);
+  if (!parts.length) return null;
+  return parts.join(' ');
+}
+
+export function fingerprintFull(input: {
+  apt?: string | null;
+  street_num?: string | null;
+  street1?: string | null;
+  street2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  country?: string | null;
+}): string | null {
+  const parts = [
+    norm(input.apt),
+    norm(input.street_num),
+    norm(input.street1),
+    norm(input.street2),
+    norm(input.city),
+    norm(input.state),
+    norm(input.zip),
+    norm(input.country),
+  ].filter(Boolean);
+  if (!parts.length) return null;
+  return parts.join(' ');
+}
+
+export function isBlankAddress(input: {
+  home_phone?: string | null;
+  street_num?: string | null;
+  street1?: string | null;
+  street2?: string | null;
+  apt?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  country?: string | null;
+}): boolean {
+  const fields = [
+    input.home_phone,
+    input.street_num,
+    input.street1,
+    input.street2,
+    input.apt,
+    input.city,
+    input.state,
+    input.zip,
+    input.country,
+  ];
+  return fields.every((v) => !v || (v + '').trim().length === 0);
+}
+
+export function isIncompleteAddress(input: {
+  street1?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+}): boolean {
+  const street1 = (input.street1 ?? '').trim();
+  const city = (input.city ?? '').trim();
+  const zip = (input.zip ?? '').trim();
+
+  return !street1 || (!city && !zip);
+}
+```
+
+## File: apps/backend/src/app/lib/token-hash.ts
+
+```typescript
+import { randomBytes, createHash } from 'crypto';
+
+export function generateToken(): string {
+  return randomBytes(32).toString('hex');
+}
+
+export function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+```
+
+## File: apps/backend/src/app/modules/activity/trpc.router.ts
+
+```typescript
+import { getAllOptions, exportCsvInput, exportCsvResponse } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { ActivityController } from './controller';
+
+const activity = new ActivityController();
+
+export const ActivityRouter = router({
+  getFeed: authProcedure.input(getAllOptions).query(({ input, ctx }) => activity.getFeed(ctx.auth, input)),
+  getActivities: authProcedure
+    .input(
+      z.object({
+        entity: z.string(),
+        entityId: z.string().min(1),
+        startRow: z.number().optional(),
+        endRow: z.number().optional(),
+      }),
+    )
+    .query(({ input, ctx }) =>
+      activity.getActivities(ctx.auth.tenant_id, input.entity, input.entityId, {
+        startRow: input.startRow,
+        endRow: input.endRow,
+      }),
+    ),
+  exportCsv: authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) => activity.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth)),
+});
+```
+
+## File: apps/backend/src/app/modules/auth/repositories/tenants.repo.ts
+
+```typescript
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class TenantsRepo extends BaseRepository<'tenants'> {
+  constructor() {
+    super('tenants');
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/billing/repositories/webhook-events.repo.ts
+
+```typescript
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class WebhookEventsRepo extends BaseRepository<'webhook_events'> {
+  constructor() {
+    super('webhook_events');
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/companies/trpc.router.ts
+
+```typescript
+import { idSchema, CompanyInputObj } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { CompaniesController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const companies = new CompaniesController();
+
+const CompanyInputSchema = CompanyInputObj;
+
+const crud = createCrudRouter(companies, CompanyInputSchema, CompanyInputSchema.partial());
+
+export const CompaniesRouter = router({
+  ...crud,
+
+  import: authProcedure
+    .input(
+      z.object({
+        rows: z.array(CompanyInputSchema),
+        skipped: z.number().int().nonnegative().optional(),
+        file_name: z.string().trim().min(1).max(255).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      ctx.res.status(202);
+      return companies.importRows(input, ctx.auth);
+    }),
+
+  getPotentialDuplicates: authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => companies.getPotentialDuplicates(ctx.auth, input)),
+
+  mergeCompanies: authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(({ input, ctx }) => companies.mergeCompanies(input.target_id, input.source_id, ctx.auth)),
+});
+```
+
+## File: apps/backend/src/app/modules/dashboard/trpc.router.ts
+
+```typescript
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { DashboardController } from './controller';
+
+const dashboard = new DashboardController();
+
+export const DashboardRouter = router({
+  getStats: authProcedure.query(({ ctx }) => dashboard.getStats(ctx.auth)),
+
+  getBreachedEmails: authProcedure
+    .input(z.object({ page: z.number().int().min(1), limit: z.number().int().min(1) }))
+    .query(({ input, ctx }) => dashboard.getBreachedEmails(ctx.auth, input)),
+
+  getBreachedTasks: authProcedure
+    .input(z.object({ page: z.number().int().min(1), limit: z.number().int().min(1) }))
+    .query(({ input, ctx }) => dashboard.getBreachedTasks(ctx.auth, input)),
+});
+```
+
+## File: apps/backend/src/app/modules/emails/repositories/email-body.repo.ts
+
+```typescript
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class EmailBodiesRepo extends BaseRepository<'email_bodies'> {
+  constructor() {
+    super('email_bodies');
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/emails/repositories/email-comments.repo.ts
+
+```typescript
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class EmailCommentsRepo extends BaseRepository<'email_comments'> {
+  constructor() {
+    super('email_comments');
+  }
+
+  public getForEmail(tenant_id: string, email_id: string) {
+    return this.getManyBy('email_id', { tenant_id, value: email_id });
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/emails/repositories/email-headers.repo.ts
+
+```typescript
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class EmailHeadersRepo extends BaseRepository<'email_headers'> {
+  constructor() {
+    super('email_headers');
+  }
+
+  public getByEmailId(tenant_id: string, email_id: string) {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', tenant_id)
+      .where('email_id', '=', email_id)
+      .executeTakeFirst();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/emails/repositories/email-recipients.repo.ts
+
+```typescript
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class EmailRecipientsRepo extends BaseRepository<'email_recipients'> {
+  constructor() {
+    super('email_recipients');
+  }
+
+  public getByEmailId(tenant_id: string, email_id: string) {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', tenant_id)
+      .where('email_id', '=', email_id)
+      .orderBy('kind')
+      .orderBy('pos')
+      .execute();
+  }
+
+  public getByEmailIdAndKind(tenant_id: string, email_id: string, kind: 'to' | 'cc' | 'bcc') {
+    return this.getSelect()
+      .select(['name', 'email', 'pos'])
+      .where('tenant_id', '=', tenant_id)
+      .where('email_id', '=', email_id)
+      .where('kind', '=', kind)
+      .orderBy('pos')
+      .execute();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/emails/trpc.router.ts
+
+```typescript
+import { idSchema } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { EmailsController } from './controller';
+
+function addComment() {
+  return authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        author_id: idSchema,
+        comment: z.string().trim().min(1, 'Comment cannot be empty').max(5000, 'Comment too long'),
+      }),
+    )
+    .mutation(({ input, ctx }) => emails.addComment(ctx.auth.tenant_id, input.id, input.author_id, input.comment));
+}
+
+function assign() {
+  return authProcedure
+    .input(z.object({ id: idSchema, user_id: idSchema.nullable(), assigned_to_name: z.string().optional() }))
+    .mutation(({ input, ctx }) =>
+      emails.assignEmail(ctx.auth.tenant_id, input.id, input.user_id, ctx.auth.user_id, input.assigned_to_name ?? null),
+    );
+}
+
+function deleteComment() {
+  return authProcedure
+    .input(z.object({ email_id: idSchema, comment_id: idSchema }))
+    .mutation(({ input, ctx }) => emails.deleteComment(ctx.auth.tenant_id, input.email_id, input.comment_id));
+}
+
+function deleteDraft() {
+  return authProcedure
+    .input(z.object({ id: idSchema }))
+    .mutation(({ input, ctx }) => emails.deleteDraft(ctx.auth.tenant_id, ctx.auth.user_id, input.id));
+}
+
+function deleteEmail() {
+  return authProcedure.input(idSchema).mutation(({ input, ctx }) => emails.deleteMany(ctx.auth.tenant_id, [input]));
+}
+
+function deleteEmails() {
+  return authProcedure
+    .input(z.array(idSchema).min(1, 'At least one ID is required'))
+    .mutation(({ input, ctx }) => emails.deleteMany(ctx.auth.tenant_id, input));
+}
+
+function getAllAttachments() {
+  return authProcedure
+    .input(z.object({ email_id: idSchema, options: z.object({ includeInline: z.boolean() }).optional() }))
+    .query(({ input, ctx }) => emails.getAllAttachments(ctx.auth.tenant_id, input.email_id, input.options));
+}
+
+function getAttachmentsByEmailId() {
+  return authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => emails.getAttachmentsByEmailId(ctx.auth.tenant_id, input));
+}
+
+function getDraft() {
+  return authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => emails.getDraft(ctx.auth.tenant_id, ctx.auth.user_id, input));
+}
+
+function getEmailBody() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input));
+}
+
+function getEmailHeader() {
+  return authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => emails.getEmailHeader(ctx.auth.tenant_id, input, ctx.auth.user_id));
+}
+
+function getEmailWithHeaders() {
+  return authProcedure.input(idSchema).query(async ({ input, ctx }) => {
+    const tenantId = ctx.auth.tenant_id;
+
+    const [body, header] = await Promise.all([
+      emails.getEmailBody(tenantId, input),
+      emails.getEmailHeader(tenantId, input),
+    ]);
+
+    return { body, header };
+  });
+}
+
+function getEmails() {
+  return authProcedure
+    .input(
+      z.object({
+        folderId: idSchema,
+        limit: z.number().int().min(1).max(100).optional(),
+        offset: z.number().int().min(0).optional(),
+      }),
+    )
+    .query(({ input, ctx }) =>
+      emails.getEmails(ctx.auth.user_id, ctx.auth.tenant_id, input.folderId, input.limit, input.offset),
+    );
+}
+
+function getFolders() {
+  return authProcedure.query(({ ctx }) => emails.getFolders(ctx.auth.tenant_id));
+}
+
+function getFoldersWithCounts() {
+  return authProcedure.query(({ ctx }) => emails.getFoldersWithCounts(ctx.auth.user_id, ctx.auth.tenant_id));
+}
+
+function hasAttachment() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => emails.hasAttachment(ctx.auth.tenant_id, input));
+}
+
+function hasAttachmentByEmailIds() {
+  return authProcedure
+    .input(z.array(idSchema))
+    .query(({ input, ctx }) => emails.hasAttachmentByEmailIds(ctx.auth.tenant_id, input));
+}
+
+function restoreFromTrash() {
+  return authProcedure
+    .input(z.array(idSchema))
+    .mutation(({ input, ctx }) => emails.restoreFromTrash(ctx.auth.tenant_id, input));
+}
+
+function moveToFolder() {
+  return authProcedure
+    .input(z.object({ id: idSchema, folderId: idSchema }))
+    .mutation(({ input, ctx }) => emails.moveToFolder(ctx.auth.tenant_id, input.id, input.folderId, ctx.auth.user_id));
+}
+
+function saveDraft() {
+  return authProcedure
+    .input(
+      z.object({
+        id: idSchema.optional(),
+        to: z.array(z.string().trim().email('Invalid recipient email address')).optional().default([]),
+        cc: z.array(z.string().trim().email('Invalid CC email address')).optional(),
+        bcc: z.array(z.string().trim().email('Invalid BCC email address')).optional(),
+        subject: z.string().trim().max(500, 'Subject is too long').optional(),
+        html: z.string().max(100000, 'HTML body is too long').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      emails.saveDraft(ctx.auth.tenant_id, ctx.auth.user_id, {
+        id: input.id,
+        to_list: input.to,
+        cc_list: input.cc ?? [],
+        bcc_list: input.bcc ?? [],
+        subject: input.subject ?? undefined,
+        body_html: input.html ?? undefined,
+      }),
+    );
+}
+
+function setFavourite() {
+  return authProcedure
+    .input(z.object({ id: idSchema, favourite: z.boolean() }))
+    .mutation(({ input, ctx }) => emails.setFavourite(ctx.auth.tenant_id, input.id, input.favourite));
+}
+
+function setStatus() {
+  return authProcedure
+    .input(z.object({ id: idSchema, status: z.enum(['open', 'closed']) }))
+    .mutation(({ input, ctx }) => emails.setStatus(ctx.auth.tenant_id, input.id, input.status, ctx.auth.user_id));
+}
+
+function getActivities() {
+  return authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => emails.getActivitiesForEmail(ctx.auth.tenant_id, input));
+}
+
+function setEmailReadStatus() {
+  return authProcedure
+    .input(z.object({ id: idSchema, isRead: z.boolean() }))
+    .mutation(({ input, ctx }) =>
+      emails.setEmailReadStatus(ctx.auth.tenant_id, ctx.auth.user_id, input.id, input.isRead),
+    );
+}
+
+const emails = new EmailsController();
+
+export const EmailsRouter = router({
+  getFolders: getFolders(),
+  getFoldersWithCounts: getFoldersWithCounts(),
+  getEmails: getEmails(),
+  getEmailBody: getEmailBody(),
+  getDraft: getDraft(),
+  getEmailHeader: getEmailHeader(),
+  getEmailWithHeaders: getEmailWithHeaders(),
+  getActivities: getActivities(),
+  addComment: addComment(),
+  deleteComment: deleteComment(),
+  deleteDraft: deleteDraft(),
+  delete: deleteEmail(),
+  deleteMany: deleteEmails(),
+  assign: assign(),
+  setFavourite: setFavourite(),
+  setStatus: setStatus(),
+  setEmailReadStatus: setEmailReadStatus(),
+  saveDraft: saveDraft(),
+  restoreFromTrash: restoreFromTrash(),
+  moveToFolder: moveToFolder(),
+  hasAttachment: hasAttachment(),
+  getAllAttachments: getAllAttachments(),
+  hasAttachmentByEmailIds: hasAttachmentByEmailIds(),
+  getAttachmentsByEmailId: getAttachmentsByEmailId(),
+});
+```
+
+## File: apps/backend/src/app/modules/events/trpc.router.ts
+
+```typescript
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import {
+  idSchema,
+  getAllOptions,
+  AddEventObj,
+  UpdateEventObj,
+  AddTicketTypeObj,
+  UpdateTicketTypeObj,
+  AddRegistrationObj,
+  UpdateRegistrationObj,
+} from '../../../../../../libs/common/src';
+import { EventsController } from './controller';
+
+const ctrl = new EventsController();
+
+export const EventsRouter = router({
+  // Events
+  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => ctrl.getAllEvents(ctx.auth, input)),
+
+  getById: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
+
+  add: authProcedure.input(AddEventObj).mutation(({ input, ctx }) => ctrl.addEvent(input, ctx.auth)),
+
+  checkSlugUnique: authProcedure
+    .input(z.object({ slug: z.string(), excludeId: z.string().nullable().optional() }))
+    .query(({ input, ctx }) => ctrl.checkSlugUnique(input.slug, input.excludeId || null, ctx.auth)),
+
+  update: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateEventObj }))
+    .mutation(({ input, ctx }) => ctrl.updateEvent(input.id, input.data, ctx.auth)),
+
+  delete: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => ctrl.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+
+  // Ticket types
+  getTicketTypesForEvent: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getTicketTypesForEvent(input, ctx.auth)),
+
+  addTicketType: authProcedure
+    .input(AddTicketTypeObj)
+    .mutation(({ input, ctx }) => ctrl.addTicketType(input, ctx.auth)),
+
+  updateTicketType: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateTicketTypeObj }))
+    .mutation(({ input, ctx }) => ctrl.updateTicketType(input.id, input.data, ctx.auth)),
+
+  deleteTicketType: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.deleteTicketType(input, ctx.auth)),
+
+  // Registrations
+  getRegistrationsForEvent: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getRegistrationsForEvent(input, ctx.auth)),
+
+  addRegistration: authProcedure
+    .input(AddRegistrationObj)
+    .mutation(({ input, ctx }) => ctrl.addRegistration(input, ctx.auth)),
+
+  checkIn: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.checkIn(input, ctx.auth)),
+
+  updateRegistration: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateRegistrationObj }))
+    .mutation(({ input, ctx }) => ctrl.updateRegistration(input.id, input.data, ctx.auth)),
+
+  deleteRegistration: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => ctrl.deleteRegistration(input, ctx.auth)),
+
+  // Person-specific history & stats
+  getHistoryForPerson: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getHistoryForPerson(input, ctx.auth)),
+
+  getStatsForPerson: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getEventStats(input, ctx.auth)),
+});
+```
+
+## File: apps/backend/src/app/modules/exports/trpc.router.ts
+
+```typescript
+import { queueExportInput, dataExportRecord } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { ExportsController } from './controller';
+
+const exports_ = new ExportsController();
+
+export const ExportsRouter = router({
+  queue: authProcedure
+    .input(queueExportInput)
+    .output(dataExportRecord)
+    .mutation(({ input, ctx }) => exports_.queueExport(input, ctx.auth)),
+
+  list: authProcedure.output(z.array(dataExportRecord)).query(({ ctx }) => exports_.list(ctx.auth)),
+
+  delete: authProcedure
+    .input(z.object({ id: z.string() }))
+    .output(z.object({ success: z.boolean() }))
+    .mutation(({ input, ctx }) => exports_.deleteExport(input.id, ctx.auth)),
+});
+```
+
+## File: apps/backend/src/app/modules/households/routes/households.schema.ts
+
+```typescript
+const HouseholdsType = {
+  id: { type: 'string' },
+  tenant_id: { type: 'string' },
+  campaign_id: { type: 'string' },
+  created_by: { type: 'string' },
+  file_id: { type: 'string' },
+  name: { type: 'string' },
+  home_phone: { type: 'string' },
+  apt: { type: 'string' },
+  street_num: { type: 'string' },
+  street1: { type: 'string' },
+  street2: { type: 'string' },
+  city: { type: 'string' },
+  state: { type: 'string' },
+  zip: { type: 'string' },
+  country: { type: 'string' },
+  json: { type: 'string' },
+  created_at: { type: 'string' },
+  updated_at: { type: 'string' },
+};
+const household = {
+  type: 'object',
+  properties: HouseholdsType,
+};
+const households = {
+  type: 'array',
+  items: HouseholdsType,
+};
+
+export const IdParam = {
+  type: 'object',
+  properties: { id: { type: 'string' } },
+};
+export const count = {
+  schema: {
+    response: { 200: { type: 'number' } },
+  },
+};
+export const findFromId = {
+  schema: {
+    params: IdParam,
+    response: { 200: household },
+  },
+};
+export const getAll = {
+  schema: {
+    response: {
+      200: households,
+    },
+  },
+};
+export const update = {
+  schema: {
+    body: {
+      type: 'object',
+      required: [],
+      properties: { ...HouseholdsType },
+    },
+    response: { 201: households },
+  },
+};
+```
+
+## File: apps/backend/src/app/modules/households/trpc.router.ts
+
+```typescript
+import { UpdateHouseholdsObj, idSchema } from '../../../../../../libs/common/src';
+
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { HouseholdsController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const households = new HouseholdsController();
+
+const crud = createCrudRouter(households, UpdateHouseholdsObj, UpdateHouseholdsObj);
+
+export const HouseholdsRouter = router({
+  ...crud,
+
+  getAll: authProcedure.query(({ ctx }) => households.getAll(ctx.auth.tenant_id)),
+
+  add: authProcedure.input(UpdateHouseholdsObj).mutation(({ input, ctx }) => households.addHousehold(input, ctx.auth)),
+
+  deleteMany: authProcedure
+    .input(z.array(idSchema).min(1, 'At least one ID is required'))
+    .mutation(({ input, ctx }) => households.deleteManyForTenant(ctx.auth, input)),
+
+  attachTag: authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => households.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth)),
+
+  detachTag: authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name, input.type ?? 'tag', ctx.auth.user_id),
+    ),
+
+  getTags: authProcedure
+    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
+    .query(({ input, ctx }) => {
+      const id = typeof input === 'string' ? input : input.id;
+      const type = typeof input === 'string' ? undefined : input.type;
+      return households.getTags(id, ctx.auth, type);
+    }),
+
+  getDistinctTags: authProcedure
+    .input(z.enum(['tag', 'issue']).optional())
+    .query(({ input, ctx }) => households.getDistinctTags(ctx.auth, input)),
+
+  getAllWithPeopleCount: authProcedure
+    .input(z.any().optional())
+    .query(({ input, ctx }) => households.getAllWithPeopleCount(ctx.auth, input)),
+
+  getPeopleCount: authProcedure.input(idSchema).query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth)),
+
+  getPotentialDuplicates: authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => households.getPotentialDuplicates(ctx.auth, input)),
+
+  mergeHouseholds: authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(({ input, ctx }) => households.mergeHouseholds(input.target_id, input.source_id, ctx.auth)),
+
+  getLastFingerprintRecomputation: authProcedure.query(({ ctx }) =>
+    households.getLastFingerprintRecomputation(ctx.auth.tenant_id),
+  ),
+
+  recomputeAddressFingerprints: authProcedure.mutation(({ ctx }) =>
+    households.recomputeAddressFingerprints(ctx.auth.tenant_id),
+  ),
+});
+```
+
+## File: apps/backend/src/app/modules/imports/trpc.router.ts
+
+```typescript
+import { idSchema } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { ImportsController } from './controller';
+
+const imports = new ImportsController();
+
+export const ImportsRouter = router({
+  getAll: authProcedure.query(({ ctx }) => imports.list(ctx.auth)),
+  delete: authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        deleteContacts: z.boolean().optional(),
+        deletePeople: z.boolean().optional(),
+        deleteHouseholds: z.boolean().optional(),
+        deleteCompanies: z.boolean().optional(),
+        deleteTasks: z.boolean().optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => imports.deleteImport(input, ctx.auth)),
+});
+```
+
+## File: apps/backend/src/app/modules/lists/repositories/map-lists-households.repo.ts
+
+```typescript
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class MapListsHouseholdsRepo extends BaseRepository<'map_lists_households'> {
+  constructor() {
+    super('map_lists_households');
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/lists/trpc.router.ts
+
+```typescript
+import { AddListObj, UpdateListObj, idSchema } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { ListsController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const lists = new ListsController();
+
+const crud = createCrudRouter(lists, AddListObj, UpdateListObj);
+
+export const ListsRouter = router({
+  ...crud,
+
+  getAll: authProcedure.query(({ ctx }) => lists.getAll(ctx.auth.tenant_id)),
+
+  add: authProcedure.input(AddListObj).mutation(({ input, ctx }) => lists.addList(input, ctx.auth)),
+
+  update: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateListObj }))
+    .mutation(({ input, ctx }) => lists.updateList(input.id, input.data, ctx.auth)),
+
+  getMembersHouseholds: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => lists.getHouseholdsByListId(ctx.auth, input)),
+
+  getMembersPersons: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getPersonsByListId(ctx.auth, input)),
+
+  refresh: authProcedure.input(idSchema).mutation(({ input, ctx }) => lists.refreshList(ctx.auth, input)),
+
+  getListStats: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getListStats(ctx.auth, input)),
+
+  getMemberCount: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getMemberCount(ctx.auth, input)),
+});
+```
+
+## File: apps/backend/src/app/modules/notifications/trpc.router.ts
+
+```typescript
+import { z } from 'zod';
+import { idSchema } from '../../../../../../libs/common/src';
+import { authProcedure, router } from '../../../trpc';
+import { NotificationsController } from './controller';
+
+const notifications = new NotificationsController();
+
+export const NotificationsRouter = router({
+  getLatest: authProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().optional(),
+          offset: z.number().optional(),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => notifications.getLatest(ctx.auth, input?.limit, input?.offset)),
+
+  getUnreadCount: authProcedure.query(({ ctx }) => notifications.getUnreadCount(ctx.auth)),
+
+  markAllRead: authProcedure.mutation(({ ctx }) => notifications.markAllAsRead(ctx.auth)),
+
+  markRead: authProcedure.input(idSchema).mutation(({ input, ctx }) => notifications.markRead(input, ctx.auth)),
+});
+```
+
+## File: apps/backend/src/app/modules/person-connections/trpc.router.ts
+
+```typescript
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { idSchema, AddConnectionObj } from '../../../../../../libs/common/src';
+import { PersonConnectionsController } from './controller';
+
+const ctrl = new PersonConnectionsController();
+
+export const PersonConnectionsRouter = router({
+  getForPerson: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getForPerson(input, ctx.auth)),
+
+  countForPerson: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.countForPerson(input, ctx.auth)),
+
+  add: authProcedure
+    .input(z.object({ person_id: idSchema, data: AddConnectionObj }))
+    .mutation(({ input, ctx }) => ctrl.addConnection(input.person_id, input.data, ctx.auth)),
+
+  remove: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.removeConnection(input, ctx.auth)),
+});
+```
+
+## File: apps/backend/src/app/modules/persons/routes/persons.schema.ts
+
+```typescript
+const PersonType = {
+  id: { type: 'string' },
+  tenant_id: { type: 'string' },
+  username: { type: 'string' },
+  role: { type: 'string' },
+  first_name: { type: 'string' },
+  middle_names: { type: 'string' },
+  last_name: { type: 'string' },
+  home_phone: { type: 'string' },
+  mobile: { type: 'string' },
+  work_phone: { type: 'string' },
+  email: { type: 'string' },
+  email2: { type: 'string' },
+  apt: { type: 'string' },
+  street_num: { type: 'string' },
+  street1: { type: 'string' },
+  street2: { type: 'string' },
+  city: { type: 'string' },
+  state: { type: 'string' },
+  zip: { type: 'string' },
+  country: { type: 'string' },
+  json: { type: 'string' },
+  linkedin: { type: 'string' },
+  twitter: { type: 'string' },
+  facebook: { type: 'string' },
+  instagram: { type: 'string' },
+  created_at: { type: 'string' },
+  updated_at: { type: 'string' },
+};
+const person = {
+  type: 'object',
+  properties: PersonType,
+};
+const persons = {
+  type: 'array',
+  items: PersonType,
+};
+
+export const IdParam = {
+  type: 'object',
+  properties: { id: { type: 'string' } },
+};
+export const count = {
+  schema: {
+    response: { 200: { type: 'number' } },
+  },
+};
+export const findFromId = {
+  schema: {
+    params: IdParam,
+    response: { 200: person },
+  },
+};
+export const getAll = {
+  schema: {
+    response: {
+      200: persons,
+    },
+  },
+};
+export const update = {
+  schema: {
+    body: {
+      type: 'object',
+      required: [],
+      properties: { ...PersonType },
+    },
+    response: { 201: person },
+  },
+};
+```
+
+## File: apps/backend/src/app/modules/settings/trpc.router.ts
+
+```typescript
+import { UpsertSettingsInputObj } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
+import { SettingsController } from './controller';
+
+const settings = new SettingsController();
+
+export const SettingsRouter = router({
+  getCurrentCampaignId: authProcedure.query(({ ctx }) => settings.getCurrentCampaignId(ctx.auth)),
+  getSnapshot: authProcedure.query(({ ctx }) => settings.getSnapshot(ctx.auth)),
+  upsert: adminOrOwnerProcedure
+    .input(UpsertSettingsInputObj)
+    .mutation(({ ctx, input }) => settings.upsert(ctx.auth, input.entries)),
+  requestEmailVerification: adminOrOwnerProcedure
+    .input(z.object({ email: z.string().email() }))
+    .mutation(({ ctx, input }) => settings.requestEmailVerification(ctx.auth, input.email)),
+  verifySenderEmail: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(({ input }) => settings.verifySenderEmail(input.token)),
+  scheduleTenantDeletion: adminOrOwnerProcedure.mutation(({ ctx }) => settings.scheduleTenantDeletion(ctx.auth)),
+  cancelTenantDeletion: adminOrOwnerProcedure.mutation(({ ctx }) => settings.cancelTenantDeletion(ctx.auth)),
+  addVerifiedDomain: adminOrOwnerProcedure
+    .input(z.object({ domain: z.string().min(1) }))
+    .mutation(({ ctx, input }) => settings.addVerifiedDomain(ctx.auth, input.domain)),
+  verifyVerifiedDomain: adminOrOwnerProcedure
+    .input(z.object({ domain: z.string().min(1) }))
+    .mutation(({ ctx, input }) => settings.verifyVerifiedDomain(ctx.auth, input.domain)),
+  deleteVerifiedDomain: adminOrOwnerProcedure
+    .input(z.object({ domain: z.string().min(1) }))
+    .mutation(({ ctx, input }) => settings.deleteVerifiedDomain(ctx.auth, input.domain)),
+});
+```
+
+## File: apps/backend/src/app/modules/tags/system-tags.ts
+
+```typescript
+export const SYSTEM_TAG_NAMES = [
+  'volunteer',
+  'donor',
+  'supporter',
+  'non-supporter',
+  'undecided',
+  'subscriber',
+  'unsubscribed',
+  'do-not-contact',
+  'staff',
+  'vip',
+] as const;
+
+const normalize = (value: string) => value.trim().toLowerCase();
+
+const canonicalNameMap = new Map<string, string>(SYSTEM_TAG_NAMES.map((name) => [normalize(name), name]));
+
+export const SYSTEM_TAG_SET = new Set<string>(canonicalNameMap.keys());
+
+export function getCanonicalSystemTagName(name: string) {
+  return canonicalNameMap.get(normalize(name));
+}
+
+export function isSystemTag(name: string) {
+  return SYSTEM_TAG_SET.has(normalize(name));
+}
+
+const SYSTEM_TAG_COLOURS: Record<string, string> = {
+  volunteer: '#0ea5e9',
+  donor: '#f97316',
+  supporter: '#10b981',
+  'non-supporter': '#f87171',
+  undecided: '#a855f7',
+  subscriber: '#14b8a6',
+  unsubscribed: '#6b7280',
+  'do-not-contact': '#111827',
+  staff: '#2563eb',
+  vip: '#facc15',
+};
+
+export const SYSTEM_TAG_SEED_DATA = SYSTEM_TAG_NAMES.map((name) => ({
+  name,
+  description: null as string | null,
+  color: SYSTEM_TAG_COLOURS[name] ?? null,
+}));
+```
+
+## File: apps/backend/src/app/modules/tags/trpc.router.ts
+
+```typescript
+import { AddTagObj, UpdateTagObj } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { TagsController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const tags = new TagsController();
+
+const crud = createCrudRouter(tags, AddTagObj, UpdateTagObj);
+
+export const TagsRouter = router({
+  ...crud,
+
+  add: authProcedure.input(AddTagObj).mutation(({ input, ctx }) => tags.addTag(input, ctx.auth)),
+
+  findByName: authProcedure
+    .input(
+      z.object({
+        name: z.string().trim().max(100, 'Search term too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .query(({ input, ctx }) => tags.findByName(input, ctx.auth)),
+});
+```
+
+## File: apps/backend/src/app/modules/tasks/repositories/task-attachments.repo.ts
+
+```typescript
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class TaskAttachmentsRepo extends BaseRepository<'task_attachments'> {
+  constructor() {
+    super('task_attachments');
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/tasks/repositories/task-comments.repo.ts
+
+```typescript
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class TaskCommentsRepo extends BaseRepository<'task_comments'> {
+  constructor() {
+    super('task_comments');
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/tasks/repositories/task-subtasks.repo.ts
+
+```typescript
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class TaskSubtasksRepo extends BaseRepository<'task_subtasks'> {
+  constructor() {
+    super('task_subtasks');
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/teams/trpc.router.ts
+
+```typescript
+import { AddTeamObj, UpdateTeamObj, getAllOptions, idSchema } from '../../../../../../libs/common/src';
+
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { TeamsController } from './controller';
+
+const controller = new TeamsController();
+
+function getAll() {
+  return authProcedure
+    .input(getAllOptions.optional())
+    .query(({ ctx, input }) => controller.getAllTeams(ctx.auth.tenant_id, input));
+}
+
+function getById() {
+  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getById(ctx.auth, input));
+}
+
+function add() {
+  return authProcedure.input(AddTeamObj).mutation(({ ctx, input }) => controller.addTeam(ctx.auth, input));
+}
+
+function update() {
+  return authProcedure
+    .input(z.object({ id: idSchema, data: UpdateTeamObj }))
+    .mutation(({ ctx, input }) => controller.updateTeam(ctx.auth, input.id, input.data));
+}
+
+function remove() {
+  return authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.deleteTeam(ctx.auth, input));
+}
+
+function getForVolunteer() {
+  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getTeamsForVolunteer(ctx.auth, input));
+}
+
+function getAssignedLists() {
+  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getAssignedLists(ctx.auth, input));
+}
+
+export const TeamsRouter = router({
+  getAll: getAll(),
+  getById: getById(),
+  add: add(),
+  update: update(),
+  delete: remove(),
+  getForVolunteer: getForVolunteer(),
+  getAssignedLists: getAssignedLists(),
+});
+```
+
+## File: apps/backend/src/app/modules/userprofiles/controller.ts
+
+```typescript
+import { UserProfiles } from './repositories/userprofiles.repo';
+import { BaseController } from '../../lib/base.controller';
+
+export class UserProfilesController extends BaseController<'profiles', UserProfiles> {
+  constructor() {
+    super(new UserProfiles());
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/userprofiles/trpc.router.ts
+
+```typescript
+import { idSchema } from '../../../../../../libs/common/src';
+
+import { authProcedure, router } from '../../../trpc';
+import { UserProfilesController } from './controller';
+
+function getById() {
+  return authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => user.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
+}
+
+const user = new UserProfilesController();
+
+export const UserProfilesRouter = router({
+  getById: getById(),
+});
+```
+
+## File: apps/backend/src/app/modules/users/trpc.router.ts
+
+```typescript
+import { UpdateAuthUserObj, idSchema } from '../../../../../../libs/common/src';
+
+import z from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { AuthController } from '../auth/controller';
+
+const controller = new AuthController();
+
+function getUsers() {
+  return authProcedure.query(({ ctx }) => controller.getUsersList(ctx.auth));
+}
+
+function getProfileById() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => controller.getUserById(ctx.auth, input));
+}
+
+function updateUserProfile() {
+  return authProcedure
+    .input(z.object({ id: idSchema, data: UpdateAuthUserObj }))
+    .mutation(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data));
+}
+
+export const UsersRouter = router({
+  getUsers: getUsers(),
+  getProfileById: getProfileById(),
+  updateUserProfile: updateUserProfile(),
+});
+```
+
+## File: apps/backend/src/app/modules/volunteer-events/trpc.router.ts
+
+```typescript
+import {
+  idSchema,
+  getAllOptions,
+  AddVolunteerEventObj,
+  UpdateVolunteerEventObj,
+  AddVolunteerShiftObj,
+  UpdateVolunteerShiftObj,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { VolunteerEventsController } from './controller';
+
+const ctrl = new VolunteerEventsController();
+
+export const VolunteerRouter = router({
+  // Events
+  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => ctrl.getAllEvents(ctx.auth, input)),
+
+  getById: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
+
+  add: authProcedure.input(AddVolunteerEventObj).mutation(({ input, ctx }) => ctrl.addEvent(input, ctx.auth)),
+
+  checkSlugUnique: authProcedure
+    .input(z.object({ slug: z.string(), excludeId: z.string().nullable().optional() }))
+    .query(({ input, ctx }) => ctrl.checkSlugUnique(input.slug, input.excludeId || null, ctx.auth)),
+
+  update: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateVolunteerEventObj }))
+    .mutation(({ input, ctx }) => ctrl.updateEvent(input.id, input.data, ctx.auth)),
+
+  delete: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => ctrl.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+
+  // Shifts / Roster
+  getShiftsForEvent: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getShiftsForEvent(input, ctx.auth)),
+
+  signupVolunteer: authProcedure
+    .input(AddVolunteerShiftObj)
+    .mutation(({ input, ctx }) => ctrl.signupVolunteer(input, ctx.auth)),
+
+  updateShift: authProcedure
+    .input(z.object({ id: idSchema, data: UpdateVolunteerShiftObj }))
+    .mutation(({ input, ctx }) => ctrl.updateShift(input.id, input.data, ctx.auth)),
+
+  deleteShift: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.deleteShift(input, ctx.auth)),
+
+  // Person Specific History/Stats
+  getHistoryForPerson: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getHistoryForPerson(input, ctx.auth)),
+
+  getVolunteerStats: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getVolunteerStats(input, ctx.auth)),
+});
+```
+
+## File: apps/backend/src/app/modules/workflows/repositories/workflow-steps.repo.ts
+
+```typescript
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class WorkflowStepsRepo extends BaseRepository<'workflow_steps'> {
+  constructor() {
+    super('workflow_steps');
+  }
+}
+```
+
+## File: apps/backend/src/app/types/fastify-jsend.ts
+
+```typescript
+// apps/backend/src/types/fastify-jsend.d.ts
+import 'fastify';
+
+declare module 'fastify' {
+  interface FastifyReply {
+    jsendSuccess<T>(data: T, meta?: Record<string, unknown>): FastifyReply;
+    jsendFail<E extends object = Record<string, unknown>>(
+      data: E,
+      statusCode?: number,
+      meta?: Record<string, unknown>,
+    ): FastifyReply;
+    jsendError(
+      message: string,
+      statusCode?: number,
+      code?: string | number,
+      data?: unknown,
+      meta?: Record<string, unknown>,
+    ): FastifyReply;
+  }
+}
+```
+
+## File: apps/backend/src/scratch/test-tasks.ts
+
+```typescript
+import { TasksRepo } from '../app/modules/tasks/repositories/tasks.repo';
+
+async function test() {
+  const repo = new TasksRepo();
+  const res = await repo.getAllExcludingArchivedWithCount('1');
+  console.log('ROWS:', JSON.stringify(res.rows.slice(0, 3), null, 2));
+  process.exit(0);
+}
+
+test().catch(console.error);
+```
+
+## File: apps/backend/src/test-assign3.ts
+
+```typescript
+import { Kysely, PostgresDialect } from 'kysely';
+import { Pool } from 'pg';
+import { Models } from '../../../libs/common/src/lib/kysely.models';
+import Cursor from 'pg-cursor';
+
+const db = new Kysely<Models>({
+  dialect: new PostgresDialect({
+    pool: new Pool({
+      user: 'postgres',
+      database: 'pplcrm',
+      host: 'localhost',
+      port: 5432,
+    }),
+    cursor: Cursor,
+  }),
+});
+
+async function run() {
+  const q = db.updateTable('emails').set({ assigned_to: '1' }).where('id', '=', '1');
+  console.log(q.compile().sql);
+  console.log(q.compile().parameters);
+  process.exit(0);
+}
+run();
+```
+
+## File: apps/backend/src/test-assign4.ts
+
+```typescript
+import { Kysely, PostgresDialect } from 'kysely';
+import { Pool } from 'pg';
+import { Models } from '../../../libs/common/src/lib/kysely.models';
+import Cursor from 'pg-cursor';
+
+const db = new Kysely<Models>({
+  dialect: new PostgresDialect({
+    pool: new Pool({
+      user: 'pplcrm',
+      database: 'pplcrm',
+      password: '[REDACTED]',
+      host: 'localhost',
+      port: 5432,
+    }),
+    cursor: Cursor,
+  }),
+});
+
+async function run() {
+  const q = db.updateTable('emails').set({ assigned_to: '1' }).where('id', '=', '29');
+  console.log(q.compile().sql);
+  const result = await q.executeTakeFirst();
+  console.log(result);
+
+  const updatedRow = await db.selectFrom('emails').selectAll().where('id', '=', '29').executeTakeFirst();
+  console.log('After update:', updatedRow?.assigned_to);
+
+  process.exit(0);
+}
+run();
+```
+
+## File: apps/backend/src/test-assign5.js
+
+```javascript
+const { Pool } = require('pg');
+const pool = new Pool({
+  user: 'pplcrm',
+  database: 'pplcrm',
+  password: '[REDACTED]',
+  host: 'localhost',
+  port: 5432,
+});
+
+async function run() {
+  const res = await pool.query("UPDATE emails SET assigned_to = '2' WHERE id = '29' RETURNING *");
+  console.log(res.rows[0].assigned_to);
+  process.exit(0);
+}
+run();
+```
+
+## File: apps/backend/src/test-kysely.ts
+
+```typescript
+import { Kysely, PostgresDialect } from 'kysely';
+import { Pool } from 'pg';
+import { Models } from '../../../libs/common/src/lib/kysely.models';
+import Cursor from 'pg-cursor';
+
+const db = new Kysely<Models>({
+  dialect: new PostgresDialect({
+    pool: new Pool(),
+    cursor: Cursor,
+  }),
+});
+
+const query = db.updateTable('emails').set({ assigned_to: '1' }).where('id', '=', '1').where('tenant_id', '=', '1');
+
+console.log(query.compile().sql);
+console.log(query.compile().parameters);
+```
+
+## File: apps/backend/src/test-trpc.js
+
+```javascript
+async function run() {
+  const loginRes = await fetch('http://localhost:3000/trpc/auth.login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'hello@pplcrm.com', password: 'password' }),
+  });
+  console.log('Login status:', loginRes.status);
+
+  // if this doesn't work, we don't have the password, we can't test via HTTP.
+}
+run();
+```
+
+## File: apps/backend/src/typings.d.ts
+
+```typescript
+interface BigInt {
+  toJSON(): string;
+}
+```
+
+## File: apps/backend/eslint.config.cjs
+
+```javascript
+/* ---------------------- apps/backend/eslint.config.cjs ---------------------- */
+/* Node.js, Fastify, tRPC backend-specific rules only.                         */
+
+const { FlatCompat } = require('@eslint/eslintrc');
+const js = require('@eslint/js');
+const localRules = require('../../tools/eslint-rules/index.cjs');
+
+const compat = new FlatCompat({
+  baseDirectory: __dirname,
+  recommendedConfig: js.configs.recommended,
+});
+
+module.exports = [
+  /* Extend the base config */
+  ...compat.config({ extends: ['plugin:@nx/javascript'] }).map((cfg) => ({
+    ...cfg,
+    files: ['**/*.{ts,tsx,js,jsx}'],
+    rules: {
+      /* Fastify/tRPC specific style preferences */
+      'prefer-arrow-callback': 'warn',
+      'arrow-body-style': ['warn', 'as-needed'],
+    },
+  })),
+
+  /* ── Tenant-isolation lint rule ────────────────────────────────────────────
+   *
+   * Flags any Kysely query chain (selectFrom / updateTable / deleteFrom) that
+   * reaches an execute terminal without a .where('tenant_id', …) filter.
+   *
+   * Scoped to modules/** only — excludes:
+   *   - base.repo.ts          (tenant filtering is callers' responsibility)
+   *   - job-handlers.ts       (per-tenant loops; tenant_id used inside trx)
+   *   - _migrations/**        (DDL; no runtime tenant scoping)
+   *   - *.spec.ts             (integration tests do their own scoped cleanup)
+   *   - kyselyinit*.ts        (migration runner)
+   * ─────────────────────────────────────────────────────────────────────── */
+  {
+    files: ['**/src/app/modules/**/*.ts'],
+    ignores: ['**/*.spec.ts'],
+    plugins: { local: localRules },
+    rules: {
+      'local/no-unscoped-db-query': [
+        'error',
+        {
+          // Tables where cross-tenant queries are intentional:
+          //   authusers         - login by email, password reset by code
+          //   sessions          - sign-out by session_id hash (no tenant in token)
+          //   tenants           - tenant lookup by id
+          //   tags              - system-level tag reads (scoped at query join level)
+          //   ms_oauth_tokens   - keyed by user_id (globally unique bigint); single-user scope is sufficient
+          //   google_oauth_tokens - same reasoning as ms_oauth_tokens
+          ignoreTables: ['authusers', 'sessions', 'tenants', 'tags', 'ms_oauth_tokens', 'google_oauth_tokens'],
+        },
+      ],
+    },
+  },
+];
+```
+
+## File: apps/backend/jest.config.ts
+
+```typescript
+import type { Config } from 'jest';
+
+const config: Config = {
+  displayName: 'backend',
+  preset: '../../jest.preset.cjs',
+  testEnvironment: 'node',
+  transform: {
+    '^.+\\.[tj]s$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json', useESM: true, diagnostics: false }],
+  },
+  extensionsToTreatAsEsm: ['.ts'],
+  moduleNameMapper: {
+    '^@common$': '<rootDir>/../../common/src/index.ts',
+  },
+  moduleFileExtensions: ['ts', 'js', 'html'],
+  coverageDirectory: '../../coverage/apps/backend',
+};
+
+export default config;
+```
+
+## File: apps/backend/tsconfig.app.json
+
+```json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/out-tsc",
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "noEmit": false,
+    "sourceMap": true,
+    "inlineSources": true
+  },
+  "include": ["src/**/*.ts", "src/types/**/*.d.ts"],
+  "exclude": [
+    "jest.config.ts",
+    "src/**/*.spec.ts",
+    "src/**/*.test.ts",
+    "vite.config.ts",
+    "vite.config.mts",
+    "vitest.config.ts",
+    "vitest.config.mts",
+    "src/**/*.test.tsx",
+    "src/**/*.spec.tsx",
+    "src/**/*.test.js",
+    "src/**/*.spec.js",
+    "src/**/*.test.jsx",
+    "src/**/*.spec.jsx"
+  ]
+}
+```
+
+## File: apps/backend/tsconfig.json
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "files": [],
+  "include": [],
+  "references": [
+    {
+      "path": "./tsconfig.app.json"
+    },
+    {
+      "path": "./tsconfig.spec.json"
+    }
+  ]
+}
+```
+
+## File: apps/backend/tsconfig.spec.json
+
+```json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/out-tsc",
+    "types": ["vitest/globals", "vitest/importMeta", "vite/client", "node", "vitest"]
+  },
+  "include": [
+    "vite.config.ts",
+    "vite.config.mts",
+    "vitest.config.ts",
+    "vitest.config.mts",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.spec.tsx",
+    "src/**/*.test.js",
+    "src/**/*.spec.js",
+    "src/**/*.test.jsx",
+    "src/**/*.spec.jsx",
+    "src/**/*.d.ts"
+  ]
+}
+```
+
+## File: apps/frontend-e2e/playwright.config.ts
+
+```typescript
+import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './src',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: 0,
+  reporter: 'list',
+  use: {
+    baseURL: 'http://localhost:4200',
+  },
+  webServer: {
+    command: 'npx nx serve frontend',
+    url: 'http://localhost:4200',
+    reuseExistingServer: !process.env.CI,
+  },
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
+});
+```
+
+## File: apps/frontend-e2e/project.json
+
+```json
+{
+  "name": "frontend-e2e",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/frontend-e2e/src",
+  "targets": {
+    "e2e": {
+      "executor": "@nx/playwright:playwright",
+      "options": {
+        "config": "apps/frontend-e2e/playwright.config.ts"
+      }
+    }
+  }
+}
+```
+
+## File: apps/frontend-e2e/tsconfig.json
+
+```json
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es2016",
+    "types": ["node", "@playwright/test"]
+  },
+  "include": ["src/**/*.ts", "playwright.config.ts"]
+}
+```
+
+## File: apps/backend/src/app/config/email-folders.config.ts
+
+```typescript
+import type { EmailFolderConfig } from '../../../../../libs/common/src';
+import { EMAIL_FOLDERS } from '../../../../../libs/common/src';
+
+export function getAllEmailFolders(): EmailFolderConfig[] {
+  return [...EMAIL_FOLDERS].filter((folder: any) => !folder.is_hidden).sort((a, b) => a.sort_order - b.sort_order);
+}
+
+export function getEmailFolderById(id: string): EmailFolderConfig | undefined {
+  return EMAIL_FOLDERS.find((folder) => folder.id === id);
+}
+
+export function getRegularFolders(): EmailFolderConfig[] {
+  return EMAIL_FOLDERS.filter((folder) => !folder.is_virtual);
+}
+
+export function getVirtualFolders(): EmailFolderConfig[] {
+  return EMAIL_FOLDERS.filter((folder) => folder.is_virtual);
+}
+
+export function isVirtualFolder(folderId: string): boolean {
+  const folder = getEmailFolderById(folderId);
+  return folder?.is_virtual || false;
+}
+```
+
+## File: apps/backend/src/app/errors/app-errors.ts
+
+```typescript
+// Lightweight, transport-agnostic error types you can throw from controllers/services.
+export abstract class AppError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code: string,
+    public readonly data?: unknown,
+    opts?: { cause?: unknown },
+  ) {
+    super(message, { cause: opts?.cause });
+    this.name = new.target.name;
+    Error.captureStackTrace?.(this, new.target);
+  }
+}
+
+export class BadRequestError extends AppError {
+  constructor(message = 'Bad request', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 400, 'BAD_REQUEST', data, opts);
+  }
+}
+
+export class ConflictError extends AppError {
+  constructor(message = 'Conflict', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 409, 'CONFLICT', data, opts);
+  }
+}
+
+export class ForbiddenError extends AppError {
+  constructor(message = 'Forbidden', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 403, 'FORBIDDEN', data, opts);
+  }
+}
+
+export class InternalError extends AppError {
+  constructor(message = 'Something went wrong, please try again', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 500, 'INTERNAL_SERVER_ERROR', data, opts);
+  }
+}
+
+export class NotFoundError extends AppError {
+  constructor(message = 'Not found', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 404, 'NOT_FOUND', data, opts);
+  }
+}
+
+export class PreconditionFailedError extends AppError {
+  constructor(message = 'Precondition failed', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 412, 'PRECONDITION_FAILED', data, opts);
+  }
+}
+
+export class ServerMisconfigError extends AppError {
+  constructor(message = 'Server misconfiguration', data?: unknown) {
+    super(message, 500, 'INTERNAL_SERVER_ERROR', data);
+  }
+}
+
+export class TooManyRequestsError extends AppError {
+  constructor(message = 'Too many requests', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 429, 'TOO_MANY_REQUESTS', data, opts);
+  }
+}
+
+export class UnauthorizedError extends AppError {
+  constructor(message = 'User is not authenticated. Please sign in', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 401, 'UNAUTHORIZED', data, opts);
+  }
+}
+```
+
+## File: apps/backend/src/app/errors/to-trpc-errors.ts
+
+```typescript
+import { TRPCError } from '@trpc/server';
+
+import { AppError } from './app-errors';
+
+export function toTRPCError(err: unknown): TRPCError {
+  if (err instanceof TRPCError) return err;
+
+  const isDevOrTest = process.env['NODE_ENV'] !== 'production';
+
+  if (err instanceof AppError) {
+    // Status -> TRPC code
+    const code =
+      err.status === 400
+        ? 'BAD_REQUEST'
+        : err.status === 401
+          ? 'UNAUTHORIZED'
+          : err.status === 403
+            ? 'FORBIDDEN'
+            : err.status === 404
+              ? 'NOT_FOUND'
+              : err.status === 409
+                ? 'CONFLICT'
+                : err.status === 412
+                  ? 'PRECONDITION_FAILED'
+                  : err.status === 413
+                    ? 'PAYLOAD_TOO_LARGE'
+                    : err.status === 422
+                      ? 'BAD_REQUEST'
+                      : err.status === 429
+                        ? 'TOO_MANY_REQUESTS'
+                        : /* default */ 'INTERNAL_SERVER_ERROR';
+
+    let message = err.message;
+    if (isDevOrTest && err.cause instanceof Error) {
+      message = `${err.message} (Cause: ${err.cause.message})`;
+    } else if (isDevOrTest && typeof err.cause === 'string') {
+      message = `${err.message} (Cause: ${err.cause})`;
+    }
+
+    return new TRPCError({
+      code,
+      message,
+      cause: err,
+    });
+  }
+
+  // Unknown/unexpected -> internal
+  let message = 'Something went wrong, please try again';
+  if (isDevOrTest && err instanceof Error) {
+    message = `Something went wrong, please try again (Cause: ${err.message})`;
+  } else if (isDevOrTest && typeof err === 'string') {
+    message = `Something went wrong, please try again (Cause: ${err})`;
+  }
+
+  return new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message,
+    cause: err,
+  });
+}
+```
+
 ## File: apps/backend/src/app/lib/jobs/handlers/billing.handlers.ts
 
 ```typescript
@@ -2496,1934 +4424,6 @@ export async function scheduleNextRun(db: Kysely<Models>, type: JobType, delayMs
       max_attempts: DEFAULT_MAX_ATTEMPTS,
     })
     .execute();
-}
-```
-
-## File: apps/backend/src/app/lib/address-normalize.ts
-
-```typescript
-function norm(text?: string | null): string {
-  const v = (text ?? '').toString().trim().toLowerCase();
-  if (!v) return '';
-  // Basic punctuation removal, keep letters/numbers/spaces
-  let t = v.replace(/[^a-z0-9\s]/g, ' ');
-
-  // Expand common street abbreviations
-  const reps: Array<[RegExp, string]> = [
-    [/\bst\.?\b/g, 'street'],
-    [/\brd\.?\b/g, 'road'],
-    [/\bave\.?\b/g, 'avenue'],
-    [/\bav\.?\b/g, 'avenue'],
-    [/\bblvd\.?\b/g, 'boulevard'],
-    [/\bdr\.?\b/g, 'drive'],
-    [/\bhwy\.?\b/g, 'highway'],
-    [/\bwy\.?\b/g, 'way'],
-    [/\bln\.?\b/g, 'lane'],
-    [/\bct\.?\b/g, 'court'],
-    [/\bcir\.?\b/g, 'circle'],
-    [/\bpl\.?\b/g, 'place'],
-    [/\bter\.?\b/g, 'terrace'],
-    [/\bpkwy\.?\b/g, 'parkway'],
-    // Directions
-    [/\bn\b/g, 'north'],
-    [/\bs\b/g, 'south'],
-    [/\be\b/g, 'east'],
-    [/\bw\b/g, 'west'],
-  ];
-  for (const [re, to] of reps) t = t.replace(re, to);
-
-  // Collapse whitespace
-  t = t.replace(/\s{2,}/g, ' ').trim();
-  return t;
-}
-
-export function fingerprintStreet(input: {
-  street_num?: string | null;
-  street1?: string | null;
-  street2?: string | null;
-}): string | null {
-  const parts = [norm(input.street_num), norm(input.street1), norm(input.street2)].filter(Boolean);
-  if (!parts.length) return null;
-  return parts.join(' ');
-}
-
-export function fingerprintFull(input: {
-  apt?: string | null;
-  street_num?: string | null;
-  street1?: string | null;
-  street2?: string | null;
-  city?: string | null;
-  state?: string | null;
-  zip?: string | null;
-  country?: string | null;
-}): string | null {
-  const parts = [
-    norm(input.apt),
-    norm(input.street_num),
-    norm(input.street1),
-    norm(input.street2),
-    norm(input.city),
-    norm(input.state),
-    norm(input.zip),
-    norm(input.country),
-  ].filter(Boolean);
-  if (!parts.length) return null;
-  return parts.join(' ');
-}
-
-export function isBlankAddress(input: {
-  home_phone?: string | null;
-  street_num?: string | null;
-  street1?: string | null;
-  street2?: string | null;
-  apt?: string | null;
-  city?: string | null;
-  state?: string | null;
-  zip?: string | null;
-  country?: string | null;
-}): boolean {
-  const fields = [
-    input.home_phone,
-    input.street_num,
-    input.street1,
-    input.street2,
-    input.apt,
-    input.city,
-    input.state,
-    input.zip,
-    input.country,
-  ];
-  return fields.every((v) => !v || (v + '').trim().length === 0);
-}
-
-export function isIncompleteAddress(input: {
-  street1?: string | null;
-  city?: string | null;
-  state?: string | null;
-  zip?: string | null;
-}): boolean {
-  const street1 = (input.street1 ?? '').trim();
-  const city = (input.city ?? '').trim();
-  const zip = (input.zip ?? '').trim();
-
-  return !street1 || (!city && !zip);
-}
-```
-
-## File: apps/backend/src/app/lib/token-hash.ts
-
-```typescript
-import { randomBytes, createHash } from 'crypto';
-
-export function generateToken(): string {
-  return randomBytes(32).toString('hex');
-}
-
-export function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
-}
-```
-
-## File: apps/backend/src/app/modules/activity/trpc.router.ts
-
-```typescript
-import { getAllOptions, exportCsvInput, exportCsvResponse } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { ActivityController } from './controller';
-
-const activity = new ActivityController();
-
-export const ActivityRouter = router({
-  getFeed: authProcedure.input(getAllOptions).query(({ input, ctx }) => activity.getFeed(ctx.auth, input)),
-  getActivities: authProcedure
-    .input(
-      z.object({
-        entity: z.string(),
-        entityId: z.string().min(1),
-        startRow: z.number().optional(),
-        endRow: z.number().optional(),
-      }),
-    )
-    .query(({ input, ctx }) =>
-      activity.getActivities(ctx.auth.tenant_id, input.entity, input.entityId, {
-        startRow: input.startRow,
-        endRow: input.endRow,
-      }),
-    ),
-  exportCsv: authProcedure
-    .input(exportCsvInput)
-    .output(exportCsvResponse)
-    .mutation(({ input, ctx }) => activity.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth)),
-});
-```
-
-## File: apps/backend/src/app/modules/auth/repositories/tenants.repo.ts
-
-```typescript
-import { BaseRepository } from '../../../lib/base.repo';
-
-export class TenantsRepo extends BaseRepository<'tenants'> {
-  constructor() {
-    super('tenants');
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/billing/repositories/webhook-events.repo.ts
-
-```typescript
-import { BaseRepository } from '../../../lib/base.repo';
-
-export class WebhookEventsRepo extends BaseRepository<'webhook_events'> {
-  constructor() {
-    super('webhook_events');
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/companies/trpc.router.ts
-
-```typescript
-import { idSchema, CompanyInputObj } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { CompaniesController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-
-const companies = new CompaniesController();
-
-const CompanyInputSchema = CompanyInputObj;
-
-const crud = createCrudRouter(companies, CompanyInputSchema, CompanyInputSchema.partial());
-
-export const CompaniesRouter = router({
-  ...crud,
-
-  import: authProcedure
-    .input(
-      z.object({
-        rows: z.array(CompanyInputSchema),
-        skipped: z.number().int().nonnegative().optional(),
-        file_name: z.string().trim().min(1).max(255).optional(),
-      }),
-    )
-    .mutation(async ({ input, ctx }) => {
-      ctx.res.status(202);
-      return companies.importRows(input, ctx.auth);
-    }),
-
-  getPotentialDuplicates: authProcedure
-    .input(
-      z
-        .object({
-          page: z.number().int().positive().optional().default(1),
-          pageSize: z.number().int().positive().optional().default(20),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => companies.getPotentialDuplicates(ctx.auth, input)),
-
-  mergeCompanies: authProcedure
-    .input(z.object({ target_id: idSchema, source_id: idSchema }))
-    .mutation(({ input, ctx }) => companies.mergeCompanies(input.target_id, input.source_id, ctx.auth)),
-});
-```
-
-## File: apps/backend/src/app/modules/dashboard/trpc.router.ts
-
-```typescript
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { DashboardController } from './controller';
-
-const dashboard = new DashboardController();
-
-export const DashboardRouter = router({
-  getStats: authProcedure.query(({ ctx }) => dashboard.getStats(ctx.auth)),
-
-  getBreachedEmails: authProcedure
-    .input(z.object({ page: z.number().int().min(1), limit: z.number().int().min(1) }))
-    .query(({ input, ctx }) => dashboard.getBreachedEmails(ctx.auth, input)),
-
-  getBreachedTasks: authProcedure
-    .input(z.object({ page: z.number().int().min(1), limit: z.number().int().min(1) }))
-    .query(({ input, ctx }) => dashboard.getBreachedTasks(ctx.auth, input)),
-});
-```
-
-## File: apps/backend/src/app/modules/emails/repositories/email-body.repo.ts
-
-```typescript
-import { BaseRepository } from '../../../lib/base.repo';
-
-export class EmailBodiesRepo extends BaseRepository<'email_bodies'> {
-  constructor() {
-    super('email_bodies');
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/emails/repositories/email-comments.repo.ts
-
-```typescript
-import { BaseRepository } from '../../../lib/base.repo';
-
-export class EmailCommentsRepo extends BaseRepository<'email_comments'> {
-  constructor() {
-    super('email_comments');
-  }
-
-  public getForEmail(tenant_id: string, email_id: string) {
-    return this.getManyBy('email_id', { tenant_id, value: email_id });
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/emails/repositories/email-headers.repo.ts
-
-```typescript
-import { BaseRepository } from '../../../lib/base.repo';
-
-export class EmailHeadersRepo extends BaseRepository<'email_headers'> {
-  constructor() {
-    super('email_headers');
-  }
-
-  public getByEmailId(tenant_id: string, email_id: string) {
-    return this.getSelect()
-      .selectAll()
-      .where('tenant_id', '=', tenant_id)
-      .where('email_id', '=', email_id)
-      .executeTakeFirst();
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/emails/repositories/email-recipients.repo.ts
-
-```typescript
-import { BaseRepository } from '../../../lib/base.repo';
-
-export class EmailRecipientsRepo extends BaseRepository<'email_recipients'> {
-  constructor() {
-    super('email_recipients');
-  }
-
-  public getByEmailId(tenant_id: string, email_id: string) {
-    return this.getSelect()
-      .selectAll()
-      .where('tenant_id', '=', tenant_id)
-      .where('email_id', '=', email_id)
-      .orderBy('kind')
-      .orderBy('pos')
-      .execute();
-  }
-
-  public getByEmailIdAndKind(tenant_id: string, email_id: string, kind: 'to' | 'cc' | 'bcc') {
-    return this.getSelect()
-      .select(['name', 'email', 'pos'])
-      .where('tenant_id', '=', tenant_id)
-      .where('email_id', '=', email_id)
-      .where('kind', '=', kind)
-      .orderBy('pos')
-      .execute();
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/emails/trpc.router.ts
-
-```typescript
-import { idSchema } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import { authProcedure, router } from '../../../trpc';
-import { EmailsController } from './controller';
-
-function addComment() {
-  return authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        author_id: idSchema,
-        comment: z.string().trim().min(1, 'Comment cannot be empty').max(5000, 'Comment too long'),
-      }),
-    )
-    .mutation(({ input, ctx }) => emails.addComment(ctx.auth.tenant_id, input.id, input.author_id, input.comment));
-}
-
-function assign() {
-  return authProcedure
-    .input(z.object({ id: idSchema, user_id: idSchema.nullable(), assigned_to_name: z.string().optional() }))
-    .mutation(({ input, ctx }) =>
-      emails.assignEmail(ctx.auth.tenant_id, input.id, input.user_id, ctx.auth.user_id, input.assigned_to_name ?? null),
-    );
-}
-
-function deleteComment() {
-  return authProcedure
-    .input(z.object({ email_id: idSchema, comment_id: idSchema }))
-    .mutation(({ input, ctx }) => emails.deleteComment(ctx.auth.tenant_id, input.email_id, input.comment_id));
-}
-
-function deleteDraft() {
-  return authProcedure
-    .input(z.object({ id: idSchema }))
-    .mutation(({ input, ctx }) => emails.deleteDraft(ctx.auth.tenant_id, ctx.auth.user_id, input.id));
-}
-
-function deleteEmail() {
-  return authProcedure.input(idSchema).mutation(({ input, ctx }) => emails.deleteMany(ctx.auth.tenant_id, [input]));
-}
-
-function deleteEmails() {
-  return authProcedure
-    .input(z.array(idSchema).min(1, 'At least one ID is required'))
-    .mutation(({ input, ctx }) => emails.deleteMany(ctx.auth.tenant_id, input));
-}
-
-function getAllAttachments() {
-  return authProcedure
-    .input(z.object({ email_id: idSchema, options: z.object({ includeInline: z.boolean() }).optional() }))
-    .query(({ input, ctx }) => emails.getAllAttachments(ctx.auth.tenant_id, input.email_id, input.options));
-}
-
-function getAttachmentsByEmailId() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => emails.getAttachmentsByEmailId(ctx.auth.tenant_id, input));
-}
-
-function getDraft() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => emails.getDraft(ctx.auth.tenant_id, ctx.auth.user_id, input));
-}
-
-function getEmailBody() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => emails.getEmailBody(ctx.auth.tenant_id, input));
-}
-
-function getEmailHeader() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => emails.getEmailHeader(ctx.auth.tenant_id, input, ctx.auth.user_id));
-}
-
-function getEmailWithHeaders() {
-  return authProcedure.input(idSchema).query(async ({ input, ctx }) => {
-    const tenantId = ctx.auth.tenant_id;
-
-    const [body, header] = await Promise.all([
-      emails.getEmailBody(tenantId, input),
-      emails.getEmailHeader(tenantId, input),
-    ]);
-
-    return { body, header };
-  });
-}
-
-function getEmails() {
-  return authProcedure
-    .input(
-      z.object({
-        folderId: idSchema,
-        limit: z.number().int().min(1).max(100).optional(),
-        offset: z.number().int().min(0).optional(),
-      }),
-    )
-    .query(({ input, ctx }) =>
-      emails.getEmails(ctx.auth.user_id, ctx.auth.tenant_id, input.folderId, input.limit, input.offset),
-    );
-}
-
-function getFolders() {
-  return authProcedure.query(({ ctx }) => emails.getFolders(ctx.auth.tenant_id));
-}
-
-function getFoldersWithCounts() {
-  return authProcedure.query(({ ctx }) => emails.getFoldersWithCounts(ctx.auth.user_id, ctx.auth.tenant_id));
-}
-
-function hasAttachment() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => emails.hasAttachment(ctx.auth.tenant_id, input));
-}
-
-function hasAttachmentByEmailIds() {
-  return authProcedure
-    .input(z.array(idSchema))
-    .query(({ input, ctx }) => emails.hasAttachmentByEmailIds(ctx.auth.tenant_id, input));
-}
-
-function restoreFromTrash() {
-  return authProcedure
-    .input(z.array(idSchema))
-    .mutation(({ input, ctx }) => emails.restoreFromTrash(ctx.auth.tenant_id, input));
-}
-
-function moveToFolder() {
-  return authProcedure
-    .input(z.object({ id: idSchema, folderId: idSchema }))
-    .mutation(({ input, ctx }) => emails.moveToFolder(ctx.auth.tenant_id, input.id, input.folderId, ctx.auth.user_id));
-}
-
-function saveDraft() {
-  return authProcedure
-    .input(
-      z.object({
-        id: idSchema.optional(),
-        to: z.array(z.string().trim().email('Invalid recipient email address')).optional().default([]),
-        cc: z.array(z.string().trim().email('Invalid CC email address')).optional(),
-        bcc: z.array(z.string().trim().email('Invalid BCC email address')).optional(),
-        subject: z.string().trim().max(500, 'Subject is too long').optional(),
-        html: z.string().max(100000, 'HTML body is too long').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      emails.saveDraft(ctx.auth.tenant_id, ctx.auth.user_id, {
-        id: input.id,
-        to_list: input.to,
-        cc_list: input.cc ?? [],
-        bcc_list: input.bcc ?? [],
-        subject: input.subject ?? undefined,
-        body_html: input.html ?? undefined,
-      }),
-    );
-}
-
-function setFavourite() {
-  return authProcedure
-    .input(z.object({ id: idSchema, favourite: z.boolean() }))
-    .mutation(({ input, ctx }) => emails.setFavourite(ctx.auth.tenant_id, input.id, input.favourite));
-}
-
-function setStatus() {
-  return authProcedure
-    .input(z.object({ id: idSchema, status: z.enum(['open', 'closed']) }))
-    .mutation(({ input, ctx }) => emails.setStatus(ctx.auth.tenant_id, input.id, input.status, ctx.auth.user_id));
-}
-
-function getActivities() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => emails.getActivitiesForEmail(ctx.auth.tenant_id, input));
-}
-
-function setEmailReadStatus() {
-  return authProcedure
-    .input(z.object({ id: idSchema, isRead: z.boolean() }))
-    .mutation(({ input, ctx }) =>
-      emails.setEmailReadStatus(ctx.auth.tenant_id, ctx.auth.user_id, input.id, input.isRead),
-    );
-}
-
-const emails = new EmailsController();
-
-export const EmailsRouter = router({
-  getFolders: getFolders(),
-  getFoldersWithCounts: getFoldersWithCounts(),
-  getEmails: getEmails(),
-  getEmailBody: getEmailBody(),
-  getDraft: getDraft(),
-  getEmailHeader: getEmailHeader(),
-  getEmailWithHeaders: getEmailWithHeaders(),
-  getActivities: getActivities(),
-  addComment: addComment(),
-  deleteComment: deleteComment(),
-  deleteDraft: deleteDraft(),
-  delete: deleteEmail(),
-  deleteMany: deleteEmails(),
-  assign: assign(),
-  setFavourite: setFavourite(),
-  setStatus: setStatus(),
-  setEmailReadStatus: setEmailReadStatus(),
-  saveDraft: saveDraft(),
-  restoreFromTrash: restoreFromTrash(),
-  moveToFolder: moveToFolder(),
-  hasAttachment: hasAttachment(),
-  getAllAttachments: getAllAttachments(),
-  hasAttachmentByEmailIds: hasAttachmentByEmailIds(),
-  getAttachmentsByEmailId: getAttachmentsByEmailId(),
-});
-```
-
-## File: apps/backend/src/app/modules/events/trpc.router.ts
-
-```typescript
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import {
-  idSchema,
-  getAllOptions,
-  AddEventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  UpdateRegistrationObj,
-} from '../../../../../../libs/common/src';
-import { EventsController } from './controller';
-
-const ctrl = new EventsController();
-
-export const EventsRouter = router({
-  // Events
-  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => ctrl.getAllEvents(ctx.auth, input)),
-
-  getById: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
-
-  add: authProcedure.input(AddEventObj).mutation(({ input, ctx }) => ctrl.addEvent(input, ctx.auth)),
-
-  checkSlugUnique: authProcedure
-    .input(z.object({ slug: z.string(), excludeId: z.string().nullable().optional() }))
-    .query(({ input, ctx }) => ctrl.checkSlugUnique(input.slug, input.excludeId || null, ctx.auth)),
-
-  update: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateEventObj }))
-    .mutation(({ input, ctx }) => ctrl.updateEvent(input.id, input.data, ctx.auth)),
-
-  delete: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => ctrl.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-
-  // Ticket types
-  getTicketTypesForEvent: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getTicketTypesForEvent(input, ctx.auth)),
-
-  addTicketType: authProcedure
-    .input(AddTicketTypeObj)
-    .mutation(({ input, ctx }) => ctrl.addTicketType(input, ctx.auth)),
-
-  updateTicketType: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateTicketTypeObj }))
-    .mutation(({ input, ctx }) => ctrl.updateTicketType(input.id, input.data, ctx.auth)),
-
-  deleteTicketType: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.deleteTicketType(input, ctx.auth)),
-
-  // Registrations
-  getRegistrationsForEvent: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getRegistrationsForEvent(input, ctx.auth)),
-
-  addRegistration: authProcedure
-    .input(AddRegistrationObj)
-    .mutation(({ input, ctx }) => ctrl.addRegistration(input, ctx.auth)),
-
-  checkIn: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.checkIn(input, ctx.auth)),
-
-  updateRegistration: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateRegistrationObj }))
-    .mutation(({ input, ctx }) => ctrl.updateRegistration(input.id, input.data, ctx.auth)),
-
-  deleteRegistration: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => ctrl.deleteRegistration(input, ctx.auth)),
-
-  // Person-specific history & stats
-  getHistoryForPerson: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getHistoryForPerson(input, ctx.auth)),
-
-  getStatsForPerson: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getEventStats(input, ctx.auth)),
-});
-```
-
-## File: apps/backend/src/app/modules/exports/trpc.router.ts
-
-```typescript
-import { queueExportInput, dataExportRecord } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { ExportsController } from './controller';
-
-const exports_ = new ExportsController();
-
-export const ExportsRouter = router({
-  queue: authProcedure
-    .input(queueExportInput)
-    .output(dataExportRecord)
-    .mutation(({ input, ctx }) => exports_.queueExport(input, ctx.auth)),
-
-  list: authProcedure.output(z.array(dataExportRecord)).query(({ ctx }) => exports_.list(ctx.auth)),
-
-  delete: authProcedure
-    .input(z.object({ id: z.string() }))
-    .output(z.object({ success: z.boolean() }))
-    .mutation(({ input, ctx }) => exports_.deleteExport(input.id, ctx.auth)),
-});
-```
-
-## File: apps/backend/src/app/modules/households/routes/households.schema.ts
-
-```typescript
-const HouseholdsType = {
-  id: { type: 'string' },
-  tenant_id: { type: 'string' },
-  campaign_id: { type: 'string' },
-  created_by: { type: 'string' },
-  file_id: { type: 'string' },
-  name: { type: 'string' },
-  home_phone: { type: 'string' },
-  apt: { type: 'string' },
-  street_num: { type: 'string' },
-  street1: { type: 'string' },
-  street2: { type: 'string' },
-  city: { type: 'string' },
-  state: { type: 'string' },
-  zip: { type: 'string' },
-  country: { type: 'string' },
-  json: { type: 'string' },
-  created_at: { type: 'string' },
-  updated_at: { type: 'string' },
-};
-const household = {
-  type: 'object',
-  properties: HouseholdsType,
-};
-const households = {
-  type: 'array',
-  items: HouseholdsType,
-};
-
-export const IdParam = {
-  type: 'object',
-  properties: { id: { type: 'string' } },
-};
-export const count = {
-  schema: {
-    response: { 200: { type: 'number' } },
-  },
-};
-export const findFromId = {
-  schema: {
-    params: IdParam,
-    response: { 200: household },
-  },
-};
-export const getAll = {
-  schema: {
-    response: {
-      200: households,
-    },
-  },
-};
-export const update = {
-  schema: {
-    body: {
-      type: 'object',
-      required: [],
-      properties: { ...HouseholdsType },
-    },
-    response: { 201: households },
-  },
-};
-```
-
-## File: apps/backend/src/app/modules/households/trpc.router.ts
-
-```typescript
-import { UpdateHouseholdsObj, idSchema } from '../../../../../../libs/common/src';
-
-import { z } from 'zod';
-
-import { authProcedure, router } from '../../../trpc';
-import { HouseholdsController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-
-const households = new HouseholdsController();
-
-const crud = createCrudRouter(households, UpdateHouseholdsObj, UpdateHouseholdsObj);
-
-export const HouseholdsRouter = router({
-  ...crud,
-
-  getAll: authProcedure.query(({ ctx }) => households.getAll(ctx.auth.tenant_id)),
-
-  add: authProcedure.input(UpdateHouseholdsObj).mutation(({ input, ctx }) => households.addHousehold(input, ctx.auth)),
-
-  deleteMany: authProcedure
-    .input(z.array(idSchema).min(1, 'At least one ID is required'))
-    .mutation(({ input, ctx }) => households.deleteManyForTenant(ctx.auth, input)),
-
-  attachTag: authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => households.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth)),
-
-  detachTag: authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name, input.type ?? 'tag', ctx.auth.user_id),
-    ),
-
-  getTags: authProcedure
-    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
-    .query(({ input, ctx }) => {
-      const id = typeof input === 'string' ? input : input.id;
-      const type = typeof input === 'string' ? undefined : input.type;
-      return households.getTags(id, ctx.auth, type);
-    }),
-
-  getDistinctTags: authProcedure
-    .input(z.enum(['tag', 'issue']).optional())
-    .query(({ input, ctx }) => households.getDistinctTags(ctx.auth, input)),
-
-  getAllWithPeopleCount: authProcedure
-    .input(z.any().optional())
-    .query(({ input, ctx }) => households.getAllWithPeopleCount(ctx.auth, input)),
-
-  getPeopleCount: authProcedure.input(idSchema).query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth)),
-
-  getPotentialDuplicates: authProcedure
-    .input(
-      z
-        .object({
-          page: z.number().int().positive().optional().default(1),
-          pageSize: z.number().int().positive().optional().default(20),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => households.getPotentialDuplicates(ctx.auth, input)),
-
-  mergeHouseholds: authProcedure
-    .input(z.object({ target_id: idSchema, source_id: idSchema }))
-    .mutation(({ input, ctx }) => households.mergeHouseholds(input.target_id, input.source_id, ctx.auth)),
-
-  getLastFingerprintRecomputation: authProcedure.query(({ ctx }) =>
-    households.getLastFingerprintRecomputation(ctx.auth.tenant_id),
-  ),
-
-  recomputeAddressFingerprints: authProcedure.mutation(({ ctx }) =>
-    households.recomputeAddressFingerprints(ctx.auth.tenant_id),
-  ),
-});
-```
-
-## File: apps/backend/src/app/modules/imports/trpc.router.ts
-
-```typescript
-import { idSchema } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import { authProcedure, router } from '../../../trpc';
-import { ImportsController } from './controller';
-
-const imports = new ImportsController();
-
-export const ImportsRouter = router({
-  getAll: authProcedure.query(({ ctx }) => imports.list(ctx.auth)),
-  delete: authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        deleteContacts: z.boolean().optional(),
-        deletePeople: z.boolean().optional(),
-        deleteHouseholds: z.boolean().optional(),
-        deleteCompanies: z.boolean().optional(),
-        deleteTasks: z.boolean().optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => imports.deleteImport(input, ctx.auth)),
-});
-```
-
-## File: apps/backend/src/app/modules/lists/repositories/map-lists-households.repo.ts
-
-```typescript
-import { BaseRepository } from '../../../lib/base.repo';
-
-export class MapListsHouseholdsRepo extends BaseRepository<'map_lists_households'> {
-  constructor() {
-    super('map_lists_households');
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/lists/trpc.router.ts
-
-```typescript
-import { AddListObj, UpdateListObj, idSchema } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import { authProcedure, router } from '../../../trpc';
-import { ListsController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-
-const lists = new ListsController();
-
-const crud = createCrudRouter(lists, AddListObj, UpdateListObj);
-
-export const ListsRouter = router({
-  ...crud,
-
-  getAll: authProcedure.query(({ ctx }) => lists.getAll(ctx.auth.tenant_id)),
-
-  add: authProcedure.input(AddListObj).mutation(({ input, ctx }) => lists.addList(input, ctx.auth)),
-
-  update: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateListObj }))
-    .mutation(({ input, ctx }) => lists.updateList(input.id, input.data, ctx.auth)),
-
-  getMembersHouseholds: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => lists.getHouseholdsByListId(ctx.auth, input)),
-
-  getMembersPersons: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getPersonsByListId(ctx.auth, input)),
-
-  refresh: authProcedure.input(idSchema).mutation(({ input, ctx }) => lists.refreshList(ctx.auth, input)),
-
-  getListStats: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getListStats(ctx.auth, input)),
-
-  getMemberCount: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getMemberCount(ctx.auth, input)),
-});
-```
-
-## File: apps/backend/src/app/modules/notifications/trpc.router.ts
-
-```typescript
-import { z } from 'zod';
-import { idSchema } from '../../../../../../libs/common/src';
-import { authProcedure, router } from '../../../trpc';
-import { NotificationsController } from './controller';
-
-const notifications = new NotificationsController();
-
-export const NotificationsRouter = router({
-  getLatest: authProcedure
-    .input(
-      z
-        .object({
-          limit: z.number().optional(),
-          offset: z.number().optional(),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => notifications.getLatest(ctx.auth, input?.limit, input?.offset)),
-
-  getUnreadCount: authProcedure.query(({ ctx }) => notifications.getUnreadCount(ctx.auth)),
-
-  markAllRead: authProcedure.mutation(({ ctx }) => notifications.markAllAsRead(ctx.auth)),
-
-  markRead: authProcedure.input(idSchema).mutation(({ input, ctx }) => notifications.markRead(input, ctx.auth)),
-});
-```
-
-## File: apps/backend/src/app/modules/person-connections/trpc.router.ts
-
-```typescript
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { idSchema, AddConnectionObj } from '../../../../../../libs/common/src';
-import { PersonConnectionsController } from './controller';
-
-const ctrl = new PersonConnectionsController();
-
-export const PersonConnectionsRouter = router({
-  getForPerson: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getForPerson(input, ctx.auth)),
-
-  countForPerson: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.countForPerson(input, ctx.auth)),
-
-  add: authProcedure
-    .input(z.object({ person_id: idSchema, data: AddConnectionObj }))
-    .mutation(({ input, ctx }) => ctrl.addConnection(input.person_id, input.data, ctx.auth)),
-
-  remove: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.removeConnection(input, ctx.auth)),
-});
-```
-
-## File: apps/backend/src/app/modules/persons/routes/persons.schema.ts
-
-```typescript
-const PersonType = {
-  id: { type: 'string' },
-  tenant_id: { type: 'string' },
-  username: { type: 'string' },
-  role: { type: 'string' },
-  first_name: { type: 'string' },
-  middle_names: { type: 'string' },
-  last_name: { type: 'string' },
-  home_phone: { type: 'string' },
-  mobile: { type: 'string' },
-  work_phone: { type: 'string' },
-  email: { type: 'string' },
-  email2: { type: 'string' },
-  apt: { type: 'string' },
-  street_num: { type: 'string' },
-  street1: { type: 'string' },
-  street2: { type: 'string' },
-  city: { type: 'string' },
-  state: { type: 'string' },
-  zip: { type: 'string' },
-  country: { type: 'string' },
-  json: { type: 'string' },
-  linkedin: { type: 'string' },
-  twitter: { type: 'string' },
-  facebook: { type: 'string' },
-  instagram: { type: 'string' },
-  created_at: { type: 'string' },
-  updated_at: { type: 'string' },
-};
-const person = {
-  type: 'object',
-  properties: PersonType,
-};
-const persons = {
-  type: 'array',
-  items: PersonType,
-};
-
-export const IdParam = {
-  type: 'object',
-  properties: { id: { type: 'string' } },
-};
-export const count = {
-  schema: {
-    response: { 200: { type: 'number' } },
-  },
-};
-export const findFromId = {
-  schema: {
-    params: IdParam,
-    response: { 200: person },
-  },
-};
-export const getAll = {
-  schema: {
-    response: {
-      200: persons,
-    },
-  },
-};
-export const update = {
-  schema: {
-    body: {
-      type: 'object',
-      required: [],
-      properties: { ...PersonType },
-    },
-    response: { 201: person },
-  },
-};
-```
-
-## File: apps/backend/src/app/modules/settings/trpc.router.ts
-
-```typescript
-import { UpsertSettingsInputObj } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
-import { SettingsController } from './controller';
-
-const settings = new SettingsController();
-
-export const SettingsRouter = router({
-  getCurrentCampaignId: authProcedure.query(({ ctx }) => settings.getCurrentCampaignId(ctx.auth)),
-  getSnapshot: authProcedure.query(({ ctx }) => settings.getSnapshot(ctx.auth)),
-  upsert: adminOrOwnerProcedure
-    .input(UpsertSettingsInputObj)
-    .mutation(({ ctx, input }) => settings.upsert(ctx.auth, input.entries)),
-  requestEmailVerification: adminOrOwnerProcedure
-    .input(z.object({ email: z.string().email() }))
-    .mutation(({ ctx, input }) => settings.requestEmailVerification(ctx.auth, input.email)),
-  verifySenderEmail: publicProcedure
-    .input(z.object({ token: z.string() }))
-    .mutation(({ input }) => settings.verifySenderEmail(input.token)),
-  scheduleTenantDeletion: adminOrOwnerProcedure.mutation(({ ctx }) => settings.scheduleTenantDeletion(ctx.auth)),
-  cancelTenantDeletion: adminOrOwnerProcedure.mutation(({ ctx }) => settings.cancelTenantDeletion(ctx.auth)),
-  addVerifiedDomain: adminOrOwnerProcedure
-    .input(z.object({ domain: z.string().min(1) }))
-    .mutation(({ ctx, input }) => settings.addVerifiedDomain(ctx.auth, input.domain)),
-  verifyVerifiedDomain: adminOrOwnerProcedure
-    .input(z.object({ domain: z.string().min(1) }))
-    .mutation(({ ctx, input }) => settings.verifyVerifiedDomain(ctx.auth, input.domain)),
-  deleteVerifiedDomain: adminOrOwnerProcedure
-    .input(z.object({ domain: z.string().min(1) }))
-    .mutation(({ ctx, input }) => settings.deleteVerifiedDomain(ctx.auth, input.domain)),
-});
-```
-
-## File: apps/backend/src/app/modules/tags/system-tags.ts
-
-```typescript
-export const SYSTEM_TAG_NAMES = [
-  'volunteer',
-  'donor',
-  'supporter',
-  'non-supporter',
-  'undecided',
-  'subscriber',
-  'unsubscribed',
-  'do-not-contact',
-  'staff',
-  'vip',
-] as const;
-
-const normalize = (value: string) => value.trim().toLowerCase();
-
-const canonicalNameMap = new Map<string, string>(SYSTEM_TAG_NAMES.map((name) => [normalize(name), name]));
-
-export const SYSTEM_TAG_SET = new Set<string>(canonicalNameMap.keys());
-
-export function getCanonicalSystemTagName(name: string) {
-  return canonicalNameMap.get(normalize(name));
-}
-
-export function isSystemTag(name: string) {
-  return SYSTEM_TAG_SET.has(normalize(name));
-}
-
-const SYSTEM_TAG_COLOURS: Record<string, string> = {
-  volunteer: '#0ea5e9',
-  donor: '#f97316',
-  supporter: '#10b981',
-  'non-supporter': '#f87171',
-  undecided: '#a855f7',
-  subscriber: '#14b8a6',
-  unsubscribed: '#6b7280',
-  'do-not-contact': '#111827',
-  staff: '#2563eb',
-  vip: '#facc15',
-};
-
-export const SYSTEM_TAG_SEED_DATA = SYSTEM_TAG_NAMES.map((name) => ({
-  name,
-  description: null as string | null,
-  color: SYSTEM_TAG_COLOURS[name] ?? null,
-}));
-```
-
-## File: apps/backend/src/app/modules/tags/trpc.router.ts
-
-```typescript
-import { AddTagObj, UpdateTagObj } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import { authProcedure, router } from '../../../trpc';
-import { TagsController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-
-const tags = new TagsController();
-
-const crud = createCrudRouter(tags, AddTagObj, UpdateTagObj);
-
-export const TagsRouter = router({
-  ...crud,
-
-  add: authProcedure.input(AddTagObj).mutation(({ input, ctx }) => tags.addTag(input, ctx.auth)),
-
-  findByName: authProcedure
-    .input(
-      z.object({
-        name: z.string().trim().max(100, 'Search term too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .query(({ input, ctx }) => tags.findByName(input, ctx.auth)),
-});
-```
-
-## File: apps/backend/src/app/modules/tasks/repositories/task-attachments.repo.ts
-
-```typescript
-import { BaseRepository } from '../../../lib/base.repo';
-
-export class TaskAttachmentsRepo extends BaseRepository<'task_attachments'> {
-  constructor() {
-    super('task_attachments');
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/tasks/repositories/task-comments.repo.ts
-
-```typescript
-import { BaseRepository } from '../../../lib/base.repo';
-
-export class TaskCommentsRepo extends BaseRepository<'task_comments'> {
-  constructor() {
-    super('task_comments');
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/tasks/repositories/task-subtasks.repo.ts
-
-```typescript
-import { BaseRepository } from '../../../lib/base.repo';
-
-export class TaskSubtasksRepo extends BaseRepository<'task_subtasks'> {
-  constructor() {
-    super('task_subtasks');
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/teams/trpc.router.ts
-
-```typescript
-import { AddTeamObj, UpdateTeamObj, getAllOptions, idSchema } from '../../../../../../libs/common/src';
-
-import { z } from 'zod';
-
-import { authProcedure, router } from '../../../trpc';
-import { TeamsController } from './controller';
-
-const controller = new TeamsController();
-
-function getAll() {
-  return authProcedure
-    .input(getAllOptions.optional())
-    .query(({ ctx, input }) => controller.getAllTeams(ctx.auth.tenant_id, input));
-}
-
-function getById() {
-  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getById(ctx.auth, input));
-}
-
-function add() {
-  return authProcedure.input(AddTeamObj).mutation(({ ctx, input }) => controller.addTeam(ctx.auth, input));
-}
-
-function update() {
-  return authProcedure
-    .input(z.object({ id: idSchema, data: UpdateTeamObj }))
-    .mutation(({ ctx, input }) => controller.updateTeam(ctx.auth, input.id, input.data));
-}
-
-function remove() {
-  return authProcedure.input(idSchema).mutation(({ ctx, input }) => controller.deleteTeam(ctx.auth, input));
-}
-
-function getForVolunteer() {
-  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getTeamsForVolunteer(ctx.auth, input));
-}
-
-function getAssignedLists() {
-  return authProcedure.input(idSchema).query(({ ctx, input }) => controller.getAssignedLists(ctx.auth, input));
-}
-
-export const TeamsRouter = router({
-  getAll: getAll(),
-  getById: getById(),
-  add: add(),
-  update: update(),
-  delete: remove(),
-  getForVolunteer: getForVolunteer(),
-  getAssignedLists: getAssignedLists(),
-});
-```
-
-## File: apps/backend/src/app/modules/userprofiles/controller.ts
-
-```typescript
-import { UserProfiles } from './repositories/userprofiles.repo';
-import { BaseController } from '../../lib/base.controller';
-
-export class UserProfilesController extends BaseController<'profiles', UserProfiles> {
-  constructor() {
-    super(new UserProfiles());
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/userprofiles/trpc.router.ts
-
-```typescript
-import { idSchema } from '../../../../../../libs/common/src';
-
-import { authProcedure, router } from '../../../trpc';
-import { UserProfilesController } from './controller';
-
-function getById() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => user.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
-}
-
-const user = new UserProfilesController();
-
-export const UserProfilesRouter = router({
-  getById: getById(),
-});
-```
-
-## File: apps/backend/src/app/modules/users/trpc.router.ts
-
-```typescript
-import { UpdateAuthUserObj, idSchema } from '../../../../../../libs/common/src';
-
-import z from 'zod';
-
-import { authProcedure, router } from '../../../trpc';
-import { AuthController } from '../auth/controller';
-
-const controller = new AuthController();
-
-function getUsers() {
-  return authProcedure.query(({ ctx }) => controller.getUsersList(ctx.auth));
-}
-
-function getProfileById() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => controller.getUserById(ctx.auth, input));
-}
-
-function updateUserProfile() {
-  return authProcedure
-    .input(z.object({ id: idSchema, data: UpdateAuthUserObj }))
-    .mutation(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data));
-}
-
-export const UsersRouter = router({
-  getUsers: getUsers(),
-  getProfileById: getProfileById(),
-  updateUserProfile: updateUserProfile(),
-});
-```
-
-## File: apps/backend/src/app/modules/volunteer-events/trpc.router.ts
-
-```typescript
-import {
-  idSchema,
-  getAllOptions,
-  AddVolunteerEventObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  UpdateVolunteerShiftObj,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { VolunteerEventsController } from './controller';
-
-const ctrl = new VolunteerEventsController();
-
-export const VolunteerRouter = router({
-  // Events
-  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => ctrl.getAllEvents(ctx.auth, input)),
-
-  getById: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
-
-  add: authProcedure.input(AddVolunteerEventObj).mutation(({ input, ctx }) => ctrl.addEvent(input, ctx.auth)),
-
-  checkSlugUnique: authProcedure
-    .input(z.object({ slug: z.string(), excludeId: z.string().nullable().optional() }))
-    .query(({ input, ctx }) => ctrl.checkSlugUnique(input.slug, input.excludeId || null, ctx.auth)),
-
-  update: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateVolunteerEventObj }))
-    .mutation(({ input, ctx }) => ctrl.updateEvent(input.id, input.data, ctx.auth)),
-
-  delete: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => ctrl.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-
-  // Shifts / Roster
-  getShiftsForEvent: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getShiftsForEvent(input, ctx.auth)),
-
-  signupVolunteer: authProcedure
-    .input(AddVolunteerShiftObj)
-    .mutation(({ input, ctx }) => ctrl.signupVolunteer(input, ctx.auth)),
-
-  updateShift: authProcedure
-    .input(z.object({ id: idSchema, data: UpdateVolunteerShiftObj }))
-    .mutation(({ input, ctx }) => ctrl.updateShift(input.id, input.data, ctx.auth)),
-
-  deleteShift: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.deleteShift(input, ctx.auth)),
-
-  // Person Specific History/Stats
-  getHistoryForPerson: authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => ctrl.getHistoryForPerson(input, ctx.auth)),
-
-  getVolunteerStats: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getVolunteerStats(input, ctx.auth)),
-});
-```
-
-## File: apps/backend/src/app/modules/workflows/repositories/workflow-steps.repo.ts
-
-```typescript
-import { BaseRepository } from '../../../lib/base.repo';
-
-export class WorkflowStepsRepo extends BaseRepository<'workflow_steps'> {
-  constructor() {
-    super('workflow_steps');
-  }
-}
-```
-
-## File: apps/backend/src/app/types/fastify-jsend.ts
-
-```typescript
-// apps/backend/src/types/fastify-jsend.d.ts
-import 'fastify';
-
-declare module 'fastify' {
-  interface FastifyReply {
-    jsendSuccess<T>(data: T, meta?: Record<string, unknown>): FastifyReply;
-    jsendFail<E extends object = Record<string, unknown>>(
-      data: E,
-      statusCode?: number,
-      meta?: Record<string, unknown>,
-    ): FastifyReply;
-    jsendError(
-      message: string,
-      statusCode?: number,
-      code?: string | number,
-      data?: unknown,
-      meta?: Record<string, unknown>,
-    ): FastifyReply;
-  }
-}
-```
-
-## File: apps/backend/src/scratch/test-tasks.ts
-
-```typescript
-import { TasksRepo } from '../app/modules/tasks/repositories/tasks.repo';
-
-async function test() {
-  const repo = new TasksRepo();
-  const res = await repo.getAllExcludingArchivedWithCount('1');
-  console.log('ROWS:', JSON.stringify(res.rows.slice(0, 3), null, 2));
-  process.exit(0);
-}
-
-test().catch(console.error);
-```
-
-## File: apps/backend/src/test-assign3.ts
-
-```typescript
-import { Kysely, PostgresDialect } from 'kysely';
-import { Pool } from 'pg';
-import { Models } from '../../../libs/common/src/lib/kysely.models';
-import Cursor from 'pg-cursor';
-
-const db = new Kysely<Models>({
-  dialect: new PostgresDialect({
-    pool: new Pool({
-      user: 'postgres',
-      database: 'pplcrm',
-      host: 'localhost',
-      port: 5432,
-    }),
-    cursor: Cursor,
-  }),
-});
-
-async function run() {
-  const q = db.updateTable('emails').set({ assigned_to: '1' }).where('id', '=', '1');
-  console.log(q.compile().sql);
-  console.log(q.compile().parameters);
-  process.exit(0);
-}
-run();
-```
-
-## File: apps/backend/src/test-assign4.ts
-
-```typescript
-import { Kysely, PostgresDialect } from 'kysely';
-import { Pool } from 'pg';
-import { Models } from '../../../libs/common/src/lib/kysely.models';
-import Cursor from 'pg-cursor';
-
-const db = new Kysely<Models>({
-  dialect: new PostgresDialect({
-    pool: new Pool({
-      user: 'pplcrm',
-      database: 'pplcrm',
-      password: '[REDACTED]',
-      host: 'localhost',
-      port: 5432,
-    }),
-    cursor: Cursor,
-  }),
-});
-
-async function run() {
-  const q = db.updateTable('emails').set({ assigned_to: '1' }).where('id', '=', '29');
-  console.log(q.compile().sql);
-  const result = await q.executeTakeFirst();
-  console.log(result);
-
-  const updatedRow = await db.selectFrom('emails').selectAll().where('id', '=', '29').executeTakeFirst();
-  console.log('After update:', updatedRow?.assigned_to);
-
-  process.exit(0);
-}
-run();
-```
-
-## File: apps/backend/src/test-assign5.js
-
-```javascript
-const { Pool } = require('pg');
-const pool = new Pool({
-  user: 'pplcrm',
-  database: 'pplcrm',
-  password: '[REDACTED]',
-  host: 'localhost',
-  port: 5432,
-});
-
-async function run() {
-  const res = await pool.query("UPDATE emails SET assigned_to = '2' WHERE id = '29' RETURNING *");
-  console.log(res.rows[0].assigned_to);
-  process.exit(0);
-}
-run();
-```
-
-## File: apps/backend/src/test-kysely.ts
-
-```typescript
-import { Kysely, PostgresDialect } from 'kysely';
-import { Pool } from 'pg';
-import { Models } from '../../../libs/common/src/lib/kysely.models';
-import Cursor from 'pg-cursor';
-
-const db = new Kysely<Models>({
-  dialect: new PostgresDialect({
-    pool: new Pool(),
-    cursor: Cursor,
-  }),
-});
-
-const query = db.updateTable('emails').set({ assigned_to: '1' }).where('id', '=', '1').where('tenant_id', '=', '1');
-
-console.log(query.compile().sql);
-console.log(query.compile().parameters);
-```
-
-## File: apps/backend/src/test-trpc.js
-
-```javascript
-async function run() {
-  const loginRes = await fetch('http://localhost:3000/trpc/auth.login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'hello@pplcrm.com', password: 'password' }),
-  });
-  console.log('Login status:', loginRes.status);
-
-  // if this doesn't work, we don't have the password, we can't test via HTTP.
-}
-run();
-```
-
-## File: apps/backend/src/typings.d.ts
-
-```typescript
-interface BigInt {
-  toJSON(): string;
-}
-```
-
-## File: apps/backend/eslint.config.cjs
-
-```javascript
-/* ---------------------- apps/backend/eslint.config.cjs ---------------------- */
-/* Node.js, Fastify, tRPC backend-specific rules only.                         */
-
-const { FlatCompat } = require('@eslint/eslintrc');
-const js = require('@eslint/js');
-const localRules = require('../../tools/eslint-rules/index.cjs');
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-});
-
-module.exports = [
-  /* Extend the base config */
-  ...compat.config({ extends: ['plugin:@nx/javascript'] }).map((cfg) => ({
-    ...cfg,
-    files: ['**/*.{ts,tsx,js,jsx}'],
-    rules: {
-      /* Fastify/tRPC specific style preferences */
-      'prefer-arrow-callback': 'warn',
-      'arrow-body-style': ['warn', 'as-needed'],
-    },
-  })),
-
-  /* ── Tenant-isolation lint rule ────────────────────────────────────────────
-   *
-   * Flags any Kysely query chain (selectFrom / updateTable / deleteFrom) that
-   * reaches an execute terminal without a .where('tenant_id', …) filter.
-   *
-   * Scoped to modules/** only — excludes:
-   *   - base.repo.ts          (tenant filtering is callers' responsibility)
-   *   - job-handlers.ts       (per-tenant loops; tenant_id used inside trx)
-   *   - _migrations/**        (DDL; no runtime tenant scoping)
-   *   - *.spec.ts             (integration tests do their own scoped cleanup)
-   *   - kyselyinit*.ts        (migration runner)
-   * ─────────────────────────────────────────────────────────────────────── */
-  {
-    files: ['**/src/app/modules/**/*.ts'],
-    ignores: ['**/*.spec.ts'],
-    plugins: { local: localRules },
-    rules: {
-      'local/no-unscoped-db-query': [
-        'error',
-        {
-          // Tables where cross-tenant queries are intentional:
-          //   authusers         - login by email, password reset by code
-          //   sessions          - sign-out by session_id hash (no tenant in token)
-          //   tenants           - tenant lookup by id
-          //   tags              - system-level tag reads (scoped at query join level)
-          //   ms_oauth_tokens   - keyed by user_id (globally unique bigint); single-user scope is sufficient
-          //   google_oauth_tokens - same reasoning as ms_oauth_tokens
-          ignoreTables: ['authusers', 'sessions', 'tenants', 'tags', 'ms_oauth_tokens', 'google_oauth_tokens'],
-        },
-      ],
-    },
-  },
-];
-```
-
-## File: apps/backend/jest.config.ts
-
-```typescript
-import type { Config } from 'jest';
-
-const config: Config = {
-  displayName: 'backend',
-  preset: '../../jest.preset.cjs',
-  testEnvironment: 'node',
-  transform: {
-    '^.+\\.[tj]s$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json', useESM: true, diagnostics: false }],
-  },
-  extensionsToTreatAsEsm: ['.ts'],
-  moduleNameMapper: {
-    '^@common$': '<rootDir>/../../common/src/index.ts',
-  },
-  moduleFileExtensions: ['ts', 'js', 'html'],
-  coverageDirectory: '../../coverage/apps/backend',
-};
-
-export default config;
-```
-
-## File: apps/backend/tsconfig.app.json
-
-```json
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../../dist/out-tsc",
-    "forceConsistentCasingInFileNames": true,
-    "isolatedModules": true,
-    "noEmit": false,
-    "sourceMap": true,
-    "inlineSources": true
-  },
-  "include": ["src/**/*.ts", "src/types/**/*.d.ts"],
-  "exclude": [
-    "jest.config.ts",
-    "src/**/*.spec.ts",
-    "src/**/*.test.ts",
-    "vite.config.ts",
-    "vite.config.mts",
-    "vitest.config.ts",
-    "vitest.config.mts",
-    "src/**/*.test.tsx",
-    "src/**/*.spec.tsx",
-    "src/**/*.test.js",
-    "src/**/*.spec.js",
-    "src/**/*.test.jsx",
-    "src/**/*.spec.jsx"
-  ]
-}
-```
-
-## File: apps/backend/tsconfig.json
-
-```json
-{
-  "extends": "../../tsconfig.base.json",
-  "files": [],
-  "include": [],
-  "references": [
-    {
-      "path": "./tsconfig.app.json"
-    },
-    {
-      "path": "./tsconfig.spec.json"
-    }
-  ]
-}
-```
-
-## File: apps/backend/tsconfig.spec.json
-
-```json
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../../dist/out-tsc",
-    "types": ["vitest/globals", "vitest/importMeta", "vite/client", "node", "vitest"]
-  },
-  "include": [
-    "vite.config.ts",
-    "vite.config.mts",
-    "vitest.config.ts",
-    "vitest.config.mts",
-    "src/**/*.test.ts",
-    "src/**/*.spec.ts",
-    "src/**/*.test.tsx",
-    "src/**/*.spec.tsx",
-    "src/**/*.test.js",
-    "src/**/*.spec.js",
-    "src/**/*.test.jsx",
-    "src/**/*.spec.jsx",
-    "src/**/*.d.ts"
-  ]
-}
-```
-
-## File: apps/frontend-e2e/playwright.config.ts
-
-```typescript
-import { defineConfig, devices } from '@playwright/test';
-
-export default defineConfig({
-  testDir: './src',
-  fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: 0,
-  reporter: 'list',
-  use: {
-    baseURL: 'http://localhost:4200',
-  },
-  webServer: {
-    command: 'npx nx serve frontend',
-    url: 'http://localhost:4200',
-    reuseExistingServer: !process.env.CI,
-  },
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-  ],
-});
-```
-
-## File: apps/frontend-e2e/project.json
-
-```json
-{
-  "name": "frontend-e2e",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "projectType": "application",
-  "sourceRoot": "apps/frontend-e2e/src",
-  "targets": {
-    "e2e": {
-      "executor": "@nx/playwright:playwright",
-      "options": {
-        "config": "apps/frontend-e2e/playwright.config.ts"
-      }
-    }
-  }
-}
-```
-
-## File: apps/frontend-e2e/tsconfig.json
-
-```json
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "module": "commonjs",
-    "target": "es2016",
-    "types": ["node", "@playwright/test"]
-  },
-  "include": ["src/**/*.ts", "playwright.config.ts"]
-}
-```
-
-## File: apps/backend/src/app/config/email-folders.config.ts
-
-```typescript
-import type { EmailFolderConfig } from '../../../../../libs/common/src';
-import { EMAIL_FOLDERS } from '../../../../../libs/common/src';
-
-export function getAllEmailFolders(): EmailFolderConfig[] {
-  return [...EMAIL_FOLDERS].filter((folder: any) => !folder.is_hidden).sort((a, b) => a.sort_order - b.sort_order);
-}
-
-export function getEmailFolderById(id: string): EmailFolderConfig | undefined {
-  return EMAIL_FOLDERS.find((folder) => folder.id === id);
-}
-
-export function getRegularFolders(): EmailFolderConfig[] {
-  return EMAIL_FOLDERS.filter((folder) => !folder.is_virtual);
-}
-
-export function getVirtualFolders(): EmailFolderConfig[] {
-  return EMAIL_FOLDERS.filter((folder) => folder.is_virtual);
-}
-
-export function isVirtualFolder(folderId: string): boolean {
-  const folder = getEmailFolderById(folderId);
-  return folder?.is_virtual || false;
-}
-```
-
-## File: apps/backend/src/app/errors/app-errors.ts
-
-```typescript
-// Lightweight, transport-agnostic error types you can throw from controllers/services.
-export abstract class AppError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-    public readonly code: string,
-    public readonly data?: unknown,
-    opts?: { cause?: unknown },
-  ) {
-    super(message, { cause: opts?.cause });
-    this.name = new.target.name;
-    Error.captureStackTrace?.(this, new.target);
-  }
-}
-
-export class BadRequestError extends AppError {
-  constructor(message = 'Bad request', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 400, 'BAD_REQUEST', data, opts);
-  }
-}
-
-export class ConflictError extends AppError {
-  constructor(message = 'Conflict', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 409, 'CONFLICT', data, opts);
-  }
-}
-
-export class ForbiddenError extends AppError {
-  constructor(message = 'Forbidden', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 403, 'FORBIDDEN', data, opts);
-  }
-}
-
-export class InternalError extends AppError {
-  constructor(message = 'Something went wrong, please try again', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 500, 'INTERNAL_SERVER_ERROR', data, opts);
-  }
-}
-
-export class NotFoundError extends AppError {
-  constructor(message = 'Not found', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 404, 'NOT_FOUND', data, opts);
-  }
-}
-
-export class PreconditionFailedError extends AppError {
-  constructor(message = 'Precondition failed', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 412, 'PRECONDITION_FAILED', data, opts);
-  }
-}
-
-export class ServerMisconfigError extends AppError {
-  constructor(message = 'Server misconfiguration', data?: unknown) {
-    super(message, 500, 'INTERNAL_SERVER_ERROR', data);
-  }
-}
-
-export class TooManyRequestsError extends AppError {
-  constructor(message = 'Too many requests', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 429, 'TOO_MANY_REQUESTS', data, opts);
-  }
-}
-
-export class UnauthorizedError extends AppError {
-  constructor(message = 'User is not authenticated. Please sign in', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 401, 'UNAUTHORIZED', data, opts);
-  }
-}
-```
-
-## File: apps/backend/src/app/errors/to-trpc-errors.ts
-
-```typescript
-import { TRPCError } from '@trpc/server';
-
-import { AppError } from './app-errors';
-
-export function toTRPCError(err: unknown): TRPCError {
-  if (err instanceof TRPCError) return err;
-
-  const isDevOrTest = process.env['NODE_ENV'] !== 'production';
-
-  if (err instanceof AppError) {
-    // Status -> TRPC code
-    const code =
-      err.status === 400
-        ? 'BAD_REQUEST'
-        : err.status === 401
-          ? 'UNAUTHORIZED'
-          : err.status === 403
-            ? 'FORBIDDEN'
-            : err.status === 404
-              ? 'NOT_FOUND'
-              : err.status === 409
-                ? 'CONFLICT'
-                : err.status === 412
-                  ? 'PRECONDITION_FAILED'
-                  : err.status === 413
-                    ? 'PAYLOAD_TOO_LARGE'
-                    : err.status === 422
-                      ? 'BAD_REQUEST'
-                      : err.status === 429
-                        ? 'TOO_MANY_REQUESTS'
-                        : /* default */ 'INTERNAL_SERVER_ERROR';
-
-    let message = err.message;
-    if (isDevOrTest && err.cause instanceof Error) {
-      message = `${err.message} (Cause: ${err.cause.message})`;
-    } else if (isDevOrTest && typeof err.cause === 'string') {
-      message = `${err.message} (Cause: ${err.cause})`;
-    }
-
-    return new TRPCError({
-      code,
-      message,
-      cause: err,
-    });
-  }
-
-  // Unknown/unexpected -> internal
-  let message = 'Something went wrong, please try again';
-  if (isDevOrTest && err instanceof Error) {
-    message = `Something went wrong, please try again (Cause: ${err.message})`;
-  } else if (isDevOrTest && typeof err === 'string') {
-    message = `Something went wrong, please try again (Cause: ${err})`;
-  }
-
-  return new TRPCError({
-    code: 'INTERNAL_SERVER_ERROR',
-    message,
-    cause: err,
-  });
 }
 ```
 
@@ -12986,8 +12986,8 @@ export class WebhookEventWorker {
         .execute();
 
       logger.info({ webhookEventId: eventRecord.id }, 'Webhook event completed successfully');
-    } catch (err: any) {
-      const errorMsg = err?.message || String(err);
+    } catch (err) {
+      const errorMsg = err instanceof Error && err.message ? err.message : String(err);
       logger.error({ err, webhookEventId: eventRecord.id }, 'Failed to process webhook event');
 
       const attempts = Number(eventRecord.attempts || 0);
@@ -13152,7 +13152,7 @@ export class NewsletterEmailService {
         }
 
         deliveredCount += chunk.length;
-      } catch (error: any) {
+      } catch (error) {
         throw new InternalError('Failed to send newsletter via SendGrid', undefined, { cause: error });
       }
     }
@@ -14052,9 +14052,10 @@ const billingWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
     try {
       await controller.handleWebhook(payload, signature);
       return reply.code(200).send({ received: true });
-    } catch (err: any) {
-      logger.error(`Webhook error: ${err.message}`);
-      return reply.code(400).send({ error: err.message });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`Webhook error: ${message}`);
+      return reply.code(400).send({ error: message });
     }
   });
 
@@ -15198,10 +15199,10 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 
       if (isJson) return reply.status(200).send({ success: true });
       return reply.redirect('/api/event-pages/rsvp-success');
-    } catch (err: any) {
+    } catch (err) {
       fastify.log.error(err);
       const status = getStatusFromError(err);
-      const message = err.message || 'An unexpected error occurred.';
+      const message = err instanceof Error && err.message ? err.message : 'An unexpected error occurred.';
 
       if (isJson) return reply.status(status).send({ error: message });
 
@@ -15797,9 +15798,9 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
       }
 
       return reply.code(200).send({ success: true, processedCount: processedNewsletters.size });
-    } catch (err: any) {
+    } catch (err) {
       req.log.error(err, 'SendGrid webhook processing error');
-      return reply.code(500).send({ error: err.message });
+      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -17573,8 +17574,11 @@ export class SendGridWhitelabelService {
           dkim2: res.dns?.dkim2 ? { ...res.dns.dkim2, valid: !!res.dns.dkim2.valid } : undefined,
         },
       };
-    } catch (err: any) {
-      logger.warn({ err: err.message }, '[SendGridWhitelabelService] real API call failed, falling back to mock');
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] real API call failed, falling back to mock',
+      );
       return this.createDomainAuthentication(domain, undefined);
     }
   }
@@ -17619,9 +17623,9 @@ export class SendGridWhitelabelService {
           domain: res.dns?.domain ? { ...res.dns.domain, valid: !!res.dns.domain.valid } : undefined,
         },
       };
-    } catch (err: any) {
+    } catch (err) {
       logger.warn(
-        { err: err.message },
+        { err: err instanceof Error ? err.message : String(err) },
         '[SendGridWhitelabelService] real Link Branding API failed, falling back to mock',
       );
       return this.createLinkBranding(domain, undefined);
@@ -17662,8 +17666,11 @@ export class SendGridWhitelabelService {
         valid: !!res.valid,
         validationResults,
       };
-    } catch (err: any) {
-      logger.warn({ err: err.message }, '[SendGridWhitelabelService] Validate domain API failed, falling back to true');
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Validate domain API failed, falling back to true',
+      );
       return {
         valid: true,
         validationResults: {
@@ -17688,9 +17695,9 @@ export class SendGridWhitelabelService {
       });
 
       return !!res.valid;
-    } catch (err: any) {
+    } catch (err) {
       logger.warn(
-        { err: err.message },
+        { err: err instanceof Error ? err.message : String(err) },
         '[SendGridWhitelabelService] Validate link branding API failed, falling back to true',
       );
       return true;
@@ -17706,8 +17713,11 @@ export class SendGridWhitelabelService {
         apiKey,
         subuser,
       });
-    } catch (err: any) {
-      logger.warn({ err: err.message }, '[SendGridWhitelabelService] Delete domain authentication failed');
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Delete domain authentication failed',
+      );
     }
   }
 
@@ -17720,8 +17730,11 @@ export class SendGridWhitelabelService {
         apiKey,
         subuser,
       });
-    } catch (err: any) {
-      logger.warn({ err: err.message }, '[SendGridWhitelabelService] Delete link branding failed');
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Delete link branding failed',
+      );
     }
   }
 
@@ -17937,7 +17950,7 @@ export class TransactionalEmailService {
         const errorText = await response.text();
         throw new Error(`Postmark API responded with status ${response.status}: ${errorText}`);
       }
-    } catch (error: any) {
+    } catch (error) {
       throw new InternalError('Failed to send transactional email', undefined, { cause: error });
     }
   }
@@ -22229,10 +22242,12 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 </body>
 </html>
       `);
-    } catch (err: any) {
+    } catch (err) {
       const statusCode = getStatusFromError(err);
       reply.status(statusCode).type('text/html');
-      return reply.send(renderErrorHtml(err.message || 'Failed to load volunteer events.'));
+      return reply.send(
+        renderErrorHtml(err instanceof Error && err.message ? err.message : 'Failed to load volunteer events.'),
+      );
     }
   });
 
@@ -22603,10 +22618,12 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 </body>
 </html>
       `);
-    } catch (err: any) {
+    } catch (err) {
       const statusCode = getStatusFromError(err);
       reply.status(statusCode).type('text/html');
-      return reply.send(renderErrorHtml(err.message || 'Failed to load event details.'));
+      return reply.send(
+        renderErrorHtml(err instanceof Error && err.message ? err.message : 'Failed to load event details.'),
+      );
     }
   });
 
@@ -22648,10 +22665,10 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
       }
 
       return reply.redirect(`/api/events/success?tenantSlug=${slug}`);
-    } catch (err: any) {
+    } catch (err) {
       fastify.log.error(err);
       const statusCode = getStatusFromError(err);
-      const message = err.message || 'An unexpected error occurred during signup.';
+      const message = err instanceof Error && err.message ? err.message : 'An unexpected error occurred during signup.';
 
       if (isJsonExpected) {
         return reply.status(statusCode).send({ error: message });
@@ -22676,6 +22693,10 @@ import { WebFormsController } from '../controller';
 import formBody from '@fastify/formbody';
 
 const webFormsController = new WebFormsController();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
 function escapeHtml(s: string): string {
   return s
@@ -23148,9 +23169,9 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 
       reply.type('text/html');
       return reply.send(renderFormHtml(formId, formName, formDescription, fields, form.form_type));
-    } catch (err: any) {
+    } catch (err) {
       reply.status(500).type('text/html');
-      return reply.send(errorHtml(err.message || 'Failed to load form.'));
+      return reply.send(errorHtml(err instanceof Error && err.message ? err.message : 'Failed to load form.'));
     }
   });
 
@@ -23174,10 +23195,12 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       }
 
       return reply.redirect('/api/forms/success');
-    } catch (err: any) {
+    } catch (err) {
       fastify.log.error(err);
-      const statusCode = err.statusCode || 500;
-      const message = err.message || 'An unexpected error occurred during submission.';
+      const statusCode =
+        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) || 500;
+      const message =
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during submission.';
 
       if (isJsonExpected) {
         return reply.status(statusCode).send({ error: message });
@@ -23933,9 +23956,9 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     for (const wf of activeWorkflows) {
       try {
         await this.enrollPerson(tenantId, personId, String(wf.id), creatorId, trx as any);
-      } catch (err: any) {
+      } catch (err) {
         // Safe check in case they're already enrolled
-        if (err.message?.includes('already enrolled')) {
+        if (err instanceof Error && err.message.includes('already enrolled')) {
           logger.info(`Person ${personId} is already enrolled in workflow ${wf.id}. Skipping.`);
         } else {
           logger.error({ err }, `Failed to enroll person ${personId} in workflow ${wf.id}`);
@@ -25103,9 +25126,9 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
               await (trx as any).insertInto('companies').values(companyRows).execute();
             });
           results.inserted += validRows.length;
-        } catch (err: any) {
+        } catch (err) {
           results.errors += validRows.length;
-          errorMessages.push(err?.message || String(err));
+          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
         }
       }
 
@@ -31690,9 +31713,10 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
         .execute();
 
       return reply.code(200).send({ received: true });
-    } catch (err: any) {
-      logger.error({ err: err.message }, `Donations Webhook error for Tenant ${tenantId}`);
-      return reply.code(400).send({ error: err.message });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, `Donations Webhook error for Tenant ${tenantId}`);
+      return reply.code(400).send({ error: message });
     }
   });
 
@@ -34555,8 +34579,8 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
         const result = await personsService.addPerson({ email, ...fields } as any, auth);
         return reply.code(201).send({ action: 'created', person: result });
       }
-    } catch (err: any) {
-      logger.error({ err: err.message }, '[Zapier Inbound] /persons/upsert error');
+    } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/upsert error');
       return reply.code(500).send({ error: 'Failed to upsert person' });
     }
   });
@@ -34595,8 +34619,8 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 
       await personsService.attachTag(String(person.id), tag_name, 'tag', auth);
       return reply.code(200).send({ success: true });
-    } catch (err: any) {
-      logger.error({ err: err.message }, '[Zapier Inbound] /persons/tag error');
+    } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/tag error');
       return reply.code(500).send({ error: 'Failed to add tag' });
     }
   });
@@ -34643,8 +34667,8 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
       });
 
       return reply.code(200).send({ success: true });
-    } catch (err: any) {
-      logger.error({ err: err.message }, '[Zapier Inbound] /persons/untag error');
+    } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/untag error');
       return reply.code(500).send({ error: 'Failed to remove tag' });
     }
   });
@@ -34895,16 +34919,37 @@ import { logger } from '../../logger';
 
 const MAX_MESSAGES_PER_SYNC = 50;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getStatusCode(err: unknown): number | undefined {
+  return isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined;
+}
+
+function getRetryAfterHeader(err: unknown): string | undefined {
+  if (!isRecord(err)) return undefined;
+  const headers = err['headers'];
+  if (!isRecord(headers)) return undefined;
+  const getFn = headers['get'];
+  if (typeof getFn === 'function') {
+    const value: unknown = (getFn as (name: string) => unknown).call(headers, 'Retry-After');
+    if (typeof value === 'string') return value;
+  }
+  const raw = headers['retry-after'];
+  return typeof raw === 'string' ? raw : undefined;
+}
+
 async function graphCallWithRetry<T>(callFn: () => Promise<T>, maxRetries = 3): Promise<T> {
   let attempt = 0;
   while (true) {
     attempt++;
     try {
       return await callFn();
-    } catch (err: any) {
-      if (err?.statusCode === 429 && attempt <= maxRetries) {
+    } catch (err) {
+      if (getStatusCode(err) === 429 && attempt <= maxRetries) {
         let delayMs = 5000;
-        const retryAfter = err?.headers?.get?.('Retry-After') || err?.headers?.['retry-after'];
+        const retryAfter = getRetryAfterHeader(err);
         if (retryAfter) {
           const parsed = parseInt(retryAfter, 10);
           if (!isNaN(parsed)) {
@@ -34994,8 +35039,8 @@ export class MsSyncService {
           } else {
             hasMore = false;
           }
-        } catch (err: any) {
-          if (err?.statusCode === 410) {
+        } catch (err) {
+          if (getStatusCode(err) === 410) {
             // Delta link expired for this folder, clear it
             delete nextDeltaMap[folder.wellKnownName];
             isInitialSync = true;
@@ -36448,152 +36493,6 @@ export class PersonsService {
 }
 ```
 
-## File: apps/backend/src/app/lib/jobs/job-handlers.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { z } from 'zod';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { jobPayloadSchema, legacyImportJobSchema } from './job-payloads';
-import { handleCheckAllUsageLimits, handleCheckUsageLimits, handleZapierTrigger } from './handlers/billing.handlers';
-import { handlePerformScheduledDeletions } from './handlers/deletions.handlers';
-import { handleExportCsv } from './handlers/export.handlers';
-import { handleImportJob } from './handlers/import.handlers';
-import {
-  handleCleanupActivities,
-  handleEnrichCompanyGoogle,
-  handleGeocodeHousehold,
-  handleRecomputeAddressFingerprints,
-  handleRecomputeAllDuplicates,
-  handleRefreshCompaniesGoogle,
-  handleRefreshList,
-} from './handlers/maintenance.handlers';
-import { handlePruneNewsletterEvents, handleSendNewsletter } from './handlers/newsletter.handlers';
-import {
-  handleCheckDueTasks,
-  handleSendEventRegistrationConfirmation,
-  handleSendEventReminder,
-  handleSendFormNotifications,
-  handleSendShiftReminder,
-  handleSendSubscriptionConfirmation,
-  handleSendTransactionalEmail,
-  handleSendWebformNotifications,
-} from './handlers/notifications.handlers';
-import { handleGoogleSync, handleMsSync, handleScheduleSyncJobs } from './handlers/sync.handlers';
-import { handleProcessDripWorkflows } from './handlers/workflows.handlers';
-
-export { checkDueTasks } from './handlers/notifications.handlers';
-
-const typeProbeSchema = z.looseObject({ type: z.unknown() });
-
-/**
- * Background job dispatcher. Parses the raw queue payload against the typed
- * job schemas and routes it to the matching domain handler in `./handlers/`.
- */
-export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: string): Promise<void> {
-  const typed = jobPayloadSchema.safeParse(payload);
-
-  if (!typed.success) {
-    // CSV imports are queued without a `type` discriminator (legacy shape).
-    const legacyImport = legacyImportJobSchema.safeParse(payload);
-    if (legacyImport.success) {
-      await handleImportJob(legacyImport.data, db);
-      return;
-    }
-
-    const probe = typeProbeSchema.safeParse(payload);
-    const typeLabel = probe.success && probe.data.type !== undefined ? String(probe.data.type) : 'unknown';
-    throw new Error(`Unsupported background job type: ${typeLabel}`);
-  }
-
-  const job = typed.data;
-  switch (job.type) {
-    case 'refresh_list':
-      await handleRefreshList(job);
-      break;
-    case 'enrich_company_google':
-      await handleEnrichCompanyGoogle(job, db);
-      break;
-    case 'refresh_companies_google':
-      await handleRefreshCompaniesGoogle(job, db);
-      break;
-    case 'cleanup_activities':
-      await handleCleanupActivities(db);
-      break;
-    case 'recompute_all_duplicates':
-      await handleRecomputeAllDuplicates(db);
-      break;
-    case 'recompute_address_fingerprints':
-      await handleRecomputeAddressFingerprints(job, db);
-      break;
-    case 'geocode_household':
-      await handleGeocodeHousehold(job, db);
-      break;
-    case 'schedule_sync_jobs':
-      await handleScheduleSyncJobs(db);
-      break;
-    case 'google_sync':
-      await handleGoogleSync(job, db);
-      break;
-    case 'ms_sync':
-      await handleMsSync(job, db);
-      break;
-    case 'send-form-notifications':
-      await handleSendFormNotifications(job, db);
-      break;
-    case 'send-shift-reminder':
-      await handleSendShiftReminder(job, db);
-      break;
-    case 'send-webform-notifications':
-      await handleSendWebformNotifications(job, db);
-      break;
-    case 'send-event-registration-confirmation':
-      await handleSendEventRegistrationConfirmation(job, db);
-      break;
-    case 'send-event-reminder':
-      await handleSendEventReminder(job, db);
-      break;
-    case 'send-transactional-email':
-      await handleSendTransactionalEmail(job);
-      break;
-    case 'send-subscription-confirmation':
-      await handleSendSubscriptionConfirmation(job);
-      break;
-    case 'check_due_tasks':
-      await handleCheckDueTasks(db);
-      break;
-    case 'send-newsletter':
-      await handleSendNewsletter(job, db, jobId);
-      break;
-    case 'prune_newsletter_events':
-      await handlePruneNewsletterEvents(db);
-      break;
-    case 'process_drip_workflows':
-      await handleProcessDripWorkflows(db);
-      break;
-    case 'perform_scheduled_deletions':
-      await handlePerformScheduledDeletions(db);
-      break;
-    case 'zapier_trigger':
-      await handleZapierTrigger(job);
-      break;
-    case 'check_usage_limits':
-      await handleCheckUsageLimits(job, db);
-      break;
-    case 'check_all_usage_limits':
-      await handleCheckAllUsageLimits(db);
-      break;
-    case 'export_csv':
-      await handleExportCsv(job, db);
-      break;
-    default: {
-      const _exhaustive: never = job;
-      throw new Error(`Unsupported background job type: ${JSON.stringify(_exhaustive)}`);
-    }
-  }
-}
-```
-
 ## File: apps/backend/src/app/modules/events/controller.ts
 
 ```typescript
@@ -36658,8 +36557,8 @@ export class EventsController extends BaseController<'events', EventsRepo> {
 
     try {
       return await this.add(row);
-    } catch (err: any) {
-      if (err?.message?.includes('events_end_after_start_check')) {
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
       }
       throw err;
@@ -36737,8 +36636,8 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     let result;
     try {
       result = await this.update({ tenant_id: auth.tenant_id, id, row });
-    } catch (err: any) {
-      if (err?.message?.includes('events_end_after_start_check')) {
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
       }
       throw err;
@@ -37671,6 +37570,152 @@ export class GoogleSyncService {
       base64 += '=';
     }
     return Buffer.from(base64, 'base64');
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/job-handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { z } from 'zod';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { jobPayloadSchema, legacyImportJobSchema } from './job-payloads';
+import { handleCheckAllUsageLimits, handleCheckUsageLimits, handleZapierTrigger } from './handlers/billing.handlers';
+import { handlePerformScheduledDeletions } from './handlers/deletions.handlers';
+import { handleExportCsv } from './handlers/export.handlers';
+import { handleImportJob } from './handlers/import.handlers';
+import {
+  handleCleanupActivities,
+  handleEnrichCompanyGoogle,
+  handleGeocodeHousehold,
+  handleRecomputeAddressFingerprints,
+  handleRecomputeAllDuplicates,
+  handleRefreshCompaniesGoogle,
+  handleRefreshList,
+} from './handlers/maintenance.handlers';
+import { handlePruneNewsletterEvents, handleSendNewsletter } from './handlers/newsletter.handlers';
+import {
+  handleCheckDueTasks,
+  handleSendEventRegistrationConfirmation,
+  handleSendEventReminder,
+  handleSendFormNotifications,
+  handleSendShiftReminder,
+  handleSendSubscriptionConfirmation,
+  handleSendTransactionalEmail,
+  handleSendWebformNotifications,
+} from './handlers/notifications.handlers';
+import { handleGoogleSync, handleMsSync, handleScheduleSyncJobs } from './handlers/sync.handlers';
+import { handleProcessDripWorkflows } from './handlers/workflows.handlers';
+
+export { checkDueTasks } from './handlers/notifications.handlers';
+
+const typeProbeSchema = z.looseObject({ type: z.unknown() });
+
+/**
+ * Background job dispatcher. Parses the raw queue payload against the typed
+ * job schemas and routes it to the matching domain handler in `./handlers/`.
+ */
+export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: string): Promise<void> {
+  const typed = jobPayloadSchema.safeParse(payload);
+
+  if (!typed.success) {
+    // CSV imports are queued without a `type` discriminator (legacy shape).
+    const legacyImport = legacyImportJobSchema.safeParse(payload);
+    if (legacyImport.success) {
+      await handleImportJob(legacyImport.data, db);
+      return;
+    }
+
+    const probe = typeProbeSchema.safeParse(payload);
+    const typeLabel = probe.success && probe.data.type !== undefined ? String(probe.data.type) : 'unknown';
+    throw new Error(`Unsupported background job type: ${typeLabel}`);
+  }
+
+  const job = typed.data;
+  switch (job.type) {
+    case 'refresh_list':
+      await handleRefreshList(job);
+      break;
+    case 'enrich_company_google':
+      await handleEnrichCompanyGoogle(job, db);
+      break;
+    case 'refresh_companies_google':
+      await handleRefreshCompaniesGoogle(job, db);
+      break;
+    case 'cleanup_activities':
+      await handleCleanupActivities(db);
+      break;
+    case 'recompute_all_duplicates':
+      await handleRecomputeAllDuplicates(db);
+      break;
+    case 'recompute_address_fingerprints':
+      await handleRecomputeAddressFingerprints(job, db);
+      break;
+    case 'geocode_household':
+      await handleGeocodeHousehold(job, db);
+      break;
+    case 'schedule_sync_jobs':
+      await handleScheduleSyncJobs(db);
+      break;
+    case 'google_sync':
+      await handleGoogleSync(job, db);
+      break;
+    case 'ms_sync':
+      await handleMsSync(job, db);
+      break;
+    case 'send-form-notifications':
+      await handleSendFormNotifications(job, db);
+      break;
+    case 'send-shift-reminder':
+      await handleSendShiftReminder(job, db);
+      break;
+    case 'send-webform-notifications':
+      await handleSendWebformNotifications(job, db);
+      break;
+    case 'send-event-registration-confirmation':
+      await handleSendEventRegistrationConfirmation(job, db);
+      break;
+    case 'send-event-reminder':
+      await handleSendEventReminder(job, db);
+      break;
+    case 'send-transactional-email':
+      await handleSendTransactionalEmail(job);
+      break;
+    case 'send-subscription-confirmation':
+      await handleSendSubscriptionConfirmation(job);
+      break;
+    case 'check_due_tasks':
+      await handleCheckDueTasks(db);
+      break;
+    case 'send-newsletter':
+      await handleSendNewsletter(job, db, jobId);
+      break;
+    case 'prune_newsletter_events':
+      await handlePruneNewsletterEvents(db);
+      break;
+    case 'process_drip_workflows':
+      await handleProcessDripWorkflows(db);
+      break;
+    case 'perform_scheduled_deletions':
+      await handlePerformScheduledDeletions(db);
+      break;
+    case 'zapier_trigger':
+      await handleZapierTrigger(job);
+      break;
+    case 'check_usage_limits':
+      await handleCheckUsageLimits(job, db);
+      break;
+    case 'check_all_usage_limits':
+      await handleCheckAllUsageLimits(db);
+      break;
+    case 'export_csv':
+      await handleExportCsv(job, db);
+      break;
+    default: {
+      const _exhaustive: never = job;
+      throw new Error(`Unsupported background job type: ${JSON.stringify(_exhaustive)}`);
+    }
   }
 }
 ```
@@ -38755,9 +38800,9 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
         uploadedFiles,
         fallbackPreview,
       );
-    } catch (err: any) {
+    } catch (err) {
       fastify.log.error(err, 'Failed to save outbound email to database');
-      return reply.jsendError(err.message || 'Failed to save email', 500);
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Failed to save email', 500);
     }
 
     // Determine send method prioritizing matching address
@@ -38864,7 +38909,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
           }
 
           return reply.jsendSuccess(finalEmail);
-        } catch (err: any) {
+        } catch (err) {
           fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
           // Clean up local email
           await db
@@ -38872,7 +38917,10 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             .where('tenant_id', '=', tenantId)
             .where('id', '=', String(emailRow.id))
             .execute();
-          return reply.jsendError(err.message || 'Failed to send email via Microsoft Graph', 400);
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Microsoft Graph',
+            400,
+          );
         }
       } else if (sendMethod === 'google') {
         const oauthSvc = new GoogleOAuthService(db, {
@@ -38952,7 +39000,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
           }
 
           return reply.jsendSuccess(finalEmail);
-        } catch (err: any) {
+        } catch (err) {
           fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
           await db
             .updateTable('emails')
@@ -38965,14 +39013,17 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             .where('id', '=', String(emailRow.id))
             .execute();
 
-          return reply.jsendError(err.message || 'Failed to send email via Google. Saved to Drafts.', 400);
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Google. Saved to Drafts.',
+            400,
+          );
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
       // Clean up local email
       await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
-      return reply.jsendError(err.message || 'Unexpected error in send task', 500);
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Unexpected error in send task', 500);
     }
   });
 
