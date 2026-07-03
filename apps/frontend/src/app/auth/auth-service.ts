@@ -153,8 +153,8 @@ export class AuthService extends TRPCService<'authusers'> {
     let response: any;
     try {
       response = await startAuthentication({ optionsJSON: options });
-    } catch (err: any) {
-      if (err?.name === 'NotAllowedError') return { user: null, cancelled: true };
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
       throw err;
     }
     const token = await (

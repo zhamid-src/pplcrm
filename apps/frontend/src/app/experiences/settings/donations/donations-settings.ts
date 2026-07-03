@@ -280,11 +280,8 @@ export class DonationsSettingsComponent implements OnInit {
   });
 
   ngOnInit(): void {
-
     void this.loadOnInit();
-
   }
-
 
   private async loadOnInit(): Promise<void> {
     await this.settingsSvc.load();
@@ -340,8 +337,8 @@ export class DonationsSettingsComponent implements OnInit {
       this.newPeriodLimit.set(1000);
       this.showAddPeriod.set(false);
       await this.loadPeriods();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to create donation period');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to create donation period');
     } finally {
       this.isSavingPeriod.set(false);
     }
@@ -351,8 +348,8 @@ export class DonationsSettingsComponent implements OnInit {
     try {
       await this.donationsSvc.updateDonationPeriod({ id: period.id, is_active: !period.is_active });
       await this.loadPeriods();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to update period');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update period');
     }
   }
 
@@ -369,8 +366,8 @@ export class DonationsSettingsComponent implements OnInit {
       await this.donationsSvc.deleteDonationPeriod(period.id);
       this.alerts.showSuccess('Period deleted');
       await this.loadPeriods();
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to delete period');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete period');
     }
   }
 
@@ -518,8 +515,10 @@ export class DonationsSettingsComponent implements OnInit {
 
       await this.settingsSvc.upsert(entries);
       this.alerts.showSuccess('Donations configuration saved successfully');
-    } catch (err: any) {
-      this.alerts.showError(err.message || 'Failed to save donations configuration');
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to save donations configuration',
+      );
     } finally {
       this.isSaving.set(false);
     }

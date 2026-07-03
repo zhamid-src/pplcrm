@@ -184,7 +184,7 @@ export class TransactionalEmailService {
         const errorText = await response.text();
         throw new Error(`Postmark API responded with status ${response.status}: ${errorText}`);
       }
-    } catch (error: any) {
+    } catch (error) {
       throw new InternalError('Failed to send transactional email', undefined, { cause: error });
     }
   }

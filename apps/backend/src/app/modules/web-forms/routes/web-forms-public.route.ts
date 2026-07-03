@@ -4,6 +4,10 @@ import formBody from '@fastify/formbody';
 
 const webFormsController = new WebFormsController();
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -475,9 +479,9 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 
       reply.type('text/html');
       return reply.send(renderFormHtml(formId, formName, formDescription, fields, form.form_type));
-    } catch (err: any) {
+    } catch (err) {
       reply.status(500).type('text/html');
-      return reply.send(errorHtml(err.message || 'Failed to load form.'));
+      return reply.send(errorHtml(err instanceof Error && err.message ? err.message : 'Failed to load form.'));
     }
   });
 
@@ -501,10 +505,12 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       }
 
       return reply.redirect('/api/forms/success');
-    } catch (err: any) {
+    } catch (err) {
       fastify.log.error(err);
-      const statusCode = err.statusCode || 500;
-      const message = err.message || 'An unexpected error occurred during submission.';
+      const statusCode =
+        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) || 500;
+      const message =
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during submission.';
 
       if (isJsonExpected) {
         return reply.status(statusCode).send({ error: message });

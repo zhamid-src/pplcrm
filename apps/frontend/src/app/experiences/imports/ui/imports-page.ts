@@ -117,8 +117,16 @@ export class ImportsPage {
       this.alerts.showSuccess('Import deleted');
       await this.load();
       this.closeDeleteDialog(dialog);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to delete import';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to delete import';
       this.alerts.showError(message);
     } finally {
       this.deleting.set(false);
@@ -137,8 +145,16 @@ export class ImportsPage {
     try {
       const list = await this.imports.list();
       this.items.set(list ?? []);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to load imports';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load imports';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -146,4 +162,8 @@ export class ImportsPage {
       end();
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

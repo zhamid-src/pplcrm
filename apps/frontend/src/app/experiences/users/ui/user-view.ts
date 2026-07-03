@@ -150,8 +150,8 @@ export class UserViewComponent {
       }
       this.alerts.showSuccess('User deleted');
       await this.router.navigate(['/users']);
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Unable to delete user');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
     } finally {
       end();
     }
@@ -177,8 +177,16 @@ export class UserViewComponent {
       const user = await this.users.getById(this.id());
       this.detail.set(user);
       this.stats.set(user.stats);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Failed to load user';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load user';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -186,4 +194,8 @@ export class UserViewComponent {
       this.initialized.set(true);
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

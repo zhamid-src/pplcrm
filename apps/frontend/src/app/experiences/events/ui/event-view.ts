@@ -62,7 +62,7 @@ export class EventViewComponent {
   protected readonly selectedPersonId = signal<string | null>(null);
   protected readonly selectedTicketTypeId = signal<string | null>(null);
   protected readonly addingRegistration = signal(false);
-  protected readonly searchTimeout: any = null;
+  protected readonly searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
   protected activeTab = signal<string>('attendees');
 
@@ -81,13 +81,9 @@ export class EventViewComponent {
     return new Date(end) < new Date();
   });
 
-  protected readonly activeCount = computed(
-    () => this.registrations().filter((r) => r.status !== 'cancelled').length,
-  );
+  protected readonly activeCount = computed(() => this.registrations().filter((r) => r.status !== 'cancelled').length);
 
-  protected readonly attendedCount = computed(
-    () => this.registrations().filter((r) => r.status === 'attended').length,
-  );
+  protected readonly attendedCount = computed(() => this.registrations().filter((r) => r.status === 'attended').length);
 
   protected readonly publicUrl = computed(() => {
     const slug = this.event()?.slug;
@@ -155,8 +151,8 @@ export class EventViewComponent {
       this.eventsFrontendSvc.triggerRefresh();
       this.alertSvc.showSuccess('Event deleted');
       await this.router.navigate(['/events/pages']);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Unable to delete event');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Unable to delete event');
     } finally {
       end();
     }
@@ -204,8 +200,8 @@ export class EventViewComponent {
       this.personSearchResults.set([]);
       const regs = await this.eventsSvc.getRegistrations(this.id());
       this.registrations.set(regs || []);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Failed to add registration');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to add registration');
     } finally {
       this.addingRegistration.set(false);
     }
@@ -217,8 +213,8 @@ export class EventViewComponent {
       this.alertSvc.showSuccess(`${reg.first_name} checked in`);
       const regs = await this.eventsSvc.getRegistrations(this.id());
       this.registrations.set(regs || []);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Failed to check in');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to check in');
     }
   }
 
@@ -227,8 +223,8 @@ export class EventViewComponent {
       await this.eventsSvc.updateRegistration(String(reg.id), { status: status as any });
       const regs = await this.eventsSvc.getRegistrations(this.id());
       this.registrations.set(regs || []);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Failed to update status');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to update status');
     }
   }
 
@@ -245,8 +241,8 @@ export class EventViewComponent {
       this.alertSvc.showSuccess('Registration removed');
       const regs = await this.eventsSvc.getRegistrations(this.id());
       this.registrations.set(regs || []);
-    } catch (err: any) {
-      this.alertSvc.showError(err?.message || 'Failed to remove registration');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to remove registration');
     }
   }
 
@@ -264,7 +260,9 @@ export class EventViewComponent {
       r.checked_in_at ? new Date(r.checked_in_at).toLocaleString() : '',
     ]);
 
-    const csv = [headers, ...rows].map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const csv = [headers, ...rows]
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -276,11 +274,16 @@ export class EventViewComponent {
 
   protected getStatusType(status: string | null | undefined): any {
     switch (String(status || '').toLowerCase()) {
-      case 'attended': return 'success';
-      case 'registered': return 'warning';
-      case 'no_show': return 'error';
-      case 'cancelled': return 'neutral';
-      default: return 'ghost';
+      case 'attended':
+        return 'success';
+      case 'registered':
+        return 'warning';
+      case 'no_show':
+        return 'error';
+      case 'cancelled':
+        return 'neutral';
+      default:
+        return 'ghost';
     }
   }
 

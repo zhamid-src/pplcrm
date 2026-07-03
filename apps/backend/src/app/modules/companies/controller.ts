@@ -229,9 +229,9 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
               await (trx as any).insertInto('companies').values(companyRows).execute();
             });
           results.inserted += validRows.length;
-        } catch (err: any) {
+        } catch (err) {
           results.errors += validRows.length;
-          errorMessages.push(err?.message || String(err));
+          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
         }
       }
 

@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked, OnInit } from '@angular/core';
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -58,7 +58,7 @@ interface SocialLinkDef {
   ],
   templateUrl: './person-view.html',
 })
-export class PersonView implements OnInit {
+export class PersonView {
   readonly id = input.required<string>();
 
   private readonly alertSvc = inject(AlertService);
@@ -233,10 +233,6 @@ export class PersonView implements OnInit {
     });
   }
 
-  public ngOnInit() {
-    // Standard Angular Init
-  }
-
   protected async loadAllData(id: string) {
     const end = this._loading.begin();
     try {
@@ -394,8 +390,8 @@ export class PersonView implements OnInit {
       } else {
         this.alertSvc.showError('Failed to initialize payment gateway.');
       }
-    } catch (err: any) {
-      this.alertSvc.showError(err.message || 'Verification check failed.');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Verification check failed.');
     } finally {
       this.isCheckingEligibility.set(false);
     }
@@ -420,8 +416,16 @@ export class PersonView implements OnInit {
       this.personsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Person deleted');
       await this.router.navigate(['/people']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete person';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete person';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -469,4 +473,8 @@ export class PersonView implements OnInit {
     const formatted = parts.join(', ').trim();
     return formatted || 'No Address Assigned';
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

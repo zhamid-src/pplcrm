@@ -80,8 +80,8 @@ export class SignUpPage {
           } else {
             this.alertSvc.showError('Unable to complete signup.');
           }
-        } catch (err: any) {
-          this.alertSvc.showError(err.message);
+        } catch (err) {
+          this.alertSvc.showError(err instanceof Error ? err.message : 'Signup failed.');
         } finally {
           end();
         }

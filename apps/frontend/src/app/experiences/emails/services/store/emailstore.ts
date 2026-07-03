@@ -230,7 +230,7 @@ export class EmailsStore {
       await this.refreshFolderCounts();
       this.alerts.showSuccess('Sync complete!');
       return result;
-    } catch (e: any) {
+    } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (
         msg.includes('No email accounts connected') ||
@@ -240,10 +240,11 @@ export class EmailsStore {
       ) {
         const confirmed = await this.dialogs.confirm({
           title: 'Email Account Connection Required',
-          message: 'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
+          message:
+            'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
           variant: 'warning',
           confirmText: 'Go to Settings',
-          cancelText: 'Cancel'
+          cancelText: 'Cancel',
         });
         if (confirmed) {
           void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });

@@ -133,13 +133,13 @@ export class FormViewComponent {
     <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
   </div>`
       : isRecurring
-      ? `
+        ? `
   <div style="margin-bottom: 16px;">
     <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
     <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
     <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
   </div>`
-      : '';
+        : '';
 
     const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
 
@@ -252,8 +252,16 @@ ${
       this.formsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Web form deleted');
       await this.router.navigate([backRoute]);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete web form';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete web form';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -283,4 +291,8 @@ ${
     if (!id) return '?';
     return this.usersById.get(String(id))?.first_name ?? '?';
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

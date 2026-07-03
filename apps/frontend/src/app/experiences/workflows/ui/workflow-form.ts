@@ -363,8 +363,16 @@ export class WorkflowFormComponent implements OnInit {
       this.workflowsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Workflow deleted');
       await this.router.navigate(['/workflows']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete workflow';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete workflow';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -425,8 +433,10 @@ export class WorkflowFormComponent implements OnInit {
               void this.loadSteps();
             }
           }
-        } catch (err: any) {
-          this.alertSvc.showError(err.message || 'An error occurred while saving the workflow.');
+        } catch (err) {
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : 'An error occurred while saving the workflow.',
+          );
         } finally {
           end();
         }
@@ -559,9 +569,9 @@ export class WorkflowFormComponent implements OnInit {
       this.searchQuery.set('');
       this.searchResults.set([]);
       void this.loadEnrollments();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Enrollment failed', err);
-      this.alertSvc.showError(err.message || 'Failed to enroll contact.');
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to enroll contact.');
     } finally {
       end();
     }
@@ -602,4 +612,8 @@ export class WorkflowFormComponent implements OnInit {
     if (trigger === 'new_unsubscriber') return 'New Unsubscriber';
     return trigger;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

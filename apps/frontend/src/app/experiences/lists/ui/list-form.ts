@@ -465,7 +465,16 @@ export class ListForm implements OnInit {
       })
       .catch((err: any) => {
         const message =
-          err?.message || err?.data?.message || (this.isNew() ? 'Failed to add list' : 'Failed to update list');
+          err instanceof Error && err.message
+            ? err.message
+            : isRecord(err) &&
+                isRecord(err['data']) &&
+                typeof err['data']['message'] === 'string' &&
+                err['data']['message']
+              ? err['data']['message']
+              : this.isNew()
+                ? 'Failed to add list'
+                : 'Failed to update list';
         this.alertSvc.showError(message);
         doneFn();
       })
@@ -489,8 +498,16 @@ export class ListForm implements OnInit {
       this.listsRefresh.trigger();
       this.alertSvc.showSuccess('List deleted');
       await this.router.navigate(['/lists']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete list';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete list';
       this.alertSvc.showError(message);
     } finally {
       end();
@@ -594,4 +611,8 @@ export class ListForm implements OnInit {
     }
     return false;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

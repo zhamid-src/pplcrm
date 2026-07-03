@@ -109,7 +109,7 @@ export class NewsletterEmailService {
         }
 
         deliveredCount += chunk.length;
-      } catch (error: any) {
+      } catch (error) {
         throw new InternalError('Failed to send newsletter via SendGrid', undefined, { cause: error });
       }
     }

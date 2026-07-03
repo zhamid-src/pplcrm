@@ -22,11 +22,8 @@ export class ConfirmSubscriptionPage implements OnInit {
   protected readonly errorMessage = signal<string>('');
 
   public ngOnInit(): void {
-
     void this.loadOnInit();
-
   }
-
 
   private async loadOnInit(): Promise<void> {
     const token = this.route.snapshot.queryParamMap.get('token');
@@ -48,9 +45,11 @@ export class ConfirmSubscriptionPage implements OnInit {
         this.status.set('error');
         this.errorMessage.set('Confirmation failed. The link may be invalid or expired.');
       }
-    } catch (err: any) {
+    } catch (err) {
       this.status.set('error');
-      this.errorMessage.set(err.message || 'An unexpected error occurred during confirmation.');
+      this.errorMessage.set(
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during confirmation.',
+      );
     } finally {
       end();
     }

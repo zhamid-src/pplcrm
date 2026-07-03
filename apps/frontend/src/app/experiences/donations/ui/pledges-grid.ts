@@ -22,14 +22,13 @@ export class PledgesGridComponent implements OnInit {
   protected readonly _loading = createLoadingGate();
   protected readonly cancelling = signal<string | null>(null);
 
-  protected readonly activePledgeCount = computed(() =>
-    this.pledges().filter((p) => p.status === 'active').length,
-  );
+  protected readonly activePledgeCount = computed(() => this.pledges().filter((p) => p.status === 'active').length);
 
-  protected readonly totalMonthlyCommitted = computed(() =>
-    this.pledges()
-      .filter((p) => p.status === 'active')
-      .reduce((sum: number, p: any) => sum + Number(p.monthly_amount || 0), 0) / 100,
+  protected readonly totalMonthlyCommitted = computed(
+    () =>
+      this.pledges()
+        .filter((p) => p.status === 'active')
+        .reduce((sum: number, p: any) => sum + Number(p.monthly_amount || 0), 0) / 100,
   );
 
   ngOnInit() {
@@ -41,7 +40,10 @@ export class PledgesGridComponent implements OnInit {
   }
 
   protected async cancelPledge(pledge: any) {
-    const name = [pledge.person_first_name, pledge.person_last_name].filter(Boolean).join(' ') || pledge.person_email || 'this donor';
+    const name =
+      [pledge.person_first_name, pledge.person_last_name].filter(Boolean).join(' ') ||
+      pledge.person_email ||
+      'this donor';
     const confirmed = await this.dialogs.confirm({
       title: `Cancel pledge for ${name}?`,
       message: `This will stop the $${this.formatCurrency(pledge.monthly_amount)}/month recurring donation immediately. This cannot be undone.`,
@@ -56,8 +58,8 @@ export class PledgesGridComponent implements OnInit {
       await this.donationsSvc.cancelPledge(String(pledge.id));
       this.alertSvc.showSuccess('Pledge cancelled successfully.');
       await this.load();
-    } catch (err: any) {
-      this.alertSvc.showError(err.message || 'Failed to cancel pledge.');
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel pledge.');
     } finally {
       this.cancelling.set(null);
     }

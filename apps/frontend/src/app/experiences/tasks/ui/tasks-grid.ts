@@ -187,8 +187,13 @@ export class TasksGrid implements OnInit {
       });
       this.importerOpen.set(false);
       await this.grid()?.refresh();
-    } catch (e: any) {
-      const msg = e?.message || e?.data?.message || 'Import failed';
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
       this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
       this.importerOpen.set(false);
     }
@@ -424,4 +429,8 @@ export class TasksGrid implements OnInit {
     const key = String(id);
     return this.usersById.get(key) ?? '';
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

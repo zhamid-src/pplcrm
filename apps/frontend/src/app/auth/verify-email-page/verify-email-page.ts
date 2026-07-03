@@ -22,11 +22,8 @@ export class VerifyEmailPage implements OnInit {
   protected readonly errorMessage = signal<string>('');
 
   public ngOnInit(): void {
-
     void this.loadOnInit();
-
   }
-
 
   private async loadOnInit(): Promise<void> {
     const code = this.route.snapshot.queryParamMap.get('code');
@@ -48,9 +45,11 @@ export class VerifyEmailPage implements OnInit {
         this.status.set('error');
         this.errorMessage.set('Verification failed. The link may be invalid.');
       }
-    } catch (err: any) {
+    } catch (err) {
       this.status.set('error');
-      this.errorMessage.set(err.message || 'An unexpected error occurred during verification.');
+      this.errorMessage.set(
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during verification.',
+      );
     } finally {
       end();
     }

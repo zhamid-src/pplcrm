@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
@@ -37,7 +37,7 @@ import { EventsFrontendService } from '../services/events-frontend-service';
   templateUrl: './event-form.html',
   providers: [EventsService],
 })
-export class EventFormComponent {
+export class EventFormComponent implements OnInit {
   private readonly _loading = createLoadingGate();
   private readonly alerts = inject(AlertService);
   private readonly dialogs = inject(ConfirmDialogService);
@@ -45,7 +45,7 @@ export class EventFormComponent {
   private readonly eventsSvc = inject(EventsService);
   private readonly router = inject(Router);
 
-  private slugTimeoutId: any = null;
+  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly addingTicket = signal(false);
   protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
@@ -171,8 +171,8 @@ export class EventFormComponent {
       this.eventsFrontendSvc.triggerRefresh();
       this.alerts.showSuccess('Event deleted');
       await this.router.navigate(['/events/pages']);
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to delete event');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
     } finally {
       this.saving.set(false);
     }
@@ -190,8 +190,8 @@ export class EventFormComponent {
       await this.eventsSvc.deleteTicketType(id);
       this.alerts.showSuccess('Ticket type deleted');
       await this.loadTicketTypes();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to delete ticket type');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete ticket type');
     }
   }
 
@@ -224,8 +224,8 @@ export class EventFormComponent {
         this.selectedFields.set(event.fields);
       }
       await this.loadTicketTypes();
-    } catch (err: any) {
-      this.error.set(err?.message || 'Failed to load event');
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
       this.alerts.showError(this.error()!);
     }
   }
@@ -295,8 +295,8 @@ export class EventFormComponent {
           await this.router.navigate(['/events/pages', this.id()]);
         }
       }
-    } catch (err: any) {
-      this.error.set(err?.message || 'Failed to save event');
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
       this.alerts.showError(this.error()!);
     } finally {
       this.saving.set(false);
@@ -320,8 +320,8 @@ export class EventFormComponent {
       this.addingTicket.set(false);
       this.alerts.showSuccess('Ticket type added');
       await this.loadTicketTypes();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to add ticket type');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add ticket type');
     }
   }
 

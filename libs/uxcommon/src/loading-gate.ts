@@ -13,8 +13,8 @@ export function createLoadingGate(options?: { delay?: number; minDuration?: numb
 
   const visible = signal(false);
   let pendingCount = 0;
-  let showTimer: any = null;
-  let hideTimer: any = null;
+  let showTimer: ReturnType<typeof setTimeout> | null = null;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
   let shownAt = 0;
 
   const clearShowTimer = () => {

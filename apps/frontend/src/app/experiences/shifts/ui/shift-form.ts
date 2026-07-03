@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
@@ -44,7 +44,7 @@ import { ShiftsService } from '../services/shifts-service';
   templateUrl: './shift-form.html',
   providers: [VolunteerService],
 })
-export class ShiftFormComponent {
+export class ShiftFormComponent implements OnInit {
   private readonly _loading = createLoadingGate();
   private readonly alerts = inject(AlertService);
   private readonly dialogs = inject(ConfirmDialogService);
@@ -53,7 +53,7 @@ export class ShiftFormComponent {
   private readonly volunteerEventsSvc = inject(ShiftsService);
   private readonly volunteerSvc = inject(VolunteerService);
 
-  private slugTimeoutId: any = null;
+  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
   protected readonly publicUrl = computed(() => {
@@ -191,8 +191,8 @@ export class ShiftFormComponent {
       this.volunteerSearch.set('');
       this.alerts.showSuccess(`${person.first_name} added to roster`);
       await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to add volunteer');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add volunteer');
     }
   }
 
@@ -219,8 +219,8 @@ export class ShiftFormComponent {
       this.volunteerEventsSvc.triggerRefresh();
       this.alerts.showSuccess('Event deleted');
       await this.router.navigate(['/events/shifts']);
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to delete event');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
     } finally {
       this.saving.set(false);
     }
@@ -274,8 +274,8 @@ export class ShiftFormComponent {
       }
 
       await this.loadRoster();
-    } catch (err: any) {
-      this.error.set(err?.message || 'Failed to load event');
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
       this.alerts.showError(this.error()!);
     }
   }
@@ -315,8 +315,8 @@ export class ShiftFormComponent {
       await this.volunteerSvc.deleteShift(shift.id);
       this.alerts.showSuccess('Volunteer removed');
       await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to remove volunteer');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove volunteer');
     }
   }
 
@@ -374,8 +374,8 @@ export class ShiftFormComponent {
           await this.router.navigate(['/events/shifts', this.id()]);
         }
       }
-    } catch (err: any) {
-      this.error.set(err?.message || 'Failed to save event');
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
       this.alerts.showError(this.error()!);
     } finally {
       this.saving.set(false);
@@ -391,8 +391,8 @@ export class ShiftFormComponent {
       });
       this.alerts.showSuccess('Shift details saved');
       await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to save shift details');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to save shift details');
     }
   }
 
@@ -429,8 +429,8 @@ export class ShiftFormComponent {
       });
       this.alerts.showSuccess('Shift status updated');
       await this.loadRoster();
-    } catch (err: any) {
-      this.alerts.showError(err?.message || 'Failed to update shift');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update shift');
     }
   }
 }

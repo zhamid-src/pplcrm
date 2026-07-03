@@ -176,9 +176,9 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
       }
 
       return reply.code(200).send({ success: true, processedCount: processedNewsletters.size });
-    } catch (err: any) {
+    } catch (err) {
       req.log.error(err, 'SendGrid webhook processing error');
-      return reply.code(500).send({ error: err.message });
+      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 

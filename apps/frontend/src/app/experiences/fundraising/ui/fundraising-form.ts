@@ -217,8 +217,16 @@ export class FundraisingFormComponent implements OnInit {
       this.formsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Donation page deleted');
       await this.router.navigate(['/donation-pages']);
-    } catch (err: any) {
-      const message = err?.message || err?.data?.message || 'Unable to delete donation page';
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete donation page';
       this.alertSvc.showError(message);
     } finally {
       this.saving.set(false);
@@ -281,8 +289,8 @@ export class FundraisingFormComponent implements OnInit {
               void this.router.navigate(['/donation-pages', id]);
             }
           }
-        } catch (err: any) {
-          const msg = err.message || 'An error occurred while saving.';
+        } catch (err) {
+          const msg = err instanceof Error && err.message ? err.message : 'An error occurred while saving.';
           this.error.set(msg);
           this.alertSvc.showError(msg);
         } finally {
@@ -346,4 +354,8 @@ export class FundraisingFormComponent implements OnInit {
       end();
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }

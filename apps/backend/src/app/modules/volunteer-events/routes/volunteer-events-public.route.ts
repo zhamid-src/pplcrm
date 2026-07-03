@@ -736,10 +736,12 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 </body>
 </html>
       `);
-    } catch (err: any) {
+    } catch (err) {
       const statusCode = getStatusFromError(err);
       reply.status(statusCode).type('text/html');
-      return reply.send(renderErrorHtml(err.message || 'Failed to load volunteer events.'));
+      return reply.send(
+        renderErrorHtml(err instanceof Error && err.message ? err.message : 'Failed to load volunteer events.'),
+      );
     }
   });
 
@@ -1110,10 +1112,12 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 </body>
 </html>
       `);
-    } catch (err: any) {
+    } catch (err) {
       const statusCode = getStatusFromError(err);
       reply.status(statusCode).type('text/html');
-      return reply.send(renderErrorHtml(err.message || 'Failed to load event details.'));
+      return reply.send(
+        renderErrorHtml(err instanceof Error && err.message ? err.message : 'Failed to load event details.'),
+      );
     }
   });
 
@@ -1155,10 +1159,10 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
       }
 
       return reply.redirect(`/api/events/success?tenantSlug=${slug}`);
-    } catch (err: any) {
+    } catch (err) {
       fastify.log.error(err);
       const statusCode = getStatusFromError(err);
-      const message = err.message || 'An unexpected error occurred during signup.';
+      const message = err instanceof Error && err.message ? err.message : 'An unexpected error occurred during signup.';
 
       if (isJsonExpected) {
         return reply.status(statusCode).send({ error: message });

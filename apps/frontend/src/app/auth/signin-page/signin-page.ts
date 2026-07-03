@@ -161,8 +161,8 @@ export class SignInPage implements OnInit, OnDestroy {
         return;
       }
       if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
-    } catch (err: any) {
-      if (err?.name === 'NotAllowedError') {
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') {
         this.step.set('password');
         return;
       }
@@ -210,7 +210,7 @@ export class SignInPage implements OnInit, OnDestroy {
             }
             this.suppressNavigation.set(false);
           }
-        } catch (err: any) {
+        } catch (err) {
           this.suppressNavigation.set(false);
           this.handleError(err, emailVal);
         } finally {
@@ -244,7 +244,7 @@ export class SignInPage implements OnInit, OnDestroy {
             code: codeVal,
             rememberMe: this.persistence(),
           });
-        } catch (err: any) {
+        } catch (err) {
           this.handleError(err);
         } finally {
           end();
@@ -272,9 +272,9 @@ export class SignInPage implements OnInit, OnDestroy {
       if (result.verified) {
         this.alertSvc.showSuccess('Passkey set up successfully!');
       }
-    } catch (err: any) {
-      if (err?.name !== 'NotAllowedError') {
-        this.alertSvc.showError(err.message || 'Failed to set up passkey.');
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
+        this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to set up passkey.');
       }
     } finally {
       this.settingUpPasskey.set(false);
@@ -306,14 +306,17 @@ export class SignInPage implements OnInit, OnDestroy {
       await this.authService.resendVerificationEmail(emailVal);
       this.alertSvc.showSuccess('Verification email sent successfully!');
       this.startResendCooldown(60);
-    } catch (err: any) {
-      const tRPCData = err?.originalError?.data ?? err?.data;
+    } catch (err) {
+      const tRPCData = getTRPCData(err);
       const retryAfterSec =
-        (tRPCData?.retryAfterSec as number | undefined) ?? this.parseRetryAfterSec(err.message || '');
+        (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+        this.parseRetryAfterSec(err instanceof Error && err.message ? err.message : '');
       if (retryAfterSec) {
         this.startResendCooldown(retryAfterSec);
       } else {
-        this.alertSvc.showError(err.message || 'Failed to resend verification email.');
+        this.alertSvc.showError(
+          err instanceof Error && err.message ? err.message : 'Failed to resend verification email.',
+        );
       }
     } finally {
       this.resending.set(false);
@@ -348,15 +351,17 @@ export class SignInPage implements OnInit, OnDestroy {
     }, 1000);
   }
 
-  private handleError(err: any, emailVal?: string) {
-    const tRPCData = err?.originalError?.data ?? err?.data;
-    const message = err.message || String(err);
-    const retryAfterSec = (tRPCData?.retryAfterSec as number | undefined) ?? this.parseRetryAfterSec(message);
+  private handleError(err: unknown, emailVal?: string) {
+    const tRPCData = getTRPCData(err);
+    const message = err instanceof Error && err.message ? err.message : String(err);
+    const retryAfterSec =
+      (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+      this.parseRetryAfterSec(message);
     if (retryAfterSec) {
       this.startRateLimitCountdown(retryAfterSec);
       return;
     }
-    const code = tRPCData?.code as string | undefined;
+    const code = typeof tRPCData?.['code'] === 'string' ? tRPCData['code'] : undefined;
     if (emailVal && message.toLowerCase().includes('not verified')) {
       this.verificationPending.set(true);
       this.pendingEmail.set(emailVal);
@@ -396,3 +401,15 @@ export function emailSafeValidator(): ValidatorFn {
 }
 
 const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** Extract the tRPC error `data` payload (e.g. rate-limit metadata) from a caught error. */
+function getTRPCData(err: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(err)) return undefined;
+  const originalError = err['originalError'];
+  if (isRecord(originalError) && isRecord(originalError['data'])) return originalError['data'];
+  return isRecord(err['data']) ? err['data'] : undefined;
+}

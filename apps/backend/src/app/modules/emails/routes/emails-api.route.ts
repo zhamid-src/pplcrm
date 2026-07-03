@@ -415,9 +415,9 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
         uploadedFiles,
         fallbackPreview,
       );
-    } catch (err: any) {
+    } catch (err) {
       fastify.log.error(err, 'Failed to save outbound email to database');
-      return reply.jsendError(err.message || 'Failed to save email', 500);
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Failed to save email', 500);
     }
 
     // Determine send method prioritizing matching address
@@ -524,7 +524,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
           }
 
           return reply.jsendSuccess(finalEmail);
-        } catch (err: any) {
+        } catch (err) {
           fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
           // Clean up local email
           await db
@@ -532,7 +532,10 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             .where('tenant_id', '=', tenantId)
             .where('id', '=', String(emailRow.id))
             .execute();
-          return reply.jsendError(err.message || 'Failed to send email via Microsoft Graph', 400);
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Microsoft Graph',
+            400,
+          );
         }
       } else if (sendMethod === 'google') {
         const oauthSvc = new GoogleOAuthService(db, {
@@ -612,7 +615,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
           }
 
           return reply.jsendSuccess(finalEmail);
-        } catch (err: any) {
+        } catch (err) {
           fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
           await db
             .updateTable('emails')
@@ -625,14 +628,17 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
             .where('id', '=', String(emailRow.id))
             .execute();
 
-          return reply.jsendError(err.message || 'Failed to send email via Google. Saved to Drafts.', 400);
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Google. Saved to Drafts.',
+            400,
+          );
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
       // Clean up local email
       await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
-      return reply.jsendError(err.message || 'Unexpected error in send task', 500);
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Unexpected error in send task', 500);
     }
   });
 

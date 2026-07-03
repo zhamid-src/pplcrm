@@ -163,7 +163,7 @@ export class ActivityFeed implements OnInit {
       } else {
         this.alertSvc.showError('No activity data to export');
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to export activity feed', err);
       this.alertSvc.showError('Failed to export activity feed');
     } finally {

@@ -52,7 +52,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
     <pc-add-connection-drawer
       [personId]="personId()"
       [isOpen]="showAddDrawer()"
-      (close)="showAddDrawer.set(false)"
+      (closeDrawer)="showAddDrawer.set(false)"
       (saved)="onConnectionAdded()"
     ></pc-add-connection-drawer>
   `,

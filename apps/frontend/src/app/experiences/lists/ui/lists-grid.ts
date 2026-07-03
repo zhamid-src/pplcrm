@@ -155,10 +155,10 @@ export class ListsGridComponent implements OnDestroy {
       this.alerts.showSuccess('Refresh job scheduled in background');
       await this.listsSvc.refreshList(id);
       this.pollRefreshStatus(id);
-    } catch (e: any) {
+    } catch (e) {
       this.refreshingIds.delete(id);
       cellParams?.api?.refreshCells({ rowNodes: [cellParams.node], columns: ['refresh_action'], force: true });
-      this.alerts.showError(e?.message ?? String(e));
+      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
     }
   }
 

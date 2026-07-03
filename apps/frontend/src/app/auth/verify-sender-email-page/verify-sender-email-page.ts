@@ -23,11 +23,8 @@ export class VerifySenderEmailPage implements OnInit {
   protected readonly verifiedEmail = signal<string>('');
 
   public ngOnInit(): void {
-
     void this.loadOnInit();
-
   }
-
 
   private async loadOnInit(): Promise<void> {
     const token = this.route.snapshot.queryParamMap.get('token');
@@ -50,9 +47,11 @@ export class VerifySenderEmailPage implements OnInit {
         this.status.set('error');
         this.errorMessage.set('Verification failed. The token may be invalid.');
       }
-    } catch (err: any) {
+    } catch (err) {
       this.status.set('error');
-      this.errorMessage.set(err.message || 'An unexpected error occurred during verification.');
+      this.errorMessage.set(
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during verification.',
+      );
     } finally {
       end();
     }
