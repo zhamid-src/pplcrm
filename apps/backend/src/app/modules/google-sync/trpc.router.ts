@@ -5,6 +5,7 @@ import { BaseRepository } from '../../lib/base.repo';
 import { env } from '../../../env';
 import { z } from 'zod';
 import { sql } from 'kysely';
+import { encodeOAuthState } from '../../lib/oauth-state';
 
 let _oauthSvc: GoogleOAuthService | null = null;
 let _syncSvc: GoogleSyncService | null = null;
@@ -25,9 +26,11 @@ function getServices() {
 function getAuthUrl() {
   return authProcedure.input(z.object({ returnTo: z.string().optional() })).query(async ({ ctx, input }) => {
     const { oauthSvc } = getServices();
-    const state = Buffer.from(
-      JSON.stringify({ userId: ctx.auth.user_id, tenantId: ctx.auth.tenant_id, returnTo: input.returnTo }),
-    ).toString('base64');
+    const state = encodeOAuthState({
+      userId: ctx.auth.user_id,
+      tenantId: ctx.auth.tenant_id,
+      returnTo: input.returnTo,
+    });
     const url = oauthSvc.getAuthUrl(state);
     return { url };
   });
