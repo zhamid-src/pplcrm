@@ -1,9 +1,9 @@
 import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
-import { TasksBoard } from './tasks-board';
-import { TasksService } from '../services/tasks-service';
 import { Router } from '@angular/router';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { TasksService } from '../services/tasks-service';
+import { TasksBoard } from './tasks-board';
 
 describe('TasksBoard', () => {
   let component: TasksBoard;
@@ -48,7 +48,7 @@ describe('TasksBoard', () => {
     await runInit();
     expect(mockTasksSvc.getAll).toHaveBeenCalled();
     expect(component['tasks']()).toHaveLength(1);
-    expect(component['tasks']()[0].id).toBe('t1');
+    expect(component['tasks']()[0]?.id).toBe('t1');
   });
 
   it('should update task status and trigger refresh on drop', async () => {
