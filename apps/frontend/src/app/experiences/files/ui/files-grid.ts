@@ -4,6 +4,7 @@ import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { environment } from '../../../../environments/environment';
+import { downloadWithAuthHeader } from '../../../services/api/http-download';
 import { TokenService } from '../../../services/api/token-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { FilesService } from '../services/files.service';
@@ -107,10 +108,17 @@ export class FilesGrid implements OnInit {
     return 'document';
   }
 
-  protected downloadFile(file: any) {
-    const token = this.tokenSvc.getAuthToken();
-    const url = `${environment.apiUrl}/api/files/download/${file.id}?token=${encodeURIComponent(token || '')}`;
-    window.open(url, '_blank');
+  protected async downloadFile(file: any) {
+    try {
+      const token = this.tokenSvc.getAuthToken();
+      await downloadWithAuthHeader(
+        `${environment.apiUrl}/api/files/download/${file.id}`,
+        token,
+        file.filename || 'download',
+      );
+    } catch {
+      this.alertSvc.showError('Failed to download file');
+    }
   }
 
   protected async deleteFile(file: any) {

@@ -65,6 +65,7 @@ interface MergeableService {
 }
 // Header and inline filters rendered inline in template now
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import DOMPurify from 'dompurify';
 import { GridHeaderComponent } from '@uxcommon/components/grid-header/grid-header';
 import { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { EditingController } from './controllers/editing.controller';
@@ -920,9 +921,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
       const raw = fn({ data: row, value, colDef: col });
 
-      // If renderers return strings (your current setup), trust them here.
+      // Renderer strings may interpolate row data, so they are never trusted
+      // as-is: DOMPurify strips script/event-handler payloads while keeping
+      // the markup (class/style/img) renderers legitimately produce.
       if (typeof raw === 'string') {
-        return this.sanitizer.bypassSecurityTrustHtml(raw);
+        return this.sanitizer.bypassSecurityTrustHtml(DOMPurify.sanitize(raw));
       }
 
       // If you later allow SafeHtml from some renderers, just return it.

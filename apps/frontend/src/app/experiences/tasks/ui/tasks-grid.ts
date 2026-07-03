@@ -6,7 +6,7 @@ import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { UpdateTaskType } from '../../../../../../../libs/common/src';
+import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Component({
@@ -288,20 +288,22 @@ export class TasksGrid implements OnInit {
     const v = value == null ? '' : String(value);
     const isUnassigned = !v || v === this.unassignedLabel;
     const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
+    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
+    const safeLabel = escapeHtml(label);
     if (isUnassigned) {
-      return `<span class="badge badge-error badge-sm">${label}</span>`;
+      return `<span class="badge badge-error badge-sm">${safeLabel}</span>`;
     }
     let avatarUrl = this.usersAvatarById.get(v);
     if (avatarUrl) {
       avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
       return `
         <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${avatarUrl}" alt="${label}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${label}</span>
+          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeLabel}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${safeLabel}</span>
         </div>
       `;
     }
-    const initial = label.slice(0, 1).toUpperCase() || '?';
+    const initial = escapeHtml(label.slice(0, 1).toUpperCase() || '?');
     const colors = [
       'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
       'bg-teal-500/20 text-teal-700 dark:text-teal-300',
@@ -321,7 +323,7 @@ export class TasksGrid implements OnInit {
             <span>${initial}</span>
           </div>
         </div>
-        <span class="text-xs font-medium">${label}</span>
+        <span class="text-xs font-medium">${safeLabel}</span>
       </div>
     `;
   }
@@ -332,17 +334,19 @@ export class TasksGrid implements OnInit {
       return `<span class="text-base-content/30">—</span>`;
     }
     const resolvedName = this.usersById.get(label) ?? label;
+    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
+    const safeName = escapeHtml(resolvedName);
     let avatarUrl = this.usersAvatarById.get(label);
     if (avatarUrl) {
       avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
       return `
         <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${avatarUrl}" alt="${resolvedName}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${resolvedName}</span>
+          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeName}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${safeName}</span>
         </div>
       `;
     }
-    const initial = resolvedName.slice(0, 1).toUpperCase() || '?';
+    const initial = escapeHtml(resolvedName.slice(0, 1).toUpperCase() || '?');
     const colors = [
       'bg-blue-500/20 text-blue-700 dark:text-blue-300',
       'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
@@ -361,7 +365,7 @@ export class TasksGrid implements OnInit {
             <span>${initial}</span>
           </div>
         </div>
-        <span class="text-xs font-medium">${resolvedName}</span>
+        <span class="text-xs font-medium">${safeName}</span>
       </div>
     `;
   }

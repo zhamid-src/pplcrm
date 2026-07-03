@@ -19,10 +19,6 @@ export function initSession(authService: AuthService) {
   };
 }
 
-export function tokenGetter() {
-  return localStorage.getItem('auth-token');
-}
-
 export const appConfig: ApplicationConfig = {
   providers: [
     { provide: ENVIRONMENT, useValue: environment },
@@ -37,8 +33,6 @@ export const appConfig: ApplicationConfig = {
         });
       },
     },
-
-    provideRouter(appRoutes),
 
     {
       provide: RouteReuseStrategy,
