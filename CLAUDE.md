@@ -26,6 +26,24 @@
 
 # PeopleCRM Project Standards
 
+## 0. Skill Library — check here before re-deriving anything
+
+Project-specific how-tos live in `.claude/skills/<name>/SKILL.md`. If one exists for your task, read it first — it already has the verified file paths, commands, and examples so you don't have to re-grep the codebase from scratch:
+
+- `pplcrm-add-entity` — scaffolding a new CRUD entity end-to-end (schema → backend module → frontend experience)
+- `pplcrm-trpc-backend` — tRPC/Fastify/Kysely conventions, error handling, transactions, background jobs
+- `pplcrm-tenant-safety` — multi-tenant query scoping and the `local/no-unscoped-db-query` rule
+- `pplcrm-migrations` — writing/applying DB migrations, `schema.sql` baseline
+- `pplcrm-angular-components` — signals, the `form()` helper, loading gate, icons
+- `pplcrm-design-principles` — the app-wide UI/UX doctrine: three orientation questions, disclosure over suppression, guide-don't-error, semantic tokens, one-idiom-per-job, DaisyUI-first/CSS-over-JS, subtle purposeful motion. **Read before designing or reviewing any UI.**
+- `pplcrm-page-layout-ux` — detail-layout/header/breadcrumbs/record-navigation/activity-log/toasts/dialogs composition
+- `pplcrm-quality-gate` — the exact pre-commit-equivalent lint/build/test pipeline
+- `pplcrm-debugging` — tracing a bug end-to-end (correlationId → Pino → tRPC → Kysely → signals)
+- `pplcrm-schemas-validation` — the Zod schema triad (`AddXObj`/`UpdateXObj`/`XObj`) and `core.schema` helpers
+- `pplcrm-testing` — Vitest conventions and the spec-file lint gap
+
+If none exists for a recurring task you had to figure out the hard way, write one — don't just solve it and move on.
+
 ## 1. Repository Structure & Imports
 
 **Monorepo layout — keep logic in its layer:**
@@ -108,6 +126,7 @@ These rules are strict and enforced by ESLint. Violations must be fixed, not sup
 - **Native Typing:** Use Kysely's `Insertable<T>` and `Updateable<T>` utility types for insert/update payloads — do not hand-roll equivalent interfaces.
 - **Intentional Retrieval:** Use `.returning('id')` or `.returningAll()` only when subsequent logic requires the returned data. Avoid over-fetching.
 - **Transactions:** Wrap all multi-table writes in a Kysely transaction for ACID compliance.
+- **Tenant Scoping:** Every `selectFrom`/`updateTable`/`deleteFrom` chain must include a `.where('tenant_id', ...)` filter before executing — this is a cross-tenant data leak otherwise, and it's enforced by the custom `local/no-unscoped-db-query` ESLint rule (`tools/eslint-rules/rules/no-unscoped-db-query.cjs`). See `pplcrm-tenant-safety` for the intentional-exceptions list.
 
 ### Background Jobs
 
@@ -116,10 +135,7 @@ These rules are strict and enforced by ESLint. Violations must be fixed, not sup
 ### Security, Hardening & Observability
 
 - **Input Validation:** All tRPC procedure inputs are validated with Zod at the boundary.
-- **Error Sanitization:** On unhandled exceptions:
-  1. Generate a unique `correlationId`.
-  2. Log the full stack trace and request context to Pino using that `correlationId`.
-  3. Return only the safe message + `correlationId` to the client — never the raw error.
+- **Error Sanitization:** tRPC errors are mapped through `toTRPCError`/`errorFormatter` and only a generic safe message reaches the client in production — never the raw error or stack trace. The `correlationId` pattern (generate one, log it with Pino, return it to the client) is currently implemented in the background-job worker (`lib/jobs/worker.ts`), not yet on the tRPC request path — see `pplcrm-debugging` before assuming a client-visible tRPC error carries one.
 
 ---
 
@@ -134,7 +150,7 @@ These rules are strict and enforced by ESLint. Violations must be fixed, not sup
 
 ### Forms
 
-This project uses an internal `form()` helper — not Angular's `ReactiveFormsModule` or `ngModel`:
+This project uses Angular's experimental signal-forms API (`form`, `required`, `email`, `disabled`, etc. imported from `@angular/forms/signals`) — not `ReactiveFormsModule` or `ngModel`:
 
 - Wrap payloads: `form(payload, (p) => { ... })`.
 - Bind fields via `[formField]`.
@@ -172,52 +188,34 @@ This project uses an internal `form()` helper — not Angular's `ReactiveFormsMo
 ## 5. Database Migrations
 
 - **Never delete applied migration files.** They are permanent history; deletion breaks the migration runner's state tracking.
-- **`schema_dump.sql` is the baseline.** Update it with `pg_dump --schema-only` when the schema changes significantly. Do not add data (COPY/INSERT). The `0001_baseline.ts` migration uses this file to initialize fresh databases only.
+- **`apps/backend/src/app/_migrations/schema.sql` is the baseline.** Update it with `pg_dump --schema-only` when the schema changes significantly. Do not add data (COPY/INSERT). The `0001_baseline.ts` migration reads this file to initialize fresh databases only. (Older references to `schema_dump.sql` elsewhere in the repo are stale — this is the real filename.)
 - **New changes = new file.** Never modify a migration that has already been applied. Add a new timestamped file: `apps/backend/src/app/_migrations/YYYY-MM-DD-description.ts`.
 
 ---
 
 ## 6. Quality & Verification Pipeline
 
-Before committing or opening a PR, run in order:
+Before committing, run both of these on the files you changed — **neither one alone is sufficient**:
 
 ```bash
 npx prettier --write .
-npx nx lint frontend
-npx nx lint backend
-npx nx build frontend
-npx nx build backend
-npx nx test frontend
-npx nx test backend
+npx eslint <changed-files> --report-unused-disable-directives-severity=off   # what the pre-commit hook runs
+npx nx lint <project>                                                       # project-specific rules
+npx nx build frontend && npx nx build backend
+npx nx test frontend && npx nx test backend
 ```
 
-All lint errors and warnings must be resolved — do not suppress them with disable comments unless there is no alternative, and always explain why in an inline comment.
+**Why both are required — they enforce disjoint rule sets, not overlapping ones.** Each `apps/*/eslint.config.cjs` / `libs/*/eslint.config.cjs` is loaded standalone by `nx lint <project>`; it does not automatically inherit the root `eslint.config.cjs` that Husky's `lint-staged` runs (config in root `package.json`). Concretely, as of this writing:
 
-### Pre-commit hook — what actually gates a commit
+- `no-floating-promises` / `no-misused-promises` are declared **only** in the root config, so only the pre-commit `eslint` invocation catches them — `nx lint` doesn't, for any project, spec or not.
+- `local/no-unscoped-db-query` (the multi-tenant safety rule, see `pplcrm-tenant-safety`) is declared **only** in `apps/backend/eslint.config.cjs`, so only `nx lint backend` catches it — plain `eslint` from the repo root does not.
+- `apps/backend/eslint.config.cjs` and `libs/common/eslint.config.cjs` now additionally spread in the root config (so `nx lint backend`/`nx lint common` enforce the union of both rule sets — verified zero new violations when this was done). `apps/frontend/eslint.config.cjs` and `libs/uxcommon/eslint.config.cjs` do **not** yet do this; each has pre-existing violations that would surface if merged the same way (frontend: `@angular-eslint/no-output-native` on 2 files; uxcommon: `@angular-eslint/prefer-inject` on several) — fixing those and merging is a good follow-up, not yet done.
+- `require-await` is named below as a common blocker but is **not currently enforced by any config in this repo** (root or project-level) — treat that bullet as an aspirational/manual-review item until it's actually wired in, not something a green lint run guarantees.
+- Separately, `nx lint backend` currently fails on real, pre-existing `local/no-unscoped-db-query` violations in `companies.repo.ts` and a donations-pledges repo — unscoped queries already in the codebase, not a config issue. Worth a dedicated fix.
 
-A Husky `pre-commit` hook runs `lint-staged` on every commit, which for staged files runs:
+Rules most likely to bite you (apply to **all** `.ts`, including specs/mocks):
 
-```jsonc
-"*.{ts,html}": "eslint --fix --report-unused-disable-directives-severity=off",
-"*.{ts,html,css,json,md}": "prettier --write"
-```
+- **`no-misused-promises`** — don't pass an async/Promise-returning function where a `void`-returning callback is expected (event handlers, `mockImplementation`, array callbacks, Fastify hooks). Give it an explicit `: void` return type and do the async work another way. Prefer a sync mock callback over `async () => {}`.
+- **`no-floating-promises`** — every Promise is `await`-ed, `.catch()`-ed, or explicitly discarded with `void`.
 
-**`nx lint <project>` and the pre-commit hook are NOT equivalent.** `nx lint` skips some files (notably `*.spec.ts`) and does not report every type-aware rule the flat ESLint config enforces. It is entirely possible for `npx nx lint backend` to pass while the pre-commit hook rejects the same code. A green `nx lint` is necessary but **not sufficient**.
-
-Before committing, verify with the _same_ command the hook uses, on the files you actually changed:
-
-```bash
-npx eslint <changed-file-1> <changed-file-2> --report-unused-disable-directives-severity=off
-```
-
-This is the authoritative check — if it exits 0, the pre-commit hook will pass.
-
-### Type-aware rules that most often block commits
-
-These are enforced on **all** `.ts` files, including tests and mocks, and are the usual reason a commit is rejected after `nx lint` looked clean:
-
-- **`@typescript-eslint/no-misused-promises`** — do not pass an `async`/Promise-returning function where a `void`-returning callback is expected (event handlers, `mockImplementation`, array callbacks, Fastify hooks). Give the callback an explicit `: void` return type and do the async work another way, or make the surrounding API accept a Promise.
-- **`@typescript-eslint/no-floating-promises`** — every Promise must be `await`-ed, `.catch()`-ed, or explicitly discarded with the `void` operator.
-- **`@typescript-eslint/require-await`** — no `async` on a function that never `await`s.
-
-When adding test mocks, prefer a synchronous callback with an explicit `: void` return over `async () => {}` or `() => Promise.resolve()` — both of the latter trip `no-misused-promises` in a void-return context.
+Never suppress a violation with a disable comment unless truly unavoidable — explain why inline when you do. See `pplcrm-quality-gate` for worked examples of each fix, pulled from real commits in this repo's history.
