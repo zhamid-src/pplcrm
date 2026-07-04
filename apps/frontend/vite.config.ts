@@ -35,6 +35,16 @@ export default defineConfig(() => ({
     coverage: {
       reportsDirectory: '../../coverage/apps/frontend',
       provider: 'v8' as const,
+      // Coverage ratchet: set just under the measured baseline (2026-07-04:
+      // 55.49% stmts / 37.15% branch / 54.85% funcs / 55.75% lines). These may
+      // only ever be raised, never lowered — if your change drops coverage
+      // below them, add tests rather than editing the thresholds.
+      thresholds: {
+        statements: 54,
+        branches: 36,
+        functions: 53,
+        lines: 54,
+      },
     },
     // Suppress NG0914: Angular fires this when provideZonelessChangeDetection() is used
     // alongside Zone.js (which the Angular testing harness always loads). It's harmless.
