@@ -203,10 +203,12 @@ name the state change an animation narrates, cut it.
 
 ## 8. Typography & hierarchy
 
-- App font is **Inter** (Google Fonts) at body weight 400 — Roboto 300 is retired (300 is too
-  fragile below 14px, especially in dark mode). Verified gap, July 2026: `index.html` and
-  `styles.css` still load Roboto 300/500; the Inter migration is pending — don't deepen the
-  Roboto dependency in new work.
+- App font is **Inter** at body weight 400 — Roboto 300 is retired (300 is too fragile below
+  14px, especially in dark mode). Inter is **self-hosted** via the `@fontsource-variable/inter`
+  package, imported at the top of `styles.css` and bundled at build time — the SPA makes no
+  external font requests; never add a `fonts.googleapis.com` link to `index.html`. (The
+  backend's public event/web-form pages still load Roboto from Google Fonts — a separate,
+  unmigrated surface as of July 2026.)
 - Headings earn weight (600–700), so **weight is hierarchy** — don't reach for size or color
   first. Monospace is `ui-monospace`/system mono, reserved for IDs, routes, and kbd hints.
 - Kickers/eyebrows are small uppercase tracked labels; record names are the big type.

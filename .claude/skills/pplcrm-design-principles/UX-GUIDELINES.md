@@ -58,7 +58,7 @@ House vocabulary only: `animate-up/down/left/right/drop` (0.3s ease-in-out), `an
 
 ## 8. Typography & density
 
-- App font is **Inter** (Google Fonts), body weight **400** — the old Roboto 300 body is retired (300 is too fragile below 14px, especially in dark mode). **Weight is hierarchy** (600–700 for headings/actives) before size or color. Monospace stays `ui-monospace` / system mono for IDs, routes, kbd hints. (Verified gap, July 2026: `index.html`/`styles.css` still load Roboto 300/500 — the Inter migration is pending; don't deepen the Roboto dependency in new work.)
+- App font is **Inter**, body weight **400** — the old Roboto 300 body is retired (300 is too fragile below 14px, especially in dark mode). **Weight is hierarchy** (600–700 for headings/actives) before size or color. Monospace stays `ui-monospace` / system mono for IDs, routes, kbd hints. Inter is **self-hosted** via `@fontsource-variable/inter` (imported in `styles.css`, bundled at build) — never add a `fonts.googleapis.com` link to the SPA.
 - Micro-labels (eyebrows, section headers, column headers): 10–11.5px, weight 500–600, UPPERCASE, letter-spacing .04–.09em, base-content at 45–55%.
 - Sidebar: headings 10.5px/500/.09em/45%; items 13px/.03em, active 600 + primary; count badges 10.5px/600 tabular-nums pills.
 - Page titles 22px/700; card titles 15px/600; table text 13px; chips 10–12px/500–600.
