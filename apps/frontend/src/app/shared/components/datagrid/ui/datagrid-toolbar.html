@@ -31,23 +31,7 @@
       tabindex="0"
       class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
     >
-      @if (grid.showNarrowTypeFilter()) {
-      <pc-dg-filter-section
-        [title]="'Narrow by Type'"
-        [bordered]="false"
-        [clearable]="false"
-        [active]="grid.selectedNarrowType() !== null"
-        [open]="grid.selectedNarrowType() !== null"
-      >
-        <pc-singleselect-filter
-          [label]="'Type'"
-          [options]="narrowTypeOptions()"
-          [selected]="grid.selectedNarrowType()"
-          [radioName]="'narrowTypeMobile'"
-          (select)="grid.selectNarrowType($event)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showTagFilter()) {
+      @if (grid.showTagFilter()) {
       <pc-dg-filter-section
         [title]="'Filter by Tags'"
         [active]="grid.selectedTags().length > 0"
@@ -229,25 +213,8 @@
     (action)="onExportCsv()"
   />
 
-  @if (grid.showNarrowTypeFilter() || grid.showTagFilter()) {
+  @if (grid.showTagFilter()) {
   <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-  } @if (grid.showNarrowTypeFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'tag'"
-    [tip]="'Narrow by type'"
-    [active]="grid.selectedNarrowType() !== null"
-    [hasDropdown]="true"
-  >
-    <div tabindex="0" class="dropdown-content bg-base-100 rounded-box z-[1] w-48 p-3 shadow-lg border border-base-200">
-      <pc-singleselect-filter
-        [label]="'Type'"
-        [options]="narrowTypeOptions()"
-        [selected]="grid.selectedNarrowType()"
-        [radioName]="'narrowType'"
-        (select)="grid.selectNarrowType($event)"
-      />
-    </div>
-  </pc-grid-tool-btn>
   } @if (grid.showTagFilter()) {
   <pc-grid-tool-btn
     [icon]="'label'"

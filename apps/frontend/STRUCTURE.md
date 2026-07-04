@@ -8896,7 +8896,7 @@ export class VisualNewsletterEditorComponent implements OnInit {
     addRoute="/people/add"
     viewRoute="/people"
     [disableView]="false"
-    [narrowTypeOptions]="narrowTypeOptions"
+    [narrowTypeOptions]="narrowTypeOptions()"
     (importCSV)="openImportDialog()"
     [plusIcon]="getPlusIcon()"
   ></pc-datagrid>
@@ -15366,97 +15366,6 @@ export class VolunteerService extends TRPCService<'volunteer_events'> {
 }
 ```
 
-## File: apps/frontend/src/app/services/fullscreen.service.ts
-
-```typescript
-import { inject, signal, Service } from '@angular/core';
-
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-@Service()
-export class FullScreenService {
-  private readonly alertSvc = inject(AlertService);
-  private readonly _isFullScreen = signal<boolean>(false);
-
-  constructor() {
-    // Initialize state
-    this._isFullScreen.set(this.hasFsElement());
-
-    // Keep state in sync with the browser
-    document.addEventListener('fullscreenchange', () => {
-      this._isFullScreen.set(this.hasFsElement());
-    });
-
-    // Safari (older WebKit) – vendor event
-    document.addEventListener('webkitfullscreenchange' as unknown as keyof DocumentEventMap, () => {
-      this._isFullScreen.set(this.hasFsElement());
-    });
-  }
-
-  public isFullScreenMode(): boolean {
-    return this._isFullScreen();
-  }
-
-  public async toggleFullScreen(): Promise<void> {
-    if (this.hasFsElement()) {
-      await this.exitFullScreen();
-    } else {
-      await this.enterFullScreen();
-    }
-  }
-
-  private async enterFullScreen(): Promise<void> {
-    const elem = document.documentElement as unknown as HTMLElement & {
-      webkitRequestFullscreen?: () => Promise<void>;
-      msRequestFullscreen?: () => Promise<void>;
-    };
-    try {
-      if (elem.requestFullscreen) {
-        await elem.requestFullscreen();
-      } else if (elem.webkitRequestFullscreen) {
-        await elem.webkitRequestFullscreen(); // Safari
-      } else if (elem.msRequestFullscreen) {
-        await elem.msRequestFullscreen(); // IE/legacy Edge
-      }
-      // state will be updated by the fullscreenchange listener
-    } catch (e) {
-      console.error('Failed to enter fullscreen:', e);
-      this.alertSvc.showError('Could not enter full screen — your browser blocked the request.');
-    }
-  }
-
-  private async exitFullScreen(): Promise<void> {
-    try {
-      if (!this.hasFsElement()) return; // avoid "Not in fullscreen" errors
-
-      const doc = document as unknown as Document & {
-        webkitExitFullscreen?: () => Promise<void>;
-        msExitFullscreen?: () => Promise<void>;
-      };
-      if (document.exitFullscreen) {
-        await document.exitFullscreen();
-      } else if (doc.webkitExitFullscreen) {
-        await doc.webkitExitFullscreen(); // Safari
-      } else if (doc.msExitFullscreen) {
-        await doc.msExitFullscreen(); // IE/legacy Edge
-      }
-      // state will be updated by the fullscreenchange listener
-    } catch (e) {
-      console.error('Failed to exit fullscreen:', e);
-      this.alertSvc.showError('Could not exit full screen.');
-    }
-  }
-
-  private hasFsElement(): boolean {
-    const doc = document as unknown as Document & {
-      webkitFullscreenElement?: Element | null;
-      msFullscreenElement?: Element | null;
-    };
-    return !!(document.fullscreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement);
-  }
-}
-```
-
 ## File: apps/frontend/src/app/services/shared-dialog.service.ts
 
 ```typescript
@@ -18212,6 +18121,95 @@ export type DraftPayload = {
   subject: string;
   to: string[];
 };
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.html
+
+```html
+<aside [class]="asideClass()">
+  <!-- Header and expand / collapse icon -->
+  <div class="flex items-center justify-between border-t border-base-300 pl-4 border-double border-b-4">
+    <h2 class="text-xs font-semibold text-neutral-content">
+      <span [class]="labelClass()">Filters</span>
+    </h2>
+
+    <pc-swap
+      swapOffIcon="chevron-double-right"
+      swapOnIcon="chevron-double-left"
+      animation="rotate"
+      [checked]="!foldersCollapsed()"
+      (click)="toggleFolders()"
+      [size]="4"
+      class="hover:text-primary invisible lg:visible"
+    ></pc-swap>
+  </div>
+
+  <ul class="flex-1 font-light overflow-y-auto email-scrollbar">
+    <!-- Virtual Folders (Filters) -->
+    @for (folder of folders(); track folder.id) { @if (folder.is_virtual) {
+    <li
+      class="cursor-pointer flex items-center justify-between px-3 py-2 hover:bg-primary/5"
+      (click)="selectFolder(folder)"
+      [class.bg-primary/10]="isSelected(folder)"
+      [class.text-primary]="isSelected(folder)"
+    >
+      <div class="flex items-center gap-2">
+        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
+        <span [class]="labelClass()">{{ folder.name }}</span>
+      </div>
+
+      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
+    </li>
+    } }
+
+    <!-- Separator & Collapsible Header -->
+    <li [class]="separatorClass()" role="separator"></li>
+    <li [class]="sectionHeaderClass()" (click)="toggleRealFolders()">
+      <span>Folders</span>
+      <pc-swap
+        swapOffIcon="chevron-right"
+        swapOnIcon="chevron-down"
+        animation="flip"
+        [checked]="!realFoldersCollapsed()"
+        [size]="3"
+        (click)="toggleRealFolders()"
+      ></pc-swap>
+    </li>
+
+    <!-- Real Folders -->
+    @if (!realFoldersCollapsed()) { @for (folder of folders(); track folder.id) { @if (!folder.is_virtual) {
+    <li
+      class="cursor-pointer flex items-center justify-between px-3 py-2 hover:bg-primary/5"
+      (click)="selectFolder(folder)"
+      [class.bg-primary/10]="isSelected(folder)"
+      [class.text-primary]="isSelected(folder)"
+    >
+      <div class="flex items-center gap-2">
+        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
+        <span [class]="labelClass()">{{ folder.name }}</span>
+      </div>
+
+      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
+    </li>
+    } } }
+  </ul>
+
+  <div class="p-2 border-t border-base-300 flex flex-col gap-2 shrink-0">
+    <button class="btn btn-accent w-full" (click)="emitNewEmail()" title="New Email">
+      <pc-icon name="pencil-square"></pc-icon>
+      <span [class]="buttonLabelClass()">New Email</span>
+    </button>
+    <button
+      class="btn btn-outline btn-primary w-full"
+      [disabled]="store.isSyncing()"
+      (click)="store.syncEmails()"
+      title="Sync Emails"
+    >
+      <pc-icon name="arrow-path" [class.animate-spin]="store.isSyncing()"></pc-icon>
+      <span [class]="buttonLabelClass()"> {{ store.isSyncing() ? 'Syncing...' : 'Sync Emails' }} </span>
+    </button>
+  </div>
+</aside>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
@@ -23288,720 +23286,153 @@ export class Dashboard {
 }
 ```
 
-## File: apps/frontend/src/app/layout/navbar/navbar.html
+## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
 
-```html
-<!-- Navigation bar template with search, theme toggle, and user actions -->
-<div class="navbar bg-base-100 shadow-lg relative">
-  <div class="flex-1 sm:hidden" (click)="toggleMobile()">
-    <pc-icon name="bars-4"></pc-icon>
-  </div>
+```typescript
+import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NgTemplateOutlet } from '@angular/common';
+import {
+  NavigationCancel,
+  NavigationError,
+  NavigationStart,
+  Router,
+  RouterLink,
+  RouterLinkActive,
+} from '@angular/router';
+import { filter, map } from 'rxjs';
+import { Icon } from '@icons/icon';
+import { Swap } from '@uxcommon/components/swap/swap';
 
-  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
-    <!-- Search bar -->
-    <div *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'" class="flex-1 max-w-full">
-      <label class="input input-primary w-full flex items-center gap-2">
-        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
-        <input
-          #searchInput
-          type="text"
-          placeholder="Search"
-          i18n-placeholder="@@navbar.search.placeholder"
-          class="grow w-full"
-          (blur)="onBlurSearchBar()"
-          [value]="searchStr()"
-          (input)="onSearchInput($event)"
-          (keydown.enter)="onSearchEnter()"
-        />
-        <kbd class="kbd kbd-sm hidden sm:block">⌘</kbd>
-        <kbd class="kbd kbd-sm hidden sm:block">K</kbd>
-      </label>
-    </div>
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { ISidebarItem } from './sidebar-items';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 
-    <!-- Search icon -->
-    <pc-icon
-      class="hover:text-primary text-base-400 cursor-pointer"
-      [class.hidden]="searchBarVisible()"
-      (click)="showSearchBar()"
-      name="magnifying-glass"
-    ></pc-icon>
+@Component({
+  selector: 'pc-sidebar',
+  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
+  templateUrl: './sidebar.html',
+  styles: [
+    `
+      .tooltip:before {
+        z-index: 100 !important;
+      }
+    `,
+  ],
+})
+export class Sidebar {
+  private readonly sidebarSvc = inject(SidebarService);
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
 
-    <pc-swap
-      class="hover:text-primary text-base-400 cursor-pointer"
-      swapOnIcon="arrows-pointing-out"
-      swapOffIcon="arrows-pointing-in"
-      [checked]="!isFullScreenMode()"
-      (click)="toggleFullScreen()"
-      aria-label="Toggle full screen"
-      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
-    ></pc-swap>
+  protected hoveringSidebar = signal(false);
 
-    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
-    <pc-favourite-toggle></pc-favourite-toggle>
+  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
+  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
+  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
 
-    <!-- light / dark theme switcher -->
-    <pc-swap
-      swapOnIcon="sun"
-      swapOffIcon="moon"
-      [checked]="themeSvc.getTheme() === 'light'"
-      (click)="toggleTheme()"
-      aria-label="Toggle theme"
-      i18n-aria-label="@@navbar.theme.ariaLabel"
-    ></pc-swap>
+  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
+  protected readonly isEffectivelyNarrow = computed(
+    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
+  );
 
-    <!-- email sending status indicator -->
-    @if (emailActions.sendingCount() > 0) {
-    <div
-      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
-    >
-      <span class="loading loading-spinner loading-xs text-primary"></span>
-      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
-        >Sending ({{ emailActions.sendingCount() }})...</span
-      >
-    </div>
-    }
+  protected readonly pendingRoute = toSignal(
+    this.router.events.pipe(
+      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
+      map((e) => (e instanceof NavigationStart ? e.url : null)),
+    ),
+    { initialValue: null },
+  );
 
-    <!-- notifications drop down -->
-    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
-      <div
-        tabindex="0"
-        role="button"
-        class="btn btn-ghost btn-circle relative"
-        aria-label="Notifications"
-        i18n-aria-label="@@navbar.notifications.ariaLabel"
-      >
-        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
-        @if (unreadCount() > 0) {
-        <span class="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full" [class.animate-pulse]="isPulsing()"></span>
+  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
+
+  protected readonly items = computed(() => {
+    const role = this.auth.getUser()?.role;
+    const allItems = this.sidebarSvc.getItems()();
+    if (role === 'user') {
+      return allItems.map((item) => {
+        if (item.children) {
+          return {
+            ...item,
+            children: item.children.filter((child) => !child.adminOnly),
+          };
         }
-      </div>
-
-      <!-- Notifications list -->
-      <div
-        tabindex="0"
-        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
-      >
-        <div class="card-body p-0">
-          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
-            <h3
-              class="font-semibold text-sm"
-              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
-            >
-              Notifications
-            </h3>
-            @if (unreadCount() > 0) {
-            <button
-              class="text-xs text-primary hover:underline font-medium"
-              (click)="markAllAsRead($event)"
-              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
-            >
-              Mark all read
-            </button>
-            }
-          </div>
-
-          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
-            @if (notifications().length === 0) {
-            <div class="flex flex-col items-center justify-center py-8 text-base-400">
-              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
-              <p
-                class="text-xs font-light"
-                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
-              >
-                All caught up!
-              </p>
-            </div>
-            } @else { @for (notif of notifications(); track notif.id) {
-            <div
-              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
-              [class.bg-primary/5]="!notif.read"
-              (click)="clickNotification(notif)"
-            >
-              <!-- Icon Based on Type -->
-              <div class="flex-shrink-0">
-                <div
-                  class="w-8 h-8 rounded-lg flex items-center justify-center"
-                  [class.bg-info/10]="notif.type === 'info'"
-                  [class.text-info]="notif.type === 'info'"
-                  [class.bg-primary/10]="notif.type === 'email'"
-                  [class.text-primary]="notif.type === 'email'"
-                  [class.bg-warning/10]="notif.type === 'task'"
-                  [class.text-warning]="notif.type === 'task'"
-                >
-                  @if (notif.type === 'email') {
-                  <pc-icon name="envelope"></pc-icon>
-                  } @else if (notif.type === 'task') {
-                  <pc-icon name="clipboard-document-list"></pc-icon>
-                  } @else {
-                  <pc-icon name="information-circle"></pc-icon>
-                  }
-                </div>
-              </div>
-
-              <!-- Message Details -->
-              <div class="flex-1 min-w-0">
-                <div class="flex justify-between items-start gap-1">
-                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
-                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
-                </div>
-                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
-              </div>
-
-              <!-- Unread dot indicator -->
-              @if (!notif.read) {
-              <span
-                class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary animate-ping"
-              ></span>
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
-              }
-            </div>
-            } } @if (isLoadingMore()) {
-            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
-              <span class="loading loading-spinner loading-xs text-primary"></span>
-            </div>
-            }
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- profile drop down -->
-    <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
-        <div
-          class="bg-base-100 border-primary hover:bg-base-300 hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
-        >
-          @if (currentUserAvatar()) {
-          <img
-            [src]="currentUserAvatar()!"
-            alt="User Profile Picture"
-            i18n-alt="@@navbar.profile.avatarAlt"
-            class="w-full h-full object-cover"
-          />
-          } @else {
-          <img alt="User Profile Picture" i18n-alt="@@navbar.profile.avatarAlt" src="assets/logo-sq.svg" class="p-1" />
-          }
-        </div>
-      </div>
-
-      <!-- Menu -->
-      <ul
-        tabindex="0"
-        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow"
-        (click)="closeDropdown()"
-      >
-        <li class="hover:text-primary">
-          <a routerLink="/profile">
-            <pc-icon name="user-circle"></pc-icon>
-            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary">
-          <a routerLink="/settings">
-            <pc-icon name="cog-6-tooth"></pc-icon>
-            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary" (click)="signOut()">
-          <a>
-            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
-            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
-          </a>
-        </li>
-      </ul>
-    </div>
-  </div>
-
-  <!-- Background email sending progress bar -->
-  @if (emailActions.sendingCount() > 0) {
-  <progress
-    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
-  ></progress>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-export interface ISidebarItem {
-  adminOnly?: boolean;
-  children?: ISidebarItem[];
-  collapsed?: boolean;
-  favourite?: boolean;
-  hidden?: boolean;
-  hiddenByFavourite?: boolean;
-  icon?: PcIconNameType;
-  indicator?: boolean;
-  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
-  justPinned?: boolean;
-  name: string;
-  parent?: ISidebarItem;
-  pathMatchExact?: boolean;
-  route?: string;
-  short_name?: string;
-  type?: 'item' | 'subheading' | 'bookmark';
-}
-
-export const SidebarItems: ISidebarItem[] = [
-  {
-    name: 'App',
-    route: '/',
-    hidden: true,
-  },
-  {
-    name: `Dashboard`,
-    route: '/summary',
-    icon: 'presentation-chart-line',
-    pathMatchExact: true,
-  },
-  {
-    name: `BOOKMARKS`,
-    short_name: 'PINS',
-    type: 'bookmark',
-    hidden: true,
-  },
-  {
-    name: `ENGAGE`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Inbox',
-        route: '/inbox',
-        icon: 'envelope',
-      },
-      {
-        name: 'Newsletters',
-        route: '/newsletters',
-        icon: 'megaphone',
-      },
-
-      {
-        name: 'Lists',
-        route: '/lists',
-        icon: 'queue-list',
-      },
-      {
-        name: `Automations`,
-        route: '/workflows',
-        icon: 'cog',
-      },
-    ],
-  },
-  {
-    name: `CONTACTS`,
-    type: 'subheading',
-    children: [
-      {
-        name: `People`,
-        route: '/people',
-        icon: 'identification',
-      },
-      {
-        name: `Households`,
-        route: '/households',
-        icon: 'house-modern',
-      },
-      {
-        name: `Companies`,
-        route: '/companies',
-        icon: 'briefcase',
-      },
-      {
-        name: `Duplicates`,
-        route: '/duplicates',
-        icon: 'document-duplicate',
-      },
-    ],
-  },
-  {
-    name: `CAMPAIGN`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Teams',
-        route: '/teams',
-        icon: 'user-group',
-      },
-      {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
-      },
-    ],
-  },
-  {
-    name: 'FORMS',
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        name: 'Forms',
-        route: '/forms',
-        icon: 'clipboard-document-list',
-      },
-      {
-        name: 'Shifts',
-        route: '/events/shifts',
-        icon: 'add-schedule',
-      },
-      {
-        name: 'Events',
-        route: '/events/pages',
-        icon: 'ticket',
-      },
-      {
-        name: 'Fundraising',
-        route: '/donation-pages',
-        icon: 'currency-dollar',
-      },
-    ],
-  },
-  {
-    name: 'TOOLS',
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        name: `Tasks`,
-        route: '/tasks',
-        icon: 'task',
-      },
-      {
-        name: `Task Board`,
-        route: '/board',
-        icon: 'view-kanban',
-      },
-      {
-        name: 'Files',
-        route: '/files',
-        icon: 'document',
-      },
-      {
-        name: 'Imports',
-        route: '/imports',
-        icon: 'arrow-up-tray',
-      },
-      {
-        name: 'Exports',
-        route: '/exports',
-        icon: 'arrow-down-tray',
-      },
-    ],
-  },
-
-  {
-    name: `SYSTEM`,
-    type: 'subheading',
-    adminOnly: true,
-    collapsed: true,
-    children: [
-      {
-        name: 'Activity Log',
-        route: '/activities',
-        icon: 'clipboard-document-list',
-      },
-      {
-        name: 'Tags',
-        route: '/tags',
-        icon: 'label',
-      },
-      {
-        name: 'Issues',
-        route: '/issues',
-        icon: 'shield-exclamation',
-      },
-      {
-        name: 'Users',
-        route: '/users',
-        icon: 'users',
-      },
-      {
-        name: 'Configuration',
-        route: '/configuration',
-        icon: 'wrench-screwdriver',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar-service.ts
-
-```typescript
-import { signal, Service } from '@angular/core';
-import { ISidebarItem, SidebarItems } from './sidebar-items';
-
-@Service()
-export class SidebarService {
-  private readonly collapsedSections = new Set<string>();
-  private readonly initializedSections = new Set<string>();
-
-  private readonly drawerStateSubject = signal<DrawerStates>(this.getState());
-  private readonly isMobileOpenSubject = signal<boolean>(false);
-  private favourites = new Set<string>();
-  /** Route of the item just pinned, so its clone plays the `up` entry once. */
-  private pendingAnimateRoute?: string;
-  private readonly itemsSignal = signal<ISidebarItem[]>(SidebarItems);
-  private get items() {
-    return this.itemsSignal();
-  }
-  private set items(value: ISidebarItem[]) {
-    this.itemsSignal.set(value);
-  }
+        return item;
+      });
+    }
+    return allItems;
+  });
 
   constructor() {
-    this.initializeCollapsedDefaults(this.items);
-    this.loadFavourites();
-  }
-
-  public closeMobile() {
-    this.isMobileOpenSubject.set(false);
-  }
-
-  public findItemForUrl(url: string): ISidebarItem | undefined {
-    const normalizedUrl = this.normalizeRoute(url);
-    const flatItems = this.flattenItems(this.items).filter((item) => !!item.route);
-
-    return flatItems
-      .sort((a, b) => this.normalizeRoute(b.route!).length - this.normalizeRoute(a.route!).length)
-      .find((item) => this.matchesRoute(normalizedUrl, item.route!));
-  }
-
-  public getItems() {
-    return this.itemsSignal;
-  }
-
-  public getRoute(destination: string): string | undefined {
-    const allItems = this.flattenItems(this.items);
-    const target = allItems.find((item) => item.route?.split('/').pop()?.toLowerCase() === destination.toLowerCase());
-    return target?.route;
-  }
-
-  public isFull() {
-    return this.drawerStateSubject() === 'full';
-  }
-
-  public isHalf() {
-    return this.drawerStateSubject() === 'half';
-  }
-
-  public isMobileOpen() {
-    return this.isMobileOpenSubject();
-  }
-
-  public isCollapsed(name: string) {
-    return this.collapsedSections.has(name);
-  }
-
-  public isFavourite(route?: string) {
-    if (!route) return false;
-    return this.favourites.has(this.normalizeRoute(route));
-  }
-
-  public setFavourite(route: string, favourite: boolean) {
-    const normalizedRoute = this.normalizeRoute(route);
-
-    if (!normalizedRoute) return favourite;
-
-    if (favourite) {
-      this.favourites.add(normalizedRoute);
-      this.pendingAnimateRoute = normalizedRoute;
-    } else {
-      this.favourites.delete(normalizedRoute);
+    if (this._mql) {
+      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
+      this._mql.addEventListener('change', handler);
+      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
     }
 
-    this.updateItemFavourite(normalizedRoute, favourite);
-    this.persistFavourites();
-    this.rebuildFavouritesSection();
-
-    return favourite;
-  }
-
-  public setItems(items: ISidebarItem[]) {
-    this.items = items;
-    this.initializeCollapsedDefaults(items);
-    this.applyFavouritesToItems(items);
-  }
-
-  public toggleCollapsed(name: string) {
-    if (this.collapsedSections.has(name)) {
-      this.collapsedSections.delete(name);
-      return;
-    }
-    this.collapsedSections.add(name);
-  }
-
-  public toggleDrawer() {
-    const next = this.drawerStateSubject() === 'full' ? 'half' : 'full';
-    return this.setState(next);
-  }
-
-  public toggleFavourite(route: string) {
-    const next = !this.isFavourite(route);
-    this.setFavourite(route, next);
-    return next;
-  }
-
-  public toggleMobile() {
-    this.isMobileOpenSubject.update((v) => !v);
-  }
-
-  private applyFavouritesToItems(items: ISidebarItem[]) {
-    this.walkItems(items, (item) => {
-      if (item.type === 'bookmark' || item.parent?.type === 'bookmark') {
-        return;
+    effect(() => {
+      const flatItems = this.flattenItems(this.items());
+      for (const item of flatItems) {
+        const key = this.getItemKey(item);
+        const visible = !item.hidden && !item.hiddenByFavourite;
+        const existing = this.visibilitySignals.get(key);
+        if (existing) {
+          existing.set(visible);
+        } else {
+          this.visibilitySignals.set(key, signal(visible));
+        }
       }
-
-      if (!item.route) {
-        item.favourite = false;
-        return;
-      }
-
-      const isFavourited = this.favourites.has(this.normalizeRoute(item.route));
-      item.favourite = isFavourited;
-      item.hiddenByFavourite = isFavourited; // Safely hide original items
     });
-
-    this.rebuildFavouritesSection();
   }
 
-  private cloneForFavourite(item: ISidebarItem, parent: ISidebarItem): ISidebarItem {
-    const { children: _children, parent: _originalParent, ...rest } = item;
-
-    return {
-      ...rest,
-      parent,
-      children: undefined,
-      hidden: false,
-      hiddenByFavourite: false, // Ensure the bookmark copy is visible
-      type: 'item',
-      favourite: true,
-    };
+  protected closeMobile() {
+    this.sidebarSvc.closeMobile();
   }
 
   private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
     return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
   }
 
-  private getState(): DrawerStates {
-    const state = localStorage.getItem(DRAWER_STATE_KEY);
-    return state === 'full' ? 'full' : 'half';
+  private getItemKey(item: ISidebarItem): string {
+    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
+    return prefix + item.name + (item.route ?? '');
   }
 
-  private initializeCollapsedDefaults(items: ISidebarItem[]) {
-    this.walkItems(items, (item) => {
-      if (this.initializedSections.has(item.name)) return;
-
-      this.initializedSections.add(item.name);
-
-      if (item.collapsed) {
-        this.collapsedSections.add(item.name);
-      }
-    });
+  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
+    const key = this.getItemKey(item);
+    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
   }
 
-  private loadFavourites() {
-    const raw = localStorage.getItem(SIDEBAR_FAVOURITES_KEY);
-
-    if (raw) {
-      try {
-        const stored = JSON.parse(raw) as string[];
-        this.favourites = new Set(stored.map((route) => this.normalizeRoute(route)).filter(Boolean));
-      } catch {
-        this.favourites.clear();
-      }
-    }
-
-    this.applyFavouritesToItems(this.items);
+  protected isCollapsed(name: string): boolean {
+    return this.sidebarSvc.isCollapsed(name);
   }
 
-  private matchesRoute(url: string, route: string) {
-    const normalizedRoute = this.normalizeRoute(route);
-
-    if (normalizedRoute === '/') return url === '/';
-
-    return url === normalizedRoute || url.startsWith(`${normalizedRoute}/`);
+  protected isDrawerFull() {
+    return this.sidebarSvc.isFull();
   }
 
-  private normalizeRoute(route: string) {
-    if (!route) return '';
-
-    const [pathWithHash = ''] = route.split('?');
-    const path = pathWithHash.split('#')[0]!;
-    const trimmed = path.endsWith('/') && path !== '/' ? path.slice(0, -1) : path;
-    return trimmed || '/';
+  protected isDrawerHalf() {
+    return this.sidebarSvc.isHalf();
   }
 
-  private persistFavourites() {
-    localStorage.setItem(SIDEBAR_FAVOURITES_KEY, JSON.stringify([...this.favourites]));
+  protected isMobileOpen() {
+    return this.sidebarSvc.isMobileOpen();
   }
 
-  private rebuildFavouritesSection() {
-    const currentItems = this.itemsSignal();
-    const favouritesSectionIndex = currentItems.findIndex((item) => item.type === 'bookmark');
-
-    if (favouritesSectionIndex === -1) return;
-
-    const favouritesSection = currentItems[favouritesSectionIndex]!;
-    const favouriteRoutes = new Set(this.favourites);
-
-    const favouriteItems = this.flattenItems(currentItems)
-      .filter((item) => item.type !== 'bookmark' && item.parent?.type !== 'bookmark')
-      .filter((item) => !!item.route && favouriteRoutes.has(this.normalizeRoute(item.route!)))
-      .map((item) => {
-        const clone = this.cloneForFavourite(item, favouritesSection);
-        clone.justPinned =
-          !!this.pendingAnimateRoute && !!item.route && this.normalizeRoute(item.route) === this.pendingAnimateRoute;
-        return clone;
-      });
-
-    const updatedSection: ISidebarItem = {
-      ...favouritesSection,
-      children: favouriteItems,
-      hidden: favouriteItems.length === 0,
-    };
-
-    const updatedItems = [...currentItems];
-    updatedItems[favouritesSectionIndex] = updatedSection;
-    this.itemsSignal.set(updatedItems);
-    // Entry animation is a one-shot; clear so subsequent rebuilds don't replay it.
-    this.pendingAnimateRoute = undefined;
+  protected onSidebarHover(state: boolean) {
+    this.hoveringSidebar.set(state);
   }
 
-  private setState(state: DrawerStates) {
-    this.drawerStateSubject.set(state);
-    localStorage.setItem(DRAWER_STATE_KEY, state);
-    return state;
+  protected toggleCollapse(name: string) {
+    this.sidebarSvc.toggleCollapsed(name);
   }
 
-  private updateItemFavourite(route: string, favourite: boolean) {
-    this.walkItems(this.items, (item) => {
-      if (item.type !== 'bookmark' && item.parent?.type !== 'bookmark') {
-        if (item.route && this.normalizeRoute(item.route) === route) {
-          item.favourite = favourite;
-          item.hiddenByFavourite = favourite;
-        }
-      }
-    });
-  }
-
-  private walkItems(items: ISidebarItem[], cb: (item: ISidebarItem) => void) {
-    items.forEach((item) => {
-      cb(item);
-      if (item.children?.length) {
-        this.walkItems(item.children, cb);
-      }
-    });
+  protected toggleDrawer() {
+    return this.sidebarSvc.toggleDrawer();
   }
 }
-
-type DrawerStates = 'full' | 'half';
-
-const DRAWER_STATE_KEY = 'pc-drawerState';
-const SIDEBAR_FAVOURITES_KEY = 'pc-sidebar-favourites';
 ```
 
 ## File: apps/frontend/src/app/routing/route-reuse-strategy.ts
@@ -24370,6 +23801,97 @@ export class ErrorService {
   private redirectFromStatus(status?: number): boolean {
     if (status === 401) return this.redirect();
     return false;
+  }
+}
+```
+
+## File: apps/frontend/src/app/services/fullscreen.service.ts
+
+```typescript
+import { inject, signal, Service } from '@angular/core';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+@Service()
+export class FullScreenService {
+  private readonly alertSvc = inject(AlertService);
+  private readonly _isFullScreen = signal<boolean>(false);
+
+  constructor() {
+    // Initialize state
+    this._isFullScreen.set(this.hasFsElement());
+
+    // Keep state in sync with the browser
+    document.addEventListener('fullscreenchange', () => {
+      this._isFullScreen.set(this.hasFsElement());
+    });
+
+    // Safari (older WebKit) – vendor event
+    document.addEventListener('webkitfullscreenchange' as unknown as keyof DocumentEventMap, () => {
+      this._isFullScreen.set(this.hasFsElement());
+    });
+  }
+
+  public isFullScreenMode(): boolean {
+    return this._isFullScreen();
+  }
+
+  public async toggleFullScreen(): Promise<void> {
+    if (this.hasFsElement()) {
+      await this.exitFullScreen();
+    } else {
+      await this.enterFullScreen();
+    }
+  }
+
+  private async enterFullScreen(): Promise<void> {
+    const elem = document.documentElement as unknown as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void>;
+      msRequestFullscreen?: () => Promise<void>;
+    };
+    try {
+      if (elem.requestFullscreen) {
+        await elem.requestFullscreen();
+      } else if (elem.webkitRequestFullscreen) {
+        await elem.webkitRequestFullscreen(); // Safari
+      } else if (elem.msRequestFullscreen) {
+        await elem.msRequestFullscreen(); // IE/legacy Edge
+      }
+      // state will be updated by the fullscreenchange listener
+    } catch (e) {
+      console.error('Failed to enter fullscreen:', e);
+      this.alertSvc.showError('Could not enter full screen — your browser blocked the request.');
+    }
+  }
+
+  private async exitFullScreen(): Promise<void> {
+    try {
+      if (!this.hasFsElement()) return; // avoid "Not in fullscreen" errors
+
+      const doc = document as unknown as Document & {
+        webkitExitFullscreen?: () => Promise<void>;
+        msExitFullscreen?: () => Promise<void>;
+      };
+      if (document.exitFullscreen) {
+        await document.exitFullscreen();
+      } else if (doc.webkitExitFullscreen) {
+        await doc.webkitExitFullscreen(); // Safari
+      } else if (doc.msExitFullscreen) {
+        await doc.msExitFullscreen(); // IE/legacy Edge
+      }
+      // state will be updated by the fullscreenchange listener
+    } catch (e) {
+      console.error('Failed to exit fullscreen:', e);
+      this.alertSvc.showError('Could not exit full screen.');
+    }
+  }
+
+  private hasFsElement(): boolean {
+    const doc = document as unknown as Document & {
+      webkitFullscreenElement?: Element | null;
+      msFullscreenElement?: Element | null;
+    };
+    return !!(document.fullscreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement);
   }
 }
 ```
@@ -26359,11 +25881,15 @@ export interface ColumnDef {
   cellRenderer?: (p: CellParams) => CellRendererResult;
   cellRendererParams?: unknown;
   comparator?: (a: unknown, b: unknown) => number;
+  /** Clicking any cell in this column opens the record (the "name is the door" cell). */
+  doorColumn?: boolean;
   editable?: boolean;
   equals?: (a: unknown, b: unknown) => boolean;
   field?: string;
   headerName?: string;
   hide?: boolean;
+  /** Column cannot be hidden by the user (identity columns like the Name door). */
+  noHide?: boolean;
   onCellClicked?: (event: CellParams) => void;
   onCellDoubleClicked?: (event: CellParams) => void;
   isCellInteractive?: (row: GridRow) => boolean;
@@ -27287,376 +26813,6 @@ export const dashboardRoutes: Routes = [
     </pc-root>
   </body>
 </html>
-```
-
-## File: apps/frontend/src/styles.css
-
-```css
-@import 'tailwindcss';
-@plugin "daisyui";
-@plugin "@tailwindcss/typography";
-
-/* styles.css */
-@import 'quill/dist/quill.snow.css';
-
-/* Self-hosted app font — bundled from node_modules, no external font CDN */
-@import '@fontsource-variable/inter';
-
-@plugin "daisyui/theme" {
-  name: 'light';
-  default: true;
-  --color-primary: #0ea5e9;
-  --color-secondary: #14e8a6;
-  --color-secondary-content: #1f2937;
-  --color-accent: #0c506e;
-  --color-accent-content: #f0f0f0;
-  --color-neutral: #cbd5e1;
-  --color-neutral-content: #1f2937;
-  --color-base-100: #ffffff;
-  --color-base-200: #f8f8f8ff;
-  --color-base-300: #efeeeeff;
-  --color-info: #38bdf8;
-  --color-success: #2dd4bf;
-  --color-warning: #e5c963;
-  --color-error: #f37373;
-  --color-error-content: #f0f0f0;
-
-  --tooltip-bg: #333333;
-  --tooltip-color: #eeeeee;
-  --color-placeholder: #9ca3af;
-}
-
-.input::placeholder,
-textarea::placeholder,
-label.input input::placeholder,
-label.input textarea::placeholder,
-label.input pc-icon {
-  color: var(--color-placeholder);
-}
-
-/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
-label.input input {
-  flex-grow: 1;
-  width: 100%;
-}
-
-/* Prevent browser autofill from coloring the background, preserving transparency */
-label.input input:-webkit-autofill,
-label.input input:-webkit-autofill:hover,
-label.input input:-webkit-autofill:focus,
-label.input input:-webkit-autofill:active {
-  transition: background-color 5000s ease-in-out 0s;
-  -webkit-text-fill-color: inherit !important;
-}
-
-@plugin "daisyui/theme" {
-  name: 'dark';
-
-  /* Brand / accent */
-  --color-primary: #3ea6ff; /* bright azure */
-  --color-secondary: #20d7a7; /* teal pop (optional) */
-  --color-accent: #3ea6ff;
-  --color-accent-content: #f0f6ff; /* light text on blue */
-
-  /* Text + neutrals */
-  --color-neutral: #0e182b; /* chrome / panels */
-  --color-neutral-content: #c7d1e5; /* default text on dark */
-
-  /* Surfaces */
-  --color-base-100: #0b1220; /* app/page background */
-  --color-base-200: #131e31; /* row alt / subtle surface */
-  --color-base-300: #1a2b45; /* headers / raised surface */
-
-  /* Feedback */
-  --color-info: #3ea6ff;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
-
-  /* Tooltips */
-  --tooltip-bg: #0e1626;
-  --tooltip-color: #e6edf7;
-}
-
-html,
-body {
-  height: 100vh;
-}
-
-body {
-  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  font-weight: 400;
-}
-
-/* Custom scrollbar styles for email components */
-.email-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #d1d5db #f3f4f6;
-}
-
-.email-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.email-scrollbar::-webkit-scrollbar-track {
-  background: #f3f4f6;
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
-}
-
-.bg-image {
-  background-image: url('assets/bg.jpg');
-  background-size: cover; /* scale to cover entire container */
-  background-position: center; /* keep it centered */
-  background-repeat: no-repeat; /* prevent tiling */
-}
-
-/* AG Grid legacy themes removed */
-
-@layer utilities {
-  /* Ensure mentions inside chat bubbles are inline */
-  .chat-bubble [data-mention] {
-    display: inline;
-  }
-
-  /* In composer mirrors, keep mention width identical to textarea text
-     to avoid caret drift. Use underline instead of bold in the mirror. */
-  .composer-mirror [data-mention] {
-    font-weight: inherit !important;
-    text-decoration: underline;
-  }
-
-  @keyframes up {
-    0% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes down {
-    0% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes right {
-    0% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes left {
-    0% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes drop {
-    0% {
-      transform: scale(0.95);
-      opacity: 0;
-    }
-    100% {
-      transform: scale(1);
-      opacity: 1;
-    }
-  }
-  @keyframes flash {
-    0% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-    100% {
-      opacity: 1;
-    }
-  }
-
-  @keyframes exitUp {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitDown {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitRight {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitLeft {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-  }
-
-  .animate-up {
-    animation: up 0.3s ease-in-out both;
-  }
-  .animate-down {
-    animation: down 0.3s ease-in-out both;
-  }
-  .animate-right {
-    animation: right 0.3s ease-in-out both;
-  }
-  .animate-left {
-    animation: left 0.3s ease-in-out both;
-  }
-  .animate-drop {
-    animation: drop 0.3s ease-in-out both;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out;
-  }
-  .animate-exit-up {
-    animation: exitUp 0.3s ease-in-out forwards;
-  }
-  .animate-exit-down {
-    animation: exitDown 0.3s ease-in-out forwards;
-  }
-  .animate-exit-left {
-    animation: exitLeft 0.3s ease-in-out forwards;
-  }
-  .animate-exit-right {
-    animation: exitRight 0.3s ease-in-out forwards;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out 1;
-  }
-}
-
-/* Dark mode overrides for Quill and email prose */
-[data-theme='dark'] .ql-toolbar.ql-snow,
-[data-theme='dark'] .ql-container.ql-snow {
-  border-color: var(--color-base-300) !important;
-  background-color: var(--color-base-100) !important;
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-stroke {
-  stroke: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-fill {
-  fill: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker-options {
-  background-color: var(--color-base-300) !important;
-  border-color: var(--color-base-100) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
-  color: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
-  stroke: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
-  color: var(--color-placeholder) !important;
-}
-[data-theme='dark'] .prose {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .prose h1,
-[data-theme='dark'] .prose h2,
-[data-theme='dark'] .prose h3,
-[data-theme='dark'] .prose h4,
-[data-theme='dark'] .prose h5,
-[data-theme='dark'] .prose h6,
-[data-theme='dark'] .prose strong,
-[data-theme='dark'] .prose b,
-[data-theme='dark'] .prose a {
-  color: var(--color-neutral-content) !important;
-}
-
-/* Ensure closed dropdown contents do not intercept pointer events or hover */
-.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
-  visibility: hidden !important;
-  pointer-events: none !important;
-  opacity: 0 !important;
-}
-
-/* Allow dropdown-hover to work if ever used in the future */
-.dropdown.dropdown-hover:hover .dropdown-content {
-  visibility: visible !important;
-  pointer-events: auto !important;
-  opacity: 1 !important;
-}
-
-/* Ensure tooltip text is consistently normal weight and not bold */
-.tooltip:before,
-.tooltip::before {
-  font-weight: 400 !important;
-}
-
-/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
-.menu details.dropdown {
-  overflow: visible !important;
-}
 ```
 
 ## File: apps/frontend/eslint.config.cjs
@@ -29591,95 +28747,6 @@ export class EmailBody {
   </div>
   }
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.html
-
-```html
-<aside [class]="asideClass()">
-  <!-- Header and expand / collapse icon -->
-  <div class="flex items-center justify-between border-t border-base-300 pl-4 border-double border-b-4">
-    <h2 class="text-xs font-semibold text-neutral-content">
-      <span [class]="labelClass()">Filters</span>
-    </h2>
-
-    <pc-swap
-      swapOffIcon="chevron-double-right"
-      swapOnIcon="chevron-double-left"
-      animation="rotate"
-      [checked]="!foldersCollapsed()"
-      (click)="toggleFolders()"
-      [size]="4"
-      class="hover:text-primary invisible lg:visible"
-    ></pc-swap>
-  </div>
-
-  <ul class="flex-1 font-light overflow-y-auto email-scrollbar">
-    <!-- Virtual Folders (Filters) -->
-    @for (folder of folders(); track folder.id) { @if (folder.is_virtual) {
-    <li
-      class="cursor-pointer flex items-center justify-between px-3 py-2 hover:bg-primary/5"
-      (click)="selectFolder(folder)"
-      [class.bg-primary/10]="isSelected(folder)"
-      [class.text-primary]="isSelected(folder)"
-    >
-      <div class="flex items-center gap-2">
-        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
-        <span [class]="labelClass()">{{ folder.name }}</span>
-      </div>
-
-      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
-    </li>
-    } }
-
-    <!-- Separator & Collapsible Header -->
-    <li [class]="separatorClass()" role="separator"></li>
-    <li [class]="sectionHeaderClass()" (click)="toggleRealFolders()">
-      <span>Folders</span>
-      <pc-swap
-        swapOffIcon="chevron-right"
-        swapOnIcon="chevron-down"
-        animation="flip"
-        [checked]="!realFoldersCollapsed()"
-        [size]="3"
-        (click)="toggleRealFolders()"
-      ></pc-swap>
-    </li>
-
-    <!-- Real Folders -->
-    @if (!realFoldersCollapsed()) { @for (folder of folders(); track folder.id) { @if (!folder.is_virtual) {
-    <li
-      class="cursor-pointer flex items-center justify-between px-3 py-2 hover:bg-primary/5"
-      (click)="selectFolder(folder)"
-      [class.bg-primary/10]="isSelected(folder)"
-      [class.text-primary]="isSelected(folder)"
-    >
-      <div class="flex items-center gap-2">
-        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
-        <span [class]="labelClass()">{{ folder.name }}</span>
-      </div>
-
-      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
-    </li>
-    } } }
-  </ul>
-
-  <div class="p-2 border-t border-base-300 flex flex-col gap-2 shrink-0">
-    <button class="btn btn-accent w-full" (click)="emitNewEmail()" title="New Email">
-      <pc-icon name="pencil-square"></pc-icon>
-      <span [class]="buttonLabelClass()">New Email</span>
-    </button>
-    <button
-      class="btn btn-outline btn-primary w-full"
-      [disabled]="store.isSyncing()"
-      (click)="store.syncEmails()"
-      title="Sync Emails"
-    >
-      <pc-icon name="arrow-path" [class.animate-spin]="store.isSyncing()"></pc-icon>
-      <span [class]="buttonLabelClass()"> {{ store.isSyncing() ? 'Syncing...' : 'Sync Emails' }} </span>
-    </button>
-  </div>
-</aside>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts
@@ -34736,123 +33803,237 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/layout/favourite-toggle/favourite-toggle.ts
+## File: apps/frontend/src/app/layout/navbar/navbar.html
 
-```typescript
-import { Component, computed, effect, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+```html
+<!-- Navigation bar template with search, theme toggle, and user actions -->
+<div class="navbar bg-base-100 shadow-lg relative">
+  <div class="flex-1 sm:hidden" (click)="toggleMobile()">
+    <pc-icon name="bars-4"></pc-icon>
+  </div>
 
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { ISidebarItem } from '../sidebar/sidebar-items';
-import { SidebarService } from '../sidebar/sidebar-service';
+  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
+    <!-- Search bar -->
+    <div *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'" class="flex-1 max-w-full">
+      <label class="input input-primary w-full flex items-center gap-2">
+        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
+        <input
+          #searchInput
+          type="text"
+          placeholder="Search"
+          i18n-placeholder="@@navbar.search.placeholder"
+          class="grow w-full"
+          (blur)="onBlurSearchBar()"
+          [value]="searchStr()"
+          (input)="onSearchInput($event)"
+          (keydown.enter)="onSearchEnter()"
+        />
+        <kbd class="kbd kbd-sm hidden sm:block">⌘</kbd>
+        <kbd class="kbd kbd-sm hidden sm:block">K</kbd>
+      </label>
+    </div>
 
-/**
- * Pin button for the navbar: pins the sidebar item matching the current route
- * into the PINS section. Extracted from the retired URL-segment breadcrumb bar;
- * page orientation is now handled by pc-breadcrumbs inside each page header.
- *
- * Sidebar pins hold sections (People, Inbox…), not records. On a record page
- * (/people/amira-hassan) the button dims and both the tooltip and a toast
- * explain that only main pages can be pinned — the icon stays present (§1
- * disclosure over suppression) rather than vanishing.
- */
-@Component({
-  selector: 'pc-favourite-toggle',
-  imports: [Icon],
-  template: `
-    @if (visible()) {
-      <button
-        type="button"
-        class="btn btn-circle btn-ghost btn-sm tooltip tooltip-bottom"
-        [attr.aria-label]="tooltip()"
-        [attr.data-tip]="tooltip()"
-        (mouseenter)="hovered.set(true)"
-        (mouseleave)="hovered.set(false)"
-        (click)="onClick()"
+    <!-- Search icon -->
+    <pc-icon
+      class="hover:text-primary text-base-400 cursor-pointer"
+      [class.hidden]="searchBarVisible()"
+      (click)="showSearchBar()"
+      name="magnifying-glass"
+    ></pc-icon>
+
+    <pc-swap
+      class="hover:text-primary text-base-400 cursor-pointer"
+      swapOnIcon="arrows-pointing-out"
+      swapOffIcon="arrows-pointing-in"
+      [checked]="!isFullScreenMode()"
+      (click)="toggleFullScreen()"
+      aria-label="Toggle full screen"
+      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
+    ></pc-swap>
+
+    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
+    <pc-favourite-toggle></pc-favourite-toggle>
+
+    <!-- light / dark theme switcher -->
+    <pc-swap
+      swapOnIcon="sun"
+      swapOffIcon="moon"
+      [checked]="themeSvc.getTheme() === 'light'"
+      (click)="toggleTheme()"
+      aria-label="Toggle theme"
+      i18n-aria-label="@@navbar.theme.ariaLabel"
+    ></pc-swap>
+
+    <!-- email sending status indicator -->
+    @if (emailActions.sendingCount() > 0) {
+    <div
+      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
+    >
+      <span class="loading loading-spinner loading-xs text-primary"></span>
+      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
+        >Sending ({{ emailActions.sendingCount() }})...</span
       >
-        <pc-icon
-          [name]="iconName()"
-          [size]="5"
-          class="text-base-400 hover:text-primary transition-opacity"
-          [class.text-primary]="favourite() && pinnable()"
-          [class.opacity-40]="!pinnable()"
-          [class.hover:text-base-400]="!pinnable()"
-        ></pc-icon>
-      </button>
+    </div>
     }
-  `,
-})
-export class FavouriteToggle {
-  private readonly router = inject(Router);
-  private readonly sidebarSvc = inject(SidebarService);
-  private readonly alertSvc = inject(AlertService);
 
-  private readonly navigationUrl = computed(() => {
-    const navigation = this.router.currentNavigation();
-    if (navigation) {
-      const finalUrl = navigation.finalUrl ?? navigation.initialUrl;
-      return finalUrl.toString();
-    }
-    return this.router.url;
-  });
+    <!-- notifications drop down -->
+    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
+      <div
+        tabindex="0"
+        role="button"
+        class="btn btn-ghost btn-circle relative"
+        aria-label="Notifications"
+        i18n-aria-label="@@navbar.notifications.ariaLabel"
+      >
+        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
+        @if (unreadCount() > 0) {
+        <span class="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full" [class.animate-pulse]="isPulsing()"></span>
+        }
+      </div>
 
-  private currentItem?: ISidebarItem;
-  protected readonly favourite = signal(false);
-  protected readonly hovered = signal(false);
-  protected readonly pinnable = signal(false);
-  protected readonly visible = signal(false);
-  protected readonly itemName = signal('');
+      <!-- Notifications list -->
+      <div
+        tabindex="0"
+        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
+      >
+        <div class="card-body p-0">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
+            <h3
+              class="font-semibold text-sm"
+              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
+            >
+              Notifications
+            </h3>
+            @if (unreadCount() > 0) {
+            <button
+              class="text-xs text-primary hover:underline font-medium"
+              (click)="markAllAsRead($event)"
+              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
+            >
+              Mark all read
+            </button>
+            }
+          </div>
 
-  protected readonly iconName = computed(() => {
-    if (!this.pinnable()) return 'bookmark';
-    if (this.favourite()) return this.hovered() ? 'bookmark-slash' : 'bookmark-filled';
-    return this.hovered() ? 'bookmark-plus' : 'bookmark';
-  });
+          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
+            @if (notifications().length === 0) {
+            <div class="flex flex-col items-center justify-center py-8 text-base-400">
+              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
+              <p
+                class="text-xs font-light"
+                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
+              >
+                All caught up!
+              </p>
+            </div>
+            } @else { @for (notif of notifications(); track notif.id) {
+            <div
+              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
+              [class.bg-primary/5]="!notif.read"
+              (click)="clickNotification(notif)"
+            >
+              <!-- Icon Based on Type -->
+              <div class="flex-shrink-0">
+                <div
+                  class="w-8 h-8 rounded-lg flex items-center justify-center"
+                  [class.bg-info/10]="notif.type === 'info'"
+                  [class.text-info]="notif.type === 'info'"
+                  [class.bg-primary/10]="notif.type === 'email'"
+                  [class.text-primary]="notif.type === 'email'"
+                  [class.bg-warning/10]="notif.type === 'task'"
+                  [class.text-warning]="notif.type === 'task'"
+                >
+                  @if (notif.type === 'email') {
+                  <pc-icon name="envelope"></pc-icon>
+                  } @else if (notif.type === 'task') {
+                  <pc-icon name="clipboard-document-list"></pc-icon>
+                  } @else {
+                  <pc-icon name="information-circle"></pc-icon>
+                  }
+                </div>
+              </div>
 
-  protected readonly tooltip = computed(() => {
-    if (!this.pinnable()) return `Only main pages can be pinned — open ${this.itemName()} to pin it`;
-    return this.favourite() ? `Unpin ${this.itemName()} from the sidebar` : `Pin ${this.itemName()} to the sidebar`;
-  });
+              <!-- Message Details -->
+              <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-start gap-1">
+                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
+                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
+                </div>
+                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
+              </div>
 
-  constructor() {
-    effect(() => this.handleNavigationChange(this.navigationUrl()));
+              <!-- Unread dot indicator -->
+              @if (!notif.read) {
+              <span
+                class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary animate-ping"
+              ></span>
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
+              }
+            </div>
+            } } @if (isLoadingMore()) {
+            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
+              <span class="loading loading-spinner loading-xs text-primary"></span>
+            </div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- profile drop down -->
+    <div class="dropdown dropdown-end">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
+        <div
+          class="bg-base-100 border-primary hover:bg-base-300 hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
+        >
+          @if (currentUserAvatar()) {
+          <img
+            [src]="currentUserAvatar()!"
+            alt="User Profile Picture"
+            i18n-alt="@@navbar.profile.avatarAlt"
+            class="w-full h-full object-cover"
+          />
+          } @else {
+          <img alt="User Profile Picture" i18n-alt="@@navbar.profile.avatarAlt" src="assets/logo-sq.svg" class="p-1" />
+          }
+        </div>
+      </div>
+
+      <!-- Menu -->
+      <ul
+        tabindex="0"
+        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow"
+        (click)="closeDropdown()"
+      >
+        <li class="hover:text-primary">
+          <a routerLink="/profile">
+            <pc-icon name="user-circle"></pc-icon>
+            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a routerLink="/settings">
+            <pc-icon name="cog-6-tooth"></pc-icon>
+            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary" (click)="signOut()">
+          <a>
+            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
+            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Background email sending progress bar -->
+  @if (emailActions.sendingCount() > 0) {
+  <progress
+    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
+  ></progress>
   }
-
-  protected onClick(): void {
-    if (!this.pinnable()) {
-      // Record page: narrate the reason instead of silently doing nothing.
-      this.alertSvc.showInfo(`Only main pages can be pinned — open ${this.itemName()} to pin it.`);
-      return;
-    }
-    if (!this.currentItem?.route) return;
-
-    const next = this.sidebarSvc.toggleFavourite(this.currentItem.route);
-    this.favourite.set(next);
-    this.currentItem.favourite = next;
-    // Narrate both directions (§1).
-    if (next) this.alertSvc.showSuccess(`Pinned ${this.itemName()} to the sidebar.`);
-    else this.alertSvc.showInfo(`Removed ${this.itemName()} from your pins.`);
-  }
-
-  private handleNavigationChange(url: string): void {
-    const item = this.sidebarSvc.findItemForUrl(url);
-    const exact = !!item?.route && this.normalizePath(url) === this.normalizePath(item.route);
-    this.currentItem = exact ? item : undefined;
-    this.favourite.set(exact && !!item?.favourite);
-    this.pinnable.set(exact);
-    // Show the (dimmed) control whenever the URL maps to a known section, so a
-    // record page still explains why it can't be pinned; hide only on unknown routes.
-    this.visible.set(!!item?.route);
-    this.itemName.set(item?.name ?? '');
-  }
-
-  private normalizePath(route: string): string {
-    const path = (route.split('?')[0] ?? '').split('#')[0] ?? '';
-    const trimmed = path.endsWith('/') && path !== '/' ? path.slice(0, -1) : path;
-    return trimmed || '/';
-  }
-}
+</div>
 ```
 
 ## File: apps/frontend/src/app/layout/navbar/navbar.ts
@@ -35153,6 +34334,489 @@ export class Navbar implements OnDestroy {
 }
 ```
 
+## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
+
+```typescript
+import type { PcIconNameType } from '@icons/icons.index';
+
+export interface ISidebarItem {
+  adminOnly?: boolean;
+  children?: ISidebarItem[];
+  collapsed?: boolean;
+  favourite?: boolean;
+  hidden?: boolean;
+  hiddenByFavourite?: boolean;
+  icon?: PcIconNameType;
+  indicator?: boolean;
+  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
+  justPinned?: boolean;
+  name: string;
+  parent?: ISidebarItem;
+  pathMatchExact?: boolean;
+  route?: string;
+  short_name?: string;
+  type?: 'item' | 'subheading' | 'bookmark';
+}
+
+export const SidebarItems: ISidebarItem[] = [
+  {
+    name: 'App',
+    route: '/',
+    hidden: true,
+  },
+  {
+    name: `Dashboard`,
+    route: '/summary',
+    icon: 'presentation-chart-line',
+    pathMatchExact: true,
+  },
+  {
+    name: `BOOKMARKS`,
+    short_name: 'PINS',
+    type: 'bookmark',
+    hidden: true,
+  },
+  {
+    name: `ENGAGE`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Inbox',
+        route: '/inbox',
+        icon: 'envelope',
+      },
+      {
+        name: 'Newsletters',
+        route: '/newsletters',
+        icon: 'megaphone',
+      },
+
+      {
+        name: 'Lists',
+        route: '/lists',
+        icon: 'queue-list',
+      },
+      {
+        name: `Automations`,
+        route: '/workflows',
+        icon: 'cog',
+      },
+    ],
+  },
+  {
+    name: `CONTACTS`,
+    type: 'subheading',
+    children: [
+      {
+        name: `People`,
+        route: '/people',
+        icon: 'identification',
+      },
+      {
+        name: `Households`,
+        route: '/households',
+        icon: 'house-modern',
+      },
+      {
+        name: `Companies`,
+        route: '/companies',
+        icon: 'briefcase',
+      },
+      {
+        name: `Duplicates`,
+        route: '/duplicates',
+        icon: 'document-duplicate',
+      },
+    ],
+  },
+  {
+    name: `CAMPAIGN`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Teams',
+        route: '/teams',
+        icon: 'user-group',
+      },
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+      },
+    ],
+  },
+  {
+    name: 'FORMS',
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      {
+        name: 'Forms',
+        route: '/forms',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Shifts',
+        route: '/events/shifts',
+        icon: 'add-schedule',
+      },
+      {
+        name: 'Events',
+        route: '/events/pages',
+        icon: 'ticket',
+      },
+      {
+        name: 'Fundraising',
+        route: '/donation-pages',
+        icon: 'currency-dollar',
+      },
+    ],
+  },
+  {
+    name: 'TOOLS',
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      {
+        name: `Tasks`,
+        route: '/tasks',
+        icon: 'task',
+      },
+      {
+        name: `Task Board`,
+        route: '/board',
+        icon: 'view-kanban',
+      },
+      {
+        name: 'Files',
+        route: '/files',
+        icon: 'document',
+      },
+      {
+        name: 'Imports',
+        route: '/imports',
+        icon: 'arrow-up-tray',
+      },
+      {
+        name: 'Exports',
+        route: '/exports',
+        icon: 'arrow-down-tray',
+      },
+    ],
+  },
+
+  {
+    name: `SYSTEM`,
+    type: 'subheading',
+    adminOnly: true,
+    collapsed: true,
+    children: [
+      {
+        name: 'Activity Log',
+        route: '/activities',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Tags',
+        route: '/tags',
+        icon: 'label',
+      },
+      {
+        name: 'Issues',
+        route: '/issues',
+        icon: 'shield-exclamation',
+      },
+      {
+        name: 'Users',
+        route: '/users',
+        icon: 'users',
+      },
+      {
+        name: 'Configuration',
+        route: '/configuration',
+        icon: 'wrench-screwdriver',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/layout/sidebar/sidebar-service.ts
+
+```typescript
+import { signal, Service } from '@angular/core';
+import { ISidebarItem, SidebarItems } from './sidebar-items';
+
+@Service()
+export class SidebarService {
+  private readonly collapsedSections = new Set<string>();
+  private readonly initializedSections = new Set<string>();
+
+  private readonly drawerStateSubject = signal<DrawerStates>(this.getState());
+  private readonly isMobileOpenSubject = signal<boolean>(false);
+  private favourites = new Set<string>();
+  /** Route of the item just pinned, so its clone plays the `up` entry once. */
+  private pendingAnimateRoute?: string;
+  private readonly itemsSignal = signal<ISidebarItem[]>(SidebarItems);
+  private get items() {
+    return this.itemsSignal();
+  }
+  private set items(value: ISidebarItem[]) {
+    this.itemsSignal.set(value);
+  }
+
+  constructor() {
+    this.initializeCollapsedDefaults(this.items);
+    this.loadFavourites();
+  }
+
+  public closeMobile() {
+    this.isMobileOpenSubject.set(false);
+  }
+
+  public findItemForUrl(url: string): ISidebarItem | undefined {
+    const normalizedUrl = this.normalizeRoute(url);
+    const flatItems = this.flattenItems(this.items).filter((item) => !!item.route);
+
+    return flatItems
+      .sort((a, b) => this.normalizeRoute(b.route!).length - this.normalizeRoute(a.route!).length)
+      .find((item) => this.matchesRoute(normalizedUrl, item.route!));
+  }
+
+  public getItems() {
+    return this.itemsSignal;
+  }
+
+  public getRoute(destination: string): string | undefined {
+    const allItems = this.flattenItems(this.items);
+    const target = allItems.find((item) => item.route?.split('/').pop()?.toLowerCase() === destination.toLowerCase());
+    return target?.route;
+  }
+
+  public isFull() {
+    return this.drawerStateSubject() === 'full';
+  }
+
+  public isHalf() {
+    return this.drawerStateSubject() === 'half';
+  }
+
+  public isMobileOpen() {
+    return this.isMobileOpenSubject();
+  }
+
+  public isCollapsed(name: string) {
+    return this.collapsedSections.has(name);
+  }
+
+  public isFavourite(route?: string) {
+    if (!route) return false;
+    return this.favourites.has(this.normalizeRoute(route));
+  }
+
+  public setFavourite(route: string, favourite: boolean) {
+    const normalizedRoute = this.normalizeRoute(route);
+
+    if (!normalizedRoute) return favourite;
+
+    if (favourite) {
+      this.favourites.add(normalizedRoute);
+      this.pendingAnimateRoute = normalizedRoute;
+    } else {
+      this.favourites.delete(normalizedRoute);
+    }
+
+    this.updateItemFavourite(normalizedRoute, favourite);
+    this.persistFavourites();
+    this.rebuildFavouritesSection();
+
+    return favourite;
+  }
+
+  public setItems(items: ISidebarItem[]) {
+    this.items = items;
+    this.initializeCollapsedDefaults(items);
+    this.applyFavouritesToItems(items);
+  }
+
+  public toggleCollapsed(name: string) {
+    if (this.collapsedSections.has(name)) {
+      this.collapsedSections.delete(name);
+      return;
+    }
+    this.collapsedSections.add(name);
+  }
+
+  public toggleDrawer() {
+    const next = this.drawerStateSubject() === 'full' ? 'half' : 'full';
+    return this.setState(next);
+  }
+
+  public toggleFavourite(route: string) {
+    const next = !this.isFavourite(route);
+    this.setFavourite(route, next);
+    return next;
+  }
+
+  public toggleMobile() {
+    this.isMobileOpenSubject.update((v) => !v);
+  }
+
+  private applyFavouritesToItems(items: ISidebarItem[]) {
+    this.walkItems(items, (item) => {
+      if (item.type === 'bookmark' || item.parent?.type === 'bookmark') {
+        return;
+      }
+
+      if (!item.route) {
+        item.favourite = false;
+        return;
+      }
+
+      const isFavourited = this.favourites.has(this.normalizeRoute(item.route));
+      item.favourite = isFavourited;
+      item.hiddenByFavourite = isFavourited; // Safely hide original items
+    });
+
+    this.rebuildFavouritesSection();
+  }
+
+  private cloneForFavourite(item: ISidebarItem, parent: ISidebarItem): ISidebarItem {
+    const { children: _children, parent: _originalParent, ...rest } = item;
+
+    return {
+      ...rest,
+      parent,
+      children: undefined,
+      hidden: false,
+      hiddenByFavourite: false, // Ensure the bookmark copy is visible
+      type: 'item',
+      favourite: true,
+    };
+  }
+
+  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
+    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
+  }
+
+  private getState(): DrawerStates {
+    const state = localStorage.getItem(DRAWER_STATE_KEY);
+    return state === 'full' ? 'full' : 'half';
+  }
+
+  private initializeCollapsedDefaults(items: ISidebarItem[]) {
+    this.walkItems(items, (item) => {
+      if (this.initializedSections.has(item.name)) return;
+
+      this.initializedSections.add(item.name);
+
+      if (item.collapsed) {
+        this.collapsedSections.add(item.name);
+      }
+    });
+  }
+
+  private loadFavourites() {
+    const raw = localStorage.getItem(SIDEBAR_FAVOURITES_KEY);
+
+    if (raw) {
+      try {
+        const stored = JSON.parse(raw) as string[];
+        this.favourites = new Set(stored.map((route) => this.normalizeRoute(route)).filter(Boolean));
+      } catch {
+        this.favourites.clear();
+      }
+    }
+
+    this.applyFavouritesToItems(this.items);
+  }
+
+  private matchesRoute(url: string, route: string) {
+    const normalizedRoute = this.normalizeRoute(route);
+
+    if (normalizedRoute === '/') return url === '/';
+
+    return url === normalizedRoute || url.startsWith(`${normalizedRoute}/`);
+  }
+
+  private normalizeRoute(route: string) {
+    if (!route) return '';
+
+    const [pathWithHash = ''] = route.split('?');
+    const path = pathWithHash.split('#')[0]!;
+    const trimmed = path.endsWith('/') && path !== '/' ? path.slice(0, -1) : path;
+    return trimmed || '/';
+  }
+
+  private persistFavourites() {
+    localStorage.setItem(SIDEBAR_FAVOURITES_KEY, JSON.stringify([...this.favourites]));
+  }
+
+  private rebuildFavouritesSection() {
+    const currentItems = this.itemsSignal();
+    const favouritesSectionIndex = currentItems.findIndex((item) => item.type === 'bookmark');
+
+    if (favouritesSectionIndex === -1) return;
+
+    const favouritesSection = currentItems[favouritesSectionIndex]!;
+    const favouriteRoutes = new Set(this.favourites);
+
+    const favouriteItems = this.flattenItems(currentItems)
+      .filter((item) => item.type !== 'bookmark' && item.parent?.type !== 'bookmark')
+      .filter((item) => !!item.route && favouriteRoutes.has(this.normalizeRoute(item.route!)))
+      .map((item) => {
+        const clone = this.cloneForFavourite(item, favouritesSection);
+        clone.justPinned =
+          !!this.pendingAnimateRoute && !!item.route && this.normalizeRoute(item.route) === this.pendingAnimateRoute;
+        return clone;
+      });
+
+    const updatedSection: ISidebarItem = {
+      ...favouritesSection,
+      children: favouriteItems,
+      hidden: favouriteItems.length === 0,
+    };
+
+    const updatedItems = [...currentItems];
+    updatedItems[favouritesSectionIndex] = updatedSection;
+    this.itemsSignal.set(updatedItems);
+    // Entry animation is a one-shot; clear so subsequent rebuilds don't replay it.
+    this.pendingAnimateRoute = undefined;
+  }
+
+  private setState(state: DrawerStates) {
+    this.drawerStateSubject.set(state);
+    localStorage.setItem(DRAWER_STATE_KEY, state);
+    return state;
+  }
+
+  private updateItemFavourite(route: string, favourite: boolean) {
+    this.walkItems(this.items, (item) => {
+      if (item.type !== 'bookmark' && item.parent?.type !== 'bookmark') {
+        if (item.route && this.normalizeRoute(item.route) === route) {
+          item.favourite = favourite;
+          item.hiddenByFavourite = favourite;
+        }
+      }
+    });
+  }
+
+  private walkItems(items: ISidebarItem[], cb: (item: ISidebarItem) => void) {
+    items.forEach((item) => {
+      cb(item);
+      if (item.children?.length) {
+        this.walkItems(item.children, cb);
+      }
+    });
+  }
+}
+
+type DrawerStates = 'full' | 'half';
+
+const DRAWER_STATE_KEY = 'pc-drawerState';
+const SIDEBAR_FAVOURITES_KEY = 'pc-sidebar-favourites';
+```
+
 ## File: apps/frontend/src/app/layout/sidebar/sidebar.html
 
 ```html
@@ -35218,8 +34882,9 @@ export class Navbar implements OnDestroy {
       (click)="toggleCollapse(item.name)"
     >
       <span [class.text-[10px]]="isEffectivelyNarrow() && !hoveringSidebar()">
-        @if (isEffectivelyNarrow() && !hoveringSidebar()) { {{ item.short_name || item.name }} } @else { {{ item.name }}
-        }
+        @if (isEffectivelyNarrow() && !hoveringSidebar()) {
+        <hr class="border-base-300" />
+        } @else { {{ item.name }} }
       </span>
       @if (item.children?.length) {
       <pc-swap
@@ -35249,169 +34914,20 @@ export class Navbar implements OnDestroy {
   </div>
   }
 
-  <div class="hidden flex-auto grow flex-col sm:flex">
+  <div class="hidden flex-auto grow items-start flex-col sm:flex">
     <span class="min-h-full grow"></span>
     <pc-swap
       class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
-      swapOffIcon="chevron-double-right"
-      swapOnIcon="chevron-double-left"
+      swapOffIcon="arrow-right-end-on-rectangle"
+      swapOnIcon="arrow-left-start-on-rectangle"
       [checked]="isDrawerFull()"
-      animation="rotate"
+      animation="flip"
       (click)="toggleDrawer()"
       aria-label="Toggle drawer"
       i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
     ></pc-swap>
   </div>
 </div>
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
-
-```typescript
-import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { NgTemplateOutlet } from '@angular/common';
-import {
-  NavigationCancel,
-  NavigationError,
-  NavigationStart,
-  Router,
-  RouterLink,
-  RouterLinkActive,
-} from '@angular/router';
-import { filter, map } from 'rxjs';
-import { Icon } from '@icons/icon';
-import { Swap } from '@uxcommon/components/swap/swap';
-
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { ISidebarItem } from './sidebar-items';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-
-@Component({
-  selector: 'pc-sidebar',
-  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
-  templateUrl: './sidebar.html',
-  styles: [
-    `
-      .tooltip:before {
-        z-index: 100 !important;
-      }
-    `,
-  ],
-})
-export class Sidebar {
-  private readonly sidebarSvc = inject(SidebarService);
-  private readonly auth = inject(AuthService);
-  private readonly router = inject(Router);
-  private readonly destroyRef = inject(DestroyRef);
-
-  protected hoveringSidebar = signal(false);
-
-  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
-  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
-  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
-
-  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
-  protected readonly isEffectivelyNarrow = computed(
-    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
-  );
-
-  protected readonly pendingRoute = toSignal(
-    this.router.events.pipe(
-      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
-      map((e) => (e instanceof NavigationStart ? e.url : null)),
-    ),
-    { initialValue: null },
-  );
-
-  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
-
-  protected readonly items = computed(() => {
-    const role = this.auth.getUser()?.role;
-    const allItems = this.sidebarSvc.getItems()();
-    if (role === 'user') {
-      return allItems.map((item) => {
-        if (item.children) {
-          return {
-            ...item,
-            children: item.children.filter((child) => !child.adminOnly),
-          };
-        }
-        return item;
-      });
-    }
-    return allItems;
-  });
-
-  constructor() {
-    if (this._mql) {
-      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
-      this._mql.addEventListener('change', handler);
-      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
-    }
-
-    effect(() => {
-      const flatItems = this.flattenItems(this.items());
-      for (const item of flatItems) {
-        const key = this.getItemKey(item);
-        const visible = !item.hidden && !item.hiddenByFavourite;
-        const existing = this.visibilitySignals.get(key);
-        if (existing) {
-          existing.set(visible);
-        } else {
-          this.visibilitySignals.set(key, signal(visible));
-        }
-      }
-    });
-  }
-
-  protected closeMobile() {
-    this.sidebarSvc.closeMobile();
-  }
-
-  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
-    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
-  }
-
-  private getItemKey(item: ISidebarItem): string {
-    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
-    return prefix + item.name + (item.route ?? '');
-  }
-
-  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
-    const key = this.getItemKey(item);
-    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
-  }
-
-  protected isCollapsed(name: string): boolean {
-    return this.sidebarSvc.isCollapsed(name);
-  }
-
-  protected isDrawerFull() {
-    return this.sidebarSvc.isFull();
-  }
-
-  protected isDrawerHalf() {
-    return this.sidebarSvc.isHalf();
-  }
-
-  protected isMobileOpen() {
-    return this.sidebarSvc.isMobileOpen();
-  }
-
-  protected onSidebarHover(state: boolean) {
-    this.hoveringSidebar.set(state);
-  }
-
-  protected toggleCollapse(name: string) {
-    this.sidebarSvc.toggleCollapsed(name);
-  }
-
-  protected toggleDrawer() {
-    return this.sidebarSvc.toggleDrawer();
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
@@ -36800,6 +36316,376 @@ export const appConfig: ApplicationConfig = {
 };
 ```
 
+## File: apps/frontend/src/styles.css
+
+```css
+@import 'tailwindcss';
+@plugin "daisyui";
+@plugin "@tailwindcss/typography";
+
+/* styles.css */
+@import 'quill/dist/quill.snow.css';
+
+/* Self-hosted app font — bundled from node_modules, no external font CDN */
+@import '@fontsource-variable/inter';
+
+@plugin "daisyui/theme" {
+  name: 'light';
+  default: true;
+  --color-primary: #0ea5e9;
+  --color-secondary: #14e8a6;
+  --color-secondary-content: #1f2937;
+  --color-accent: #0c506e;
+  --color-accent-content: #f0f0f0;
+  --color-neutral: #cbd5e1;
+  --color-neutral-content: #1f2937;
+  --color-base-100: #ffffff;
+  --color-base-200: #f8f8f8ff;
+  --color-base-300: #efeeeeff;
+  --color-info: #38bdf8;
+  --color-success: #2dd4bf;
+  --color-warning: #e5c963;
+  --color-error: #f37373;
+  --color-error-content: #f0f0f0;
+
+  --tooltip-bg: #333333;
+  --tooltip-color: #eeeeee;
+  --color-placeholder: #9ca3af;
+}
+
+.input::placeholder,
+textarea::placeholder,
+label.input input::placeholder,
+label.input textarea::placeholder,
+label.input pc-icon {
+  color: var(--color-placeholder);
+}
+
+/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
+label.input input {
+  flex-grow: 1;
+  width: 100%;
+}
+
+/* Prevent browser autofill from coloring the background, preserving transparency */
+label.input input:-webkit-autofill,
+label.input input:-webkit-autofill:hover,
+label.input input:-webkit-autofill:focus,
+label.input input:-webkit-autofill:active {
+  transition: background-color 5000s ease-in-out 0s;
+  -webkit-text-fill-color: inherit !important;
+}
+
+@plugin "daisyui/theme" {
+  name: 'dark';
+
+  /* Brand / accent */
+  --color-primary: #3ea6ff; /* bright azure */
+  --color-secondary: #20d7a7; /* teal pop (optional) */
+  --color-accent: #3ea6ff;
+  --color-accent-content: #f0f6ff; /* light text on blue */
+
+  /* Text + neutrals */
+  --color-neutral: #0e182b; /* chrome / panels */
+  --color-neutral-content: #c7d1e5; /* default text on dark */
+
+  /* Surfaces */
+  --color-base-100: #0b1220; /* app/page background */
+  --color-base-200: #131e31; /* row alt / subtle surface */
+  --color-base-300: #1a2b45; /* headers / raised surface */
+
+  /* Feedback */
+  --color-info: #3ea6ff;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+
+  /* Tooltips */
+  --tooltip-bg: #0e1626;
+  --tooltip-color: #e6edf7;
+}
+
+html,
+body {
+  height: 100vh;
+}
+
+body {
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+}
+
+/* Custom scrollbar styles for email components */
+.email-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db #f3f4f6;
+}
+
+.email-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.email-scrollbar::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+.bg-image {
+  background-image: url('assets/bg.jpg');
+  background-size: cover; /* scale to cover entire container */
+  background-position: center; /* keep it centered */
+  background-repeat: no-repeat; /* prevent tiling */
+}
+
+/* AG Grid legacy themes removed */
+
+@layer utilities {
+  /* Ensure mentions inside chat bubbles are inline */
+  .chat-bubble [data-mention] {
+    display: inline;
+  }
+
+  /* In composer mirrors, keep mention width identical to textarea text
+     to avoid caret drift. Use underline instead of bold in the mirror. */
+  .composer-mirror [data-mention] {
+    font-weight: inherit !important;
+    text-decoration: underline;
+  }
+
+  @keyframes up {
+    0% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes down {
+    0% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes right {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes left {
+    0% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes drop {
+    0% {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes flash {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes exitUp {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitDown {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitRight {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitLeft {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+  }
+
+  .animate-up {
+    animation: up 0.3s ease-in-out both;
+  }
+  .animate-down {
+    animation: down 0.3s ease-in-out both;
+  }
+  .animate-right {
+    animation: right 0.3s ease-in-out both;
+  }
+  .animate-left {
+    animation: left 0.3s ease-in-out both;
+  }
+  .animate-drop {
+    animation: drop 0.3s ease-in-out both;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out;
+  }
+  .animate-exit-up {
+    animation: exitUp 0.3s ease-in-out forwards;
+  }
+  .animate-exit-down {
+    animation: exitDown 0.3s ease-in-out forwards;
+  }
+  .animate-exit-left {
+    animation: exitLeft 0.3s ease-in-out forwards;
+  }
+  .animate-exit-right {
+    animation: exitRight 0.3s ease-in-out forwards;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out 1;
+  }
+}
+
+/* Dark mode overrides for Quill and email prose */
+[data-theme='dark'] .ql-toolbar.ql-snow,
+[data-theme='dark'] .ql-container.ql-snow {
+  border-color: var(--color-base-300) !important;
+  background-color: var(--color-base-100) !important;
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-stroke {
+  stroke: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-fill {
+  fill: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker-options {
+  background-color: var(--color-base-300) !important;
+  border-color: var(--color-base-100) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
+  color: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
+  stroke: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
+  color: var(--color-placeholder) !important;
+}
+[data-theme='dark'] .prose {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .prose h1,
+[data-theme='dark'] .prose h2,
+[data-theme='dark'] .prose h3,
+[data-theme='dark'] .prose h4,
+[data-theme='dark'] .prose h5,
+[data-theme='dark'] .prose h6,
+[data-theme='dark'] .prose strong,
+[data-theme='dark'] .prose b,
+[data-theme='dark'] .prose a {
+  color: var(--color-neutral-content) !important;
+}
+
+/* Ensure closed dropdown contents do not intercept pointer events or hover */
+.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+/* Allow dropdown-hover to work if ever used in the future */
+.dropdown.dropdown-hover:hover .dropdown-content {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+}
+
+/* Ensure tooltip text is consistently normal weight and not bold */
+.tooltip:before,
+.tooltip::before {
+  font-weight: 400 !important;
+}
+
+/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
+.menu details.dropdown {
+  overflow: visible !important;
+}
+```
+
 ## File: apps/frontend/project.json
 
 ```json
@@ -37525,6 +37411,112 @@ export class SignUpPage {
   </div>
   }
 </div>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.ts
+
+```typescript
+import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
+import { Swap } from '@uxcommon/components/swap/swap';
+
+import { EmailsStore } from '../../services/store/emailstore';
+import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
+
+@Component({
+  selector: 'pc-email-folder-list',
+  imports: [Swap, Icon],
+  templateUrl: 'email-folder-list.html',
+})
+export class EmailFolderList implements OnInit {
+  protected readonly store = inject(EmailsStore);
+
+  protected trackByFolderId = (_: number, f: EmailFolderType) => String(f.id);
+
+  public readonly folderSelected = output<EmailFolderType>();
+
+  public readonly folders = this.store.allFolders;
+
+  public readonly foldersCollapsed = signal(false);
+
+  public readonly realFoldersCollapsed = signal(true);
+
+  public readonly newEmail = output<void>();
+
+  // Responsive Tailwind class strings — CSS handles breakpoint, signal handles manual toggle
+  protected readonly asideClass = computed(
+    () =>
+      'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
+      'w-full md:w-12 ' +
+      (this.foldersCollapsed() ? 'lg:w-12 lg:hover:w-48' : 'lg:w-48'),
+  );
+
+  // Labels: visible on small (< md); hidden on md (collapsed); on lg+ hidden unless hovered or not collapsed
+  protected readonly labelClass = computed(
+    () => 'block md:hidden lg:group-hover:block' + (this.foldersCollapsed() ? '' : ' lg:block'),
+  );
+
+  protected readonly countClass = computed(
+    () =>
+      'text-xs tabular-nums font-normal block md:hidden lg:group-hover:block' +
+      (this.foldersCollapsed() ? '' : ' lg:block'),
+  );
+
+  protected readonly sectionHeaderClass = computed(
+    () =>
+      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none flex md:hidden lg:group-hover:flex' +
+      (this.foldersCollapsed() ? '' : ' lg:flex'),
+  );
+
+  protected readonly buttonLabelClass = computed(
+    () => 'inline md:hidden lg:group-hover:inline' + (this.foldersCollapsed() ? '' : ' lg:inline'),
+  );
+
+  protected readonly separatorClass = computed(
+    () => 'h-px bg-base-300 my-2' + (this.foldersCollapsed() ? ' mx-1' : ' mx-1 lg:mx-3'),
+  );
+
+  public emitNewEmail() {
+    this.newEmail.emit();
+  }
+
+  public getEmailCount(folder: EmailFolderType): number {
+    return (folder as any).email_count ?? 0;
+  }
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    try {
+      await this.store.loadAllFoldersWithCounts();
+    } catch (e) {
+      console.error('Failed to load folders with counts', e);
+    }
+  }
+
+  public selectFolder(folder: EmailFolderType): void {
+    this.folderSelected.emit(folder);
+  }
+
+  public toggleFolders(): void {
+    this.foldersCollapsed.update((v) => !v);
+  }
+
+  public toggleRealFolders(): void {
+    this.realFoldersCollapsed.update((v) => !v);
+  }
+
+  protected getIcon(folder: EmailFolderType): PcIconNameType {
+    return folder.icon as PcIconNameType;
+  }
+
+  protected isSelected(folder: EmailFolderType): boolean {
+    return String(folder.id) === String(this.store.currentSelectedFolderId());
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
@@ -38914,8 +38906,26 @@ export class PersonsGrid implements OnInit {
   ];
 
   protected col: ColDef[] = [
-    { field: 'first_name', headerName: 'First Name', editable: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true },
+    {
+      // Combined identity column: the door that opens the record. Non-editable and
+      // non-hidable; first/last name remain separately editable to its right.
+      field: 'name',
+      headerName: 'Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      minWidth: 160,
+      valueGetter: (params: CellParams) => {
+        const data = params?.data as Record<string, unknown> | undefined;
+        if (!data) return '';
+        return [data['first_name'], data['last_name']]
+          .filter((p) => typeof p === 'string' && p.trim().length)
+          .join(' ')
+          .trim();
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
     { field: 'email', headerName: 'Email', editable: true },
     { field: 'mobile', headerName: 'Mobile', editable: true },
     { field: 'company_name', headerName: 'Company', editable: false },
@@ -38985,7 +38995,9 @@ export class PersonsGrid implements OnInit {
         const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
         if (streetParts.length) parts.push(streetParts.join(' ').trim());
         if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        return parts.join(', ').trim() || 'No household assigned';
+        // §2: empty address renders as "—" (the grid cell falls back on ''); an
+        // unassigned household is surfaced as a guided empty state on the person view, not here.
+        return parts.join(', ').trim();
       },
     },
     {
@@ -39058,11 +39070,13 @@ export class PersonsGrid implements OnInit {
 
   public listId = input<string | null>(null);
 
-  protected readonly narrowTypeOptions = [
+  protected readonly narrowTypeOptions = signal<
+    Array<{ label: string; value: string | null; tags: string[]; count?: number }>
+  >([
     { label: 'All', value: null, tags: [] },
-    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
     { label: 'Donors', value: 'donor', tags: ['donor'] },
-  ];
+    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
+  ]);
 
   protected tagsInput = '';
 
@@ -39074,9 +39088,30 @@ export class PersonsGrid implements OnInit {
     try {
       await this.loadTagOptions();
       await this.loadIssueOptions();
-      // Any logic that depends on this data should go here
+      void this.loadViewCounts();
     } catch (error) {
       console.error('Initialization failed', error);
+    }
+  }
+
+  /**
+   * Absolute per-view counts for the system-views segmented control (All / Donors /
+   * Volunteers). Fetched once with only the view's tag filter, so counts stay fixed
+   * regardless of the grid's other active filters (§2).
+   */
+  private async loadViewCounts(): Promise<void> {
+    try {
+      const opts = this.narrowTypeOptions();
+      const counts = await Promise.all(
+        opts.map(async (o) => {
+          if (o.value === null) return this.personsService.count();
+          const res = await this.personsService.getAll({ tags: o.tags, limit: 1 });
+          return res?.count ?? 0;
+        }),
+      );
+      this.narrowTypeOptions.set(opts.map((o, i) => ({ ...o, count: counts[i] })));
+    } catch (err) {
+      console.error('Failed to load view counts', err);
     }
   }
 
@@ -41971,6 +42006,125 @@ export class UsersGridComponent {
 }
 ```
 
+## File: apps/frontend/src/app/layout/favourite-toggle/favourite-toggle.ts
+
+```typescript
+import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { ISidebarItem } from '../sidebar/sidebar-items';
+import { SidebarService } from '../sidebar/sidebar-service';
+
+/**
+ * Pin button for the navbar: pins the sidebar item matching the current route
+ * into the PINS section. Extracted from the retired URL-segment breadcrumb bar;
+ * page orientation is now handled by pc-breadcrumbs inside each page header.
+ *
+ * Sidebar pins hold sections (People, Inbox…), not records. On a record page
+ * (/people/amira-hassan) the button dims and both the tooltip and a toast
+ * explain that only main pages can be pinned — the icon stays present (§1
+ * disclosure over suppression) rather than vanishing.
+ */
+@Component({
+  selector: 'pc-favourite-toggle',
+  imports: [Icon],
+  template: `
+    @if (visible()) {
+      <button
+        type="button"
+        class="btn btn-circle btn-ghost btn-sm tooltip tooltip-bottom"
+        [attr.aria-label]="tooltip()"
+        [attr.data-tip]="tooltip()"
+        (mouseenter)="hovered.set(true)"
+        (mouseleave)="hovered.set(false)"
+        (click)="onClick()"
+      >
+        <pc-icon
+          [name]="iconName()"
+          [size]="5"
+          class="text-base-400 hover:text-primary transition-opacity"
+          [class.text-primary]="favourite() && pinnable()"
+          [class.opacity-40]="!pinnable()"
+          [class.hover:text-base-400]="!pinnable()"
+        ></pc-icon>
+      </button>
+    }
+  `,
+})
+export class FavouriteToggle {
+  private readonly router = inject(Router);
+  private readonly sidebarSvc = inject(SidebarService);
+  private readonly alertSvc = inject(AlertService);
+
+  private readonly navigationUrl = computed(() => {
+    const navigation = this.router.currentNavigation();
+    if (navigation) {
+      const finalUrl = navigation.finalUrl ?? navigation.initialUrl;
+      return finalUrl.toString();
+    }
+    return this.router.url;
+  });
+
+  private currentItem?: ISidebarItem;
+  protected readonly favourite = signal(false);
+  protected readonly hovered = signal(false);
+  protected readonly pinnable = signal(false);
+  protected readonly visible = signal(false);
+  protected readonly itemName = signal('');
+
+  protected readonly iconName = computed(() => {
+    if (!this.pinnable()) return 'bookmark';
+    if (this.favourite()) return this.hovered() ? 'bookmark-slash' : 'bookmark-filled';
+    return this.hovered() ? 'bookmark-plus' : 'bookmark';
+  });
+
+  protected readonly tooltip = computed(() => {
+    if (!this.pinnable()) return `Only main pages can be pinned — open ${this.itemName()} to pin it`;
+    return this.favourite() ? `Unpin ${this.itemName()} from the sidebar` : `Pin ${this.itemName()} to the sidebar`;
+  });
+
+  constructor() {
+    effect(() => this.handleNavigationChange(this.navigationUrl()));
+  }
+
+  protected onClick(): void {
+    if (!this.pinnable()) {
+      // Record page: narrate the reason instead of silently doing nothing.
+      this.alertSvc.showInfo(`Only main pages can be pinned — open ${this.itemName()} to pin it.`);
+      return;
+    }
+    if (!this.currentItem?.route) return;
+
+    const next = this.sidebarSvc.toggleFavourite(this.currentItem.route);
+    this.favourite.set(next);
+    this.currentItem.favourite = next;
+    // Narrate both directions (§1).
+    if (next) this.alertSvc.showSuccess(`Pinned ${this.itemName()} to the sidebar.`);
+    else this.alertSvc.showInfo(`Removed ${this.itemName()} from your pins.`);
+  }
+
+  private handleNavigationChange(url: string): void {
+    const item = this.sidebarSvc.findItemForUrl(url);
+    const exact = !!item?.route && this.normalizePath(url) === this.normalizePath(item.route);
+    this.currentItem = exact ? item : undefined;
+    this.favourite.set(exact && !!item?.favourite);
+    this.pinnable.set(exact);
+    // Show the (dimmed) control whenever the URL maps to a known section, so a
+    // record page still explains why it can't be pinned; hide only on unknown routes.
+    this.visible.set(!!item?.route);
+    this.itemName.set(item?.name ?? '');
+  }
+
+  private normalizePath(route: string): string {
+    const path = (route.split('?')[0] ?? '').split('#')[0] ?? '';
+    const trimmed = path.endsWith('/') && path !== '/' ? path.slice(0, -1) : path;
+    return trimmed || '/';
+  }
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-row.ts
 
 ```typescript
@@ -42772,112 +42926,6 @@ export class EmailClient {
       ev.preventDefault();
       ev.stopPropagation();
     }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.ts
-
-```typescript
-import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
-import { Swap } from '@uxcommon/components/swap/swap';
-
-import { EmailsStore } from '../../services/store/emailstore';
-import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Component({
-  selector: 'pc-email-folder-list',
-  imports: [Swap, Icon],
-  templateUrl: 'email-folder-list.html',
-})
-export class EmailFolderList implements OnInit {
-  protected readonly store = inject(EmailsStore);
-
-  protected trackByFolderId = (_: number, f: EmailFolderType) => String(f.id);
-
-  public readonly folderSelected = output<EmailFolderType>();
-
-  public readonly folders = this.store.allFolders;
-
-  public readonly foldersCollapsed = signal(false);
-
-  public readonly realFoldersCollapsed = signal(true);
-
-  public readonly newEmail = output<void>();
-
-  // Responsive Tailwind class strings — CSS handles breakpoint, signal handles manual toggle
-  protected readonly asideClass = computed(
-    () =>
-      'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
-      'w-full md:w-12 ' +
-      (this.foldersCollapsed() ? 'lg:w-12 lg:hover:w-48' : 'lg:w-48'),
-  );
-
-  // Labels: visible on small (< md); hidden on md (collapsed); on lg+ hidden unless hovered or not collapsed
-  protected readonly labelClass = computed(
-    () => 'block md:hidden lg:group-hover:block' + (this.foldersCollapsed() ? '' : ' lg:block'),
-  );
-
-  protected readonly countClass = computed(
-    () =>
-      'text-xs tabular-nums font-normal block md:hidden lg:group-hover:block' +
-      (this.foldersCollapsed() ? '' : ' lg:block'),
-  );
-
-  protected readonly sectionHeaderClass = computed(
-    () =>
-      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none flex md:hidden lg:group-hover:flex' +
-      (this.foldersCollapsed() ? '' : ' lg:flex'),
-  );
-
-  protected readonly buttonLabelClass = computed(
-    () => 'inline md:hidden lg:group-hover:inline' + (this.foldersCollapsed() ? '' : ' lg:inline'),
-  );
-
-  protected readonly separatorClass = computed(
-    () => 'h-px bg-base-300 my-2' + (this.foldersCollapsed() ? ' mx-1' : ' mx-1 lg:mx-3'),
-  );
-
-  public emitNewEmail() {
-    this.newEmail.emit();
-  }
-
-  public getEmailCount(folder: EmailFolderType): number {
-    return (folder as any).email_count ?? 0;
-  }
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    try {
-      await this.store.loadAllFoldersWithCounts();
-    } catch (e) {
-      console.error('Failed to load folders with counts', e);
-    }
-  }
-
-  public selectFolder(folder: EmailFolderType): void {
-    this.folderSelected.emit(folder);
-  }
-
-  public toggleFolders(): void {
-    this.foldersCollapsed.update((v) => !v);
-  }
-
-  public toggleRealFolders(): void {
-    this.realFoldersCollapsed.update((v) => !v);
-  }
-
-  protected getIcon(folder: EmailFolderType): PcIconNameType {
-    return folder.icon as PcIconNameType;
-  }
-
-  protected isSelected(folder: EmailFolderType): boolean {
-    return String(folder.id) === String(this.store.currentSelectedFolderId());
   }
 }
 ```
@@ -45004,23 +45052,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       tabindex="0"
       class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
     >
-      @if (grid.showNarrowTypeFilter()) {
-      <pc-dg-filter-section
-        [title]="'Narrow by Type'"
-        [bordered]="false"
-        [clearable]="false"
-        [active]="grid.selectedNarrowType() !== null"
-        [open]="grid.selectedNarrowType() !== null"
-      >
-        <pc-singleselect-filter
-          [label]="'Type'"
-          [options]="narrowTypeOptions()"
-          [selected]="grid.selectedNarrowType()"
-          [radioName]="'narrowTypeMobile'"
-          (select)="grid.selectNarrowType($event)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showTagFilter()) {
+      @if (grid.showTagFilter()) {
       <pc-dg-filter-section
         [title]="'Filter by Tags'"
         [active]="grid.selectedTags().length > 0"
@@ -45202,25 +45234,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     (action)="onExportCsv()"
   />
 
-  @if (grid.showNarrowTypeFilter() || grid.showTagFilter()) {
+  @if (grid.showTagFilter()) {
   <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-  } @if (grid.showNarrowTypeFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'tag'"
-    [tip]="'Narrow by type'"
-    [active]="grid.selectedNarrowType() !== null"
-    [hasDropdown]="true"
-  >
-    <div tabindex="0" class="dropdown-content bg-base-100 rounded-box z-[1] w-48 p-3 shadow-lg border border-base-200">
-      <pc-singleselect-filter
-        [label]="'Type'"
-        [options]="narrowTypeOptions()"
-        [selected]="grid.selectedNarrowType()"
-        [radioName]="'narrowType'"
-        (select)="grid.selectNarrowType($event)"
-      />
-    </div>
-  </pc-grid-tool-btn>
   } @if (grid.showTagFilter()) {
   <pc-grid-tool-btn
     [icon]="'label'"
@@ -47795,12 +47810,6 @@ import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-
 export class DataGridToolbarComponent {
   public readonly grid = inject(DataGrid);
 
-  // narrowTypeOptions may include a null "All" sentinel value; SingleSelectOption
-  // types value as string, but the sentinel must round-trip unchanged for the
-  // datagrid's own `o.value === selected` matching to keep working.
-  readonly narrowTypeOptions = computed<SingleSelectOption[]>(
-    () => this.grid.narrowTypeOptions() as unknown as SingleSelectOption[],
-  );
   readonly listOptions = computed<SingleSelectOption[]>(() =>
     this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
   );
@@ -49808,7 +49817,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     [totalCount]="hasInitiatedLoad() ? totalCountAll() : null"
     [filtered]="anyFilterActive()"
   ></pc-grid-header>
-  } @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
+  } @if (showToolbar()) { <pc-dg-toolbar /> } @if (showNarrowTypeFilter()) {
+  <!-- System views: segmented control with per-view counts (composes AND with filters) -->
+  <div class="mb-2 flex flex-wrap items-center gap-2">
+    <div class="join border border-base-300 rounded-lg">
+      @for (opt of narrowTypeOptions(); track opt.label) {
+      <button
+        type="button"
+        class="btn btn-sm join-item border-0 font-normal gap-1.5"
+        [class.btn-primary]="selectedNarrowType() === opt.value"
+        [class.btn-ghost]="selectedNarrowType() !== opt.value"
+        (click)="selectNarrowType(opt.value)"
+      >
+        {{ opt.label }} @if (opt.count != null) {
+        <span class="tabular-nums opacity-70">{{ opt.count }}</span>
+        }
+      </button>
+      }
+    </div>
+  </div>
+  } @if (isLoading()) {
   <progress class="progress h-1"></progress>
   } @if (filterChips().length) {
   <div class="mb-2 flex flex-wrap items-center gap-2 rounded border border-base-300 bg-base-100 px-3 py-2 text-xs">
@@ -49997,11 +50025,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                       ><span>▸</span></label
                     >
                     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (!col?.noHide) {
                       <li>
                         <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
                           >Hide</a
                         >
                       </li>
+                      }
                       <li class="dropdown dropdown-right">
                         <label tabindex="0" class="flex w-full items-center justify-between"
                           ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
@@ -50118,7 +50148,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                 [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
                 (change)="onRowCheckboxChange(r, $any($event.target).checked)"
               />
-              } @let rowId = toId(r.original); @if (!disableView() && rowId) {
+              } @let rowId = toId(r.original); @if (!disableView() && !hasDoorColumn() && rowId) {
               <span
                 title="Open detail"
                 i18n-title="@@datagrid.rows.openDetailTitle"
@@ -50274,7 +50304,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
             } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
             === null || formattedVal === undefined || formattedVal === '') {
             <span class="text-base-content/30">—</span>
-            } @else { {{ formattedVal }} } } @else { @if (col.field === 'address') {
+            } @else { {{ formattedVal }} } } @else { @if (col.doorColumn) {
+            <!-- Name is the door: underlined at rest, primary on hover; opens the record on click -->
+            @if (rawValue) {
+            <span
+              class="cursor-pointer underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
+              >{{ rawValue }}</span
+            >
+            } @else {
+            <span
+              class="cursor-pointer font-light text-base-content/55 underline decoration-base-content/20 underline-offset-[3px]"
+              i18n="Datagrid|Fallback label for a record with no name@@datagrid.rows.unnamed"
+              >Unnamed person</span
+            >
+            } } @else if (col.field === 'address') {
             <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
               <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
             </div>
@@ -50312,18 +50355,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       </select>
     </div>
     <div
-      class="whitespace-nowrap"
+      class="whitespace-nowrap tabular-nums"
       i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
     >
-      <span class="font-normal">{{ displayStartIndex() }}</span> to
-      <span class="font-normal">{{ displayEndIndex() }}</span> of
-      <span class="font-normal">{{ totalCountAll() }}</span>
+      <span class="font-normal">{{ displayStartIndex() }}</span>–<span class="font-normal"
+        >{{ displayEndIndex() }}</span
+      >
+      of <span class="font-normal">{{ totalCountAll() }}</span> · Page
+      <span class="font-normal">{{ pageIndex() + 1 }}</span> of <span class="font-normal">{{ totalPages() }}</span>
     </div>
     <div class="join whitespace-nowrap">
       <button
         class="btn btn-sm font-light join-item btn-ghost"
-        title="First"
-        i18n-title="@@datagrid.pagination.firstTitle"
+        [title]="canPrev() ? firstPageTitle : onFirstPageTitle"
         [disabled]="!canPrev()"
         (click)="firstPage()"
       >
@@ -50331,24 +50375,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       </button>
       <button
         class="btn btn-sm font-light join-item btn-ghost"
-        title="Prev"
-        i18n-title="@@datagrid.pagination.prevTitle"
+        [title]="canPrev() ? prevPageTitle : onFirstPageTitle"
         [disabled]="!canPrev()"
         (click)="prevPage()"
       >
         <pc-icon name="chevron-left" [size]="4"></pc-icon>
       </button>
       <button
-        class="btn font-light btn-sm join-item btn-ghost pointer-events-none whitespace-nowrap"
-        i18n="Datagrid|Current page number out of total pages@@datagrid.pagination.currentPage"
-      >
-        Page <span class="font-normal">{{ pageIndex() + 1 }}</span> of
-        <span class="font-normal">{{ totalPages() }}</span>
-      </button>
-      <button
         class="btn btn-sm font-light join-item btn-ghost"
-        title="Next"
-        i18n-title="@@datagrid.pagination.nextTitle"
+        [title]="canNext() ? nextPageTitle : onLastPageTitle"
         [disabled]="!canNext()"
         (click)="nextPage()"
       >
@@ -50356,8 +50391,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
       </button>
       <button
         class="btn btn-sm font-light join-item btn-ghost"
-        title="Last"
-        i18n-title="@@datagrid.pagination.lastTitle"
+        [title]="canNext() ? lastPageTitle : onLastPageTitle"
         [disabled]="!canNext()"
         (click)="lastPage()"
       >
@@ -51724,6 +51758,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly recordNav = inject(RecordNavigationService);
   public readonly searchTerm = this.searchSvc.searchSignal;
   private readonly hasEditableColumns = signal(false);
+  // A "door" column (e.g. the People Name cell) opens the record on click and
+  // replaces the hover open-icon; when present the selection column narrows to 36px.
+  protected readonly hasDoorColumn = signal(false);
   private readonly headerMinWidths = signal<Record<string, number>>({});
   private readonly dgListsSvc = inject(ListsService, { optional: true });
   public readonly flashedCells = signal<Set<string>>(new Set());
@@ -51902,6 +51939,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return Math.min(end, total);
   });
 
+  // Pager tooltips: enabled states name the action, disabled states name the
+  // unmet condition (§2 pagination honesty / §7.2 acceptance checklist).
+  protected readonly firstPageTitle = 'First page';
+  protected readonly prevPageTitle = 'Previous page';
+  protected readonly nextPageTitle = 'Next page';
+  protected readonly lastPageTitle = 'Last page';
+  protected readonly onFirstPageTitle = "You're on the first page";
+  protected readonly onLastPageTitle = "You're on the last page";
+
   // Hidden columns list for header menu as a computed
   protected readonly hiddenColumns = computed(() => {
     const v = this.colVisibility();
@@ -52041,7 +52087,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public rowCanSelect = input<(row: GridRow) => boolean>(() => true);
   public limitToTags = input<string[]>([]);
   public limitToIssues = input<string[]>([]);
-  public narrowTypeOptions = input<Array<{ label: string; value: string | null; tags: string[] }>>([]);
+  public narrowTypeOptions = input<Array<{ label: string; value: string | null; tags: string[]; count?: number }>>([]);
   public plusIcon = input<PcIconNameType>('plus');
 
   public showToolbar = input<boolean>(true);
@@ -52091,11 +52137,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   });
 
   public selectNarrowType(value: string | null): void {
+    // Already on this view — nothing to fetch.
+    if (this.selectedNarrowType() === value) return;
     this.selectedNarrowType.set(value);
     const option = this.narrowTypeOptions().find((o) => o.value === value);
     const tags = option?.tags ?? [];
     this.tagFilter.selectedTags.set([...tags]);
-    void this.doRefresh();
+    // A view is a server-side tag filter, so fetch page 1 of the new set — but via
+    // the normal loading gate, not doRefresh()'s forced 1s spinner (that's for the
+    // manual Refresh button). Feels like filtering, not a hard reload.
+    void this.loadPage(0);
   }
 
   public toggleTagFilter(tag: string, checked: boolean) {
@@ -52424,6 +52475,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       const selectionCols = this.enableSelection() ? [SELECTION_COLUMN] : [];
       this.colDefsWithEdit = [...selectionCols, ...this.colDefs()];
       this.hasEditableColumns.set(this.colDefsWithEdit.some((col) => !!col?.editable));
+      this.hasDoorColumn.set(this.colDefsWithEdit.some((col) => !!col?.doorColumn));
 
       // Initialize column visibility defaults
       const vis: Record<string, boolean> = {};
@@ -52490,7 +52542,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       // Load persisted state and apply to table before first load
       if (this.config.pageSize && this.config.pageSize > 0) this.store.pageSize.set(this.config.pageSize);
       this.store.loadState();
-      this.selectionStickyWidth.set(this.selectionColumnWidthPx);
+      // A door column replaces the open-icon, so the selection column only needs
+      // to fit the checkbox (36px); without one it also holds the open-icon (72px).
+      this.selectionStickyWidth.set(this.hasDoorColumn() ? 36 : this.selectionColumnWidthPx);
 
       await this.loadPage(0);
       this._initialized = true;
@@ -53137,6 +53191,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected handleCellClick(row: GridRow, col: ColDef) {
     if (col.isCellInteractive && !col.isCellInteractive(row)) return;
+    // The door cell (e.g. Name) opens the record, routing through view() so the
+    // filtered record-navigation context (prev/next, "N of M") is captured.
+    if (col.doorColumn) {
+      const id = this.toId(row);
+      if (id) this.openEdit(id);
+      return;
+    }
     if (typeof col.onCellClicked === 'function') {
       col.onCellClicked({ data: row, colDef: col });
     }
@@ -53171,7 +53232,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected hideAllCols() {
     const v = { ...this.colVisibility() };
-    for (const c of this.colDefsWithEdit) if (c.field) v[c.field] = false;
+    for (const c of this.colDefsWithEdit) if (c.field && !c.noHide) v[c.field] = false;
     this.colVisibility.set(v);
     if (this.tsTable) this.tsTable.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
   }
@@ -53237,7 +53298,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.hasSelection();
   }
   public getColDefsForToolbar() {
-    return this.colDefsWithEdit;
+    // Identity columns (noHide) are omitted from the visibility toggle list.
+    return this.colDefsWithEdit.filter((c) => !c.noHide);
   }
   public getColVisibilityMap() {
     return this.colVisibility();
@@ -53820,6 +53882,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected toggleCol(field: string, checked: boolean) {
+    // Identity columns (noHide) can never be hidden.
+    if (!checked && this.colDefsWithEdit.some((c) => c.field === field && c.noHide)) return;
     const v = { ...this.colVisibility() };
     v[field] = checked;
     this.colVisibility.set(v);

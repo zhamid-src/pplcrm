@@ -16,11 +16,15 @@ export interface ColumnDef {
   cellRenderer?: (p: CellParams) => CellRendererResult;
   cellRendererParams?: unknown;
   comparator?: (a: unknown, b: unknown) => number;
+  /** Clicking any cell in this column opens the record (the "name is the door" cell). */
+  doorColumn?: boolean;
   editable?: boolean;
   equals?: (a: unknown, b: unknown) => boolean;
   field?: string;
   headerName?: string;
   hide?: boolean;
+  /** Column cannot be hidden by the user (identity columns like the Name door). */
+  noHide?: boolean;
   onCellClicked?: (event: CellParams) => void;
   onCellDoubleClicked?: (event: CellParams) => void;
   isCellInteractive?: (row: GridRow) => boolean;

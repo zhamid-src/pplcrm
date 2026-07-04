@@ -24,12 +24,6 @@ import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-
 export class DataGridToolbarComponent {
   public readonly grid = inject(DataGrid);
 
-  // narrowTypeOptions may include a null "All" sentinel value; SingleSelectOption
-  // types value as string, but the sentinel must round-trip unchanged for the
-  // datagrid's own `o.value === selected` matching to keep working.
-  readonly narrowTypeOptions = computed<SingleSelectOption[]>(
-    () => this.grid.narrowTypeOptions() as unknown as SingleSelectOption[],
-  );
   readonly listOptions = computed<SingleSelectOption[]>(() =>
     this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
   );
