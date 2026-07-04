@@ -31,6 +31,7 @@
     "@fastify/formbody": "^8.0.2",
     "@fastify/multipart": "^10.0.0",
     "@fastify/sensible": "6.0.3",
+    "@fontsource-variable/inter": "^5.2.8",
     "@googlemaps/js-api-loader": "^1.16.10",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@simplewebauthn/server": "^13.3.2",
