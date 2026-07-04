@@ -11,6 +11,11 @@ developer or agent. The approved source design proposals are the two artifacts:
 and [Newsletter UX](https://claude.ai/code/artifact/c765baa0-9498-47ac-9a79-09e6540ebbb3).
 This skill is the durable distillation; when in doubt, re-read those.
 
+**Also read [UX-GUIDELINES.md](UX-GUIDELINES.md) in this directory before touching any UI.**
+It is the working distillation of this doctrine plus concrete rulings made during the North
+Star prototype (the extended idiom table, exact typography/motion values, hover and disabled
+rules). Where this doctrine is silent, that document rules.
+
 ## 0. The north star: beauty is a trust proxy
 
 The bar, verbatim from the product owner: _"the first-time user should look at it and think —
