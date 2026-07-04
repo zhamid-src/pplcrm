@@ -356,7 +356,7 @@ body {
 /* Ensure tooltip text is consistently normal weight and not bold */
 .tooltip:before,
 .tooltip::before {
-  font-weight: 300 !important;
+  font-weight: 400 !important;
 }
 
 /* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */

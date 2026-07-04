@@ -1,15 +1,20 @@
 <ng-template #navLink let-nav>
   <a
     *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="hover:font-bold hover:text-primary flex flex-auto items-center pb-1 pl-2 tracking-widest hover:rounded-lg !cursor-pointer"
+    class="hover:text-primary flex flex-auto items-center pb-1 pl-2 font-light hover:rounded-lg !cursor-pointer"
+    [class.animate-up]="nav.justPinned"
     (click)="this.closeMobile()"
     [routerLink]="nav.route"
-    routerLinkActive="font-bold"
+    routerLinkActive="!font-semibold !text-primary"
     [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
-    [class.font-bold]="pendingRoute() === nav.route"
+    [class.!font-semibold]="pendingRoute() === nav.route"
+    [class.!text-primary]="pendingRoute() === nav.route"
   >
     <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span class="indicator pl-2 group-hover:md:visible text-sm" [class.invisible]="isEffectivelyNarrow()">
+    <span
+      class="indicator pl-2 group-hover:md:visible text-[13px] tracking-[0.03em]"
+      [class.invisible]="isEffectivelyNarrow()"
+    >
       {{ nav.name }} @if (nav.indicator) {
       <span class="indicator-item status status-primary"></span>
       }
@@ -51,7 +56,7 @@
   <div class="flex-none pl-2" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
     @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
     <div
-      class="text-base-400 font-medium flex items-center justify-between pl-2 capitalize text-xs hover:cursor-pointer"
+      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] hover:cursor-pointer"
       (click)="toggleCollapse(item.name)"
     >
       <span [class.text-[10px]]="isEffectivelyNarrow() && !hoveringSidebar()">
