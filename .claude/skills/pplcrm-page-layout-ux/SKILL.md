@@ -1,0 +1,183 @@
+---
+name: pplcrm-page-layout-ux
+description: "How PeopleCRM detail/record pages compose (pc-detail-layout + pc-detail-header + pc-breadcrumbs + record-navigation.service) and the review checklist for shipping a page change. USE WHEN building or reviewing a detail/record view, adding breadcrumbs, wiring prev/next record navigation, placing the activity log, choosing AlertService vs confirm-dialog, or reviewing a page for UX consistency before commit. EXAMPLES: 'add a detail page for X', 'wire prev/next record navigation', 'the breadcrumbs are wrong on this view', 'where does pc-record-activities go', 'review this detail page before I ship it', 'add a delete confirmation', 'J/K keyboard nav on the record page'."
+---
+
+# PeopleCRM page layout & detail-page UX
+
+This is both a how-to and a **review checklist**. Every `*-view` detail page in this app is built
+from one shell (`pc-detail-layout`) and three collaborating pieces. Get the composition right and
+the orientation rules (below) fall out for free.
+
+## The shell: `pc-detail-layout`
+
+`libs/uxcommon/src/components/detail-layout/detail-layout.ts` is the outer frame for every record
+view. It owns the padded `bg-base-200/50` container, the loading/error/not-found states, and a
+content slot. **Do not hand-roll a page frame** — pass inputs to this and project your body into it.
+
+Key inputs (`detail-layout.ts:69-92`): `title` (required), `eyebrow`, `crumbs`, `icon`,
+`isLoading` (required), `hasRecord`, `showDelete`, `deleteText`, `btn1Text`, `btn1Icon`, plus the
+pager inputs `positionLabel`/`hasPrev`/`hasNext`/`prevLabel`/`nextLabel`. Outputs: `save` (the
+primary/Edit button), `delete`, `prevRecord`, `nextRecord` (`detail-layout.ts:94-97`).
+
+It internally renders `pc-detail-header`, which renders `pc-breadcrumbs`. You almost never
+reference the header or breadcrumbs directly on a page — you feed the layout and it wires them.
+
+Gotcha: the layout's own `@if (isLoading())` / `error()` / `hasRecord()` branches
+(`detail-layout.ts:46-63`) already render skeleton/error/not-found. Your projected body should
+guard its own render on the record existing (e.g. `@if (company())` in
+`company-view.html:21`) so you don't flash empty cards before data lands.
+
+Gotcha: `showDelete` demotes Delete into an overflow (⋯) menu, not an inline button, and it
+suppresses the third form-action button to keep the layout stable (`detail-header.ts:57-74`,
+`detail-header.ts:109-114`). Set `showDelete=true` + `deleteText` and handle `(delete)` — don't
+add your own delete button.
+
+## Prev/next record navigation: `record-navigation.service.ts`
+
+New pattern (`apps/frontend/src/app/services/record-navigation.service.ts`, untracked on branch
+`fix/lint-warnings`). Two halves:
+
+1. **The grid captures the filtered id set** on record open. `datagrid.ts:2522-2528` calls
+   `selectAllMatching()` then `recordNav.setContext(entityKey, ids, count)`, keyed by the grid's
+   own stripped list path (`datagrid.ts:2515-2520`, e.g. `/teams`). It is persisted to
+   `sessionStorage` so a deep-link/refresh survives (`record-navigation.service.ts:25-29`).
+
+2. **The detail page consumes it** via the `injectRecordNavigation(noun, id)` helper
+   (`record-navigation.service.ts:91`). It derives the list route from the activated route itself
+   (drops the record's own id segment — `record-navigation.service.ts:96-110`), so you pass no
+   route string. It returns a `RecordNavHandle` of signals:
+   `positionLabel` ("N of M filtered"), `hasPrev`/`hasNext`, `prevLabel`/`nextLabel`,
+   `goToPrev()`/`goToNext()` (`record-navigation.service.ts:73-81`).
+
+Wire it in the component (`company-view.ts:39`):
+
+```ts
+protected readonly recordNav = injectRecordNavigation('company', this.id);
+```
+
+Then bind the handle straight through to the layout (`company-view.html:11-19`):
+
+```html
+[positionLabel]="recordNav.positionLabel()" [hasPrev]="recordNav.hasPrev()" [hasNext]="recordNav.hasNext()"
+[prevLabel]="recordNav.prevLabel()" [nextLabel]="recordNav.nextLabel()" (prevRecord)="recordNav.goToPrev()"
+(nextRecord)="recordNav.goToNext()"
+```
+
+The pager renders inline with the breadcrumb trail (`breadcrumbs.ts:42-64`) and `J`/`K` keys
+navigate next/prev while the page is open — but **only when `positionLabel` is set** and the
+focus isn't in an input/textarea/select/contenteditable (`detail-layout.ts:99-112`). If the user
+deep-linked straight to a record (no grid handoff), `positionLabel` is `null`, the pager is
+hidden, and J/K do nothing. That's intended: no fake "1 of 1".
+
+The `noun` argument is only for aria-labels ("Previous person"); it does not have to match the
+entity key. All 12 view components already use this helper — grep
+`injectRecordNavigation` for live call sites.
+
+## Breadcrumbs
+
+Build a `PcBreadcrumb[]` as a `computed` and pass it as `crumbs`. Convention (verified in
+`company-view.ts:56-59`, `person-view.ts:154-157`, `team-view.ts:59-62`): first crumb is the list
+page with a `route`; **last crumb is the record name with NO `route`** (it renders as the current
+page, `breadcrumbs.ts:23-34`). The record name also becomes the layout `title` — the crumb and the
+`<h1>` say the same thing.
+
+```ts
+protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+  { label: 'People', route: '/people' },
+  { label: this.fullName() || 'Person' },
+]);
+```
+
+Rules baked into the current design (from Zee's UX judgment, now enforced by the shell):
+
+- **No fake "Home" crumb.** The trail must reflect real hierarchy; the sidebar logo is the way home.
+- Title is the **record name**, never a template name ("Person", "Company Profile"). Fall back to
+  the entity noun only while data is loading (`company()?.name || 'Company'`, `company-view.html:2`).
+- Entity type goes in `eyebrow`, not the title.
+
+## Activity log placement (mandatory — CLAUDE.md §4)
+
+Every view that modifies data includes `<pc-record-activities [entity]="..." [entityId]="...">`.
+Verified placement: inside the Activity tab panel on tabbed views
+(`company-view.html:107`, `team-view.html:94`, `person-view.html:242`,
+`household-view.html:211`).
+
+`entity` and `entityId` are `input.required` (`record-activities.ts:19-20`). **`entity` is the DB
+table name, not the route** — `'persons'` (route is `/people`), `'companies'`, `'teams'`,
+`'households'`. `entityId` is `id()` (the required `input` on the view). Match the table name or
+the activity feed loads nothing.
+
+## AlertService vs confirm-dialog vs neither
+
+- **`AlertService` (toast)** — fire-and-forget feedback after an action resolves. `showSuccess` /
+  `showError` / `showInfo`, each takes a single string (`alert-service.ts:78-86`). Use for "Company
+  deleted", load failures, copy-to-clipboard confirmations. Never `window.alert`, never an inline
+  banner (CLAUDE.md §4).
+- **`ConfirmDialogService`** (imported in views from `../../../services/shared-dialog.service`,
+  which re-exports `@uxcommon/components/confirm-dialog.service`) — a blocking decision the user
+  must make before you proceed. `confirm()` returns `Promise<boolean>`; `variant: 'danger'` for
+  destructive actions (`confirm-dialog.service.ts:85-103`). Also `alert`, `prompt`, `choose`.
+  Canonical destructive flow (`company-view.ts:130-137`):
+
+  ```ts
+  const confirmed = await this.dialogs.confirm({
+    title: 'Delete Company',
+    message: 'Are you sure you want to delete this company? This action cannot be undone.',
+    variant: 'danger',
+    confirmText: 'Delete',
+  });
+  if (!confirmed) return;
+  ```
+
+- **Neither** — reversible, low-stakes actions (opening a tab, navigating to Edit). Don't gate
+  navigation behind a confirm.
+
+Rule of thumb: **irreversible or lossy → confirm dialog first, toast after. Reversible → just do it,
+toast if there's a result worth reporting.**
+
+## Review checklist (run before shipping a page change)
+
+Zee's bar: a first-time user should think the page is beautiful, because sloppy UI reads as broken.
+Every page must answer three orientation questions:
+
+- [ ] **Where am I?** Title is the record's real name (not a template label); entity type is the
+      `eyebrow`; a leading `icon` if the entity has one.
+- [ ] **Where was I?** Breadcrumb trail is real hierarchy, first crumb links back to the list, last
+      crumb is this record with no link, no fake "Home".
+- [ ] **Where am I going?** Counts shown before clicks — tab labels carry counts
+      (`Employees (${employeeCount()})`, `company-view.ts:71`); prev/next pager shows "N of M
+      filtered" when a grid handed off context.
+- [ ] `pc-detail-layout` is the frame (no hand-rolled page shell); body guarded on the record
+      existing so nothing flashes before load.
+- [ ] Prev/next wired via `injectRecordNavigation` + bound through to the layout, or deliberately
+      omitted (fine — pager self-hides with no context).
+- [ ] `<pc-record-activities>` present with the correct **DB table name** as `entity` and `id()` as
+      `entityId`.
+- [ ] Destructive actions go through `ConfirmDialogService.confirm({ variant: 'danger' })`; feedback
+      via `AlertService` toasts — never `window.alert` or inline banners.
+- [ ] **Semantic DaisyUI tokens only** — `text-base-content`, `bg-primary`, `badge-neutral`, etc.
+      No hardcoded Tailwind hues (`text-teal-500`, `text-amber-500`, `bg-[#0a66c2]`) — they break
+      the dark theme. NOTE: some current views still violate this (`company-view.html:88-100`,
+      `person-view.ts:160-188`); the design track lists converting stat-card hues to semantic
+      tokens as pending cleanup — don't copy those as the pattern.
+- [ ] **Disclosure over suppression** — a disabled control says _why_ (or is hidden if it would be
+      misleading); buttons state exactly what they do; no hover-only affordances; no dead/misleading
+      affordances (e.g. a bookmark star on a record page that doesn't bookmark the record).
+- [ ] Sentence case, one modal idiom (the dialog service), one empty-state pattern
+      (icon + plain sentence + action).
+
+Then run `/verify` and the quality gate (see `pplcrm-quality-gate`).
+
+## Non-goals
+
+- **The app-wide design doctrine** (why the three questions, disclosure over suppression,
+  guide-don't-error, the color/copy/idiom contract for _all_ surfaces, proposing new design
+  work) → **`pplcrm-design-principles`**. This skill is its detail-page enforcement arm.
+- **Component-internal conventions** — `signal()`/`computed()`/`effect()`, the `form()` helper,
+  `createLoadingGate()`, `pc-icon` name/size rules → **`pplcrm-angular-components`**. (This skill
+  uses those but doesn't teach them.)
+- **Adding a whole new entity end-to-end** (schema → migration → tRPC → routing → experience) →
+  **`pplcrm-add-entity`**.
+- **Zod schema shapes** feeding the edit form → **`pplcrm-schemas-validation`**.
+- **Generic review/verify workflow** → the `/code-review` and `/verify` slash commands.
