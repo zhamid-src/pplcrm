@@ -60,9 +60,8 @@
       (click)="toggleCollapse(item.name)"
     >
       <span [class.text-[10px]]="isEffectivelyNarrow() && !hoveringSidebar()">
-        @if (isEffectivelyNarrow() && !hoveringSidebar()) {
-        <hr class="border-base-300 w-full" />
-        } @else { {{ item.name }} }
+        @if (isEffectivelyNarrow() && !hoveringSidebar()) { {{ item.short_name || item.name }} } @else { {{ item.name }}
+        }
       </span>
       @if (item.children?.length) {
       <pc-swap
