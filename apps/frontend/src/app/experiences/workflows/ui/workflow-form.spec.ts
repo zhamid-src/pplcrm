@@ -157,8 +157,7 @@ describe('WorkflowFormComponent', () => {
 
       await component['saveSettings']();
 
-      // The signal-forms `submit()` helper refuses to run the save action
-      // while the form is invalid, so the workflow is never persisted.
+      expect(mockAlertSvc.showError).toHaveBeenCalledWith('Please enter a valid workflow name.');
       expect(mockWorkflowsSvc.add).not.toHaveBeenCalled();
       expect(mockWorkflowsSvc.saveSteps).not.toHaveBeenCalled();
     });
