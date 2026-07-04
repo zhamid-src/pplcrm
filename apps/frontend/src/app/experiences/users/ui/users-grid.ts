@@ -3,6 +3,8 @@ import { escapeHtml } from '../../../../../../../libs/common/src';
 import { UserService } from '@frontend/services/user.service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { GridRow } from '@frontend/shared/components/datagrid/types';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { UserAdminService } from '../services/useradmin-service';
@@ -45,17 +47,17 @@ export class UsersGridComponent {
     timeStyle: 'short',
   });
 
-  protected col = [
+  protected col: ColDef[] = [
     {
       field: 'email',
       headerName: 'Email',
       editable: true,
-      cellRenderer: (p: any) => {
-        let avatarUrl: string | null = p.data?.avatar_url ?? null;
-        const firstName: string = p.data?.first_name ?? '';
-        const lastName: string = p.data?.last_name ?? '';
-        const name = [firstName, lastName].filter(Boolean).join(' ') || p.value || '?';
-        const emailVal = p.value || '';
+      cellRenderer: (p: CellParams) => {
+        let avatarUrl = (p.data?.['avatar_url'] as string | null | undefined) ?? null;
+        const firstName = (p.data?.['first_name'] as string | undefined) ?? '';
+        const lastName = (p.data?.['last_name'] as string | undefined) ?? '';
+        const name = [firstName, lastName].filter(Boolean).join(' ') || String(p.value ?? '') || '?';
+        const emailVal = String(p.value ?? '');
 
         let avatarHtml = '';
         if (avatarUrl) {
@@ -79,8 +81,12 @@ export class UsersGridComponent {
           for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
           const colorClass = PALETTES[sum % PALETTES.length];
           const parts = name.split(/\s+/);
+          const first = parts[0];
+          const last = parts[parts.length - 1];
           const initials =
-            parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : name[0].toUpperCase();
+            parts.length >= 2 && first && last
+              ? (first.charAt(0) + last.charAt(0)).toUpperCase()
+              : name.charAt(0).toUpperCase();
           avatarHtml = `<div class="w-5 h-5 rounded-full ${colorClass} flex items-center justify-center font-bold text-[10px] ring-1 ring-base-200">
             <span>${escapeHtml(initials)}</span>
           </div>`;
@@ -109,43 +115,43 @@ export class UsersGridComponent {
         values.push({ value: 'viewer', label: 'Viewer' });
         return { values };
       },
-      valueFormatter: (p: any) => {
-        const val = p.value ?? p.data?.role;
+      valueFormatter: (p: CellParams) => {
+        const val = p.value ?? p.data?.['role'];
         if (val === 'owner') return 'Owner';
         if (val === 'admin') return 'Admin';
         if (val === 'user') return 'User';
         if (val === 'viewer') return 'Viewer';
-        return val || '';
+        return (val as string | undefined) || '';
       },
     },
     {
       field: 'verified',
       headerName: 'Verified',
       editable: false,
-      valueFormatter: (p: any) => (this.coerceBoolean(p.value ?? p.data?.verified) ? 'Yes' : 'No'),
-      cellRenderer: (p: any) => (this.coerceBoolean(p.value ?? p.data?.verified) ? 'Yes' : 'No'),
+      valueFormatter: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
+      cellRenderer: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
     },
     {
       field: 'updated_at',
       headerName: 'Updated',
       hide: true,
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.updated_at),
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['updated_at']),
     },
     {
       field: 'created_at',
       headerName: 'Created',
       hide: true,
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.created_at),
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['created_at']),
     },
   ];
 
-  public readonly isCellEditableBind = (row: any, col: any): boolean => {
+  public readonly isCellEditableBind = (row: GridRow, col: ColDef): boolean => {
     if (!col.editable) return false;
 
     const currentUserRole = this.auth.getUser()?.role;
 
     if (currentUserRole === 'admin') {
-      if (row.role === 'owner') {
+      if (row['role'] === 'owner') {
         if (col.field === 'role' || col.field === 'verified') {
           return false;
         }
