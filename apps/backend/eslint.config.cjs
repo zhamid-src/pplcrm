@@ -3,7 +3,6 @@
 
 const { FlatCompat } = require('@eslint/eslintrc');
 const js = require('@eslint/js');
-const localRules = require('../../tools/eslint-rules/index.cjs');
 
 const compat = new FlatCompat({
   baseDirectory: __dirname,
@@ -11,6 +10,14 @@ const compat = new FlatCompat({
 });
 
 module.exports = [
+  /* Compose the root config so `nx lint backend` enforces the same
+   * workspace-wide rules (no-floating-promises, no-misused-promises, etc.)
+   * as the pre-commit `eslint` invocation. Previously this file stood alone,
+   * which meant nx lint never saw those rules and plain `eslint` never saw
+   * `local/no-unscoped-db-query` below — two disjoint, non-overlapping
+   * checks. Confirmed zero new violations from this composition. */
+  ...require('../../eslint.config.cjs'),
+
   /* Extend the base config */
   ...compat.config({ extends: ['plugin:@nx/javascript'] }).map((cfg) => ({
     ...cfg,
@@ -37,19 +44,25 @@ module.exports = [
   {
     files: ['**/src/app/modules/**/*.ts'],
     ignores: ['**/*.spec.ts'],
-    plugins: { local: localRules },
+    // `local` is already registered by the root config spread in above —
+    // redeclaring it here for the same file set throws
+    // "Cannot redefine plugin 'local'" under ESLint's flat config.
     rules: {
       'local/no-unscoped-db-query': [
         'error',
         {
           // Tables where cross-tenant queries are intentional:
-          //   authusers         - login by email, password reset by code
-          //   sessions          - sign-out by session_id hash (no tenant in token)
-          //   tenants           - tenant lookup by id
-          //   tags              - system-level tag reads (scoped at query join level)
-          //   ms_oauth_tokens   - keyed by user_id (globally unique bigint); single-user scope is sufficient
-          //   google_oauth_tokens - same reasoning as ms_oauth_tokens
-          ignoreTables: ['authusers', 'sessions', 'tenants', 'tags', 'ms_oauth_tokens', 'google_oauth_tokens'],
+          //   authusers - login by email, password reset by code (pre-auth, no tenant known yet)
+          //   sessions  - sign-out by session_id hash (no tenant in token)
+          //   tenants   - tenant lookup by id
+          //
+          // Removed 2026-07-04: `tags` (all module queries already scope tenant_id — the old
+          // "join-level scoping" note was wrong) and `ms_oauth_tokens`/`google_oauth_tokens`
+          // (migration 2026-06-26-email-sync-per-tenant re-keyed both on UNIQUE(tenant_id) and
+          // made user_id nullable, so "keyed by user_id" no longer held — these hold OAuth
+          // secrets and must be tenant-scoped). Adding a table here is a security decision:
+          // prove every current and future query on it is safe cross-tenant, not just quiet.
+          ignoreTables: ['authusers', 'sessions', 'tenants'],
         },
       ],
     },
