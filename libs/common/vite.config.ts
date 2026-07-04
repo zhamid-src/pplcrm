@@ -19,6 +19,16 @@ export default defineConfig(() => ({
     coverage: {
       reportsDirectory: '../../coverage/libs/common',
       provider: 'v8' as const,
+      // Coverage ratchet: measured baseline 2026-07-04 was 100% stmts /
+      // 94% branch on this small lib; held slightly below so one new helper
+      // file doesn't instantly break the build, but keep raising it as the
+      // lib grows. Never lower these — add tests instead.
+      thresholds: {
+        statements: 95,
+        branches: 90,
+        functions: 95,
+        lines: 95,
+      },
     },
   },
 }));
