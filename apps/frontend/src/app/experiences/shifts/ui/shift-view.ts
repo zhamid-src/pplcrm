@@ -17,6 +17,7 @@ import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs'
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 
 @Component({
   selector: 'pc-shift-view',
@@ -39,6 +40,8 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 })
 export class ShiftViewComponent {
   readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('shift', this.id);
 
   private readonly alertSvc = inject(AlertService);
   private readonly volunteerEventsSvc = inject(ShiftsService);

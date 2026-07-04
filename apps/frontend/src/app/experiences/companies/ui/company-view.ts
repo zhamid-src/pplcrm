@@ -15,6 +15,7 @@ import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 
 @Component({
   selector: 'pc-company-view',
@@ -34,6 +35,8 @@ import { SystemMetadata } from '@uxcommon/components/system-metadata/system-meta
 })
 export class CompanyView {
   readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('company', this.id);
 
   private readonly alertSvc = inject(AlertService);
   private readonly companiesSvc = inject(CompaniesService);

@@ -8,8 +8,15 @@
   [deleteText]="'Delete person'"
   [btn1Text]="'Edit person'"
   [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
   (save)="editPerson()"
   (delete)="deletePerson()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
 >
   @if (person()) {
   <!-- Main Content Grid -->

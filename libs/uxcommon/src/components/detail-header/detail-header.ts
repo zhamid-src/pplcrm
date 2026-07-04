@@ -11,7 +11,16 @@ import { FormActions } from '../form-actions/form-actions';
   template: `
     <div class="flex flex-col gap-2 border-b border-base-200 pb-4">
       @if (crumbs().length) {
-        <pc-breadcrumbs [crumbs]="crumbs()"></pc-breadcrumbs>
+        <pc-breadcrumbs
+          [crumbs]="crumbs()"
+          [positionLabel]="positionLabel()"
+          [hasPrev]="hasPrev()"
+          [hasNext]="hasNext()"
+          [prevLabel]="prevLabel()"
+          [nextLabel]="nextLabel()"
+          (prev)="prevRecord.emit()"
+          (next)="nextRecord.emit()"
+        ></pc-breadcrumbs>
       }
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex min-w-0 items-center gap-3">
@@ -71,6 +80,8 @@ import { FormActions } from '../form-actions/form-actions';
 export class DetailHeader {
   public readonly delete = output<void>();
   public readonly save = output<any>();
+  public readonly prevRecord = output<void>();
+  public readonly nextRecord = output<void>();
 
   public btn1Icon = input<PcIconNameType>('save');
   public btn1Text = input<string>('Save');
@@ -87,6 +98,13 @@ export class DetailHeader {
   public showDelete = input<boolean>(false);
   public subtitle = input<string | null | undefined>();
   public title = input.required<string>();
+
+  /** Optional "N of M filtered" pager, rendered inline with the breadcrumb trail. */
+  public positionLabel = input<string | null>(null);
+  public hasPrev = input<boolean>(false);
+  public hasNext = input<boolean>(false);
+  public prevLabel = input<string>('Previous record');
+  public nextLabel = input<string>('Next record');
 
   // Delete moved to the overflow menu. Suppressing the third button whenever
   // Delete is offered preserves the layout form-actions previously produced

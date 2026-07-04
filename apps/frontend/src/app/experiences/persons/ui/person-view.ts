@@ -28,6 +28,7 @@ import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { Tags } from '@experiences/tags/ui/tags';
 import { PcIconNameType } from '@icons/icons.index';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 
 interface SocialLinkDef {
   name: string;
@@ -61,6 +62,8 @@ interface SocialLinkDef {
 })
 export class PersonView {
   readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('person', this.id);
 
   private readonly alertSvc = inject(AlertService);
   private readonly userService = inject(UserService);

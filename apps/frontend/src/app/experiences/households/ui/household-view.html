@@ -9,8 +9,15 @@
   [deleteText]="'Delete household'"
   [btn1Text]="'Edit household'"
   [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
   (save)="editHousehold()"
   (delete)="deleteHousehold()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
 >
   @if (household(); as h) { @if (h.is_placeholder) {
   <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">

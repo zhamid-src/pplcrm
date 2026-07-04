@@ -16,6 +16,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { UserService } from '../../../services/user.service';
 import { TasksService } from '../../tasks/services/tasks-service';
 import { TeamsService } from '../services/teams-service';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 
 @Component({
   selector: 'pc-team-view',
@@ -35,6 +36,8 @@ import { TeamsService } from '../services/teams-service';
 })
 export class TeamViewComponent {
   readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('team', this.id);
 
   private readonly alertSvc = inject(AlertService);
   private readonly teamsSvc = inject(TeamsService);

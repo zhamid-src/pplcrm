@@ -19,6 +19,7 @@ import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs'
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { Card as PcCard } from '@uxcommon/components/card/card';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 
 @Component({
   selector: 'pc-user-view',
@@ -40,6 +41,8 @@ import { Card as PcCard } from '@uxcommon/components/card/card';
 })
 export class UserViewComponent {
   readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('user', this.id);
 
   private readonly alerts = inject(AlertService);
   private readonly route = inject(ActivatedRoute);

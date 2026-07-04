@@ -18,6 +18,7 @@ import { environment } from '../../../../environments/environment';
 import { EventsFrontendService } from '../services/events-frontend-service';
 import { EventsService } from '../../../services/api/events-service';
 import { PersonsService } from '../../persons/services/persons-service';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 
 @Component({
   selector: 'pc-event-view',
@@ -40,6 +41,8 @@ import { PersonsService } from '../../persons/services/persons-service';
 })
 export class EventViewComponent {
   readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('event', this.id);
 
   private readonly alertSvc = inject(AlertService);
   private readonly eventsFrontendSvc = inject(EventsFrontendService);
