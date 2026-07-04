@@ -10,6 +10,15 @@
       "options": {
         "lintFilePatterns": ["common/**/*.ts"]
       }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "outputs": ["{workspaceRoot}/coverage/libs/common"],
+      "options": {
+        "cwd": "libs/common",
+        "command": "vitest run"
+      }
     }
   },
   "tags": []
