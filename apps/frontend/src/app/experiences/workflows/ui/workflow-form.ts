@@ -386,7 +386,7 @@ export class WorkflowFormComponent implements OnInit {
     }
 
     this.form().markAsTouched();
-    if (!this.form().valid) {
+    if (!this.form().valid()) {
       this.alertSvc.showError('Please enter a valid workflow name.');
       return;
     }
