@@ -44,6 +44,7 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
       .execute();
   }
 
+  // TODO: is this called from anywhere?
   public async getByStripeSubscriptionId(
     subscriptionId: string,
   ): Promise<Selectable<Models['donation_pledges']> | undefined> {

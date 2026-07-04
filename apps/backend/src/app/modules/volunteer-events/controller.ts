@@ -67,7 +67,12 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       send_signup_confirmation: payload.send_signup_confirmation ?? true,
       send_volunteer_alert: payload.send_volunteer_alert ?? true,
       slug: payload.slug,
-      fields: payload.fields ?? DEFAULT_FIELDS,
+      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
+      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
+      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
+      // Stringifying it first makes node-postgres send plain text, which Postgres casts
+      // to jsonb correctly.
+      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
     } as OperationDataType<'volunteer_events', 'insert'>;
     return this.add(row);
   }
@@ -107,8 +112,13 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
     }
 
+    // `fields` is a jsonb column but modeled as `string[]`; pull it out of the raw payload
+    // spread and stringify it so node-postgres sends valid JSON text instead of a Postgres
+    // ARRAY literal (see addEvent() above for the full explanation).
+    const { fields, ...restPayload } = payload;
     const row = {
-      ...payload,
+      ...restPayload,
+      ...(fields !== undefined ? { fields: JSON.stringify(fields) as unknown as string[] } : {}),
       updatedby_id: auth.user_id,
     } as OperationDataType<'volunteer_events', 'update'>;
     const result = await this.update({

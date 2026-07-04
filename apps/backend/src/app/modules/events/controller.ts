@@ -54,7 +54,12 @@ export class EventsController extends BaseController<'events', EventsRepo> {
       is_published: payload.is_published ?? false,
       send_reminder: payload.send_reminder ?? true,
       send_registration_confirmation: payload.send_registration_confirmation ?? true,
-      fields: payload.fields ?? DEFAULT_FIELDS,
+      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
+      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
+      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
+      // Stringifying it first makes node-postgres send plain text, which Postgres casts
+      // to jsonb correctly.
+      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
     } as OperationDataType<'events', 'insert'>;
 
     try {
@@ -133,7 +138,9 @@ export class EventsController extends BaseController<'events', EventsRepo> {
 
     const row = {
       ...payload,
-      ...(payload.fields !== undefined ? { fields: payload.fields } : {}),
+      // See addEvent() above: `fields` is jsonb but modeled as `string[]`; stringify so
+      // node-postgres sends valid JSON text instead of a Postgres ARRAY literal.
+      ...(payload.fields !== undefined ? { fields: JSON.stringify(payload.fields) as unknown as string[] } : {}),
       updatedby_id: auth.user_id,
     } as OperationDataType<'events', 'update'>;
     let result;
@@ -533,11 +540,6 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     const lastName = payload['last_name']?.trim() || null;
     const mobile = payload['mobile']?.trim() || null;
     const notes = payload['notes']?.trim() || null;
-    const street1 = payload['street1']?.trim() || null;
-    const city = payload['city']?.trim() || null;
-    const state = payload['state']?.trim() || null;
-    const zip = payload['zip']?.trim() || null;
-    const country = payload['country']?.trim() || null;
 
     await this.getRepo()
       .transaction()
@@ -597,22 +599,26 @@ export class EventsController extends BaseController<'events', EventsRepo> {
               .execute();
           }
         } else {
-          let campaignId: string | null = null;
-          try {
-            const campaignRow = await trx
-              .selectFrom('campaigns')
-              .select('id')
-              .where('tenant_id', '=', tenantId)
-              .orderBy('created_at', 'asc')
-              .limit(1)
-              .executeTakeFirst();
-            campaignId = campaignRow ? String(campaignRow.id) : null;
-          } catch {
-            /* ignore */
-          }
+          // `persons.campaign_id` is NOT NULL, so a campaign must be resolved before insert
+          // (there is no "campaign-less" person). `persons` also has no address columns
+          // (street1/city/state/zip/country live on `households`, not `persons`), so those
+          // RSVP fields are intentionally not persisted here.
+          const campaignRow = await trx
+            .selectFrom('campaigns')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .orderBy('created_at', 'asc')
+            .limit(1)
+            .executeTakeFirst();
 
-          const insertRow: any = {
+          if (!campaignRow) {
+            throw new Error('Tenant configuration is incomplete.');
+          }
+          const campaignId = String(campaignRow.id);
+
+          const insertRow = {
             tenant_id: tenantId,
+            campaign_id: campaignId,
             household_id: householdId,
             createdby_id: creatorId,
             updatedby_id: creatorId,
@@ -621,13 +627,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
             email,
             mobile,
             notes,
-            street1,
-            city,
-            state,
-            zip,
-            country,
           };
-          if (campaignId) insertRow.campaign_id = campaignId as any;
 
           const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
           personId = String(insertRes.id);

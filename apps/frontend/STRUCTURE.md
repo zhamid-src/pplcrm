@@ -384,12 +384,15 @@ apps/
             trpc-refreshlink.ts
             trpc-service.ts
             trpc-types.ts
+            user-message.ts
             volunteer-service.ts
           error.service.ts
           fullscreen.service.ts
           global-error-handler.ts
           jsend.interceptor.ts
+          record-navigation.service.ts
           shared-dialog.service.ts
+          unsaved-changes-guard.ts
           user.service.ts
         shared/
           components/
@@ -2589,6 +2592,305 @@ function toNum(n: unknown): number | undefined {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/emails/ui/email-create-task-dialog/email-create-task-dialog.html
+
+```html
+<dialog #dlg class="modal">
+  <div class="modal-box max-w-2xl">
+    <div class="flex items-center justify-between mb-5">
+      <h3 class="text-xl font-bold flex items-center gap-2">
+        <pc-icon name="check-circle" [size]="5" class="text-primary"></pc-icon>
+        Create Task from Email
+      </h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <form class="space-y-4" (submit)="$event.preventDefault(); submit()" novalidate>
+      <!-- Task Name -->
+      <div class="form-control w-full">
+        <label class="label font-semibold text-sm" for="ct-name">
+          <span class="label-text">Task Name <span class="text-error">*</span></span>
+        </label>
+        <input
+          id="ct-name"
+          type="text"
+          placeholder="Enter task name..."
+          class="input input-bordered w-full focus:input-primary"
+          [formField]="form.name"
+          [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
+          autofocus
+        />
+        @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
+        form.name().errors(); track err) {
+        <p class="text-xs text-error mt-1 flex items-center gap-1">
+          <pc-icon name="x-mark" [size]="3"></pc-icon>{{ err.message }}
+        </p>
+        } }
+      </div>
+
+      <!-- Details (pre-filled with email thread) -->
+      <div class="form-control w-full">
+        <label class="label font-semibold text-sm" for="ct-details">
+          <span class="label-text">Description / Details</span>
+        </label>
+        <textarea
+          id="ct-details"
+          class="textarea textarea-bordered h-40 w-full focus:textarea-primary resize-y font-mono text-xs"
+          [formField]="form.details"
+        ></textarea>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Status -->
+        <div class="form-control w-full">
+          <label class="label font-semibold text-sm" for="ct-status">
+            <span class="label-text">Status</span>
+          </label>
+          <select id="ct-status" class="select select-bordered w-full focus:select-primary" [formField]="form.status">
+            @for (s of statuses; track s) {
+            <option [value]="s">{{ toTitleCase(s) }}</option>
+            }
+          </select>
+        </div>
+
+        <!-- Priority -->
+        <div class="form-control w-full">
+          <label class="label font-semibold text-sm" for="ct-priority">
+            <span class="label-text">Priority</span>
+          </label>
+          <select
+            id="ct-priority"
+            class="select select-bordered w-full focus:select-primary"
+            [formField]="form.priority"
+          >
+            @for (p of priorities; track p) {
+            <option [value]="p">{{ toTitleCase(p) }}</option>
+            }
+          </select>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Due Date -->
+        <div class="form-control w-full">
+          <label class="label font-semibold text-sm" for="ct-due">
+            <span class="label-text">Due Date</span>
+          </label>
+          <input
+            id="ct-due"
+            type="date"
+            class="input input-bordered w-full focus:input-primary"
+            [formField]="form.due_at"
+          />
+        </div>
+
+        <!-- Assignee -->
+        <div class="form-control w-full">
+          <label class="label font-semibold text-sm" for="ct-assigned">
+            <span class="label-text">Assignee</span>
+          </label>
+          <select
+            id="ct-assigned"
+            class="select select-bordered w-full focus:select-primary"
+            [formField]="form.assigned_to"
+          >
+            <option value="">Unassigned</option>
+            @for (u of users(); track u.id) {
+            <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+            }
+          </select>
+        </div>
+      </div>
+
+      <!-- Team -->
+      <div class="form-control w-full">
+        <label class="label font-semibold text-sm" for="ct-team">
+          <span class="label-text">Associated Team</span>
+        </label>
+        <select id="ct-team" class="select select-bordered w-full focus:select-primary" [formField]="form.team_id">
+          <option value="">No Team</option>
+          @for (t of teamsList(); track t.id) {
+          <option [value]="t.id">{{ t.name }}</option>
+          }
+        </select>
+      </div>
+
+      @if (error()) {
+      <div class="alert alert-error py-2 text-sm rounded-xl flex items-center gap-2">
+        <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
+        <span>{{ error() }}</span>
+      </div>
+      }
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" class="btn btn-ghost" (click)="close()">Cancel</button>
+        <button type="submit" class="btn btn-primary" [disabled]="submitting()">
+          @if (submitting()) {
+          <span class="loading loading-spinner loading-sm"></span>
+          } @else {
+          <pc-icon name="plus" [size]="4"></pc-icon>
+          } Create Task
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <form method="dialog" class="modal-backdrop">
+    <button (click)="close()">close</button>
+  </form>
+</dialog>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-create-task-dialog/email-create-task-dialog.ts
+
+```typescript
+import { Component, ElementRef, inject, input, signal, viewChild } from '@angular/core';
+import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AddTaskObj } from '../../../../../../../../libs/common/src';
+import type { IAuthUser } from '../../../../../../../../libs/common/src/lib/auth';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { UserService } from '../../../../services/user.service';
+import { TeamsService } from '../../../teams/services/teams-service';
+import { TasksService } from '../../../tasks/services/tasks-service';
+
+@Component({
+  selector: 'pc-email-create-task-dialog',
+  imports: [FormField, Icon],
+  templateUrl: './email-create-task-dialog.html',
+})
+export class EmailCreateTaskDialog {
+  private readonly alertSvc = inject(AlertService);
+  private readonly tasksSvc = inject(TasksService);
+  private readonly userService = inject(UserService);
+  private readonly teamsSvc = inject(TeamsService);
+
+  private readonly _loading = createLoadingGate();
+  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
+
+  public readonly email = input.required<EmailType>();
+
+  protected readonly users = signal<IAuthUser[]>([]);
+  protected readonly teamsList = signal<any[]>([]);
+  protected readonly submitting = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly isLoading = this._loading.visible;
+
+  protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
+  protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+
+  protected readonly payload = signal({
+    name: '',
+    details: '',
+    status: 'todo' as 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived',
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
+    due_at: '',
+    assigned_to: '',
+    team_id: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddTaskObj);
+  });
+
+  public async open() {
+    const em = this.email();
+
+    const date = em.date_sent ? new Date(em.date_sent) : new Date(em.updated_at);
+    const datePart = date.toLocaleString(undefined, {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const fromPart = em.from_name ? `${em.from_name} &lt;${em.from_email}&gt;` : (em.from_email ?? '');
+    const subject = em.subject ?? '(no subject)';
+    const url = `/inbox?email=${encodeURIComponent(em.id)}`;
+    const details =
+      `<p><a href="${url}">View email thread: ${subject}</a></p>` +
+      `<p>From: ${fromPart}<br>Date: ${datePart}<br>Subject: ${subject}</p>`;
+
+    this.payload.set({
+      name: '',
+      details,
+      status: 'todo',
+      priority: 'medium',
+      due_at: '',
+      assigned_to: '',
+      team_id: '',
+    });
+    this.error.set(null);
+
+    if (!this.users().length || !this.teamsList().length) {
+      const end = this._loading.begin();
+      try {
+        const [us, ts] = await Promise.all([this.userService.getUsers(), this.teamsSvc.getAll({ limit: 1000 })]);
+        this.users.set(us ?? []);
+        this.teamsList.set(ts?.rows ?? []);
+      } catch {
+        // non-critical; proceed without users/teams
+      } finally {
+        end();
+      }
+    }
+
+    this.dlgRef().nativeElement.showModal();
+  }
+
+  public close() {
+    this.dlgRef().nativeElement.close();
+  }
+
+  protected async submit() {
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+
+    this.submitting.set(true);
+    this.error.set(null);
+    const end = this._loading.begin();
+
+    try {
+      const raw = this.payload();
+      await this.tasksSvc.add({
+        name: raw.name.trim(),
+        details: raw.details.trim() || undefined,
+        status: raw.status as any,
+        priority: raw.priority as any,
+        due_at: raw.due_at ? new Date(raw.due_at) : undefined,
+        assigned_to: raw.assigned_to || null,
+        team_id: raw.team_id || null,
+      });
+      this.tasksSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Task created successfully');
+      this.close();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to create task';
+      this.error.set(msg);
+      this.alertSvc.showError(msg);
+    } finally {
+      this.submitting.set(false);
+      end();
+    }
+  }
+
+  protected toTitleCase(s: string): string {
+    if (!s) return '';
+    return s
+      .replace(/[_-]+/g, ' ')
+      .split(' ')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/emails/ui/email-details/email-details.html
 
 ```html
@@ -3289,6 +3591,936 @@ export class StandardFormsService extends FormsService {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/forms/ui/form-editor.html
+
+```html
+<div class="flex h-full flex-col bg-base-100">
+  <!-- Header -->
+  <header class="flex items-center justify-between border-b border-base-200 px-6 py-4">
+    <h1 class="text-xl font-bold flex items-center gap-2">
+      <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
+      {{ isNew() ? 'Create Web Form' : 'Edit Web Form' }}
+    </h1>
+    <pc-form-actions
+      [isLoading]="saving()"
+      [signalForm]="form"
+      (btn1Clicked)="save($event)"
+      [buttonsToShow]="'two'"
+      [btn1Text]="isNew() ? 'Create Web Form' : 'Save Web Form'"
+      [showDelete]="!isNew()"
+      [deleteText]="'Delete Web Form'"
+      (deleteClicked)="deleteForm()"
+    ></pc-form-actions>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
+    @if (!isInitialized()) {
+    <div class="mx-auto max-w-4xl space-y-4">
+      <div class="skeleton h-8 w-1/3"></div>
+      <div class="skeleton h-12 w-full"></div>
+      <div class="skeleton h-12 w-full"></div>
+      <div class="skeleton h-24 w-full"></div>
+    </div>
+    } @else {
+    <div class="mx-auto max-w-5xl">
+      @if (error()) {
+      <div class="alert alert-error mb-6 shadow-sm">
+        <pc-icon name="shield-exclamation" [size]="6"></pc-icon>
+        <span>{{ error() }}</span>
+      </div>
+      }
+
+      <div class="grid gap-8 md:grid-cols-12">
+        <!-- Left Column: Form Configuration -->
+        <div class="space-y-6 md:col-span-7">
+          <form (submit)="save($event)">
+            <pc-card title="Form Settings">
+              <!-- Name -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Form Name *</label>
+                <input
+                  type="text"
+                  [formField]="form.name"
+                  class="input input-bordered w-full"
+                  placeholder="E.g., Newsletter Signup"
+                  [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
+                />
+                @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
+                form.name().errors(); track err) {
+                <p class="mt-1 text-xs text-error">{{ err.message }}</p>
+                } }
+              </div>
+
+              <!-- Description -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Description</label>
+                <textarea
+                  [formField]="form.description"
+                  class="textarea textarea-bordered w-full"
+                  rows="2"
+                  placeholder="Internal note about where this form is deployed..."
+                ></textarea>
+                @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) {
+                @for (err of form.description().errors(); track err) {
+                <p class="mt-1 text-xs text-error">{{ err.message }}</p>
+                } }
+              </div>
+
+              <!-- Redirect URL -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1 flex items-center justify-between">
+                  <span>Redirect URL (After Submit)</span>
+                  <span class="text-[10px] text-base-content/50 font-normal">Optional</span>
+                </label>
+                <input
+                  type="url"
+                  [formField]="form.redirect_url"
+                  class="input input-bordered w-full"
+                  placeholder="https://mywebsite.com/thank-you"
+                  [class.input-error]="form.redirect_url().invalid() && (form.redirect_url().dirty() || form.redirect_url().touched())"
+                />
+                <p class="mt-1 text-[11px] text-base-content/50">
+                  If blank, users will see the PeopleCRM default success page.
+                </p>
+                @if (form.redirect_url().invalid() && (form.redirect_url().dirty() || form.redirect_url().touched())) {
+                @for (err of form.redirect_url().errors(); track err) {
+                <p class="mt-1 text-xs text-error">{{ err.message }}</p>
+                } }
+              </div>
+
+              <!-- Status -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Status</label>
+                <select [formField]="form.status" class="select select-bordered w-full">
+                  <option value="active">Active</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <!-- Send Confirmation Email Toggle -->
+              <div class="form-control">
+                <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+                  <div class="flex-1 min-w-0">
+                    <span class="label-text font-bold text-sm whitespace-normal"
+                      >Send Form Submission Confirmation</span
+                    >
+                    <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                      Send a thank-you confirmation email to constituents when they submit the form.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    [formField]="form.send_confirmation"
+                    class="toggle toggle-primary mt-1 shrink-0"
+                  />
+                </label>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <!-- Send Lead Notification Email Toggle -->
+              <div class="form-control">
+                <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+                  <div class="flex-1 min-w-0">
+                    <span class="label-text font-bold text-sm whitespace-normal">Send New Lead Notification</span>
+                    <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                      Send email alert notifications to organization admins when a new submission is received.
+                    </p>
+                  </div>
+                  <input type="checkbox" [formField]="form.send_alert" class="toggle toggle-primary mt-1 shrink-0" />
+                </label>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <!-- Form Fields Toggles -->
+              @if (!isDonationForm()) {
+              <div class="form-control">
+                <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60 mb-3">Form Fields</h2>
+                <pc-fields-selector
+                  [selectedFields]="selectedFields()"
+                  (fieldsChange)="selectedFields.set($event)"
+                ></pc-fields-selector>
+              </div>
+              } @else {
+              <div class="form-control">
+                <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60 mb-3">Form Fields</h2>
+                <div
+                  class="space-y-2 bg-base-200/30 rounded-xl p-4 border border-base-200 text-xs text-base-content/70"
+                >
+                  <p class="font-bold text-primary flex items-center gap-1">
+                    <pc-icon name="information-circle" [size]="4"></pc-icon>
+                    Donation form requires the following fields:
+                  </p>
+                  <ul class="list-disc list-inside space-y-1 pl-1 font-semibold text-base-content/85">
+                    <li>Donation Amount ($ CAD)</li>
+                    <li>First Name & Last Name</li>
+                    <li>Email Address</li>
+                    <li>Street Address</li>
+                    <li>City</li>
+                    <li>State / Province of Residence</li>
+                    <li>Zip / Postal Code</li>
+                    <li>Country of Residence</li>
+                  </ul>
+                  <div class="divider my-1.5"></div>
+                  <p class="text-[10px] text-base-content/50 font-medium">You can select optional fields to collect:</p>
+                  <div class="space-y-1">
+                    <div
+                      class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
+                    >
+                      <label class="flex items-center gap-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          [checked]="showMobile()"
+                          (change)="toggleField('mobile')"
+                          class="checkbox checkbox-sm checkbox-primary"
+                        />
+                        <span class="text-sm font-medium text-base-content/85">Mobile / Phone</span>
+                      </label>
+                      @if (showMobile()) {
+                      <button
+                        type="button"
+                        (click)="toggleRequired('mobile')"
+                        class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
+                        [class.btn-primary]="isMobileRequired()"
+                        [class.btn-outline]="!isMobileRequired()"
+                      >
+                        {{ isMobileRequired() ? 'Required' : 'Optional' }}
+                      </button>
+                      }
+                    </div>
+                    <div
+                      class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
+                    >
+                      <label class="flex items-center gap-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          [checked]="showNotes()"
+                          (change)="toggleField('notes')"
+                          class="checkbox checkbox-sm checkbox-primary"
+                        />
+                        <span class="text-sm font-medium text-base-content/85">Notes / Message</span>
+                      </label>
+                      @if (showNotes()) {
+                      <button
+                        type="button"
+                        (click)="toggleRequired('notes')"
+                        class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
+                        [class.btn-primary]="isNotesRequired()"
+                        [class.btn-outline]="!isNotesRequired()"
+                      >
+                        {{ isNotesRequired() ? 'Required' : 'Optional' }}
+                      </button>
+                      }
+                    </div>
+                  </div>
+                </div>
+              </div>
+              }
+
+              <div class="divider my-1"></div>
+
+              <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60">
+                Target Audience Actions
+              </h2>
+
+              <!-- Lists mapping -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Add subscribers to Lists</label>
+                @if (!availableLists().length) {
+                <p class="text-xs text-base-content/60 italic">No lists created yet.</p>
+                } @else {
+                <select class="select select-bordered select-sm w-full" (change)="handleListSelect($event)">
+                  <option value="">Select a list to target</option>
+                  @for (list of availableLists(); track list.id) {
+                  <option [value]="list.id" [disabled]="selectedLists().includes(list.id)">{{ list.name }}</option>
+                  }
+                </select>
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                  @if (!selectedLists().length) {
+                  <span class="text-[11px] text-base-content/50">No lists selected.</span>
+                  } @else { @for (listId of selectedLists(); track listId) {
+                  <pc-tagitem [name]="listName(listId)" (close)="removeList(listId)"></pc-tagitem>
+                  } }
+                </div>
+                }
+              </div>
+
+              <!-- Tags mapping -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Apply Tags to subscribers</label>
+                <div class="rounded border border-base-200 bg-base-50 p-2">
+                  <pc-tags
+                    [tags]="selectedTags()"
+                    [enableAutoComplete]="true"
+                    placeholder="Add tag"
+                    (tagsChange)="handleTagsChange($event)"
+                  ></pc-tags>
+                </div>
+                <p class="mt-1 text-[11px] text-base-content/50">
+                  A system tag <code class="badge badge-sm badge-neutral">Source: [Form Name]</code> will also be
+                  applied automatically. @if (payload().form_type === 'donation' || payload().form_type ===
+                  'recurring_donation') {
+                  <span class="block mt-1 text-success font-semibold flex items-center gap-1">
+                    <pc-icon name="tag" [size]="3" class="text-success"></pc-icon>
+                    The system tag <code class="badge badge-sm badge-success text-success-content">Donor</code> will
+                    also be applied automatically.
+                  </span>
+                  }
+                </p>
+              </div>
+            </pc-card>
+          </form>
+        </div>
+
+        <!-- Right Column: Code Generator / Preview -->
+        <div class="space-y-6 md:col-span-5">
+          <!-- Live Form Preview Panel -->
+          <pc-card title="Live Form Preview" subtitle="Real-time preview of the landing page form layout." icon="eye">
+            <!-- Mimic Public Form Aesthetics (supporting theme inheritance) -->
+            <div class="rounded-2xl border border-base-200 bg-base-200/30 p-6 mt-1 relative">
+              <!-- Inner Form Header -->
+              <div class="text-center mb-6">
+                <h4
+                  class="text-lg font-bold bg-gradient-to-br from-base-content to-base-content/75 bg-clip-text text-transparent"
+                >
+                  {{ payload().name || 'Untitled Web Form' }}
+                </h4>
+                <p class="text-xs text-base-content/60 mt-1 whitespace-pre-wrap">
+                  {{ payload().description || 'Enter a description to see it here.' }}
+                </p>
+              </div>
+
+              <!-- Form Fields -->
+              <div class="space-y-4">
+                @if (isDonationForm()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">Donation Amount ($ CAD) *</label>
+                  <input type="number" class="input input-bordered input-sm w-full" placeholder="E.g. 50.00" disabled />
+                </div>
+                } @if (isDonationForm() || showFirstName()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5"
+                    >First Name{{ isDonationForm() || isFirstNameRequired() ? ' *' : '' }}</label
+                  >
+                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. John" disabled />
+                </div>
+                } @if (isDonationForm() || showLastName()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5"
+                    >Last Name{{ isDonationForm() || isLastNameRequired() ? ' *' : '' }}</label
+                  >
+                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. Doe" disabled />
+                </div>
+                }
+
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">Email Address *</label>
+                  <input
+                    type="email"
+                    class="input input-bordered input-sm w-full"
+                    placeholder="john@example.com"
+                    disabled
+                  />
+                </div>
+
+                @if (isDonationForm() || showStreet1()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5"
+                    >Street Address{{ isDonationForm() || isStreet1Required() ? ' *' : '' }}</label
+                  >
+                  <input
+                    type="text"
+                    class="input input-bordered input-sm w-full"
+                    placeholder="E.g. 123 Main St"
+                    disabled
+                  />
+                </div>
+                } @if (isDonationForm() || showCity()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5"
+                    >City{{ isDonationForm() || isCityRequired() ? ' *' : '' }}</label
+                  >
+                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. Toronto" disabled />
+                </div>
+                } @if (isDonationForm() || showCountry()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5"
+                    >Country of Residence{{ isDonationForm() || isCountryRequired() ? ' *' : '' }}</label
+                  >
+                  <select class="select select-bordered select-sm w-full" disabled>
+                    <option>Canada</option>
+                    <option>United States</option>
+                  </select>
+                </div>
+                } @if (isDonationForm() || showState()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5"
+                    >State / Province of Residence{{ isDonationForm() || isStateRequired() ? ' *' : '' }}</label
+                  >
+                  <input
+                    type="text"
+                    class="input input-bordered input-sm w-full"
+                    placeholder="E.g. ON or NY"
+                    disabled
+                  />
+                </div>
+                } @if (isDonationForm() || showZip()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5"
+                    >Zip / Postal Code{{ isDonationForm() || isZipRequired() ? ' *' : '' }}</label
+                  >
+                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. M5V 2T6" disabled />
+                </div>
+                } @if (showMobile()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5"
+                    >Mobile / Phone{{ isMobileRequired() ? ' *' : '' }}</label
+                  >
+                  <input
+                    type="text"
+                    class="input input-bordered input-sm w-full"
+                    placeholder="E.g. 555-0199"
+                    disabled
+                  />
+                </div>
+                } @if (showNotes()) {
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5"
+                    >Notes / Message{{ isNotesRequired() ? ' *' : '' }}</label
+                  >
+                  <textarea
+                    class="textarea textarea-bordered textarea-sm w-full"
+                    rows="2"
+                    placeholder="How can we help you?"
+                    disabled
+                  ></textarea>
+                </div>
+                }
+
+                <button type="button" class="btn btn-primary btn-sm w-full mt-2" disabled>
+                  {{ isDonationForm() ? 'Next' : 'Submit' }}
+                </button>
+              </div>
+            </div>
+          </pc-card>
+
+          @if (isNew()) {
+          <div class="card bg-base-200 border border-base-300 text-center">
+            <div class="card-body items-center py-12">
+              <pc-icon name="clipboard-document-list" [size]="12" class="text-base-content/40 mb-3"></pc-icon>
+              <h3 class="font-bold text-lg">Snippet Generator</h3>
+              <p class="text-sm text-base-content/60 max-w-sm mt-1">
+                Once you save the form definition, we will generate the copy-paste HTML snippet you can embed on your
+                website.
+              </p>
+            </div>
+          </div>
+          } @else {
+          <pc-card title="HTML Embed Snippet" subtitle="Deploy this form on your external website.">
+            <button pc-card-actions class="btn btn-sm btn-outline btn-primary" (click)="copySnippet()">
+              <pc-icon name="document-duplicate" class="mr-1"></pc-icon>
+              Copy
+            </button>
+
+            <div class="form-control">
+              <label class="label text-xs font-semibold py-1">Public Form ID</label>
+              <code class="badge badge-neutral font-mono select-all p-3 text-xs w-full justify-start h-auto break-all">
+                {{ formId() }}
+              </code>
+            </div>
+
+            <div class="form-control">
+              <label class="label text-xs font-semibold py-1">
+                <span>Public Landing Page URL</span>
+              </label>
+              <div class="flex gap-2">
+                <input
+                  type="text"
+                  [value]="formUrl()"
+                  readonly
+                  class="input input-bordered input-sm flex-1 font-mono text-xs"
+                />
+                <a
+                  [href]="formUrl()"
+                  target="_blank"
+                  class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
+                  title="Open landing page"
+                >
+                  <pc-icon name="arrow-top-right-on-square"></pc-icon>
+                </a>
+                <button
+                  class="btn btn-sm btn-outline btn-primary px-3"
+                  (click)="copyUrl()"
+                  title="Copy landing page URL"
+                >
+                  <pc-icon name="document-duplicate"></pc-icon>
+                </button>
+              </div>
+            </div>
+
+            <div class="form-control">
+              <label class="label text-xs font-semibold py-1">HTML Code</label>
+              <pre
+                class="bg-neutral text-neutral-content p-4 rounded-xl text-[11px] font-mono max-h-72 overflow-y-auto select-all leading-normal"
+              >
+{{ embedSnippet() }}
+                  </pre
+              >
+            </div>
+
+            <div class="divider my-1"></div>
+
+            <div class="rounded-lg bg-base-50 p-4 border border-base-200">
+              <h4
+                class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5 mb-2"
+              >
+                <pc-icon name="check-circle" class="text-success"></pc-icon>
+                Spam & BOT Protection Included
+              </h4>
+              <p class="text-[11px] text-base-content/60 leading-normal">
+                The generated snippet includes a hidden <strong>honeypot field</strong> (<code>name="_hp"</code>). Spam
+                bots automatically fill in every input control, which triggers our silent rejection, protecting your CRM
+                from contact pollution.
+              </p>
+            </div>
+          </pc-card>
+          }
+        </div>
+      </div>
+    </div>
+    }
+  </main>
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.html
+
+```html
+<div class="flex h-full flex-col bg-base-100">
+  <!-- Header -->
+  <header class="flex items-center justify-between border-b border-base-200 px-6 py-4">
+    <h1 class="text-xl font-bold flex items-center gap-2">
+      <pc-icon name="currency-dollar" [size]="5" class="text-primary"></pc-icon>
+      {{ isNew() ? 'Create Donation Page' : 'Edit Donation Page' }}
+    </h1>
+    <pc-form-actions
+      [isLoading]="saving()"
+      [signalForm]="form"
+      (btn1Clicked)="save($event)"
+      [buttonsToShow]="'two'"
+      [btn1Text]="isNew() ? 'Create Donation Page' : 'Save Donation Page'"
+      [showDelete]="!isNew()"
+      [deleteText]="'Delete Donation Page'"
+      (deleteClicked)="deleteForm()"
+    ></pc-form-actions>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
+    @if (!isInitialized()) {
+    <div class="mx-auto max-w-4xl space-y-4">
+      <div class="skeleton h-8 w-1/3"></div>
+      <div class="skeleton h-12 w-full"></div>
+      <div class="skeleton h-12 w-full"></div>
+      <div class="skeleton h-24 w-full"></div>
+    </div>
+    } @else { @if (!hasStripeKey()) {
+    <div class="mx-auto max-w-5xl mb-6">
+      <div class="alert alert-warning shadow-sm">
+        <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+        <div>
+          <span class="font-bold">Stripe Keys Required</span>
+          <p class="text-sm mt-0.5">
+            Donation pages require Stripe to process payments.
+            <a href="/configuration/donations" class="link link-primary font-bold">Configure Stripe</a>
+          </p>
+        </div>
+      </div>
+    </div>
+    } @if (error()) {
+    <div class="mx-auto max-w-5xl mb-6">
+      <div class="alert alert-error shadow-sm">
+        <pc-icon name="shield-exclamation" [size]="6"></pc-icon>
+        <span>{{ error() }}</span>
+      </div>
+    </div>
+    }
+
+    <div class="mx-auto max-w-5xl">
+      <div class="grid gap-8 md:grid-cols-12">
+        <!-- Left Column: Page Configuration -->
+        <div class="space-y-6 md:col-span-7">
+          <form (submit)="save($event)">
+            <pc-card title="Page Settings">
+              <!-- Donation Type -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Donation Type</label>
+                @if (isNew()) {
+                <div class="flex gap-6">
+                  <label class="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="donationType"
+                      class="radio radio-success radio-sm"
+                      [checked]="!isRecurring()"
+                      (change)="setType('donation')"
+                    />
+                    <div>
+                      <span class="text-sm font-semibold">One-Time</span>
+                      <p class="text-[11px] text-base-content/50">Single donation via Stripe Checkout</p>
+                    </div>
+                  </label>
+                  <label class="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="donationType"
+                      class="radio radio-primary radio-sm"
+                      [checked]="isRecurring()"
+                      (change)="setType('recurring_donation')"
+                    />
+                    <div>
+                      <span class="text-sm font-semibold">Recurring</span>
+                      <p class="text-[11px] text-base-content/50">Monthly pledge via Stripe Subscription</p>
+                    </div>
+                  </label>
+                </div>
+                } @else {
+                <div class="flex items-center gap-2 px-3 py-2 bg-base-200/50 rounded-lg border border-base-200">
+                  @if (isRecurring()) {
+                  <pc-icon name="arrow-path" class="text-primary" [size]="5"></pc-icon>
+                  <span class="font-medium text-sm">Recurring (Monthly Pledge)</span>
+                  } @else {
+                  <pc-icon name="currency-dollar" class="text-success" [size]="5"></pc-icon>
+                  <span class="font-medium text-sm">One-Time Donation</span>
+                  }
+                </div>
+                <p class="text-[10px] text-base-content/50 mt-1">Donation type cannot be changed after creation.</p>
+                }
+              </div>
+
+              <!-- Name -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Page Name *</label>
+                <input
+                  type="text"
+                  [formField]="form.name"
+                  class="input input-bordered w-full"
+                  placeholder="E.g., Spring Fundraiser"
+                  [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
+                />
+                @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
+                form.name().errors(); track err) {
+                <p class="mt-1 text-xs text-error">{{ err.message }}</p>
+                } }
+              </div>
+
+              <!-- Description -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Description</label>
+                <textarea
+                  [formField]="form.description"
+                  class="textarea textarea-bordered w-full"
+                  rows="2"
+                  placeholder="Internal note about this donation page..."
+                ></textarea>
+              </div>
+
+              <!-- Redirect URL -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1 flex items-center justify-between">
+                  <span>Redirect URL (After Submit)</span>
+                  <span class="text-[10px] text-base-content/50 font-normal">Optional</span>
+                </label>
+                <input
+                  type="url"
+                  [formField]="form.redirect_url"
+                  class="input input-bordered w-full"
+                  placeholder="https://mywebsite.com/thank-you"
+                  [class.input-error]="form.redirect_url().invalid() && (form.redirect_url().dirty() || form.redirect_url().touched())"
+                />
+                <p class="mt-1 text-[11px] text-base-content/50">
+                  If blank, users will see the PeopleCRM default success page.
+                </p>
+              </div>
+
+              <!-- Status -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Status</label>
+                <select [formField]="form.status" class="select select-bordered w-full">
+                  <option value="active">Active</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <!-- Send Confirmation Email Toggle -->
+              <div class="form-control">
+                <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+                  <div class="flex-1 min-w-0">
+                    <span class="label-text font-bold text-sm whitespace-normal">Send Submission Confirmation</span>
+                    <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                      Send a thank-you confirmation email to donors when they complete their donation.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    [formField]="form.send_confirmation"
+                    class="toggle toggle-primary mt-1 shrink-0"
+                  />
+                </label>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <!-- Send Lead Notification Email Toggle -->
+              <div class="form-control">
+                <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+                  <div class="flex-1 min-w-0">
+                    <span class="label-text font-bold text-sm whitespace-normal">Send New Donor Notification</span>
+                    <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                      Send email alert notifications to organization admins when a new donation is received.
+                    </p>
+                  </div>
+                  <input type="checkbox" [formField]="form.send_alert" class="toggle toggle-primary mt-1 shrink-0" />
+                </label>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <!-- Form Fields (donation forms have fixed required fields) -->
+              <div class="form-control">
+                <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60 mb-3">Form Fields</h2>
+                <div
+                  class="space-y-2 bg-base-200/30 rounded-xl p-4 border border-base-200 text-xs text-base-content/70"
+                >
+                  <p class="font-bold text-primary flex items-center gap-1">
+                    <pc-icon name="information-circle" [size]="4"></pc-icon>
+                    Donation pages always collect:
+                  </p>
+                  <ul class="list-disc list-inside space-y-1 pl-1 font-semibold text-base-content/85">
+                    <li>{{ isRecurring() ? 'Monthly Pledge Amount ($)' : 'Donation Amount ($ CAD)' }}</li>
+                    <li>First Name & Last Name</li>
+                    <li>Email Address</li>
+                    <li>Street Address, City, State / Province, Zip / Postal Code, Country</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60">
+                Target Audience Actions
+              </h2>
+
+              <!-- Lists mapping -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Add donors to Lists</label>
+                @if (!availableLists().length) {
+                <p class="text-xs text-base-content/60 italic">No lists created yet.</p>
+                } @else {
+                <select class="select select-bordered select-sm w-full" (change)="handleListSelect($event)">
+                  <option value="">Select a list to target</option>
+                  @for (list of availableLists(); track list.id) {
+                  <option [value]="list.id" [disabled]="selectedLists().includes(list.id)">{{ list.name }}</option>
+                  }
+                </select>
+                <div class="mt-2 flex flex-wrap gap-1.5">
+                  @if (!selectedLists().length) {
+                  <span class="text-[11px] text-base-content/50">No lists selected.</span>
+                  } @else { @for (listId of selectedLists(); track listId) {
+                  <pc-tagitem [name]="listName(listId)" (close)="removeList(listId)"></pc-tagitem>
+                  } }
+                </div>
+                }
+              </div>
+
+              <!-- Tags mapping -->
+              <div class="form-control">
+                <label class="label text-xs font-semibold py-1">Apply Tags to donors</label>
+                <div class="rounded border border-base-200 bg-base-50 p-2">
+                  <pc-tags
+                    [tags]="selectedTags()"
+                    [enableAutoComplete]="true"
+                    placeholder="Add tag"
+                    (tagsChange)="handleTagsChange($event)"
+                  ></pc-tags>
+                </div>
+                <p class="mt-1 text-[11px] text-base-content/50">
+                  A system tag <code class="badge badge-sm badge-neutral">Source: [Page Name]</code> will be applied
+                  automatically. The system tag
+                  <code class="badge badge-sm badge-success text-success-content">Donor</code> will also be applied to
+                  all submissions.
+                </p>
+              </div>
+            </pc-card>
+          </form>
+        </div>
+
+        <!-- Right Column: Preview & Snippet -->
+        <div class="space-y-6 md:col-span-5">
+          <!-- Live Form Preview -->
+          <pc-card title="Live Form Preview" subtitle="Real-time preview of the donation page layout." icon="eye">
+            <div class="rounded-2xl border border-base-200 bg-base-200/30 p-6 mt-1 relative">
+              <div class="text-center mb-6">
+                <h4
+                  class="text-lg font-bold bg-gradient-to-br from-base-content to-base-content/75 bg-clip-text text-transparent"
+                >
+                  {{ payload().name || 'Untitled Donation Page' }}
+                </h4>
+                <p class="text-xs text-base-content/60 mt-1 whitespace-pre-wrap">
+                  {{ payload().description || 'Enter a description to see it here.' }}
+                </p>
+              </div>
+
+              <div class="space-y-4">
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">
+                    {{ isRecurring() ? 'Monthly Pledge Amount ($) *' : 'Donation Amount ($ CAD) *' }}
+                  </label>
+                  <input type="number" class="input input-bordered input-sm w-full" placeholder="E.g. 50" disabled />
+                </div>
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">First Name *</label>
+                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. John" disabled />
+                </div>
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">Last Name *</label>
+                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. Doe" disabled />
+                </div>
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">Email Address *</label>
+                  <input
+                    type="email"
+                    class="input input-bordered input-sm w-full"
+                    placeholder="john@example.com"
+                    disabled
+                  />
+                </div>
+                <div class="form-control">
+                  <label class="label text-[11px] font-semibold py-0.5">Street Address *</label>
+                  <input
+                    type="text"
+                    class="input input-bordered input-sm w-full"
+                    placeholder="E.g. 123 Main St"
+                    disabled
+                  />
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="form-control">
+                    <label class="label text-[11px] font-semibold py-0.5">City *</label>
+                    <input type="text" class="input input-bordered input-sm w-full" disabled />
+                  </div>
+                  <div class="form-control">
+                    <label class="label text-[11px] font-semibold py-0.5">Zip / Postal *</label>
+                    <input type="text" class="input input-bordered input-sm w-full" disabled />
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div class="form-control">
+                    <label class="label text-[11px] font-semibold py-0.5">State / Province *</label>
+                    <input type="text" class="input input-bordered input-sm w-full" disabled />
+                  </div>
+                  <div class="form-control">
+                    <label class="label text-[11px] font-semibold py-0.5">Country *</label>
+                    <input type="text" class="input input-bordered input-sm w-full" disabled />
+                  </div>
+                </div>
+                <button type="button" class="btn btn-primary btn-sm w-full mt-2" disabled>
+                  {{ isRecurring() ? 'Start Monthly Pledge' : 'Donate Now' }}
+                </button>
+              </div>
+            </div>
+          </pc-card>
+
+          @if (isNew()) {
+          <div class="card bg-base-200 border border-base-300 text-center">
+            <div class="card-body items-center py-12">
+              <pc-icon name="currency-dollar" [size]="12" class="text-base-content/40 mb-3"></pc-icon>
+              <h3 class="font-bold text-lg">Snippet Generator</h3>
+              <p class="text-sm text-base-content/60 max-w-sm mt-1">
+                Once you save the page, we will generate the copy-paste HTML snippet you can embed on your website.
+              </p>
+            </div>
+          </div>
+          } @else {
+          <pc-card title="HTML Embed Snippet" subtitle="Deploy this donation page on your external website.">
+            <button pc-card-actions class="btn btn-sm btn-outline btn-primary" (click)="copySnippet()">
+              <pc-icon name="document-duplicate" class="mr-1"></pc-icon>
+              Copy
+            </button>
+
+            <div class="form-control">
+              <label class="label text-xs font-semibold py-1">Public Form ID</label>
+              <code class="badge badge-neutral font-mono select-all p-3 text-xs w-full justify-start h-auto break-all">
+                {{ formId() }}
+              </code>
+            </div>
+
+            <div class="form-control">
+              <label class="label text-xs font-semibold py-1">Public Landing Page URL</label>
+              <div class="flex gap-2">
+                <input
+                  type="text"
+                  [value]="formUrl()"
+                  readonly
+                  class="input input-bordered input-sm flex-1 font-mono text-xs"
+                />
+                <a
+                  [href]="formUrl()"
+                  target="_blank"
+                  class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
+                  title="Open landing page"
+                >
+                  <pc-icon name="arrow-top-right-on-square"></pc-icon>
+                </a>
+                <button
+                  class="btn btn-sm btn-outline btn-primary px-3"
+                  (click)="copyUrl()"
+                  title="Copy landing page URL"
+                >
+                  <pc-icon name="document-duplicate"></pc-icon>
+                </button>
+              </div>
+            </div>
+
+            <div class="form-control">
+              <label class="label text-xs font-semibold py-1">HTML Code</label>
+              <pre
+                class="bg-neutral text-neutral-content p-4 rounded-xl text-[11px] font-mono max-h-72 overflow-y-auto select-all leading-normal"
+              >
+{{ embedSnippet() }}
+              </pre>
+            </div>
+
+            <div class="divider my-1"></div>
+
+            <div class="rounded-lg bg-base-50 p-4 border border-base-200">
+              <h4
+                class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5 mb-2"
+              >
+                <pc-icon name="check-circle" class="text-success"></pc-icon>
+                Spam & BOT Protection Included
+              </h4>
+              <p class="text-[11px] text-base-content/60 leading-normal">
+                The generated snippet includes a hidden <strong>honeypot field</strong> (<code>name="_hp"</code>) to
+                silently reject spam bots.
+              </p>
+            </div>
+          </pc-card>
+          }
+        </div>
+      </div>
+    </div>
+    }
+  </main>
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/households/services/households-service.ts
 
 ```typescript
@@ -3656,6 +4888,255 @@ export class ListsRefreshService {
     this.refreshCount.update((n) => n + 1);
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/lists/ui/list-form.html
+
+```html
+<div class="flex min-h-full flex-col bg-base-100">
+  @if (!isNew()) {
+  <!-- Simple Edit Form -->
+  <form [formGroup]="form" class="mx-5 my-8 flex flex-col gap-6 sm:mx-10" (submit)="save($event)">
+    <div class="flex items-center justify-between border-b border-base-200 pb-4 mb-6">
+      <div class="flex items-center gap-3">
+        <pc-icon name="queue-list" class="text-primary" [size]="5"></pc-icon>
+        <div>
+          <h1 class="text-xl font-bold">Edit {{ form.get('name')?.value || 'List' }}</h1>
+          <p class="text-sm text-base-content/60 mt-0.5">Modify the name and description of this list.</p>
+        </div>
+      </div>
+      <pc-form-actions
+        [isLoading]="isLoading()"
+        (btn1Clicked)="save($event)"
+        [btn1Text]="'Save List'"
+        [showDelete]="true"
+        [deleteText]="'Delete List'"
+        (deleteClicked)="deleteList()"
+        buttonsToShow="two"
+      ></pc-form-actions>
+    </div>
+
+    <section class="grid gap-6 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
+      <div class="space-y-2">
+        <label class="text-sm font-medium text-base-content/80" for="list-name">List Name</label>
+        <input
+          id="list-name"
+          type="text"
+          class="input input-bordered w-full"
+          formControlName="name"
+          placeholder="List Name"
+        />
+      </div>
+
+      <div class="space-y-2">
+        <label class="text-sm font-medium text-base-content/80" for="list-description">Description</label>
+        <textarea
+          id="list-description"
+          rows="4"
+          class="textarea textarea-bordered w-full"
+          placeholder="Describe the purpose of this list"
+          formControlName="description"
+        ></textarea>
+      </div>
+    </section>
+  </form>
+  } @else {
+  <!-- Stepper Form for New Lists -->
+  <form [formGroup]="form" class="mx-5 my-8 flex flex-col gap-6 sm:mx-10">
+    <!-- Header -->
+    <div class="flex items-center justify-between border-b border-base-200 pb-4">
+      <div class="flex items-center gap-3">
+        <pc-icon name="queue-list" class="text-primary" [size]="5"></pc-icon>
+        <div>
+          <h1 class="text-xl font-bold">New List</h1>
+          <p class="text-sm text-base-content/60 mt-0.5">
+            Configure static or dynamic contact lists for outreach campaigns.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stepper -->
+    <div class="w-full">
+      <ol class="flex items-center w-full text-sm">
+        <li class="flex-1 flex items-center gap-2" [class.cursor-pointer]="isNew()" (click)="isNew() && goto(1)">
+          <div
+            class="w-7 h-7 rounded-full flex items-center justify-center"
+            [class.bg-primary]="step() >= 1"
+            [class.bg-base-300]="step() < 1"
+          >
+            <span class="text-base-100 font-bold">1</span>
+          </div>
+          <span class="font-medium">Type</span>
+        </li>
+        <div class="flex-1 h-0.5 mx-2" [class.bg-primary]="step() > 1" [class.bg-base-300]="step() <= 1"></div>
+        <li class="flex-1 flex items-center gap-2" [class.cursor-pointer]="isNew()" (click)="isNew() && goto(2)">
+          <div
+            class="w-7 h-7 rounded-full flex items-center justify-center"
+            [class.bg-primary]="step() >= 2"
+            [class.bg-base-300]="step() < 2"
+          >
+            <span class="text-base-100 font-bold">2</span>
+          </div>
+          <span class="font-medium">Mode</span>
+        </li>
+        <div class="flex-1 h-0.5 mx-2" [class.bg-primary]="step() > 2" [class.bg-base-300]="step() <= 2"></div>
+        <li class="flex-1 flex items-center gap-2 cursor-pointer" (click)="goto(3)">
+          <div
+            class="w-7 h-7 rounded-full flex items-center justify-center"
+            [class.bg-primary]="step() >= 3"
+            [class.bg-base-300]="step() < 3"
+          >
+            <span class="text-base-100 font-bold">3</span>
+          </div>
+          <span class="font-medium">Filters</span>
+        </li>
+        <div class="flex-1 h-0.5 mx-2" [class.bg-primary]="step() > 3" [class.bg-base-300]="step() <= 3"></div>
+        <li class="flex-1 flex items-center gap-2 cursor-pointer" (click)="goto(4)">
+          <div
+            class="w-7 h-7 rounded-full flex items-center justify-center"
+            [class.bg-primary]="step() >= 4"
+            [class.bg-base-300]="step() < 4"
+          >
+            <span class="text-base-100 font-bold">4</span>
+          </div>
+          <span class="font-medium">Preview</span>
+        </li>
+      </ol>
+    </div>
+
+    <!-- Step 1: Type selection -->
+    @if (step() === 1) {
+    <div class="grid gap-4 sm:grid-cols-2">
+      <button
+        type="button"
+        class="card border border-base-300 hover:border-primary p-6 text-left"
+        [class.bg-base-200]="form.get('object')?.value === 'people'"
+        (click)="form.get('object')?.setValue('people'); next()"
+      >
+        <div class="flex items-center gap-4">
+          <pc-icon name="users" [size]="10"></pc-icon>
+          <div>
+            <div class="font-semibold">People List</div>
+            <div class="text-sm text-base-content/70">Individuals with contact and tag data.</div>
+          </div>
+        </div>
+      </button>
+
+      <button
+        type="button"
+        class="card border border-base-300 hover:border-primary p-6 text-left"
+        [class.bg-base-200]="form.get('object')?.value === 'households'"
+        (click)="form.get('object')?.setValue('households'); next()"
+      >
+        <div class="flex items-center gap-4">
+          <pc-icon name="house-modern" [size]="10"></pc-icon>
+          <div>
+            <div class="font-semibold">Household List</div>
+            <div class="text-sm text-base-content/70">Households grouped by address.</div>
+          </div>
+        </div>
+      </button>
+    </div>
+    }
+
+    <!-- Step 2: Mode selection -->
+    @if (step() === 2) {
+    <div class="grid gap-4 sm:grid-cols-2">
+      <button
+        type="button"
+        class="card border border-base-300 hover:border-primary p-6 text-left"
+        [class.bg-base-200]="!form.get('is_dynamic')?.value"
+        (click)="form.get('is_dynamic')?.setValue(false)"
+      >
+        <div class="font-semibold mb-1">Static List</div>
+        <div class="text-sm text-base-content/70">A fixed snapshot. You select members now.</div>
+      </button>
+      <button
+        type="button"
+        class="card border border-base-300 hover:border-primary p-6 text-left"
+        [class.bg-base-200]="form.get('is_dynamic')?.value"
+        (click)="form.get('is_dynamic')?.setValue(true)"
+      >
+        <div class="font-semibold mb-1">Dynamic List</div>
+        <div class="text-sm text-base-content/70">Auto-updates using saved filters (e.g., Tags).</div>
+      </button>
+    </div>
+    <div class="flex items-center justify-between mt-4">
+      <button type="button" class="btn" (click)="back()">Back</button>
+      <button type="button" class="btn btn-primary" (click)="next()">Next</button>
+    </div>
+    }
+
+    <!-- Step 3: Filters -->
+    @if (step() === 3) {
+    <div class="grid gap-4">
+      <div class="grid gap-3">
+        <div class="label-text mb-1">Build Tag Rules</div>
+        <pc-query-builder
+          [group]="rulesRoot()"
+          [fields]="listFields()"
+          [tagSvc]="tagSvc"
+          [summaryMatches]="matchCount()"
+          [summaryCounting]="counting()"
+          [summaryError]="rulesError()"
+          (changed)="onRulesChanged()"
+        ></pc-query-builder>
+        <div class="text-xs text-base-content/70">Use AND/OR and nested groups to combine Tag is / is not rules.</div>
+      </div>
+      <!-- Matches are shown in the summary line above -->
+      <div class="flex items-center justify-between mt-2">
+        @if (isNew()) {
+        <button type="button" class="btn" (click)="back()">Back</button>
+        } @else {
+        <div></div>
+        }
+        <button type="button" class="btn btn-primary" (click)="next()">Next</button>
+      </div>
+    </div>
+    }
+
+    <!-- Step 4: Preview -->
+    @if (step() === 4) {
+    <div class="grid gap-4">
+      <div class="grid sm:grid-cols-2 gap-4">
+        <input class="input w-full" placeholder="List Name" aria-label="List Name" formControlName="name" />
+        <input class="input w-full" placeholder="Description" aria-label="Description" formControlName="description" />
+      </div>
+      <div class="text-sm text-base-content/70">Preview (read-only). Go back to adjust filters.</div>
+      <div class="h-96 border border-base-300 rounded">
+        @if (form.get('object')?.value === 'people') {
+        <pc-people-filter-grid
+          [showToolbar]="false"
+          [enableSelection]="false"
+          [disableView]="true"
+          [allowFilter]="false"
+          [externalAdvancedFilterModel]="rulesRoot()"
+        />
+        } @else {
+        <pc-household-filter-grid
+          [showToolbar]="false"
+          [enableSelection]="false"
+          [disableView]="true"
+          [allowFilter]="false"
+          [externalAdvancedFilterModel]="rulesRoot()"
+        />
+        }
+      </div>
+      <div class="flex items-center justify-between">
+        <button type="button" class="btn" (click)="back()">Back</button>
+        <pc-form-actions
+          [isLoading]="isLoading()"
+          [btn1Text]="btnLabel()"
+          (btn1Clicked)="save($event)"
+          buttonsToShow="two"
+        ></pc-form-actions>
+      </div>
+    </div>
+    }
+  </form>
+  }
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/lists/ui/list-view.html
@@ -8523,6 +10004,219 @@ export class DomainSettingsComponent implements OnInit {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/settings/google-sync/google-sync-settings.html
+
+```html
+<div class="space-y-6">
+  @if (isLoading()) {
+  <div class="flex items-center gap-3 text-base-content/60">
+    <span class="loading loading-spinner loading-sm"></span>
+    <span class="text-sm">Loading connection status…</span>
+  </div>
+  } @else if (status()?.connected) {
+  <!-- Connected state -->
+  <div class="rounded-xl border border-success/30 bg-success/10 px-5 py-4 flex items-start gap-4">
+    <pc-icon name="check-circle" class="text-success mt-0.5 shrink-0" [size]="5"></pc-icon>
+    <div class="flex-1 min-w-0">
+      <p class="font-semibold text-success">Connected</p>
+      <p class="text-sm text-base-content/70 mt-0.5 truncate">{{ status()?.googleEmail }}</p>
+      @if (status()?.syncedAt) {
+      <p class="text-xs text-base-content/50 mt-1">Last synced: {{ formatDate(status()!.syncedAt) }}</p>
+      }
+    </div>
+  </div>
+
+  @if (status()?.lastSyncError) {
+  <div class="rounded-xl border border-warning/30 bg-warning/10 px-5 py-4 flex items-start gap-4">
+    <pc-icon name="exclamation-triangle" class="text-warning mt-0.5 shrink-0" [size]="5"></pc-icon>
+    <div class="flex-1 min-w-0">
+      <p class="font-semibold text-warning">Last sync failed</p>
+      <p class="text-sm text-base-content/70 mt-1">
+        Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with
+        this code:
+      </p>
+      <p class="font-mono text-sm font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
+    </div>
+  </div>
+  }
+
+  <div class="flex flex-wrap gap-3">
+    <button id="google-sync-now-btn" type="button" class="btn btn-primary" [disabled]="isSyncing()" (click)="syncNow()">
+      @if (isSyncing()) {
+      <span class="loading loading-spinner loading-xs mr-2"></span>
+      Syncing… } @else {
+      <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
+      Sync Now }
+    </button>
+
+    <button type="button" class="btn btn-ghost" [disabled]="isSyncing()" (click)="forceFullResync()">
+      <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
+      Force Full Re-sync
+    </button>
+
+    <button
+      id="google-disconnect-btn"
+      type="button"
+      class="btn btn-ghost text-error hover:bg-error/10"
+      [disabled]="isSyncing()"
+      (click)="disconnect()"
+    >
+      <pc-icon name="x-circle" [size]="4" class="mr-2"></pc-icon>
+      Disconnect
+    </button>
+  </div>
+
+  @if (lastSyncResult()) {
+  <p class="text-sm text-base-content/60">✓ Sync complete — {{ lastSyncResult()!.inserted }} new email(s) imported.</p>
+  } } @else {
+  <!-- Disconnected state -->
+  <div class="rounded-xl border border-base-200 bg-base-50 px-5 py-4">
+    <p class="text-sm text-base-content/70">
+      Connect your Google Suite account to automatically sync incoming and outgoing emails into your pplcrm inbox.
+    </p>
+  </div>
+
+  <button
+    id="google-connect-btn"
+    type="button"
+    class="btn btn-primary gap-2"
+    [disabled]="isConnecting()"
+    (click)="connect()"
+  >
+    @if (isConnecting()) {
+    <span class="loading loading-spinner loading-xs"></span>
+    } @else {
+    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+        fill="#4285F4"
+      />
+      <path
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+        fill="#34A853"
+      />
+      <path
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+        fill="#FBBC05"
+      />
+      <path
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+        fill="#EA4335"
+      />
+    </svg>
+    } Connect Google Suite
+  </button>
+
+  @if (connectError()) {
+  <p class="text-sm text-error flex items-center gap-1.5">
+    <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+    {{ connectError() }}
+  </p>
+  } }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/settings/ms-sync/ms-sync-settings.html
+
+```html
+<div class="space-y-6">
+  @if (isLoading()) {
+  <div class="flex items-center gap-3 text-base-content/60">
+    <span class="loading loading-spinner loading-sm"></span>
+    <span class="text-sm">Loading connection status…</span>
+  </div>
+  } @else if (status()?.connected) {
+  <!-- Connected state -->
+  <div class="rounded-xl border border-success/30 bg-success/10 px-5 py-4 flex items-start gap-4">
+    <pc-icon name="check-circle" class="text-success mt-0.5 shrink-0" [size]="5"></pc-icon>
+    <div class="flex-1 min-w-0">
+      <p class="font-semibold text-success">Connected</p>
+      <p class="text-sm text-base-content/70 mt-0.5 truncate">{{ status()?.msEmail }}</p>
+      @if (status()?.syncedAt) {
+      <p class="text-xs text-base-content/50 mt-1">Last synced: {{ formatDate(status()!.syncedAt) }}</p>
+      }
+    </div>
+  </div>
+
+  @if (status()?.lastSyncError) {
+  <div class="rounded-xl border border-warning/30 bg-warning/10 px-5 py-4 flex items-start gap-4">
+    <pc-icon name="exclamation-triangle" class="text-warning mt-0.5 shrink-0" [size]="5"></pc-icon>
+    <div class="flex-1 min-w-0">
+      <p class="font-semibold text-warning">Last sync failed</p>
+      <p class="text-sm text-base-content/70 mt-1">
+        Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with
+        this code:
+      </p>
+      <p class="font-mono text-sm font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
+    </div>
+  </div>
+  }
+
+  <div class="flex flex-wrap gap-3">
+    <button id="ms-sync-now-btn" type="button" class="btn btn-primary" [disabled]="isSyncing()" (click)="syncNow()">
+      @if (isSyncing()) {
+      <span class="loading loading-spinner loading-xs mr-2"></span>
+      Syncing… } @else {
+      <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
+      Sync Now }
+    </button>
+
+    <button type="button" class="btn btn-ghost" [disabled]="isSyncing()" (click)="forceFullResync()">
+      <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
+      Force Full Re-sync
+    </button>
+
+    <button
+      id="ms-disconnect-btn"
+      type="button"
+      class="btn btn-ghost text-error hover:bg-error/10"
+      [disabled]="isSyncing()"
+      (click)="disconnect()"
+    >
+      <pc-icon name="x-circle" [size]="4" class="mr-2"></pc-icon>
+      Disconnect
+    </button>
+  </div>
+
+  @if (lastSyncResult()) {
+  <p class="text-sm text-base-content/60">✓ Sync complete — {{ lastSyncResult()!.inserted }} new email(s) imported.</p>
+  } } @else {
+  <!-- Disconnected state -->
+  <div class="rounded-xl border border-base-200 bg-base-50 px-5 py-4">
+    <p class="text-sm text-base-content/70">
+      Connect your Office 365 account to automatically sync incoming emails into your pplcrm inbox.
+    </p>
+  </div>
+
+  <button
+    id="ms-connect-btn"
+    type="button"
+    class="btn btn-primary gap-2"
+    [disabled]="isConnecting()"
+    (click)="connect()"
+  >
+    @if (isConnecting()) {
+    <span class="loading loading-spinner loading-xs"></span>
+    } @else {
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
+      <path fill="#f3f3f3" d="M1 1h10v10H1z" />
+      <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
+      <path fill="#81bc06" d="M12 1h10v10H12z" />
+      <path fill="#05a6f0" d="M1 12h10v10H1z" />
+      <path fill="#ffba08" d="M12 12h10v10H12z" />
+    </svg>
+    } Connect Office 365
+  </button>
+
+  @if (connectError()) {
+  <p class="text-sm text-error flex items-center gap-1.5">
+    <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+    {{ connectError() }}
+  </p>
+  } }
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/settings/services/settings-service.ts
 
 ```typescript
@@ -10564,6 +12258,923 @@ export class WorkflowsService extends AbstractAPIService<'workflows', UpdateWork
 }
 ```
 
+## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.html
+
+```html
+<div class="flex flex-col gap-6 p-6 max-w-7xl mx-auto h-full min-h-[calc(100vh-120px)]">
+  <!-- Navigation Header -->
+  <div class="flex items-center justify-between border-b border-base-200 pb-4 mb-2">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
+        <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
+      </div>
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight">
+          {{ isNew() && !triggerSelected() ? 'New Follow-up Workflow' : payload().name }}
+        </h1>
+        <p class="text-sm text-base-content/60 mt-0.5">
+          {{ isNew() && !triggerSelected() ? 'Choose a trigger event to start your drip campaign.' : 'Build sequences,
+          manage settings, and view active enrollments.' }}
+        </p>
+      </div>
+    </div>
+    <pc-form-actions
+      [isLoading]="isLoading()"
+      [signalForm]="form"
+      (btn1Clicked)="saveSettings($event)"
+      [buttonsToShow]="'two'"
+      [btn1Text]="'Save Automation'"
+      [btn1Icon]="'save'"
+      [showDelete]="!isNew()"
+      [deleteText]="'Delete Automation'"
+      (deleteClicked)="deleteWorkflow()"
+      [disabled]="!triggerSelected()"
+    ></pc-form-actions>
+  </div>
+
+  <!-- TRIGGER SELECTOR SCREEN FOR NEW WORKFLOWS -->
+  @if (isNew() && !triggerSelected()) {
+  <div class="flex flex-col gap-8 items-center justify-center py-12 max-w-5xl mx-auto">
+    <div class="text-center gap-2 flex flex-col">
+      <h2 class="text-2xl font-black tracking-tight text-base-content">Select a trigger event</h2>
+      <p class="text-sm text-base-content/60">
+        Choose what action will automatically enroll constituents into this workflow sequence
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full mt-4">
+      <!-- Trigger Card: Manual Enrollment -->
+      <div
+        (click)="selectTrigger('manual')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-primary hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-primary-content transition-all shadow-inner"
+        >
+          <pc-icon name="user-plus"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-primary transition-all">Manual Enrollment</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Triggers only when you manually select a constituent to enroll. Perfect for custom tracks.
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-primary mt-2 group-hover:bg-primary group-hover:text-primary-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: Volunteer Event Signup -->
+      <div
+        (click)="selectTrigger('volunteer_signup')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-success hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-success/10 text-success flex items-center justify-center group-hover:bg-success group-hover:text-success-content transition-all shadow-inner"
+        >
+          <pc-icon name="volunteer"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-success transition-all">
+            Volunteer Event Signup
+          </h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Runs when a constituent signs up for an event. Ideal for welcome series and check-ins.
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-success mt-2 group-hover:bg-success group-hover:text-success-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: Tag Added -->
+      <div
+        (click)="selectTrigger('tag_added')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-secondary hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center group-hover:bg-secondary group-hover:text-secondary-content transition-all shadow-inner"
+        >
+          <pc-icon name="tag"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-secondary transition-all">Tag Added</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Triggers when a specific tag is attached to a constituent's profile.
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-secondary mt-2 group-hover:bg-secondary group-hover:text-secondary-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: Web Form Submitted -->
+      <div
+        (click)="selectTrigger('web_form_submitted')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-accent hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-accent/10 text-accent flex items-center justify-center group-hover:bg-accent group-hover:text-accent-content transition-all shadow-inner"
+        >
+          <pc-icon name="document-text"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-accent transition-all">Web Form Submitted</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Runs when a constituent submits a public-facing contact or petition web form.
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-accent mt-2 group-hover:bg-accent group-hover:text-accent-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: Volunteer Shift Status -->
+      <div
+        (click)="selectTrigger('volunteer_shift_status')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-warning hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-warning/10 text-warning flex items-center justify-center group-hover:bg-warning group-hover:text-warning-content transition-all shadow-inner"
+        >
+          <pc-icon name="volunteer"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-warning transition-all">
+            Volunteer Shift Status
+          </h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Triggers when a shift is marked as Attended, No Show, or Cancelled.
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-warning mt-2 group-hover:bg-warning group-hover:text-warning-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: New Contact Created -->
+      <div
+        (click)="selectTrigger('contact_created')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-info hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-info/10 text-info flex items-center justify-center group-hover:bg-info group-hover:text-info-content transition-all shadow-inner"
+        >
+          <pc-icon name="user-plus"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-info transition-all">New Contact Created</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Welcome series triggered automatically for any new constituent in the database.
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-info mt-2 group-hover:bg-info group-hover:text-info-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: List Joined -->
+      <div
+        (click)="selectTrigger('list_joined')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-primary hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-primary-content transition-all shadow-inner"
+        >
+          <pc-icon name="queue-list"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-primary transition-all">List Joined</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Runs when a constituent is added to a specific static organizing list.
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-primary mt-2 group-hover:bg-primary group-hover:text-primary-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: Billing / Payment Event -->
+      <div
+        (click)="selectTrigger('payment_event')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-success hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-success/10 text-success flex items-center justify-center group-hover:bg-success group-hover:text-success-content transition-all shadow-inner"
+        >
+          <pc-icon name="credit-card"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-success transition-all">
+            Billing / Payment Event
+          </h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Triggers on Stripe webhook events (e.g. invoice paid or payment failed).
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-success mt-2 group-hover:bg-success group-hover:text-success-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: New Subscriber -->
+      <div
+        (click)="selectTrigger('new_subscriber')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-secondary hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center group-hover:bg-secondary group-hover:text-secondary-content transition-all shadow-inner"
+        >
+          <pc-icon name="bell"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-secondary transition-all">New Subscriber</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Triggered automatically when a constituent becomes a subscriber (subscriber tag added).
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-secondary mt-2 group-hover:bg-secondary group-hover:text-secondary-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+
+      <!-- Trigger Card: New Unsubscriber -->
+      <div
+        (click)="selectTrigger('new_unsubscriber')"
+        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-accent hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
+      >
+        <div
+          class="w-16 h-16 rounded-2xl bg-accent/10 text-accent flex items-center justify-center group-hover:bg-accent group-hover:text-accent-content transition-all shadow-inner"
+        >
+          <pc-icon name="x-circle"></pc-icon>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h3 class="font-bold text-lg text-base-content group-hover:text-accent transition-all">New Unsubscriber</h3>
+          <p class="text-xs text-base-content/50 leading-relaxed">
+            Triggered automatically when a constituent unsubscribes (unsubscribed tag added).
+          </p>
+        </div>
+        <span
+          class="btn btn-xs btn-outline btn-accent mt-2 group-hover:bg-accent group-hover:text-accent-content transition-all px-4 rounded-lg"
+          >Select Trigger</span
+        >
+      </div>
+    </div>
+  </div>
+  }
+
+  <!-- ACTIVE WORKSPACE: DESIGNER, ENROLLMENTS, OR LOGS -->
+  @if (triggerSelected()) {
+  <pc-tabs [tabs]="workflowTabs()" [(activeTab)]="activeTab">
+    <pc-tab-panel id="steps" [activeTab]="activeTab()">
+      <div class="flex flex-col lg:flex-row gap-6 items-start h-[calc(100vh-270px)] min-h-[600px] w-full">
+        <!-- Visual Canvas (Left/Center) -->
+        <div
+          class="flex-1 bg-base-200/50 border border-base-350 rounded-2xl p-8 flex flex-col items-center h-full overflow-y-auto relative shadow-inner"
+        >
+          <!-- Trigger Node -->
+          <div
+            (click)="selectedNodeType.set('trigger'); selectedNodeIndex.set(null)"
+            class="card bg-base-100 border-2 shadow-md rounded-2xl p-5 w-80 cursor-pointer transition-all hover:scale-[1.02] duration-200"
+            [class.border-success]="selectedNodeType() === 'trigger'"
+            [class.border-base-200]="selectedNodeType() !== 'trigger'"
+          >
+            <div class="flex items-center gap-3">
+              <div
+                class="w-10 h-10 rounded-xl bg-success/10 text-success flex items-center justify-center shadow-inner"
+              >
+                @switch (payload().trigger_type) { @case ('volunteer_signup') { <pc-icon name="volunteer"></pc-icon> }
+                @case ('volunteer_shift_status') { <pc-icon name="volunteer"></pc-icon> } @case ('tag_added') {
+                <pc-icon name="tag"></pc-icon> } @case ('web_form_submitted') {
+                <pc-icon name="document-text"></pc-icon> } @case ('contact_created') {
+                <pc-icon name="user-plus"></pc-icon> } @case ('list_joined') { <pc-icon name="queue-list"></pc-icon> }
+                @case ('payment_event') { <pc-icon name="credit-card"></pc-icon> } @case ('new_subscriber') {
+                <pc-icon name="bell"></pc-icon> } @case ('new_unsubscriber') { <pc-icon name="x-circle"></pc-icon> }
+                @default { <pc-icon name="user-plus"></pc-icon> } }
+              </div>
+              <div class="flex flex-col">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Trigger Node</span>
+                <span class="text-sm font-bold text-base-content">
+                  {{ formatTriggerType(payload().trigger_type) }}
+                </span>
+                @if (selectedEventName()) {
+                <span
+                  class="text-[10px] text-success font-semibold truncate max-w-[200px]"
+                  [title]="selectedEventName()"
+                >
+                  Filter: {{ selectedEventName() }}
+                </span>
+                }
+              </div>
+            </div>
+          </div>
+
+          <!-- Connector line + Add Button below trigger -->
+          <div class="flex flex-col items-center">
+            <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
+            <div class="dropdown dropdown-bottom dropdown-center">
+              <div
+                tabindex="0"
+                role="button"
+                class="btn btn-circle btn-xs btn-outline border-base-content/20 bg-base-100 hover:bg-primary hover:text-primary-content hover:border-primary shadow-sm"
+              >
+                <pc-icon name="plus"></pc-icon>
+              </div>
+              <ul
+                tabindex="0"
+                class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow-lg border border-base-200 mt-1"
+              >
+                <li>
+                  <a (click)="addStepAt(0)" class="text-xs font-semibold gap-2 py-2.5">
+                    <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
+                    Add Email Step
+                  </a>
+                </li>
+              </ul>
+            </div>
+            <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
+          </div>
+
+          <!-- Steps Flow List -->
+          @for (step of steps(); track $index) {
+          <div class="flex flex-col items-center w-full">
+            <!-- Delay Node (Hourglass/Clock) -->
+            <div
+              (click)="selectedNodeType.set('step'); selectedNodeIndex.set($index)"
+              class="bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold px-4 py-2 rounded-full flex items-center gap-1.5 shadow-sm cursor-pointer hover:bg-amber-100 hover:scale-[1.02] transition-all duration-150"
+              [class.ring-2]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
+              [class.ring-amber-400]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
+            >
+              <pc-icon name="clock"></pc-icon>
+              <span
+                >Wait <strong>{{ step.delay_days }}</strong> {{ (step.delay_unit === 'hours' ? 'hour' : 'day') +
+                (step.delay_days === 1 ? '' : 's') }}</span
+              >
+            </div>
+
+            <!-- Vertical connector line -->
+            <div class="w-0.5 h-8 bg-base-content/15 border-dashed border-l-2"></div>
+
+            <!-- Email Action Node Card -->
+            <div
+              (click)="selectedNodeType.set('step'); selectedNodeIndex.set($index)"
+              class="card bg-base-100 border-2 shadow-md rounded-2xl w-80 cursor-pointer transition-all hover:scale-[1.02] duration-200"
+              [class.border-primary]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
+              [class.border-base-200]="selectedNodeType() !== 'step' || selectedNodeIndex() !== $index"
+            >
+              <div class="card-body p-4 gap-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <div
+                      class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shadow-inner"
+                    >
+                      <pc-icon name="envelope"></pc-icon>
+                    </div>
+                    <span class="text-[10px] font-black text-base-content/40 uppercase">Step {{ $index + 1 }}</span>
+                  </div>
+
+                  <button
+                    (click)="removeStep($index); $event.stopPropagation()"
+                    class="btn btn-ghost btn-xs text-error p-1 hover:bg-transparent rounded-full"
+                    title="Remove Step"
+                  >
+                    <pc-icon name="trash"></pc-icon>
+                  </button>
+                </div>
+
+                <div class="flex flex-col gap-1 border-b border-base-100 pb-2">
+                  <span class="text-[10px] font-bold text-base-content/40 uppercase">Email Subject</span>
+                  <span class="text-xs font-semibold text-base-content truncate"
+                    >{{ step.subject || '(No subject)' }}</span
+                  >
+                </div>
+
+                <div class="flex items-center justify-between pt-1">
+                  <button
+                    (click)="openEmailDesigner($index); $event.stopPropagation()"
+                    class="btn btn-xs btn-outline btn-primary gap-1 px-3 rounded-lg shadow-sm"
+                  >
+                    <pc-icon name="pencil-square"></pc-icon>
+                    Edit Email
+                  </button>
+                  <span class="text-[9px] text-base-content/40 font-medium italic">
+                    {{ step.html_content ? 'Visual Template' : 'Plain Text Only' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Connector line + Add Button below step -->
+            <div class="flex flex-col items-center">
+              <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
+              <div class="dropdown dropdown-bottom dropdown-center">
+                <div
+                  tabindex="0"
+                  role="button"
+                  class="btn btn-circle btn-xs btn-outline border-base-content/20 bg-base-100 hover:bg-primary hover:text-primary-content hover:border-primary shadow-sm"
+                >
+                  <pc-icon name="plus"></pc-icon>
+                </div>
+                <ul
+                  tabindex="0"
+                  class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow-lg border border-base-200 mt-1"
+                >
+                  <li>
+                    <a (click)="addStepAt($index + 1)" class="text-xs font-semibold gap-2 py-2.5">
+                      <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
+                      Add Email Step
+                    </a>
+                  </li>
+                </ul>
+              </div>
+              <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
+            </div>
+          </div>
+          }
+
+          <!-- Exit Node -->
+          <div
+            (click)="selectedNodeType.set('settings'); selectedNodeIndex.set(null)"
+            class="bg-neutral text-neutral-content text-xs font-black px-6 py-3.5 rounded-2xl shadow-md uppercase tracking-wider flex items-center gap-2 cursor-pointer hover:bg-neutral-focus hover:scale-[1.02] transition-all duration-150"
+          >
+            <pc-icon name="x-circle"></pc-icon>
+            <span>Exit Automation</span>
+          </div>
+        </div>
+
+        <!-- Properties Panel Sidebar (Right) -->
+        <aside
+          class="w-full lg:w-96 shrink-0 border border-base-300 bg-base-100 p-6 flex flex-col gap-5 h-full rounded-2xl shadow-sm overflow-y-auto"
+        >
+          <!-- Option A: Trigger Node Selected -->
+          @if (selectedNodeType() === 'trigger') {
+          <div class="flex flex-col gap-4">
+            <div class="flex justify-between items-center pb-2 border-b border-base-200">
+              <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50">Selected: Trigger</h3>
+              <button (click)="selectedNodeType.set('settings')" class="btn btn-ghost btn-xs text-primary font-bold">
+                Automation Settings
+              </button>
+            </div>
+
+            <div
+              class="p-4 rounded-2xl bg-success/5 border border-success/10 text-success-content flex flex-col gap-2.5"
+            >
+              <div class="flex items-center gap-2 text-success">
+                <div class="w-8 h-8 rounded-lg bg-success/15 flex items-center justify-center shadow-inner">
+                  @switch (payload().trigger_type) { @case ('volunteer_signup') { <pc-icon name="volunteer"></pc-icon> }
+                  @case ('volunteer_shift_status') { <pc-icon name="volunteer"></pc-icon> } @case ('tag_added') {
+                  <pc-icon name="tag"></pc-icon> } @case ('web_form_submitted') {
+                  <pc-icon name="document-text"></pc-icon> } @case ('contact_created') {
+                  <pc-icon name="user-plus"></pc-icon> } @case ('list_joined') { <pc-icon name="queue-list"></pc-icon> }
+                  @case ('payment_event') { <pc-icon name="credit-card"></pc-icon> } @case ('new_subscriber') {
+                  <pc-icon name="bell"></pc-icon> } @case ('new_unsubscriber') { <pc-icon name="x-circle"></pc-icon> }
+                  @default { <pc-icon name="user-plus"></pc-icon> } }
+                </div>
+                <span class="font-black text-sm text-base-content">
+                  {{ formatTriggerType(payload().trigger_type) }}
+                </span>
+              </div>
+              <p class="text-xs text-base-content/75 leading-relaxed">
+                This trigger activates automatically based on system events or manual selection settings.
+              </p>
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Trigger Type</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.trigger_type"
+              >
+                <option value="manual">Manual Enrollment</option>
+                <option value="volunteer_signup">Volunteer Event Signup</option>
+                <option value="tag_added">Tag Added</option>
+                <option value="web_form_submitted">Web Form Submitted</option>
+                <option value="volunteer_shift_status">Volunteer Shift Status</option>
+                <option value="contact_created">New Contact Created</option>
+                <option value="list_joined">List Joined</option>
+                <option value="payment_event">Billing / Payment Event</option>
+                <option value="new_subscriber">New Subscriber</option>
+                <option value="new_unsubscriber">New Unsubscriber</option>
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5">
+                Warning: Changing trigger type will modify how future subscribers enroll.
+              </p>
+            </div>
+
+            @if (payload().trigger_type === 'volunteer_signup') {
+            <div class="form-control mt-2">
+              <label class="label label-text font-semibold text-xs py-1">Volunteer Event</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.trigger_event_id"
+              >
+                <option value="">-- Any Event --</option>
+                @for (event of volunteerEvents(); track event.id) {
+                <option [value]="event.id">{{ event.name }}</option>
+                }
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+                Select a specific event to trigger this campaign, or leave it as "Any Event" to trigger on any volunteer
+                event signup.
+              </p>
+            </div>
+            } @if (payload().trigger_type === 'tag_added') {
+            <div class="form-control mt-2">
+              <label class="label label-text font-semibold text-xs py-1">Tag Filter</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.trigger_event_id"
+              >
+                <option value="">-- Any Tag --</option>
+                @for (tag of tags(); track tag.id) {
+                <option [value]="tag.id">{{ tag.name }}</option>
+                }
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+                Select a specific tag that triggers enrollment, or leave as "Any Tag".
+              </p>
+            </div>
+            } @if (payload().trigger_type === 'web_form_submitted') {
+            <div class="form-control mt-2">
+              <label class="label label-text font-semibold text-xs py-1">Web Form Filter</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.trigger_event_id"
+              >
+                <option value="">-- Any Web Form --</option>
+                @for (formEl of webForms(); track formEl.id) {
+                <option [value]="formEl.id">{{ formEl.name }}</option>
+                }
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+                Select a specific web form that triggers enrollment, or leave as "Any Web Form".
+              </p>
+            </div>
+            } @if (payload().trigger_type === 'list_joined') {
+            <div class="form-control mt-2">
+              <label class="label label-text font-semibold text-xs py-1">Static List Filter</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.trigger_event_id"
+              >
+                <option value="">-- Any Static List --</option>
+                @for (listEl of lists(); track listEl.id) {
+                <option [value]="listEl.id">{{ listEl.name }}</option>
+                }
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+                Select a static list that triggers enrollment when joined.
+              </p>
+            </div>
+            } @if (payload().trigger_type === 'volunteer_shift_status') {
+            <div class="form-control mt-2">
+              <label class="label label-text font-semibold text-xs py-1">Shift Status Filter</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.trigger_event_id"
+              >
+                <option value="">-- Any Status --</option>
+                <option value="attended">Attended</option>
+                <option value="no_show">No Show</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+                Select a volunteer shift status update that triggers enrollment.
+              </p>
+            </div>
+            }
+          </div>
+          }
+
+          <!-- Option B: Step Node Selected -->
+          @else if (selectedNodeType() === 'step' && selectedNodeIndex() !== null) { @let idx = selectedNodeIndex()!;
+          @let step = steps()[idx]; @if (step) {
+          <div class="flex flex-col gap-4">
+            <div class="flex justify-between items-center pb-2 border-b border-base-200">
+              <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50">
+                Selected: Step {{ idx + 1 }}
+              </h3>
+              <button
+                (click)="removeStep(idx)"
+                class="btn btn-ghost btn-xs text-error gap-1 px-1.5 hover:bg-error/10 rounded"
+              >
+                <pc-icon name="trash"></pc-icon>
+                Delete Step
+              </button>
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Delay Duration</label>
+              <div class="flex items-center gap-2">
+                <input
+                  type="number"
+                  class="input input-bordered input-sm w-20 text-center font-bold rounded-xl"
+                  [(ngModel)]="step.delay_days"
+                  min="0"
+                />
+                <select
+                  class="select select-bordered select-sm font-bold text-xs rounded-xl"
+                  [(ngModel)]="step.delay_unit"
+                >
+                  <option value="days">day(s)</option>
+                  <option value="hours">hour(s)</option>
+                </select>
+                <span class="text-xs text-base-content/60 font-semibold">after previous step</span>
+              </div>
+              <p class="text-[10px] text-base-content/50 mt-1">Set to 0 to send instantly.</p>
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Email Subject Line</label>
+              <input
+                type="text"
+                class="input input-bordered input-sm w-full font-semibold rounded-xl"
+                placeholder="e.g. Welcome aboard!"
+                [(ngModel)]="step.subject"
+              />
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Preview Text / Snippet</label>
+              <input
+                type="text"
+                class="input input-bordered input-sm w-full rounded-xl"
+                placeholder="Secondary subtitle in inbox preview..."
+                [(ngModel)]="step.preview_text"
+              />
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Plain Text Fallback (Plain Text Only)</label>
+              <textarea
+                class="textarea textarea-bordered textarea-sm w-full text-xs rounded-xl"
+                rows="4"
+                placeholder="Fallback message without HTML formatting..."
+                [(ngModel)]="step.plain_text_content"
+              ></textarea>
+            </div>
+
+            <div class="border-t border-base-250 pt-4 flex flex-col gap-3">
+              <button (click)="openEmailDesigner(idx)" class="btn btn-primary w-full gap-2 shadow-sm rounded-xl">
+                <pc-icon name="pencil-square"></pc-icon>
+                Design Email Content
+              </button>
+              <div class="text-center">
+                <span class="text-[10px] text-base-content/40 italic font-semibold"
+                  >Opens drag-and-drop block designer</span
+                >
+              </div>
+            </div>
+          </div>
+          } }
+
+          <!-- Option C: Workflow Settings (Default/Fallback) -->
+          @else {
+          <div class="flex flex-col gap-4">
+            <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50 pb-2 border-b border-base-200">
+              Workflow Settings
+            </h3>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Workflow Name</label>
+              <input
+                type="text"
+                class="input input-bordered input-sm w-full font-semibold rounded-xl"
+                placeholder="e.g. Volunteer Welcome Series"
+                [formField]="form.name"
+                [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
+              />
+              @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
+              form.name().errors(); track err) {
+              <p class="text-xs text-error mt-1">{{ err.message }}</p>
+              } }
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Description</label>
+              <textarea
+                class="textarea textarea-bordered textarea-sm w-full text-xs rounded-xl"
+                rows="4"
+                placeholder="Brief summary of what this drip campaign does..."
+                [formField]="form.description"
+                [class.textarea-error]="form.description().invalid() && (form.description().dirty() || form.description().touched())"
+              ></textarea>
+              @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) { @for
+              (err of form.description().errors(); track err) {
+              <p class="text-xs text-error mt-1">{{ err.message }}</p>
+              } }
+            </div>
+
+            <div class="form-control">
+              <label class="label label-text font-semibold text-xs py-1">Campaign Status</label>
+              <select
+                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
+                [formField]="form.status"
+              >
+                <option value="draft">Draft (Inactive)</option>
+                <option value="active">Active (Processing)</option>
+                <option value="paused">Paused</option>
+              </select>
+              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
+                Only active campaigns will parse background queues to send emails.
+              </p>
+            </div>
+
+            <div class="border-t border-base-200 pt-4 mt-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Sequence Overview</span>
+              <div class="flex items-center justify-between text-xs font-semibold mt-2 text-base-content/70">
+                <span>Total steps:</span>
+                <span class="font-mono font-black">{{ steps().length }}</span>
+              </div>
+            </div>
+          </div>
+          }
+        </aside>
+      </div>
+    </pc-tab-panel>
+
+    <pc-tab-panel id="enrollments" [activeTab]="activeTab()">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full items-start">
+        <!-- Enrollment Search & Add (1/3 width) -->
+        <div class="card bg-base-100 border border-base-300 shadow-sm rounded-2xl lg:col-span-1 h-fit">
+          <div class="card-body gap-4 p-5">
+            <h3 class="card-title text-base font-bold">Enroll a Contact</h3>
+            <p class="text-xs text-base-content/60">
+              Search for a constituent to manually subscribe them to this sequence.
+            </p>
+
+            <div class="join w-full mt-1">
+              <input
+                type="text"
+                class="input input-bordered join-item w-full text-xs rounded-l-xl"
+                placeholder="Search by name or email..."
+                [(ngModel)]="searchQuery"
+                (keyup.enter)="searchContacts()"
+              />
+              <button (click)="searchContacts()" class="btn btn-secondary join-item px-4 rounded-r-xl">
+                @if (searchingContacts()) {
+                <span class="loading loading-spinner"></span>
+                } @else {
+                <pc-icon name="magnifying-glass"></pc-icon>
+                }
+              </button>
+            </div>
+
+            <!-- Search Results list -->
+            @if (searchResults().length > 0) {
+            <div
+              class="flex flex-col gap-2 max-h-60 overflow-y-auto mt-2 border border-base-200 p-2 rounded-xl bg-base-50"
+            >
+              @for (contact of searchResults(); track contact.id) {
+              <div
+                class="flex items-center justify-between p-2 rounded-lg bg-base-100 hover:bg-base-200 border border-base-150 transition-all text-xs"
+              >
+                <div class="flex flex-col">
+                  <span class="font-bold">{{ contact.first_name || '' }} {{ contact.last_name || '' }}</span>
+                  <span class="text-[10px] text-base-content/50">{{ contact.email || 'No email' }}</span>
+                </div>
+                <button
+                  (click)="enrollSelected(contact.id)"
+                  class="btn btn-xs btn-primary gap-1 px-3 rounded-lg shadow-sm"
+                  [disabled]="!contact.email"
+                >
+                  <pc-icon name="user-plus"></pc-icon>
+                  Enroll
+                </button>
+              </div>
+              }
+            </div>
+            } @else if (searchQuery() && !searchingContacts()) {
+            <span class="text-xs text-base-content/50 mt-1 italic">No contacts found for query.</span>
+            }
+          </div>
+        </div>
+
+        <!-- Enrollment list (2/3 width) -->
+        <div class="card bg-base-100 border border-base-300 shadow-sm rounded-2xl lg:col-span-2">
+          <div class="card-body gap-4 p-5">
+            <h3 class="card-title text-base font-bold">Active Enrollments Roster</h3>
+
+            @if (enrollments().length === 0) {
+            <div class="text-center py-12 border-2 border-dashed border-base-300 rounded-xl bg-base-50">
+              <pc-icon name="user-group" class="mx-auto text-base-content/30 mb-2"></pc-icon>
+              <p class="text-sm font-semibold text-base-content/50">
+                No contacts have been enrolled in this sequence yet.
+              </p>
+            </div>
+            } @else {
+            <div class="overflow-x-auto w-full mt-2">
+              <table class="table table-zebra table-sm w-full">
+                <thead>
+                  <tr>
+                    <th>Contact Name</th>
+                    <th>Email</th>
+                    <th class="text-center">Step #</th>
+                    <th>Status</th>
+                    <th>Next Run At</th>
+                    <th class="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (en of enrollments(); track en.id) {
+                  <tr>
+                    <td class="font-bold text-xs">
+                      <a [routerLink]="['/people', en.person_id]" class="link link-primary">
+                        {{ en.person_first_name || '' }} {{ en.person_last_name || '' }}
+                      </a>
+                    </td>
+                    <td class="text-xs text-base-content/60">{{ en.person_email || '--' }}</td>
+                    <td class="text-xs font-mono font-bold text-center">
+                      <span class="bg-base-250 px-2 py-0.5 rounded">{{ en.current_step_number }}</span>
+                    </td>
+                    <td>
+                      <span
+                        class="badge badge-sm font-semibold border-none"
+                        [class.badge-success]="en.status === 'completed'"
+                        [class.badge-info]="en.status === 'active'"
+                        [class.badge-ghost]="en.status === 'cancelled'"
+                      >
+                        {{ en.status }}
+                      </span>
+                    </td>
+                    <td class="text-xs text-base-content/60">
+                      {{ en.next_run_at ? (en.next_run_at | date: 'short') : 'Ended' }}
+                    </td>
+                    <td class="text-right">
+                      @if (en.status === 'active') {
+                      <button
+                        (click)="cancelEnrollment(en.id)"
+                        class="btn btn-ghost btn-xs text-error gap-1 hover:bg-error/10 px-2 rounded"
+                      >
+                        <pc-icon name="trash"></pc-icon>
+                        Cancel
+                      </button>
+                      } @else {
+                      <span class="text-[10px] text-base-content/40 italic font-semibold">Inactive</span>
+                      }
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </div>
+      </div>
+    </pc-tab-panel>
+  </pc-tabs>
+
+  @if (!isNew() && workflowId()) {
+  <div class="mt-8 border-t border-base-200 pt-6">
+    <pc-record-activities [entity]="'workflows'" [entityId]="workflowId()!"></pc-record-activities>
+  </div>
+  } }
+</div>
+
+<!-- FULLSCREEN DIALOG: EMAIL TEMPLATE VISUAL DESIGNER -->
+@if (editingEmailStepIndex() !== null) {
+<div class="fixed inset-0 z-[150] flex flex-col bg-base-100 animate-fade-in">
+  <!-- Designer Header -->
+  <div class="flex justify-between items-center px-6 py-4 border-b border-base-300 bg-base-100 shadow-sm">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
+        <pc-icon name="envelope"></pc-icon>
+      </div>
+      <div class="flex flex-col">
+        <h2 class="text-base font-black text-base-content">Visual Email Designer</h2>
+        <p class="text-xs text-base-content/50">Sequence Step {{ editingEmailStepIndex()! + 1 }} Email Template</p>
+      </div>
+    </div>
+
+    <button (click)="closeEmailDesigner()" class="btn btn-primary btn-sm gap-2 px-5 rounded-xl shadow-md">
+      <pc-icon name="check-circle"></pc-icon>
+      Done Designing
+    </button>
+  </div>
+
+  <!-- Visual Designer Frame -->
+  <div class="flex-1 overflow-hidden p-6 bg-base-200">
+    <pc-visual-newsletter-editor
+      [htmlContent]="getEditingHtml()"
+      [plainTextContent]="getEditingText()"
+      (htmlContentChange)="onStepHtmlChange($event)"
+      (plainTextContentChange)="onStepTextChange($event)"
+    ></pc-visual-newsletter-editor>
+  </div>
+</div>
+}
+```
+
 ## File: apps/frontend/src/app/layout/theme/theme-service.ts
 
 ```typescript
@@ -11047,6 +13658,37 @@ export class TokenService {
 
 const AUTHTOKEN = 'ppl-crm-auth-token';
 const REFRESHTOKEN = 'ppl-crm-refresh-token';
+```
+
+## File: apps/frontend/src/app/services/api/user-message.ts
+
+```typescript
+import { JSendServerError } from '../../../../../../libs/common/src';
+import { TRPCClientError } from '@trpc/client';
+
+import { ApiError } from './api-error';
+
+/**
+ * Returns a message that is safe to show to the user.
+ *
+ * Server errors (tRPC / JSend) are already sanitized by the backend, so their
+ * message is shown as-is. A plain `new Error('…')` is app-authored copy and
+ * passes through too. Anything else (TypeError, DOMException, third-party
+ * errors) would leak internals into the UI, so the caller's fallback is shown
+ * instead — the full error still goes to the console via the usual handlers.
+ */
+export function getUserErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError || error instanceof TRPCClientError) {
+    return error.message || fallback;
+  }
+  if (error instanceof JSendServerError) {
+    return error.messageText || fallback;
+  }
+  if (error instanceof Error && error.constructor === Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
 ```
 
 ## File: apps/frontend/src/app/services/api/volunteer-service.ts
@@ -12928,145 +15570,6 @@ export class RecordActivities {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-view.html
-
-```html
-<pc-detail-layout
-  [title]="company()?.name || 'Company'"
-  [eyebrow]="'Company'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!company()"
-  [showDelete]="true"
-  [deleteText]="'Delete company'"
-  [btn1Text]="'Edit company'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editCompany()"
-  (delete)="deleteCompany()"
->
-  @if (company()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Company Details Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Company Card -->
-      <pc-profile-card [avatarText]="initials()">
-        <!-- Name & Industry -->
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ company().name }}</h2>
-        @if (company().industry) {
-        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">{{ company().industry }}</div>
-        } @else {
-        <span class="text-xs text-base-content/40 italic mb-4">No industry assigned</span>
-        }
-
-        <!-- Contact details list -->
-        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
-          <pc-detail-item
-            label="Website"
-            [value]="company().website"
-            icon="globe-americas"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Email Address"
-            [value]="company().email"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Phone Number"
-            [value]="company().phone"
-            icon="identification"
-            [copyable]="true"
-          ></pc-detail-item>
-        </div>
-
-        <!-- Internal Notes (Short summary) -->
-        @if (company().notes) {
-        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1">
-            Internal Notes
-          </span>
-          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-            {{ company().notes }}
-          </p>
-        </div>
-        }
-
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="company().created_at"
-          [createdBy]="getUserName(company().createdby_id)"
-          [updatedAt]="company().updated_at"
-          [updatedBy]="getUserName(company().updatedby_id)"
-        ></pc-system-metadata>
-      </pc-profile-card>
-    </div>
-
-    <!-- Right Column: Stats & Tabs -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Panel -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <pc-stat-card
-          [title]="'Employees'"
-          [value]="employeeCount()"
-          [description]="'Total staff listed'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-teal-500'"
-          [iconColorClass]="'text-teal-500'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Enriched from Google'"
-          [value]="isEnriched() ? 'Yes' : 'No'"
-          [description]="'Google Places sync status'"
-          [icon]="'check-circle'"
-          [valueColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
-          [iconColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Tabs Panel -->
-      <pc-tabs [tabs]="companyTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'companies'" [entityId]="id()"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="employees" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @defer (on viewport) {
-            <pc-people-in-company [companyId]="id()"></pc-people-in-company>
-            } @placeholder {
-            <div class="skeleton w-full h-32"></div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="details" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (company().description) {
-            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2">
-                Company Description
-              </span>
-              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-                {{ company().description }}
-              </p>
-            </div>
-            } @else {
-            <div class="text-center py-10 text-base-content/40 italic">No company description recorded.</div>
-            }
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
 ## File: apps/frontend/src/app/experiences/companies/ui/people-in-company.ts
 
 ```typescript
@@ -13840,6 +16343,7 @@ export class MergeSummaryComponent {
 ```typescript
 import { inject, signal, Service } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 import { ComposePayload, DraftPayload } from '../../ui/email-compose/email-compose';
 import { EmailsService } from '../emails-service';
@@ -13926,7 +16430,7 @@ export class EmailActionsStore {
       }
       await this.folders.refreshFolderCounts();
     } catch (e) {
-      this.alerts.showError((e as Error).message);
+      this.alerts.showError(getUserErrorMessage(e, 'Could not delete the email. Please try again.'));
       throw e;
     }
   }
@@ -13946,7 +16450,7 @@ export class EmailActionsStore {
       }
       await this.folders.refreshFolderCounts();
     } catch (e) {
-      this.alerts.showError((e as Error).message);
+      this.alerts.showError(getUserErrorMessage(e, 'Could not restore the email. Please try again.'));
       throw e;
     }
   }
@@ -13995,7 +16499,7 @@ export class EmailActionsStore {
 
       return created;
     } catch (e) {
-      this.alerts.showError((e as Error).message);
+      this.alerts.showError(getUserErrorMessage(e, 'Could not send the email. Please try again.'));
       throw e;
     } finally {
       this.sendingCount.update((c) => c - 1);
@@ -14039,7 +16543,7 @@ export class EmailActionsStore {
       }
       await this.folders.refreshFolderCounts();
     } catch (e) {
-      this.alerts.showError((e as Error).message);
+      this.alerts.showError(getUserErrorMessage(e, 'Could not move the email. Please try again.'));
       throw e;
     }
   }
@@ -14275,6 +16779,7 @@ import { computed, inject, signal, Service, debounced, effect, untracked } from 
 import { Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 import { EmailStatus } from '../../../../../../../../libs/common/src';
 
 import { EmailsService } from '../emails-service';
@@ -14523,7 +17028,7 @@ export class EmailsStore {
           void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });
         }
       } else {
-        this.alerts.showError(`Sync failed: ${msg}`);
+        this.alerts.showError(getUserErrorMessage(e, 'Sync failed. Please try again.'));
       }
       throw e;
     } finally {
@@ -15281,1983 +17786,565 @@ export type DraftPayload = {
 };
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-create-task-dialog/email-create-task-dialog.html
+## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
 
 ```html
-<dialog #dlg class="modal">
-  <div class="modal-box max-w-2xl">
-    <div class="flex items-center justify-between mb-5">
-      <h3 class="text-xl font-bold flex items-center gap-2">
-        <pc-icon name="check-circle" [size]="5" class="text-primary"></pc-icon>
-        Create Task from Email
-      </h3>
-      <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
+<header class="border-b border-base-300 px-4 pb-4">
+  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
+    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
+  </div>
+  <div class="flex items-start gap-3 mt-2">
+    <pc-email-assign [email]="email()"></pc-email-assign>
+    <div class="min-w-0 flex-1"></div>
 
-    <form class="space-y-4" (submit)="$event.preventDefault(); submit()" novalidate>
-      <!-- Task Name -->
-      <div class="form-control w-full">
-        <label class="label font-semibold text-sm" for="ct-name">
-          <span class="label-text">Task Name <span class="text-error">*</span></span>
-        </label>
-        <input
-          id="ct-name"
-          type="text"
-          placeholder="Enter task name..."
-          class="input input-bordered w-full focus:input-primary"
-          [formField]="form.name"
-          [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
-          autofocus
-        />
-        @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
-        form.name().errors(); track err) {
-        <p class="text-xs text-error mt-1 flex items-center gap-1">
-          <pc-icon name="x-mark" [size]="3"></pc-icon>{{ err.message }}
-        </p>
-        } }
-      </div>
+    <div class="flex items-center gap-1 text-sm text-base-content/70">
+      <span class="whitespace-nowrap pr-2">
+        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
+      </span>
 
-      <!-- Details (pre-filled with email thread) -->
-      <div class="form-control w-full">
-        <label class="label font-semibold text-sm" for="ct-details">
-          <span class="label-text">Description / Details</span>
-        </label>
-        <textarea
-          id="ct-details"
-          class="textarea textarea-bordered h-40 w-full focus:textarea-primary resize-y font-mono text-xs"
-          [formField]="form.details"
-        ></textarea>
-      </div>
+      <div class="border-t border-base-300 my-1 h-0"></div>
+      <div class="hidden md:block">
+        <!-- Reply -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="reply"
+          aria-label="Reply"
+          (click)="handleReply()"
+        >
+          <pc-icon name="reply" [size]="4"></pc-icon>
+        </button>
 
-      <div class="grid grid-cols-2 gap-4">
-        <!-- Status -->
-        <div class="form-control w-full">
-          <label class="label font-semibold text-sm" for="ct-status">
-            <span class="label-text">Status</span>
-          </label>
-          <select id="ct-status" class="select select-bordered w-full focus:select-primary" [formField]="form.status">
-            @for (s of statuses; track s) {
-            <option [value]="s">{{ toTitleCase(s) }}</option>
-            }
-          </select>
-        </div>
+        <!-- Reply All -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Reply All"
+          aria-label="Reply All"
+          (click)="handleReplyAll()"
+        >
+          <pc-icon name="reply-all" [size]="4"></pc-icon>
+        </button>
 
-        <!-- Priority -->
-        <div class="form-control w-full">
-          <label class="label font-semibold text-sm" for="ct-priority">
-            <span class="label-text">Priority</span>
-          </label>
-          <select
-            id="ct-priority"
-            class="select select-bordered w-full focus:select-primary"
-            [formField]="form.priority"
-          >
-            @for (p of priorities; track p) {
-            <option [value]="p">{{ toTitleCase(p) }}</option>
-            }
-          </select>
-        </div>
-      </div>
+        <!-- Forward-->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Forward"
+          aria-label="Forward"
+          (click)="handleForward()"
+        >
+          <pc-icon name="forward" [size]="4"></pc-icon>
+        </button>
 
-      <div class="grid grid-cols-2 gap-4">
-        <!-- Due Date -->
-        <div class="form-control w-full">
-          <label class="label font-semibold text-sm" for="ct-due">
-            <span class="label-text">Due Date</span>
-          </label>
-          <input
-            id="ct-due"
-            type="date"
-            class="input input-bordered w-full focus:input-primary"
-            [formField]="form.due_at"
-          />
-        </div>
+        @if (!isFolderTrash()) {
+        <!-- Star/Favorite -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Toggle favourite"
+          aria-label="Star"
+          data-testid="favorite-button"
+          (click)="toggleFavourite()"
+        >
+          <pc-icon [size]="4" [name]="getFavouriteIcon()" [class.text-primary]="isFavourite()"></pc-icon>
+        </button>
 
-        <!-- Assignee -->
-        <div class="form-control w-full">
-          <label class="label font-semibold text-sm" for="ct-assigned">
-            <span class="label-text">Assignee</span>
-          </label>
-          <select
-            id="ct-assigned"
-            class="select select-bordered w-full focus:select-primary"
-            [formField]="form.assigned_to"
-          >
-            <option value="">Unassigned</option>
-            @for (u of users(); track u.id) {
-            <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-            }
-          </select>
-        </div>
-      </div>
+        <!-- Close/Mark as Done -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="markAsDoneText()"
+          aria-label="Mark as Done"
+          (click)="toggleClosed()"
+        >
+          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
+        </button>
+        } @else {
+        <!-- Restore from Trash -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Restore from Trash"
+          aria-label="Restore from Trash"
+          (click)="restoreFromTrash()"
+        >
+          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
+        </button>
+        }
 
-      <!-- Team -->
-      <div class="form-control w-full">
-        <label class="label font-semibold text-sm" for="ct-team">
-          <span class="label-text">Associated Team</span>
-        </label>
-        <select id="ct-team" class="select select-bordered w-full focus:select-primary" [formField]="form.team_id">
-          <option value="">No Team</option>
-          @for (t of teamsList(); track t.id) {
-          <option [value]="t.id">{{ t.name }}</option>
-          }
-        </select>
-      </div>
-
-      @if (error()) {
-      <div class="alert alert-error py-2 text-sm rounded-xl flex items-center gap-2">
-        <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
-        <span>{{ error() }}</span>
-      </div>
-      }
-
-      <div class="flex justify-end gap-2 pt-2">
-        <button type="button" class="btn btn-ghost" (click)="close()">Cancel</button>
-        <button type="submit" class="btn btn-primary" [disabled]="submitting()">
-          @if (submitting()) {
-          <span class="loading loading-spinner loading-sm"></span>
+        <!-- Delete -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="getTrashText()"
+          [attr.aria-label]="getTrashText()"
+          (click)="deleteEmail()"
+        >
+          @if (isFolderTrash()) {
+          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
           } @else {
-          <pc-icon name="plus" [size]="4"></pc-icon>
-          } Create Task
+          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
+          }
         </button>
       </div>
-    </form>
+      <!-- More Actions Dropdown -->
+      <div class="dropdown dropdown-end">
+        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
+          <svg viewBox="0 0 24 24" class="h-5 w-5">
+            <path
+              fill="currentColor"
+              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
+            />
+          </svg>
+        </button>
+        <ul
+          tabindex="0"
+          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
+        >
+          <li>
+            <a
+              (click)="handleCreateTask()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create Task
+            </a>
+          </li>
+          <div class="border-t border-base-300 my-1 h-0"></div>
+          <li>
+            <a
+              (click)="handleReply()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleReplyAll()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply All
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleForward()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
+          <li>
+            <a
+              (click)="markAsSpam()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
+            </a>
+          </li>
+          } @else {
+          <li>
+            <a
+              (click)="moveToInbox()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
+            </a>
+          </li>
+          } }
+          <li>
+            <a
+              (click)="handleMarkAsUnread()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              (click)="toggleFavourite()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                [name]="getFavouriteIcon()"
+                [size]="4"
+                [class.text-amber-500]="isFavourite()"
+                [class.text-base-content/60]="!isFavourite()"
+              ></pc-icon>
+              {{ isFavourite() ? 'Unstar' : 'Star' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="toggleClosed()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                name="check-circle"
+                [size]="4"
+                [class.text-success]="isClosed()"
+                [class.text-base-content/60]="!isClosed()"
+              ></pc-icon>
+              {{ isClosed() ? 'Mark as Open' : 'Mark as Done' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="deleteEmail()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
   </div>
 
-  <form method="dialog" class="modal-backdrop">
-    <button (click)="close()">close</button>
-  </form>
-</dialog>
+  <div class="mt-3 flex items-center gap-3">
+    <div class="avatar">
+      @if (headerData()?.person; as person) {
+      <a
+        [routerLink]="['/people', person.id]"
+        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
+      >
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </a>
+      } @else {
+      <div class="w-10 rounded-full bg-base-200">
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </div>
+      }
+    </div>
+
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-1.5 min-w-0">
+        @if (headerData()?.person; as person) {
+        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
+          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
+          (email()!.from_name || email()!.from_email) }}
+        </a>
+        <div class="dropdown dropdown-bottom inline-block">
+          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
+            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
+          </button>
+          <div
+            tabindex="0"
+            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
+          >
+            <div class="space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
+                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
+                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <h3 class="font-bold text-sm">{{ person.first_name }} {{ person.last_name }}</h3>
+                  @if (person.company_name) {
+                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
+                  }
+                </div>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-2 text-xs">
+                <div class="flex items-center gap-2">
+                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span class="truncate">{{ person.email }}</span>
+                </div>
+                @if (person.mobile) {
+                <div class="flex items-center gap-2">
+                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span>{{ person.mobile }}</span>
+                </div>
+                } @if (person.notes) {
+                <div class="flex flex-col gap-1 mt-1">
+                  <span class="font-semibold text-base-content/60">Notes:</span>
+                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
+                    {{ person.notes }}
+                  </p>
+                </div>
+                }
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-3">
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Tags:</span
+                  >
+                  <pc-tags
+                    [tags]="personTags()"
+                    [type]="'tag'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add tag...'"
+                    (tagAdded)="onTagAdded($event)"
+                    (tagRemoved)="onTagRemoved($event)"
+                  ></pc-tags>
+                  @if (!personTags().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No tags</span>
+                  }
+                </div>
+
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Issues:</span
+                  >
+                  <pc-tags
+                    [tags]="personIssues()"
+                    [type]="'issue'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add issue...'"
+                    (tagAdded)="onIssueAdded($event)"
+                    (tagRemoved)="onIssueRemoved($event)"
+                  ></pc-tags>
+                  @if (!personIssues().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No issues</span>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        } @else {
+        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
+        }
+        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
+      </div>
+
+      @if (headerData()?.person; as person) { @if (person.tags?.length || person.issues?.length) {
+      <div class="flex flex-wrap gap-1.5 mt-1 items-center">
+        @for (tag of person.tags; track tag.name) {
+        <pc-tagitem [name]="tag.name" [color]="tag.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+        } @for (issue of person.issues; track issue.name) {
+        <pc-tagitem [name]="issue.name" [color]="issue.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+        }
+      </div>
+      } }
+
+      <div class="text-xs text-base-content/60 mt-1">
+        to
+        <div class="dropdown inline-block">
+          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
+            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
+            (getToRecipients().length > 1) {
+            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
+            } } @else { {{ email()!.to_email }} }
+            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+              <path
+                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
+              />
+            </svg>
+          </button>
+          <ul
+            tabindex="0"
+            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
+          >
+            <!-- Recipients Section -->
+            <li class="menu-title text-xs">Recipients</li>
+
+            @if (getToRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">To:</li>
+            @for (recipient of getToRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getCcRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">CC:</li>
+            @for (recipient of getCcRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getBccRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">BCC:</li>
+            @for (recipient of getBccRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
+            0) {
+            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
+            }
+
+            <!-- Email Details Section -->
+            <li class="divider mt-3"></li>
+            <li class="menu-title text-xs">Email Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Subject:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Date:</span>
+                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">From:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Reply-To:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
+                </div>
+              </div>
+            </li>
+
+            <!-- Technical Details Section -->
+            <li class="divider mt-2"></li>
+            <li class="menu-title text-xs">Technical Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Message-ID:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Mailed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Security:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Signed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Return-Path:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1">
+      <pc-icon
+        class="hover:text-primary tooltip tooltip-left cursor-pointer"
+        [attr.data-tip]="'Expand email body'"
+        name="expand-content"
+        [size]="4"
+        (click)="toggleExpand()"
+      ></pc-icon>
+    </div>
+  </div>
+</header>
+
+<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-create-task-dialog/email-create-task-dialog.ts
+## File: apps/frontend/src/app/experiences/forms/ui/forms-grid.ts
 
 ```typescript
-import { Component, ElementRef, inject, input, signal, viewChild } from '@angular/core';
-import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Component } from '@angular/core';
+import { StandardFormsService } from '@experiences/forms/services/standard-forms-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 
-import { AddTaskObj } from '../../../../../../../../libs/common/src';
-import type { IAuthUser } from '../../../../../../../../libs/common/src/lib/auth';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { UserService } from '../../../../services/user.service';
-import { TeamsService } from '../../../teams/services/teams-service';
-import { TasksService } from '../../../tasks/services/tasks-service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Component({
-  selector: 'pc-email-create-task-dialog',
-  imports: [FormField, Icon],
-  templateUrl: './email-create-task-dialog.html',
+  selector: 'pc-forms-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Forms"
+        i18n-title
+        description="Manage public and internal web forms, configure fields, and view submission statistics."
+        i18n-description
+        [colDefs]="col"
+        [showDescription]="true"
+        [disableDelete]="false"
+        [allowFilter]="false"
+        [disableView]="false"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="add-form"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: StandardFormsService },
+    provideDataGridConfig({ messages: { exportEntity: 'forms', exportFileName: 'forms-export.csv' } }),
+  ],
 })
-export class EmailCreateTaskDialog {
-  private readonly alertSvc = inject(AlertService);
-  private readonly tasksSvc = inject(TasksService);
-  private readonly userService = inject(UserService);
-  private readonly teamsSvc = inject(TeamsService);
-
-  private readonly _loading = createLoadingGate();
-  private readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
-
-  public readonly email = input.required<EmailType>();
-
-  protected readonly users = signal<IAuthUser[]>([]);
-  protected readonly teamsList = signal<any[]>([]);
-  protected readonly submitting = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly isLoading = this._loading.visible;
-
-  protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
-  protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
-
-  protected readonly payload = signal({
-    name: '',
-    details: '',
-    status: 'todo' as 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived',
-    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
-    due_at: '',
-    assigned_to: '',
-    team_id: '',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddTaskObj);
-  });
-
-  public async open() {
-    const em = this.email();
-
-    const date = em.date_sent ? new Date(em.date_sent) : new Date(em.updated_at);
-    const datePart = date.toLocaleString(undefined, {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    const fromPart = em.from_name ? `${em.from_name} &lt;${em.from_email}&gt;` : (em.from_email ?? '');
-    const subject = em.subject ?? '(no subject)';
-    const url = `/inbox?email=${encodeURIComponent(em.id)}`;
-    const details =
-      `<p><a href="${url}">View email thread: ${subject}</a></p>` +
-      `<p>From: ${fromPart}<br>Date: ${datePart}<br>Subject: ${subject}</p>`;
-
-    this.payload.set({
-      name: '',
-      details,
-      status: 'todo',
-      priority: 'medium',
-      due_at: '',
-      assigned_to: '',
-      team_id: '',
-    });
-    this.error.set(null);
-
-    if (!this.users().length || !this.teamsList().length) {
-      const end = this._loading.begin();
-      try {
-        const [us, ts] = await Promise.all([this.userService.getUsers(), this.teamsSvc.getAll({ limit: 1000 })]);
-        this.users.set(us ?? []);
-        this.teamsList.set(ts?.rows ?? []);
-      } catch {
-        // non-critical; proceed without users/teams
-      } finally {
-        end();
-      }
-    }
-
-    this.dlgRef().nativeElement.showModal();
-  }
-
-  public close() {
-    this.dlgRef().nativeElement.close();
-  }
-
-  protected async submit() {
-    this.form().markAsTouched();
-    if (this.form().invalid()) return;
-
-    this.submitting.set(true);
-    this.error.set(null);
-    const end = this._loading.begin();
-
-    try {
-      const raw = this.payload();
-      await this.tasksSvc.add({
-        name: raw.name.trim(),
-        details: raw.details.trim() || undefined,
-        status: raw.status as any,
-        priority: raw.priority as any,
-        due_at: raw.due_at ? new Date(raw.due_at) : undefined,
-        assigned_to: raw.assigned_to || null,
-        team_id: raw.team_id || null,
-      });
-      this.tasksSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Task created successfully');
-      this.close();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unable to create task';
-      this.error.set(msg);
-      this.alertSvc.showError(msg);
-    } finally {
-      this.submitting.set(false);
-      end();
-    }
-  }
-
-  protected toTitleCase(s: string): string {
-    if (!s) return '';
-    return s
-      .replace(/[_-]+/g, ' ')
-      .split(' ')
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-      .join(' ');
-  }
+export class FormsGridComponent {
+  protected col = [
+    { field: 'name', headerName: 'Form Name', editable: false },
+    { field: 'description', headerName: 'Description', editable: false },
+    { field: 'redirect_url', headerName: 'Redirect URL', editable: false },
+    { field: 'status', headerName: 'Status', editable: true },
+    {
+      field: 'created_at',
+      headerName: 'Created At',
+      valueFormatter: (p: any) => (p.value ? new Date(p.value).toLocaleDateString() : ''),
+    },
+  ];
 }
-```
-
-## File: apps/frontend/src/app/experiences/events/ui/event-view.html
-
-```html
-<pc-detail-layout
-  [title]="event()?.name || 'Event'"
-  [eyebrow]="'Event'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!event()"
-  [showDelete]="true"
-  [deleteText]="'Delete event'"
-  [btn1Text]="'Edit event'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editEvent()"
-  (delete)="deleteEvent()"
->
-  @if (event()) {
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left: Event Info Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <pc-profile-card iconName="calendar">
-        <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
-        <div class="flex flex-wrap gap-2 mb-4 justify-center">
-          @if (event().is_published) {
-          <span class="badge badge-success font-semibold uppercase text-xs">Published</span>
-          } @else {
-          <span class="badge badge-warning font-semibold uppercase text-xs">Draft</span>
-          } @if (eventPassed()) {
-          <span class="badge badge-neutral font-semibold uppercase text-xs">Past</span>
-          } @else {
-          <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
-          }
-        </div>
-
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          @if (event().description) {
-          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ event().description }}</div>
-          }
-
-          <pc-detail-row icon="map-pin" iconClass="text-error">
-            <span class="text-xs">
-              <strong>Location:</strong> {{ event().location_address || 'No Address Provided' }}
-            </span>
-          </pc-detail-row>
-
-          <pc-detail-row icon="calendar" iconClass="text-info">
-            <div class="text-xs flex flex-col">
-              <span><strong>Start:</strong> {{ event().start_time | date: 'medium' }}</span>
-              <span><strong>End:</strong> {{ event().end_time | date: 'medium' }}</span>
-            </div>
-          </pc-detail-row>
-
-          @if (event().contact_email || event().contact_phone) {
-          <div class="divider my-1"></div>
-          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">Organizer Contact</div>
-          @if (event().contact_email) {
-          <pc-detail-row icon="envelope" iconClass="text-teal-500">
-            <span class="text-xs">{{ event().contact_email }}</span>
-          </pc-detail-row>
-          } @if (event().contact_phone) {
-          <pc-detail-row icon="phone" iconClass="text-purple-500">
-            <span class="text-xs">{{ event().contact_phone }}</span>
-          </pc-detail-row>
-          } } @if (ticketTypes().length > 0) {
-          <div class="divider my-1"></div>
-          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">Ticket Types</div>
-          @for (ticket of ticketTypes(); track ticket.id) {
-          <div class="flex justify-between text-xs px-1">
-            <span class="font-semibold">{{ ticket.name }}</span>
-            <span class="text-base-content/60">
-              {{ ticket.price_cents ? '$' + (ticket.price_cents / 100).toFixed(2) : 'Free' }} @if (ticket.capacity) { ·
-              {{ ticket.capacity }} max }
-            </span>
-          </div>
-          } }
-        </div>
-      </pc-profile-card>
-
-      @if (publicUrl()) {
-      <pc-card title="Public RSVP Link" icon="globe-americas">
-        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copyPublicUrl()">
-          <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
-        </button>
-        <div class="flex gap-2">
-          <input
-            type="text"
-            [value]="publicUrl()"
-            readonly
-            class="input input-bordered input-xs flex-1 font-mono text-[10px]"
-          />
-          <a [href]="publicUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
-            <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
-          </a>
-        </div>
-        @if (!event().is_published) {
-        <div class="alert alert-warning py-2 text-xs flex gap-2 mt-1">
-          <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-          <span>This event is not published yet. Publish it to make the RSVP page live.</span>
-        </div>
-        }
-      </pc-card>
-      }
-    </div>
-
-    <!-- Right: Stats + Tabs -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <pc-stat-card
-          [title]="'Registered'"
-          [value]="activeCount()"
-          [description]="'Active registrations'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Attended'"
-          [value]="attendedCount()"
-          [description]="'Checked in'"
-          [icon]="'check-circle'"
-          [valueColorClass]="'text-teal-500'"
-          [iconColorClass]="'text-teal-500'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Capacity Left'"
-          [value]="remainingCapacity()"
-          [description]="'of ' + (event().capacity ?? 'unlimited') + ' total'"
-          [icon]="'adjustments-horizontal'"
-          [valueColorClass]="'text-orange-500'"
-          [iconColorClass]="'text-orange-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Tabs -->
-      <pc-tabs [tabs]="eventTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="attendees" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <!-- Add Registration -->
-            <pc-card title="Add Registration" icon="user-plus">
-              <div class="flex flex-col sm:flex-row gap-3 items-end">
-                <div class="relative flex-1 space-y-1">
-                  <label class="label text-xs font-semibold text-base-content/65 uppercase">Search People</label>
-                  <div class="relative">
-                    <input
-                      type="text"
-                      class="input input-bordered input-sm w-full pl-9"
-                      placeholder="Search by name or email..."
-                      [ngModel]="personSearch()"
-                      (ngModelChange)="onPersonSearch($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                    <div
-                      class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-base-content/40"
-                    >
-                      <pc-icon name="magnifying-glass" [size]="4"></pc-icon>
-                    </div>
-                  </div>
-                  @if (personSearchResults().length > 0) {
-                  <div
-                    class="absolute z-10 w-full mt-0.5 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
-                  >
-                    @for (p of personSearchResults(); track p.id) {
-                    <div (click)="selectPerson(p)" class="px-3 py-2 hover:bg-base-200 cursor-pointer">
-                      <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
-                      <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
-                    </div>
-                    }
-                  </div>
-                  }
-                </div>
-
-                @if (ticketTypes().length > 0) {
-                <div class="space-y-1 w-40">
-                  <label class="label text-xs font-semibold text-base-content/65 uppercase">Ticket Type</label>
-                  <select
-                    class="select select-bordered select-sm w-full"
-                    [ngModel]="selectedTicketTypeId()"
-                    (ngModelChange)="selectedTicketTypeId.set($event || null)"
-                    [ngModelOptions]="{standalone: true}"
-                  >
-                    <option [value]="null">No ticket</option>
-                    @for (t of ticketTypes(); track t.id) {
-                    <option [value]="t.id">{{ t.name }}</option>
-                    }
-                  </select>
-                </div>
-                }
-
-                <button
-                  type="button"
-                  class="btn btn-primary btn-sm shrink-0"
-                  [disabled]="!selectedPersonId() || addingRegistration()"
-                  (click)="addRegistration()"
-                >
-                  @if (addingRegistration()) {
-                  <span class="loading loading-spinner loading-xs"></span>
-                  } @else {
-                  <pc-icon name="plus" [size]="4"></pc-icon>
-                  } Register
-                </button>
-              </div>
-            </pc-card>
-
-            <!-- Attendees Table -->
-            <div class="flex justify-between items-center">
-              <h4 class="font-semibold text-sm text-base-content/70">Attendee List</h4>
-              @if (registrations().length > 0) {
-              <button type="button" class="btn btn-xs btn-outline gap-1" (click)="exportCsv()">
-                <pc-icon name="arrow-down-tray" [size]="3"></pc-icon> Export CSV
-              </button>
-              }
-            </div>
-
-            @if (registrations().length === 0) {
-            <p class="text-sm text-base-content/40 italic text-center py-8">No registrations yet for this event.</p>
-            } @else {
-            <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
-              <table class="table table-sm w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200 text-base-content/70">
-                    <th>Name</th>
-                    <th>Ticket</th>
-                    <th>Status</th>
-                    <th>Checked In</th>
-                    <th class="text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (reg of registrations(); track reg.id) {
-                  <tr class="hover:bg-base-200/50" [class.opacity-50]="reg.status === 'cancelled'">
-                    <td>
-                      <a [routerLink]="['/people', reg.person_id]" class="link link-primary font-bold">
-                        {{ reg.first_name }} {{ reg.last_name }}
-                      </a>
-                      <div class="text-[10px] text-base-content/50 mt-0.5">{{ reg.email || 'No email' }}</div>
-                    </td>
-                    <td>
-                      @if (reg.ticket_type_name) {
-                      <span class="badge badge-ghost badge-sm">{{ reg.ticket_type_name }}</span>
-                      } @else {
-                      <span class="text-base-content/30">—</span>
-                      }
-                    </td>
-                    <td>
-                      <select
-                        class="select select-bordered select-xs font-medium"
-                        [ngModel]="reg.status"
-                        (ngModelChange)="updateStatus(reg, $event)"
-                        [ngModelOptions]="{standalone: true}"
-                        [class.select-success]="reg.status === 'attended'"
-                        [class.select-warning]="reg.status === 'registered'"
-                        [class.select-error]="reg.status === 'no_show'"
-                      >
-                        <option value="registered">Registered</option>
-                        <option value="attended">Attended</option>
-                        <option value="no_show">No Show</option>
-                        <option value="cancelled">Cancelled</option>
-                      </select>
-                    </td>
-                    <td class="font-mono text-[10px]">
-                      {{ reg.checked_in_at ? (reg.checked_in_at | date: 'shortTime') : '—' }}
-                    </td>
-                    <td>
-                      <div class="flex items-center justify-center gap-1">
-                        @if (reg.status === 'registered') {
-                        <button
-                          type="button"
-                          class="btn btn-ghost btn-xs text-success"
-                          title="Check in"
-                          (click)="checkIn(reg)"
-                        >
-                          <pc-icon name="check-circle" [size]="4"></pc-icon>
-                        </button>
-                        }
-                        <button
-                          type="button"
-                          class="btn btn-ghost btn-xs text-error"
-                          title="Remove"
-                          (click)="deleteRegistration(reg)"
-                        >
-                          <pc-icon name="trash" [size]="4"></pc-icon>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'events'" [entityId]="id()"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/forms/ui/form-editor.html
-
-```html
-<div class="flex h-full flex-col bg-base-100">
-  <!-- Header -->
-  <header class="flex items-center justify-between border-b border-base-200 px-6 py-4">
-    <h1 class="text-xl font-bold flex items-center gap-2">
-      <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
-      {{ isNew() ? 'Create Web Form' : 'Edit Web Form' }}
-    </h1>
-    <pc-form-actions
-      [isLoading]="saving()"
-      [signalForm]="form"
-      (btn1Clicked)="save($event)"
-      [buttonsToShow]="'two'"
-      [btn1Text]="isNew() ? 'Create Web Form' : 'Save Web Form'"
-      [showDelete]="!isNew()"
-      [deleteText]="'Delete Web Form'"
-      (deleteClicked)="deleteForm()"
-    ></pc-form-actions>
-  </header>
-
-  <!-- Main Content -->
-  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
-    @if (!isInitialized()) {
-    <div class="mx-auto max-w-4xl space-y-4">
-      <div class="skeleton h-8 w-1/3"></div>
-      <div class="skeleton h-12 w-full"></div>
-      <div class="skeleton h-12 w-full"></div>
-      <div class="skeleton h-24 w-full"></div>
-    </div>
-    } @else {
-    <div class="mx-auto max-w-5xl">
-      @if (error()) {
-      <div class="alert alert-error mb-6 shadow-sm">
-        <pc-icon name="shield-exclamation" [size]="6"></pc-icon>
-        <span>{{ error() }}</span>
-      </div>
-      }
-
-      <div class="grid gap-8 md:grid-cols-12">
-        <!-- Left Column: Form Configuration -->
-        <div class="space-y-6 md:col-span-7">
-          <form (submit)="save($event)">
-            <pc-card title="Form Settings">
-              <!-- Name -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">Form Name *</label>
-                <input
-                  type="text"
-                  [formField]="form.name"
-                  class="input input-bordered w-full"
-                  placeholder="E.g., Newsletter Signup"
-                  [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
-                />
-                @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
-                form.name().errors(); track err) {
-                <p class="mt-1 text-xs text-error">{{ err.message }}</p>
-                } }
-              </div>
-
-              <!-- Description -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">Description</label>
-                <textarea
-                  [formField]="form.description"
-                  class="textarea textarea-bordered w-full"
-                  rows="2"
-                  placeholder="Internal note about where this form is deployed..."
-                ></textarea>
-                @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) {
-                @for (err of form.description().errors(); track err) {
-                <p class="mt-1 text-xs text-error">{{ err.message }}</p>
-                } }
-              </div>
-
-              <!-- Redirect URL -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1 flex items-center justify-between">
-                  <span>Redirect URL (After Submit)</span>
-                  <span class="text-[10px] text-base-content/50 font-normal">Optional</span>
-                </label>
-                <input
-                  type="url"
-                  [formField]="form.redirect_url"
-                  class="input input-bordered w-full"
-                  placeholder="https://mywebsite.com/thank-you"
-                  [class.input-error]="form.redirect_url().invalid() && (form.redirect_url().dirty() || form.redirect_url().touched())"
-                />
-                <p class="mt-1 text-[11px] text-base-content/50">
-                  If blank, users will see the PeopleCRM default success page.
-                </p>
-                @if (form.redirect_url().invalid() && (form.redirect_url().dirty() || form.redirect_url().touched())) {
-                @for (err of form.redirect_url().errors(); track err) {
-                <p class="mt-1 text-xs text-error">{{ err.message }}</p>
-                } }
-              </div>
-
-              <!-- Status -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">Status</label>
-                <select [formField]="form.status" class="select select-bordered w-full">
-                  <option value="active">Active</option>
-                  <option value="archived">Archived</option>
-                </select>
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <!-- Send Confirmation Email Toggle -->
-              <div class="form-control">
-                <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-                  <div class="flex-1 min-w-0">
-                    <span class="label-text font-bold text-sm whitespace-normal"
-                      >Send Form Submission Confirmation</span
-                    >
-                    <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                      Send a thank-you confirmation email to constituents when they submit the form.
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    [formField]="form.send_confirmation"
-                    class="toggle toggle-primary mt-1 shrink-0"
-                  />
-                </label>
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <!-- Send Lead Notification Email Toggle -->
-              <div class="form-control">
-                <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-                  <div class="flex-1 min-w-0">
-                    <span class="label-text font-bold text-sm whitespace-normal">Send New Lead Notification</span>
-                    <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                      Send email alert notifications to organization admins when a new submission is received.
-                    </p>
-                  </div>
-                  <input type="checkbox" [formField]="form.send_alert" class="toggle toggle-primary mt-1 shrink-0" />
-                </label>
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <!-- Form Fields Toggles -->
-              @if (!isDonationForm()) {
-              <div class="form-control">
-                <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60 mb-3">Form Fields</h2>
-                <pc-fields-selector
-                  [selectedFields]="selectedFields()"
-                  (fieldsChange)="selectedFields.set($event)"
-                ></pc-fields-selector>
-              </div>
-              } @else {
-              <div class="form-control">
-                <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60 mb-3">Form Fields</h2>
-                <div
-                  class="space-y-2 bg-base-200/30 rounded-xl p-4 border border-base-200 text-xs text-base-content/70"
-                >
-                  <p class="font-bold text-primary flex items-center gap-1">
-                    <pc-icon name="information-circle" [size]="4"></pc-icon>
-                    Donation form requires the following fields:
-                  </p>
-                  <ul class="list-disc list-inside space-y-1 pl-1 font-semibold text-base-content/85">
-                    <li>Donation Amount ($ CAD)</li>
-                    <li>First Name & Last Name</li>
-                    <li>Email Address</li>
-                    <li>Street Address</li>
-                    <li>City</li>
-                    <li>State / Province of Residence</li>
-                    <li>Zip / Postal Code</li>
-                    <li>Country of Residence</li>
-                  </ul>
-                  <div class="divider my-1.5"></div>
-                  <p class="text-[10px] text-base-content/50 font-medium">You can select optional fields to collect:</p>
-                  <div class="space-y-1">
-                    <div
-                      class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
-                    >
-                      <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          [checked]="showMobile()"
-                          (change)="toggleField('mobile')"
-                          class="checkbox checkbox-sm checkbox-primary"
-                        />
-                        <span class="text-sm font-medium text-base-content/85">Mobile / Phone</span>
-                      </label>
-                      @if (showMobile()) {
-                      <button
-                        type="button"
-                        (click)="toggleRequired('mobile')"
-                        class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-                        [class.btn-primary]="isMobileRequired()"
-                        [class.btn-outline]="!isMobileRequired()"
-                      >
-                        {{ isMobileRequired() ? 'Required' : 'Optional' }}
-                      </button>
-                      }
-                    </div>
-                    <div
-                      class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors"
-                    >
-                      <label class="flex items-center gap-2.5 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          [checked]="showNotes()"
-                          (change)="toggleField('notes')"
-                          class="checkbox checkbox-sm checkbox-primary"
-                        />
-                        <span class="text-sm font-medium text-base-content/85">Notes / Message</span>
-                      </label>
-                      @if (showNotes()) {
-                      <button
-                        type="button"
-                        (click)="toggleRequired('notes')"
-                        class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-                        [class.btn-primary]="isNotesRequired()"
-                        [class.btn-outline]="!isNotesRequired()"
-                      >
-                        {{ isNotesRequired() ? 'Required' : 'Optional' }}
-                      </button>
-                      }
-                    </div>
-                  </div>
-                </div>
-              </div>
-              }
-
-              <div class="divider my-1"></div>
-
-              <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60">
-                Target Audience Actions
-              </h2>
-
-              <!-- Lists mapping -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">Add subscribers to Lists</label>
-                @if (!availableLists().length) {
-                <p class="text-xs text-base-content/60 italic">No lists created yet.</p>
-                } @else {
-                <select class="select select-bordered select-sm w-full" (change)="handleListSelect($event)">
-                  <option value="">Select a list to target</option>
-                  @for (list of availableLists(); track list.id) {
-                  <option [value]="list.id" [disabled]="selectedLists().includes(list.id)">{{ list.name }}</option>
-                  }
-                </select>
-                <div class="mt-2 flex flex-wrap gap-1.5">
-                  @if (!selectedLists().length) {
-                  <span class="text-[11px] text-base-content/50">No lists selected.</span>
-                  } @else { @for (listId of selectedLists(); track listId) {
-                  <pc-tagitem [name]="listName(listId)" (close)="removeList(listId)"></pc-tagitem>
-                  } }
-                </div>
-                }
-              </div>
-
-              <!-- Tags mapping -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">Apply Tags to subscribers</label>
-                <div class="rounded border border-base-200 bg-base-50 p-2">
-                  <pc-tags
-                    [tags]="selectedTags()"
-                    [enableAutoComplete]="true"
-                    placeholder="Add tag"
-                    (tagsChange)="handleTagsChange($event)"
-                  ></pc-tags>
-                </div>
-                <p class="mt-1 text-[11px] text-base-content/50">
-                  A system tag <code class="badge badge-sm badge-neutral">Source: [Form Name]</code> will also be
-                  applied automatically. @if (payload().form_type === 'donation' || payload().form_type ===
-                  'recurring_donation') {
-                  <span class="block mt-1 text-success font-semibold flex items-center gap-1">
-                    <pc-icon name="tag" [size]="3" class="text-success"></pc-icon>
-                    The system tag <code class="badge badge-sm badge-success text-success-content">Donor</code> will
-                    also be applied automatically.
-                  </span>
-                  }
-                </p>
-              </div>
-            </pc-card>
-          </form>
-        </div>
-
-        <!-- Right Column: Code Generator / Preview -->
-        <div class="space-y-6 md:col-span-5">
-          <!-- Live Form Preview Panel -->
-          <pc-card title="Live Form Preview" subtitle="Real-time preview of the landing page form layout." icon="eye">
-            <!-- Mimic Public Form Aesthetics (supporting theme inheritance) -->
-            <div class="rounded-2xl border border-base-200 bg-base-200/30 p-6 mt-1 relative">
-              <!-- Inner Form Header -->
-              <div class="text-center mb-6">
-                <h4
-                  class="text-lg font-bold bg-gradient-to-br from-base-content to-base-content/75 bg-clip-text text-transparent"
-                >
-                  {{ payload().name || 'Untitled Web Form' }}
-                </h4>
-                <p class="text-xs text-base-content/60 mt-1 whitespace-pre-wrap">
-                  {{ payload().description || 'Enter a description to see it here.' }}
-                </p>
-              </div>
-
-              <!-- Form Fields -->
-              <div class="space-y-4">
-                @if (isDonationForm()) {
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5">Donation Amount ($ CAD) *</label>
-                  <input type="number" class="input input-bordered input-sm w-full" placeholder="E.g. 50.00" disabled />
-                </div>
-                } @if (isDonationForm() || showFirstName()) {
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5"
-                    >First Name{{ isDonationForm() || isFirstNameRequired() ? ' *' : '' }}</label
-                  >
-                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. John" disabled />
-                </div>
-                } @if (isDonationForm() || showLastName()) {
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5"
-                    >Last Name{{ isDonationForm() || isLastNameRequired() ? ' *' : '' }}</label
-                  >
-                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. Doe" disabled />
-                </div>
-                }
-
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5">Email Address *</label>
-                  <input
-                    type="email"
-                    class="input input-bordered input-sm w-full"
-                    placeholder="john@example.com"
-                    disabled
-                  />
-                </div>
-
-                @if (isDonationForm() || showStreet1()) {
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5"
-                    >Street Address{{ isDonationForm() || isStreet1Required() ? ' *' : '' }}</label
-                  >
-                  <input
-                    type="text"
-                    class="input input-bordered input-sm w-full"
-                    placeholder="E.g. 123 Main St"
-                    disabled
-                  />
-                </div>
-                } @if (isDonationForm() || showCity()) {
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5"
-                    >City{{ isDonationForm() || isCityRequired() ? ' *' : '' }}</label
-                  >
-                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. Toronto" disabled />
-                </div>
-                } @if (isDonationForm() || showCountry()) {
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5"
-                    >Country of Residence{{ isDonationForm() || isCountryRequired() ? ' *' : '' }}</label
-                  >
-                  <select class="select select-bordered select-sm w-full" disabled>
-                    <option>Canada</option>
-                    <option>United States</option>
-                  </select>
-                </div>
-                } @if (isDonationForm() || showState()) {
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5"
-                    >State / Province of Residence{{ isDonationForm() || isStateRequired() ? ' *' : '' }}</label
-                  >
-                  <input
-                    type="text"
-                    class="input input-bordered input-sm w-full"
-                    placeholder="E.g. ON or NY"
-                    disabled
-                  />
-                </div>
-                } @if (isDonationForm() || showZip()) {
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5"
-                    >Zip / Postal Code{{ isDonationForm() || isZipRequired() ? ' *' : '' }}</label
-                  >
-                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. M5V 2T6" disabled />
-                </div>
-                } @if (showMobile()) {
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5"
-                    >Mobile / Phone{{ isMobileRequired() ? ' *' : '' }}</label
-                  >
-                  <input
-                    type="text"
-                    class="input input-bordered input-sm w-full"
-                    placeholder="E.g. 555-0199"
-                    disabled
-                  />
-                </div>
-                } @if (showNotes()) {
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5"
-                    >Notes / Message{{ isNotesRequired() ? ' *' : '' }}</label
-                  >
-                  <textarea
-                    class="textarea textarea-bordered textarea-sm w-full"
-                    rows="2"
-                    placeholder="How can we help you?"
-                    disabled
-                  ></textarea>
-                </div>
-                }
-
-                <button type="button" class="btn btn-primary btn-sm w-full mt-2" disabled>
-                  {{ isDonationForm() ? 'Next' : 'Submit' }}
-                </button>
-              </div>
-            </div>
-          </pc-card>
-
-          @if (isNew()) {
-          <div class="card bg-base-200 border border-base-300 text-center">
-            <div class="card-body items-center py-12">
-              <pc-icon name="clipboard-document-list" [size]="12" class="text-base-content/40 mb-3"></pc-icon>
-              <h3 class="font-bold text-lg">Snippet Generator</h3>
-              <p class="text-sm text-base-content/60 max-w-sm mt-1">
-                Once you save the form definition, we will generate the copy-paste HTML snippet you can embed on your
-                website.
-              </p>
-            </div>
-          </div>
-          } @else {
-          <pc-card title="HTML Embed Snippet" subtitle="Deploy this form on your external website.">
-            <button pc-card-actions class="btn btn-sm btn-outline btn-primary" (click)="copySnippet()">
-              <pc-icon name="document-duplicate" class="mr-1"></pc-icon>
-              Copy
-            </button>
-
-            <div class="form-control">
-              <label class="label text-xs font-semibold py-1">Public Form ID</label>
-              <code class="badge badge-neutral font-mono select-all p-3 text-xs w-full justify-start h-auto break-all">
-                {{ formId() }}
-              </code>
-            </div>
-
-            <div class="form-control">
-              <label class="label text-xs font-semibold py-1">
-                <span>Public Landing Page URL</span>
-              </label>
-              <div class="flex gap-2">
-                <input
-                  type="text"
-                  [value]="formUrl()"
-                  readonly
-                  class="input input-bordered input-sm flex-1 font-mono text-xs"
-                />
-                <a
-                  [href]="formUrl()"
-                  target="_blank"
-                  class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
-                  title="Open landing page"
-                >
-                  <pc-icon name="arrow-top-right-on-square"></pc-icon>
-                </a>
-                <button
-                  class="btn btn-sm btn-outline btn-primary px-3"
-                  (click)="copyUrl()"
-                  title="Copy landing page URL"
-                >
-                  <pc-icon name="document-duplicate"></pc-icon>
-                </button>
-              </div>
-            </div>
-
-            <div class="form-control">
-              <label class="label text-xs font-semibold py-1">HTML Code</label>
-              <pre
-                class="bg-neutral text-neutral-content p-4 rounded-xl text-[11px] font-mono max-h-72 overflow-y-auto select-all leading-normal"
-              >
-{{ embedSnippet() }}
-                  </pre
-              >
-            </div>
-
-            <div class="divider my-1"></div>
-
-            <div class="rounded-lg bg-base-50 p-4 border border-base-200">
-              <h4
-                class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5 mb-2"
-              >
-                <pc-icon name="check-circle" class="text-success"></pc-icon>
-                Spam & BOT Protection Included
-              </h4>
-              <p class="text-[11px] text-base-content/60 leading-normal">
-                The generated snippet includes a hidden <strong>honeypot field</strong> (<code>name="_hp"</code>). Spam
-                bots automatically fill in every input control, which triggers our silent rejection, protecting your CRM
-                from contact pollution.
-              </p>
-            </div>
-          </pc-card>
-          }
-        </div>
-      </div>
-    </div>
-    }
-  </main>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/forms/ui/form-view.html
-
-```html
-<pc-detail-layout
-  [title]="formRecord()?.name || 'Form'"
-  [eyebrow]="'Form'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!formRecord()"
-  [showDelete]="true"
-  [deleteText]="'Delete form'"
-  [btn1Text]="'Edit form'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editForm()"
-  (delete)="deleteForm()"
->
-  @if (formRecord()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Form Info & Embed Code -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Form Details Card -->
-      <pc-profile-card iconName="clipboard-document-list">
-        <!-- Name & Status -->
-        <h2 class="text-xl font-bold text-base-content text-center mb-1">{{ formRecord().name }}</h2>
-        <div class="flex gap-2 mb-4">
-          <span
-            class="badge font-semibold uppercase text-xs"
-            [class.badge-success]="formRecord().status === 'active'"
-            [class.badge-warning]="formRecord().status === 'archived'"
-          >
-            {{ formRecord().status }}
-          </span>
-        </div>
-
-        <!-- Details and settings list -->
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          @if (formRecord().description) {
-          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ formRecord().description }}</div>
-          } @if (formRecord().redirect_url) {
-          <pc-detail-row icon="arrow-top-right-on-square" iconClass="text-indigo-500">
-            <span class="truncate">Redirect: <strong>{{ formRecord().redirect_url }}</strong></span>
-          </pc-detail-row>
-          }
-
-          <pc-detail-row icon="envelope" iconClass="text-teal-500">
-            <span>Send Confirmation:</span>
-            <span pc-row-action class="font-bold">{{ formRecord().send_confirmation !== false ? 'Yes' : 'No' }}</span>
-          </pc-detail-row>
-
-          <pc-detail-row icon="bell" iconClass="text-purple-500">
-            <span>Send Admin Alert:</span>
-            <span pc-row-action class="font-bold">{{ formRecord().send_alert !== false ? 'Yes' : 'No' }}</span>
-          </pc-detail-row>
-        </div>
-
-        <!-- System Metadata -->
-        <div
-          class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
-        >
-          <span
-            >Created by {{ getUserName(formRecord().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span
-          >
-          <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(formRecord().updatedby_id) }}</span>
-        </div>
-      </pc-profile-card>
-
-      <!-- HTML Embed Snippet Card -->
-      <pc-card title="Deploy & Embed">
-        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
-          <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy Code
-        </button>
-
-        <div class="form-control text-xs">
-          <label class="label font-semibold py-1">Public Landing Page URL</label>
-          <div class="flex gap-2">
-            <input
-              type="text"
-              [value]="formUrl()"
-              readonly
-              class="input input-bordered input-xs flex-1 font-mono text-[10px]"
-            />
-            <a [href]="formUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
-              <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
-            </a>
-          </div>
-        </div>
-
-        <div class="form-control text-xs">
-          <label class="label font-semibold py-1">Embed HTML Code</label>
-          <pre
-            class="bg-neutral text-neutral-content p-3 rounded-lg text-[10px] font-mono max-h-40 overflow-y-auto select-all leading-snug"
-          >
-{{ embedSnippet() }}</pre
-          >
-        </div>
-      </pc-card>
-    </div>
-
-    <!-- Right Column: Stats & Tabs -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Panel -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <pc-stat-card
-          [title]="'Submissions'"
-          [value]="submissionsCount()"
-          [description]="'Total lead contacts collected'"
-          [icon]="'envelope'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Fields Included'"
-          [value]="fieldsCount()"
-          [description]="'Active field inputs'"
-          [icon]="'queue-list'"
-          [valueColorClass]="'text-amber-500'"
-          [iconColorClass]="'text-amber-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Tabs Panel -->
-      <!-- Tabs Panel -->
-      <pc-tabs [tabs]="formTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'web_forms'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="targetActions" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-5 text-sm">
-            <div>
-              <h4 class="font-semibold text-base-content mb-1">Add to Lists</h4>
-              @if (targetListsNames().length > 0) {
-              <div class="flex flex-wrap gap-1.5">
-                @for (list of targetListsNames(); track list) {
-                <span class="badge badge-neutral px-3 py-2.5">{{ list }}</span>
-                }
-              </div>
-              } @else {
-              <span class="text-xs text-base-content/40 italic">No specific list assigned.</span>
-              }
-            </div>
-
-            <div>
-              <h4 class="font-semibold text-base-content mb-1">Apply Tags</h4>
-              <div class="flex flex-wrap gap-1.5">
-                @if (formRecord().target_tags?.length > 0) { @for (tag of formRecord().target_tags; track tag) {
-                <span class="badge badge-outline badge-primary px-3 py-2.5">{{ tag }}</span>
-                } }
-                <!-- Automatic system tag -->
-                <span class="badge badge-outline badge-secondary px-3 py-2.5">Source: {{ formRecord().name }}</span>
-                @if (formRecord().form_type === 'donation' || formRecord().form_type === 'recurring_donation') {
-                <span class="badge badge-outline badge-success px-3 py-2.5 flex items-center gap-1">
-                  <pc-icon name="tag" [size]="3"></pc-icon>
-                  donor <span class="text-[10px] opacity-60">(auto)</span>
-                </span>
-                }
-              </div>
-            </div>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="fieldsPreview" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <h4 class="font-semibold text-base-content">Form Input Preview</h4>
-            <div class="rounded-xl border border-base-200 bg-base-200/20 p-4 max-w-sm">
-              @if (selectedFields().includes('first_name')) {
-              <div class="form-control mb-3">
-                <span class="text-[10px] font-semibold uppercase text-base-content/50">First Name</span>
-                <input type="text" class="input input-bordered input-xs" placeholder="First Name" disabled />
-              </div>
-              } @if (selectedFields().includes('last_name')) {
-              <div class="form-control mb-3">
-                <span class="text-[10px] font-semibold uppercase text-base-content/50">Last Name</span>
-                <input type="text" class="input input-bordered input-xs" placeholder="Last Name" disabled />
-              </div>
-              }
-              <div class="form-control mb-3">
-                <span class="text-[10px] font-semibold uppercase text-base-content/50">Email Address *</span>
-                <input type="text" class="input input-bordered input-xs" placeholder="you@example.com" disabled />
-              </div>
-              @if (selectedFields().includes('mobile')) {
-              <div class="form-control mb-3">
-                <span class="text-[10px] font-semibold uppercase text-base-content/50">Mobile / Phone</span>
-                <input type="text" class="input input-bordered input-xs" placeholder="Phone Number" disabled />
-              </div>
-              } @if (selectedFields().includes('notes')) {
-              <div class="form-control mb-3">
-                <span class="text-[10px] font-semibold uppercase text-base-content/50">Notes / Message</span>
-                <textarea
-                  class="textarea textarea-bordered textarea-xs"
-                  placeholder="How can we help?"
-                  disabled
-                ></textarea>
-              </div>
-              }
-            </div>
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.html
-
-```html
-<div class="flex h-full flex-col bg-base-100">
-  <!-- Header -->
-  <header class="flex items-center justify-between border-b border-base-200 px-6 py-4">
-    <h1 class="text-xl font-bold flex items-center gap-2">
-      <pc-icon name="currency-dollar" [size]="5" class="text-primary"></pc-icon>
-      {{ isNew() ? 'Create Donation Page' : 'Edit Donation Page' }}
-    </h1>
-    <pc-form-actions
-      [isLoading]="saving()"
-      [signalForm]="form"
-      (btn1Clicked)="save($event)"
-      [buttonsToShow]="'two'"
-      [btn1Text]="isNew() ? 'Create Donation Page' : 'Save Donation Page'"
-      [showDelete]="!isNew()"
-      [deleteText]="'Delete Donation Page'"
-      (deleteClicked)="deleteForm()"
-    ></pc-form-actions>
-  </header>
-
-  <!-- Main Content -->
-  <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
-    @if (!isInitialized()) {
-    <div class="mx-auto max-w-4xl space-y-4">
-      <div class="skeleton h-8 w-1/3"></div>
-      <div class="skeleton h-12 w-full"></div>
-      <div class="skeleton h-12 w-full"></div>
-      <div class="skeleton h-24 w-full"></div>
-    </div>
-    } @else { @if (!hasStripeKey()) {
-    <div class="mx-auto max-w-5xl mb-6">
-      <div class="alert alert-warning shadow-sm">
-        <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
-        <div>
-          <span class="font-bold">Stripe Keys Required</span>
-          <p class="text-sm mt-0.5">
-            Donation pages require Stripe to process payments.
-            <a href="/configuration/donations" class="link link-primary font-bold">Configure Stripe</a>
-          </p>
-        </div>
-      </div>
-    </div>
-    } @if (error()) {
-    <div class="mx-auto max-w-5xl mb-6">
-      <div class="alert alert-error shadow-sm">
-        <pc-icon name="shield-exclamation" [size]="6"></pc-icon>
-        <span>{{ error() }}</span>
-      </div>
-    </div>
-    }
-
-    <div class="mx-auto max-w-5xl">
-      <div class="grid gap-8 md:grid-cols-12">
-        <!-- Left Column: Page Configuration -->
-        <div class="space-y-6 md:col-span-7">
-          <form (submit)="save($event)">
-            <pc-card title="Page Settings">
-              <!-- Donation Type -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">Donation Type</label>
-                @if (isNew()) {
-                <div class="flex gap-6">
-                  <label class="flex items-center gap-2.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="donationType"
-                      class="radio radio-success radio-sm"
-                      [checked]="!isRecurring()"
-                      (change)="setType('donation')"
-                    />
-                    <div>
-                      <span class="text-sm font-semibold">One-Time</span>
-                      <p class="text-[11px] text-base-content/50">Single donation via Stripe Checkout</p>
-                    </div>
-                  </label>
-                  <label class="flex items-center gap-2.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="donationType"
-                      class="radio radio-primary radio-sm"
-                      [checked]="isRecurring()"
-                      (change)="setType('recurring_donation')"
-                    />
-                    <div>
-                      <span class="text-sm font-semibold">Recurring</span>
-                      <p class="text-[11px] text-base-content/50">Monthly pledge via Stripe Subscription</p>
-                    </div>
-                  </label>
-                </div>
-                } @else {
-                <div class="flex items-center gap-2 px-3 py-2 bg-base-200/50 rounded-lg border border-base-200">
-                  @if (isRecurring()) {
-                  <pc-icon name="arrow-path" class="text-primary" [size]="5"></pc-icon>
-                  <span class="font-medium text-sm">Recurring (Monthly Pledge)</span>
-                  } @else {
-                  <pc-icon name="currency-dollar" class="text-success" [size]="5"></pc-icon>
-                  <span class="font-medium text-sm">One-Time Donation</span>
-                  }
-                </div>
-                <p class="text-[10px] text-base-content/50 mt-1">Donation type cannot be changed after creation.</p>
-                }
-              </div>
-
-              <!-- Name -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">Page Name *</label>
-                <input
-                  type="text"
-                  [formField]="form.name"
-                  class="input input-bordered w-full"
-                  placeholder="E.g., Spring Fundraiser"
-                  [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
-                />
-                @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
-                form.name().errors(); track err) {
-                <p class="mt-1 text-xs text-error">{{ err.message }}</p>
-                } }
-              </div>
-
-              <!-- Description -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">Description</label>
-                <textarea
-                  [formField]="form.description"
-                  class="textarea textarea-bordered w-full"
-                  rows="2"
-                  placeholder="Internal note about this donation page..."
-                ></textarea>
-              </div>
-
-              <!-- Redirect URL -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1 flex items-center justify-between">
-                  <span>Redirect URL (After Submit)</span>
-                  <span class="text-[10px] text-base-content/50 font-normal">Optional</span>
-                </label>
-                <input
-                  type="url"
-                  [formField]="form.redirect_url"
-                  class="input input-bordered w-full"
-                  placeholder="https://mywebsite.com/thank-you"
-                  [class.input-error]="form.redirect_url().invalid() && (form.redirect_url().dirty() || form.redirect_url().touched())"
-                />
-                <p class="mt-1 text-[11px] text-base-content/50">
-                  If blank, users will see the PeopleCRM default success page.
-                </p>
-              </div>
-
-              <!-- Status -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">Status</label>
-                <select [formField]="form.status" class="select select-bordered w-full">
-                  <option value="active">Active</option>
-                  <option value="archived">Archived</option>
-                </select>
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <!-- Send Confirmation Email Toggle -->
-              <div class="form-control">
-                <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-                  <div class="flex-1 min-w-0">
-                    <span class="label-text font-bold text-sm whitespace-normal">Send Submission Confirmation</span>
-                    <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                      Send a thank-you confirmation email to donors when they complete their donation.
-                    </p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    [formField]="form.send_confirmation"
-                    class="toggle toggle-primary mt-1 shrink-0"
-                  />
-                </label>
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <!-- Send Lead Notification Email Toggle -->
-              <div class="form-control">
-                <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-                  <div class="flex-1 min-w-0">
-                    <span class="label-text font-bold text-sm whitespace-normal">Send New Donor Notification</span>
-                    <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                      Send email alert notifications to organization admins when a new donation is received.
-                    </p>
-                  </div>
-                  <input type="checkbox" [formField]="form.send_alert" class="toggle toggle-primary mt-1 shrink-0" />
-                </label>
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <!-- Form Fields (donation forms have fixed required fields) -->
-              <div class="form-control">
-                <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60 mb-3">Form Fields</h2>
-                <div
-                  class="space-y-2 bg-base-200/30 rounded-xl p-4 border border-base-200 text-xs text-base-content/70"
-                >
-                  <p class="font-bold text-primary flex items-center gap-1">
-                    <pc-icon name="information-circle" [size]="4"></pc-icon>
-                    Donation pages always collect:
-                  </p>
-                  <ul class="list-disc list-inside space-y-1 pl-1 font-semibold text-base-content/85">
-                    <li>{{ isRecurring() ? 'Monthly Pledge Amount ($)' : 'Donation Amount ($ CAD)' }}</li>
-                    <li>First Name & Last Name</li>
-                    <li>Email Address</li>
-                    <li>Street Address, City, State / Province, Zip / Postal Code, Country</li>
-                  </ul>
-                </div>
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <h2 class="text-base font-semibold uppercase tracking-wide text-base-content/60">
-                Target Audience Actions
-              </h2>
-
-              <!-- Lists mapping -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">Add donors to Lists</label>
-                @if (!availableLists().length) {
-                <p class="text-xs text-base-content/60 italic">No lists created yet.</p>
-                } @else {
-                <select class="select select-bordered select-sm w-full" (change)="handleListSelect($event)">
-                  <option value="">Select a list to target</option>
-                  @for (list of availableLists(); track list.id) {
-                  <option [value]="list.id" [disabled]="selectedLists().includes(list.id)">{{ list.name }}</option>
-                  }
-                </select>
-                <div class="mt-2 flex flex-wrap gap-1.5">
-                  @if (!selectedLists().length) {
-                  <span class="text-[11px] text-base-content/50">No lists selected.</span>
-                  } @else { @for (listId of selectedLists(); track listId) {
-                  <pc-tagitem [name]="listName(listId)" (close)="removeList(listId)"></pc-tagitem>
-                  } }
-                </div>
-                }
-              </div>
-
-              <!-- Tags mapping -->
-              <div class="form-control">
-                <label class="label text-xs font-semibold py-1">Apply Tags to donors</label>
-                <div class="rounded border border-base-200 bg-base-50 p-2">
-                  <pc-tags
-                    [tags]="selectedTags()"
-                    [enableAutoComplete]="true"
-                    placeholder="Add tag"
-                    (tagsChange)="handleTagsChange($event)"
-                  ></pc-tags>
-                </div>
-                <p class="mt-1 text-[11px] text-base-content/50">
-                  A system tag <code class="badge badge-sm badge-neutral">Source: [Page Name]</code> will be applied
-                  automatically. The system tag
-                  <code class="badge badge-sm badge-success text-success-content">Donor</code> will also be applied to
-                  all submissions.
-                </p>
-              </div>
-            </pc-card>
-          </form>
-        </div>
-
-        <!-- Right Column: Preview & Snippet -->
-        <div class="space-y-6 md:col-span-5">
-          <!-- Live Form Preview -->
-          <pc-card title="Live Form Preview" subtitle="Real-time preview of the donation page layout." icon="eye">
-            <div class="rounded-2xl border border-base-200 bg-base-200/30 p-6 mt-1 relative">
-              <div class="text-center mb-6">
-                <h4
-                  class="text-lg font-bold bg-gradient-to-br from-base-content to-base-content/75 bg-clip-text text-transparent"
-                >
-                  {{ payload().name || 'Untitled Donation Page' }}
-                </h4>
-                <p class="text-xs text-base-content/60 mt-1 whitespace-pre-wrap">
-                  {{ payload().description || 'Enter a description to see it here.' }}
-                </p>
-              </div>
-
-              <div class="space-y-4">
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5">
-                    {{ isRecurring() ? 'Monthly Pledge Amount ($) *' : 'Donation Amount ($ CAD) *' }}
-                  </label>
-                  <input type="number" class="input input-bordered input-sm w-full" placeholder="E.g. 50" disabled />
-                </div>
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5">First Name *</label>
-                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. John" disabled />
-                </div>
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5">Last Name *</label>
-                  <input type="text" class="input input-bordered input-sm w-full" placeholder="E.g. Doe" disabled />
-                </div>
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5">Email Address *</label>
-                  <input
-                    type="email"
-                    class="input input-bordered input-sm w-full"
-                    placeholder="john@example.com"
-                    disabled
-                  />
-                </div>
-                <div class="form-control">
-                  <label class="label text-[11px] font-semibold py-0.5">Street Address *</label>
-                  <input
-                    type="text"
-                    class="input input-bordered input-sm w-full"
-                    placeholder="E.g. 123 Main St"
-                    disabled
-                  />
-                </div>
-                <div class="grid grid-cols-2 gap-2">
-                  <div class="form-control">
-                    <label class="label text-[11px] font-semibold py-0.5">City *</label>
-                    <input type="text" class="input input-bordered input-sm w-full" disabled />
-                  </div>
-                  <div class="form-control">
-                    <label class="label text-[11px] font-semibold py-0.5">Zip / Postal *</label>
-                    <input type="text" class="input input-bordered input-sm w-full" disabled />
-                  </div>
-                </div>
-                <div class="grid grid-cols-2 gap-2">
-                  <div class="form-control">
-                    <label class="label text-[11px] font-semibold py-0.5">State / Province *</label>
-                    <input type="text" class="input input-bordered input-sm w-full" disabled />
-                  </div>
-                  <div class="form-control">
-                    <label class="label text-[11px] font-semibold py-0.5">Country *</label>
-                    <input type="text" class="input input-bordered input-sm w-full" disabled />
-                  </div>
-                </div>
-                <button type="button" class="btn btn-primary btn-sm w-full mt-2" disabled>
-                  {{ isRecurring() ? 'Start Monthly Pledge' : 'Donate Now' }}
-                </button>
-              </div>
-            </div>
-          </pc-card>
-
-          @if (isNew()) {
-          <div class="card bg-base-200 border border-base-300 text-center">
-            <div class="card-body items-center py-12">
-              <pc-icon name="currency-dollar" [size]="12" class="text-base-content/40 mb-3"></pc-icon>
-              <h3 class="font-bold text-lg">Snippet Generator</h3>
-              <p class="text-sm text-base-content/60 max-w-sm mt-1">
-                Once you save the page, we will generate the copy-paste HTML snippet you can embed on your website.
-              </p>
-            </div>
-          </div>
-          } @else {
-          <pc-card title="HTML Embed Snippet" subtitle="Deploy this donation page on your external website.">
-            <button pc-card-actions class="btn btn-sm btn-outline btn-primary" (click)="copySnippet()">
-              <pc-icon name="document-duplicate" class="mr-1"></pc-icon>
-              Copy
-            </button>
-
-            <div class="form-control">
-              <label class="label text-xs font-semibold py-1">Public Form ID</label>
-              <code class="badge badge-neutral font-mono select-all p-3 text-xs w-full justify-start h-auto break-all">
-                {{ formId() }}
-              </code>
-            </div>
-
-            <div class="form-control">
-              <label class="label text-xs font-semibold py-1">Public Landing Page URL</label>
-              <div class="flex gap-2">
-                <input
-                  type="text"
-                  [value]="formUrl()"
-                  readonly
-                  class="input input-bordered input-sm flex-1 font-mono text-xs"
-                />
-                <a
-                  [href]="formUrl()"
-                  target="_blank"
-                  class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
-                  title="Open landing page"
-                >
-                  <pc-icon name="arrow-top-right-on-square"></pc-icon>
-                </a>
-                <button
-                  class="btn btn-sm btn-outline btn-primary px-3"
-                  (click)="copyUrl()"
-                  title="Copy landing page URL"
-                >
-                  <pc-icon name="document-duplicate"></pc-icon>
-                </button>
-              </div>
-            </div>
-
-            <div class="form-control">
-              <label class="label text-xs font-semibold py-1">HTML Code</label>
-              <pre
-                class="bg-neutral text-neutral-content p-4 rounded-xl text-[11px] font-mono max-h-72 overflow-y-auto select-all leading-normal"
-              >
-{{ embedSnippet() }}
-              </pre>
-            </div>
-
-            <div class="divider my-1"></div>
-
-            <div class="rounded-lg bg-base-50 p-4 border border-base-200">
-              <h4
-                class="text-xs font-bold uppercase tracking-wider text-base-content/70 flex items-center gap-1.5 mb-2"
-              >
-                <pc-icon name="check-circle" class="text-success"></pc-icon>
-                Spam & BOT Protection Included
-              </h4>
-              <p class="text-[11px] text-base-content/60 leading-normal">
-                The generated snippet includes a hidden <strong>honeypot field</strong> (<code>name="_hp"</code>) to
-                silently reject spam bots.
-              </p>
-            </div>
-          </pc-card>
-          }
-        </div>
-      </div>
-    </div>
-    }
-  </main>
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/households/ui/household-view.html
-
-```html
-<pc-detail-layout
-  [title]="addressString()"
-  [eyebrow]="'Household'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!household()"
-  [showActions]="!!(household() && !household()?.is_placeholder)"
-  [showDelete]="true"
-  [deleteText]="'Delete household'"
-  [btn1Text]="'Edit household'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editHousehold()"
-  (delete)="deleteHousehold()"
->
-  @if (household(); as h) { @if (h.is_placeholder) {
-  <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
-    <div class="avatar placeholder mb-4">
-      <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
-        <pc-icon name="exclamation-triangle" [size]="8"></pc-icon>
-      </div>
-    </div>
-    <h2 class="text-xl font-bold text-base-content mb-2">No Household Assigned</h2>
-    <p class="text-sm text-base-content/60 mb-6">
-      This is a system placeholder representing individuals who do not currently have a household or address assigned.
-      It is not a real household record and cannot be edited.
-    </p>
-    <a routerLink="/people" class="btn btn-primary btn-sm gap-2">
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Return to People
-    </a>
-  </div>
-  } @else {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Household Card, Map & Segmentation -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Household Card -->
-      <pc-profile-card iconName="home">
-        <!-- Address Title -->
-        <h2 class="text-xl font-bold text-base-content text-center mb-4 leading-tight">{{ addressString() }}</h2>
-
-        <!-- Contact Details List -->
-        <div class="w-full flex flex-col text-sm">
-          <pc-detail-item label="Home Phone" [value]="h.home_phone" icon="phone" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Household Type" [value]="h.type" icon="information-circle"></pc-detail-item>
-        </div>
-
-        <!-- Mapped Districts (GIS) -->
-        @if (h.district || h.precinct || h.ward || h.geocoding_status) {
-        <div
-          class="flex flex-col gap-2 p-3 rounded-lg bg-base-200/50 text-base-content/80 mt-2 border border-base-300/40 w-full"
-        >
-          <div class="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-base-content/50">
-            <pc-icon name="map" [size]="4" class="text-primary"></pc-icon>
-            <span>Electoral Boundaries</span>
-          </div>
-          <div class="flex flex-wrap gap-2 mt-1 text-center text-xs">
-            @if (h.district) {
-            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-              <span class="text-[10px] text-base-content/40 block">District / Riding</span>
-              <span class="font-bold text-base-content">{{ h.district }}</span>
-            </div>
-            } @if (h.ward) {
-            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-              <span class="text-[10px] text-base-content/40 block">Ward</span>
-              <span class="font-bold text-base-content">{{ h.ward }}</span>
-            </div>
-            } @if (h.precinct) {
-            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-              <span class="text-[10px] text-base-content/40 block">Precinct / Polling Div.</span>
-              <span class="font-bold text-base-content">{{ h.precinct }}</span>
-            </div>
-            }
-          </div>
-
-          <!-- Geocoding Status Badge -->
-          <div class="flex justify-between items-center mt-2 pt-2 border-t border-base-300/40 text-xs">
-            <span class="text-base-content/60">Geocoding Status:</span>
-            @if (h.geocoding_status === 'success') {
-            <span class="badge badge-success badge-sm font-medium">Success</span>
-            } @else if (h.geocoding_status === 'pending') {
-            <span class="badge badge-warning badge-sm font-medium gap-1 flex items-center">
-              <span class="loading loading-spinner loading-xs scale-75"></span>
-              Pending
-            </span>
-            } @else if (h.geocoding_status === 'failed') {
-            <span class="badge badge-error badge-sm text-xs">Unresolved</span>
-            } @else {
-            <span class="badge badge-ghost badge-sm font-medium">Skipped</span>
-            }
-          </div>
-        </div>
-        }
-
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="h.created_at"
-          [createdBy]="getUserName(h.createdby_id)"
-          [updatedAt]="h.updated_at"
-          [updatedBy]="getUserName(h.updatedby_id)"
-        ></pc-system-metadata>
-      </pc-profile-card>
-
-      <!-- Google Maps Card -->
-      <pc-card title="Map Location" icon="map">
-        <div class="relative w-full h-64 bg-base-200 flex items-center justify-center rounded-lg overflow-hidden">
-          @if (hasMap()) { @defer (on viewport) {
-          <div #mapContainer id="household-map" class="w-full h-full"></div>
-          } @placeholder {
-          <div class="skeleton w-full h-full"></div>
-          } } @else {
-          <!-- Unverified Map Placeholder -->
-          <div class="p-6 flex flex-col items-center gap-2 text-center text-base-content/40 select-none">
-            <pc-icon name="map-pin" [size]="8" class="text-base-content/20 mb-1"></pc-icon>
-            <h4 class="font-semibold text-sm text-base-content/60">Location Not Verified</h4>
-            <p class="text-xs max-w-[220px] font-light leading-snug">
-              Map pins are only available for addresses geocoded via autocomplete search or when we have verified the
-              address.
-            </p>
-          </div>
-          }
-        </div>
-      </pc-card>
-
-      <!-- Segmentation Card -->
-      <pc-card title="Segmentation">
-        <div class="flex flex-col gap-3">
-          <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
-            @if (tags().length > 0) {
-            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
-            }
-          </div>
-
-          <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
-            @if (issues().length > 0) {
-            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
-            }
-          </div>
-        </div>
-      </pc-card>
-    </div>
-
-    <!-- Right Column: Stats & Tabs Panel -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Dashboard Stats Grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <!-- Stats: People -->
-        <pc-stat-card
-          [title]="'People'"
-          [value]="peopleCount()"
-          [description]="'Household members'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-teal-500'"
-          [iconColorClass]="'text-teal-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Interactions -->
-        <pc-stat-card
-          [title]="'Interactions'"
-          [value]="0"
-          [description]="'Logged contacts'"
-          [icon]="'envelope'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Donations -->
-        <pc-stat-card
-          [title]="'Donations'"
-          [value]="'$0'"
-          [description]="'Financial support'"
-          [icon]="'currency-dollar'"
-          [valueColorClass]="'text-emerald-500'"
-          [iconColorClass]="'text-emerald-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Volunteers -->
-        <pc-stat-card
-          [title]="'Volunteers'"
-          [value]="0"
-          [description]="'Active assignments'"
-          [icon]="'volunteer'"
-          [valueColorClass]="'text-purple-500'"
-          [iconColorClass]="'text-purple-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Multi-Tab Details & History Panel -->
-      <pc-tabs [tabs]="householdTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="members" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <pc-people-in-household [householdId]="id()!"></pc-people-in-household>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'households'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="details" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (h.notes) {
-            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2"
-                >Household Notes</span
-              >
-              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">{{ h.notes }}</p>
-            </div>
-            } @else {
-            <div class="text-center py-10 text-base-content/40 italic">
-              No internal notes recorded for this household
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  } }
-</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/lists/services/lists-service.ts
@@ -17349,255 +18436,6 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
     return this.api.lists.exportCsv.mutate(input);
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/lists/ui/list-form.html
-
-```html
-<div class="flex min-h-full flex-col bg-base-100">
-  @if (!isNew()) {
-  <!-- Simple Edit Form -->
-  <form [formGroup]="form" class="mx-5 my-8 flex flex-col gap-6 sm:mx-10" (submit)="save($event)">
-    <div class="flex items-center justify-between border-b border-base-200 pb-4 mb-6">
-      <div class="flex items-center gap-3">
-        <pc-icon name="queue-list" class="text-primary" [size]="5"></pc-icon>
-        <div>
-          <h1 class="text-xl font-bold">Edit {{ form.get('name')?.value || 'List' }}</h1>
-          <p class="text-sm text-base-content/60 mt-0.5">Modify the name and description of this list.</p>
-        </div>
-      </div>
-      <pc-form-actions
-        [isLoading]="isLoading()"
-        (btn1Clicked)="save($event)"
-        [btn1Text]="'Save List'"
-        [showDelete]="true"
-        [deleteText]="'Delete List'"
-        (deleteClicked)="deleteList()"
-        buttonsToShow="two"
-      ></pc-form-actions>
-    </div>
-
-    <section class="grid gap-6 rounded border border-base-300 bg-base-100 p-6 shadow-sm">
-      <div class="space-y-2">
-        <label class="text-sm font-medium text-base-content/80" for="list-name">List Name</label>
-        <input
-          id="list-name"
-          type="text"
-          class="input input-bordered w-full"
-          formControlName="name"
-          placeholder="List Name"
-        />
-      </div>
-
-      <div class="space-y-2">
-        <label class="text-sm font-medium text-base-content/80" for="list-description">Description</label>
-        <textarea
-          id="list-description"
-          rows="4"
-          class="textarea textarea-bordered w-full"
-          placeholder="Describe the purpose of this list"
-          formControlName="description"
-        ></textarea>
-      </div>
-    </section>
-  </form>
-  } @else {
-  <!-- Stepper Form for New Lists -->
-  <form [formGroup]="form" class="mx-5 my-8 flex flex-col gap-6 sm:mx-10">
-    <!-- Header -->
-    <div class="flex items-center justify-between border-b border-base-200 pb-4">
-      <div class="flex items-center gap-3">
-        <pc-icon name="queue-list" class="text-primary" [size]="5"></pc-icon>
-        <div>
-          <h1 class="text-xl font-bold">New List</h1>
-          <p class="text-sm text-base-content/60 mt-0.5">
-            Configure static or dynamic contact lists for outreach campaigns.
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Stepper -->
-    <div class="w-full">
-      <ol class="flex items-center w-full text-sm">
-        <li class="flex-1 flex items-center gap-2" [class.cursor-pointer]="isNew()" (click)="isNew() && goto(1)">
-          <div
-            class="w-7 h-7 rounded-full flex items-center justify-center"
-            [class.bg-primary]="step() >= 1"
-            [class.bg-base-300]="step() < 1"
-          >
-            <span class="text-base-100 font-bold">1</span>
-          </div>
-          <span class="font-medium">Type</span>
-        </li>
-        <div class="flex-1 h-0.5 mx-2" [class.bg-primary]="step() > 1" [class.bg-base-300]="step() <= 1"></div>
-        <li class="flex-1 flex items-center gap-2" [class.cursor-pointer]="isNew()" (click)="isNew() && goto(2)">
-          <div
-            class="w-7 h-7 rounded-full flex items-center justify-center"
-            [class.bg-primary]="step() >= 2"
-            [class.bg-base-300]="step() < 2"
-          >
-            <span class="text-base-100 font-bold">2</span>
-          </div>
-          <span class="font-medium">Mode</span>
-        </li>
-        <div class="flex-1 h-0.5 mx-2" [class.bg-primary]="step() > 2" [class.bg-base-300]="step() <= 2"></div>
-        <li class="flex-1 flex items-center gap-2 cursor-pointer" (click)="goto(3)">
-          <div
-            class="w-7 h-7 rounded-full flex items-center justify-center"
-            [class.bg-primary]="step() >= 3"
-            [class.bg-base-300]="step() < 3"
-          >
-            <span class="text-base-100 font-bold">3</span>
-          </div>
-          <span class="font-medium">Filters</span>
-        </li>
-        <div class="flex-1 h-0.5 mx-2" [class.bg-primary]="step() > 3" [class.bg-base-300]="step() <= 3"></div>
-        <li class="flex-1 flex items-center gap-2 cursor-pointer" (click)="goto(4)">
-          <div
-            class="w-7 h-7 rounded-full flex items-center justify-center"
-            [class.bg-primary]="step() >= 4"
-            [class.bg-base-300]="step() < 4"
-          >
-            <span class="text-base-100 font-bold">4</span>
-          </div>
-          <span class="font-medium">Preview</span>
-        </li>
-      </ol>
-    </div>
-
-    <!-- Step 1: Type selection -->
-    @if (step() === 1) {
-    <div class="grid gap-4 sm:grid-cols-2">
-      <button
-        type="button"
-        class="card border border-base-300 hover:border-primary p-6 text-left"
-        [class.bg-base-200]="form.get('object')?.value === 'people'"
-        (click)="form.get('object')?.setValue('people'); next()"
-      >
-        <div class="flex items-center gap-4">
-          <pc-icon name="users" [size]="10"></pc-icon>
-          <div>
-            <div class="font-semibold">People List</div>
-            <div class="text-sm text-base-content/70">Individuals with contact and tag data.</div>
-          </div>
-        </div>
-      </button>
-
-      <button
-        type="button"
-        class="card border border-base-300 hover:border-primary p-6 text-left"
-        [class.bg-base-200]="form.get('object')?.value === 'households'"
-        (click)="form.get('object')?.setValue('households'); next()"
-      >
-        <div class="flex items-center gap-4">
-          <pc-icon name="house-modern" [size]="10"></pc-icon>
-          <div>
-            <div class="font-semibold">Household List</div>
-            <div class="text-sm text-base-content/70">Households grouped by address.</div>
-          </div>
-        </div>
-      </button>
-    </div>
-    }
-
-    <!-- Step 2: Mode selection -->
-    @if (step() === 2) {
-    <div class="grid gap-4 sm:grid-cols-2">
-      <button
-        type="button"
-        class="card border border-base-300 hover:border-primary p-6 text-left"
-        [class.bg-base-200]="!form.get('is_dynamic')?.value"
-        (click)="form.get('is_dynamic')?.setValue(false)"
-      >
-        <div class="font-semibold mb-1">Static List</div>
-        <div class="text-sm text-base-content/70">A fixed snapshot. You select members now.</div>
-      </button>
-      <button
-        type="button"
-        class="card border border-base-300 hover:border-primary p-6 text-left"
-        [class.bg-base-200]="form.get('is_dynamic')?.value"
-        (click)="form.get('is_dynamic')?.setValue(true)"
-      >
-        <div class="font-semibold mb-1">Dynamic List</div>
-        <div class="text-sm text-base-content/70">Auto-updates using saved filters (e.g., Tags).</div>
-      </button>
-    </div>
-    <div class="flex items-center justify-between mt-4">
-      <button type="button" class="btn" (click)="back()">Back</button>
-      <button type="button" class="btn btn-primary" (click)="next()">Next</button>
-    </div>
-    }
-
-    <!-- Step 3: Filters -->
-    @if (step() === 3) {
-    <div class="grid gap-4">
-      <div class="grid gap-3">
-        <div class="label-text mb-1">Build Tag Rules</div>
-        <pc-query-builder
-          [group]="rulesRoot()"
-          [fields]="listFields()"
-          [tagSvc]="tagSvc"
-          [summaryMatches]="matchCount()"
-          [summaryCounting]="counting()"
-          [summaryError]="rulesError()"
-          (changed)="onRulesChanged()"
-        ></pc-query-builder>
-        <div class="text-xs text-base-content/70">Use AND/OR and nested groups to combine Tag is / is not rules.</div>
-      </div>
-      <!-- Matches are shown in the summary line above -->
-      <div class="flex items-center justify-between mt-2">
-        @if (isNew()) {
-        <button type="button" class="btn" (click)="back()">Back</button>
-        } @else {
-        <div></div>
-        }
-        <button type="button" class="btn btn-primary" (click)="next()">Next</button>
-      </div>
-    </div>
-    }
-
-    <!-- Step 4: Preview -->
-    @if (step() === 4) {
-    <div class="grid gap-4">
-      <div class="grid sm:grid-cols-2 gap-4">
-        <input class="input w-full" placeholder="List Name" aria-label="List Name" formControlName="name" />
-        <input class="input w-full" placeholder="Description" aria-label="Description" formControlName="description" />
-      </div>
-      <div class="text-sm text-base-content/70">Preview (read-only). Go back to adjust filters.</div>
-      <div class="h-96 border border-base-300 rounded">
-        @if (form.get('object')?.value === 'people') {
-        <pc-people-filter-grid
-          [showToolbar]="false"
-          [enableSelection]="false"
-          [disableView]="true"
-          [allowFilter]="false"
-          [externalAdvancedFilterModel]="rulesRoot()"
-        />
-        } @else {
-        <pc-household-filter-grid
-          [showToolbar]="false"
-          [enableSelection]="false"
-          [disableView]="true"
-          [allowFilter]="false"
-          [externalAdvancedFilterModel]="rulesRoot()"
-        />
-        }
-      </div>
-      <div class="flex items-center justify-between">
-        <button type="button" class="btn" (click)="back()">Back</button>
-        <pc-form-actions
-          [isLoading]="isLoading()"
-          [btn1Text]="btnLabel()"
-          (btn1Clicked)="save($event)"
-          buttonsToShow="two"
-        ></pc-form-actions>
-      </div>
-    </div>
-    }
-  </form>
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.ts
@@ -18968,615 +19806,6 @@ export class PeopleInHousehold {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
-
-```html
-<pc-detail-layout
-  [title]="fullName() || 'Person'"
-  [eyebrow]="'Person'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!person()"
-  [showDelete]="true"
-  [deleteText]="'Delete person'"
-  [btn1Text]="'Edit person'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editPerson()"
-  (delete)="deletePerson()"
->
-  @if (person()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Contact Card & Bio -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Contact Card -->
-      <pc-profile-card [avatarText]="initials()">
-        <!-- Name & Company -->
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ fullName() }}</h2>
-        @if (person().company_name) {
-        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">
-          <pc-icon name="briefcase" [size]="4"></pc-icon>
-          {{ person().company_name }}
-        </div>
-        } @else {
-        <span class="text-sm text-base-content/50 italic mb-4">No company assigned</span>
-        }
-
-        <!-- Social Media Buttons -->
-        <div class="flex justify-center gap-3 w-full border-y border-base-200 py-4 mb-6">
-          @for (link of socialLinks(); track link.name) {
-          <a
-            [attr.href]="link.url || null"
-            [attr.target]="link.url ? '_blank' : null"
-            [attr.data-tip]="link.url ? link.name + ' profile' : link.name + ' URL not set'"
-            class="btn btn-circle btn-sm tooltip"
-            [class]="link.url 
-        ? 'shadow-md hover:scale-110 transition-transform text-white border-none ' + link.color 
-        : 'bg-base-200 text-base-content/30 border-base-300 cursor-not-allowed'"
-          >
-            <pc-icon [name]="link.icon" [size]="4"></pc-icon>
-          </a>
-          }
-        </div>
-
-        <!-- Contact & Address Details List -->
-        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
-          <pc-detail-item
-            label="Primary Email"
-            [value]="person().email"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Secondary Email"
-            [value]="person().email2"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Mobile Phone"
-            [value]="person().mobile"
-            icon="phone"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Home Phone"
-            [value]="person().home_phone"
-            icon="home"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item label="Address" [value]="addressString()" icon="map-pin"></pc-detail-item>
-        </div>
-
-        <!-- Notes Section -->
-        @if (person().notes) {
-        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1"
-            >Internal Notes</span
-          >
-          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-            {{ person().notes }}
-          </p>
-        </div>
-        }
-
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="person().created_at"
-          [createdBy]="getUserName(person().createdby_id)"
-          [updatedAt]="person().updated_at"
-          [updatedBy]="getUserName(person().updatedby_id)"
-        ></pc-system-metadata>
-      </pc-profile-card>
-
-      <!-- Segmentation Card -->
-      <pc-card title="Segmentation">
-        <div class="flex flex-col gap-3">
-          <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
-            @if (tags().length > 0) {
-            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
-            }
-          </div>
-
-          <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
-            @if (issues().length > 0) {
-            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
-            }
-          </div>
-        </div>
-      </pc-card>
-
-      <!-- Sentiment Score Card (frosted glass coming soon overlay) -->
-      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden relative">
-        <div class="p-6 flex flex-col items-center gap-3">
-          <h3 class="text-sm font-bold uppercase tracking-wider text-base-content/70 self-start">Sentiment Score</h3>
-
-          <!-- Placeholder Graphic -->
-          <div
-            class="flex items-center justify-center w-28 h-28 rounded-full border-4 border-dashed border-base-300 relative my-2"
-          >
-            <span class="text-4xl text-base-content/20">😐</span>
-            <span class="text-xs text-base-content/30 mt-1 absolute bottom-4 font-mono">Neutral</span>
-          </div>
-          <div class="text-xs text-base-content/40 text-center font-light leading-relaxed">
-            Aggregates communication email history and tags to automatically gauge contact affinity.
-          </div>
-        </div>
-
-        <!-- Premium Overlay for "Coming Soon" -->
-        <div
-          class="absolute inset-0 bg-base-100/80 backdrop-blur-md flex flex-col justify-center items-center p-4 text-center select-none"
-        >
-          <div class="p-3 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white rounded-2xl shadow-lg mb-2">
-            <pc-icon name="chart-pie" [size]="8"></pc-icon>
-          </div>
-          <h4 class="font-bold text-lg text-base-content">Affinity Analytics</h4>
-          <span class="badge badge-primary badge-sm font-semibold tracking-wider my-1">COMING SOON</span>
-          <p class="text-xs text-base-content/60 max-w-[200px] mt-1 font-light leading-snug">
-            AI-driven sentiment analysis of email conversations is currently in beta.
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Right Column: Stats & Multi-Tab Activity Feed -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Dashboard Stats Grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <!-- Stats: Emails Sent -->
-        <pc-stat-card
-          [title]="'Emails Sent'"
-          [value]="activityData().emails.length"
-          [description]="'Total emails sent'"
-          [icon]="'paper-airplane'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Emails Opened -->
-        <pc-stat-card
-          [title]="'Opened'"
-          [value]="openedNewslettersCount()"
-          [description]="'Opens & clicks'"
-          [icon]="'eye'"
-          [valueColorClass]="'text-emerald-500'"
-          [iconColorClass]="'text-emerald-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Active Lists -->
-        <pc-stat-card
-          [title]="'Active Lists'"
-          [value]="0"
-          [description]="'List subscriptions'"
-          [icon]="'queue-list'"
-          [valueColorClass]="'text-amber-500'"
-          [iconColorClass]="'text-amber-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Volunteer Shifts -->
-        <pc-stat-card
-          [title]="'Volunteered'"
-          [value]="volunteerStats()?.shifts_count || 0"
-          [description]="'Shifts completed'"
-          [icon]="'volunteer'"
-          [valueColorClass]="'text-purple-500'"
-          [iconColorClass]="'text-purple-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Volunteer Hours -->
-        <pc-stat-card
-          [title]="'Total Hours'"
-          [value]="volunteerStats()?.total_hours || 0.0"
-          [description]="'Hours logged'"
-          [icon]="'clock'"
-          [valueColorClass]="'text-pink-500'"
-          [iconColorClass]="'text-pink-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Donations -->
-        <pc-stat-card
-          [title]="'Donations'"
-          [value]="donationStats() ? '$' + donationStats()!.cumulativeAmount.toLocaleString() : '$0'"
-          [description]="'Financial support'"
-          [icon]="'currency-dollar'"
-          [valueColorClass]="'text-emerald-500'"
-          [iconColorClass]="'text-emerald-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Connections -->
-        <pc-stat-card
-          [title]="'Connections'"
-          [value]="connectionCount()"
-          [description]="'Network connections'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-violet-500'"
-          [iconColorClass]="'text-violet-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Activities, Interactions & History Tabs -->
-      <!-- Activities, Interactions & History Tabs -->
-      <pc-tabs [tabs]="personTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
-            <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="emails" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (activityData().emails.length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No direct email correspondence recorded</div>
-            } @else {
-            <div class="flex flex-col gap-3">
-              @for (mail of activityData().emails; track mail.id) {
-              <a
-                [routerLink]="['/inbox']"
-                [queryParams]="{ email: mail.id }"
-                class="p-4 rounded-xl border border-base-200 hover:border-indigo-300 bg-base-50/20 hover:bg-base-100 transition-all flex flex-col gap-2 no-underline text-current group cursor-pointer hover:shadow-sm"
-              >
-                <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
-                  <span class="font-mono text-base-content/60">
-                    From: <strong class="text-base-content">{{ mail.from_email }}</strong> &rarr; To:
-                    <strong>{{ mail.to_email }}</strong>
-                  </span>
-                  <span class="text-base-content/40">{{ mail.created_at | date:'medium' }}</span>
-                </div>
-                <div class="flex items-center justify-between gap-2">
-                  <h4 class="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">
-                    {{ mail.subject || '(No Subject)' }}
-                  </h4>
-                  <pc-icon
-                    name="arrow-top-right-on-square"
-                    [size]="4"
-                    class="text-base-content/30 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
-                  ></pc-icon>
-                </div>
-                @if (mail.preview) {
-                <p
-                  class="text-xs text-base-content/60 line-clamp-2 leading-relaxed bg-base-200/20 p-2.5 rounded-lg border border-base-200/50"
-                >
-                  {{ mail.preview }}
-                </p>
-                }
-                <div class="flex justify-end mt-1">
-                  <pc-status-badge [type]="getMailStatusType(mail.status)">
-                    {{ mail.status || 'received' }}
-                  </pc-status-badge>
-                </div>
-              </a>
-              }
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (activityData().newsletters.length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No newsletter logs found</div>
-            } @else {
-            <div class="flex flex-col gap-2">
-              @for (ev of activityData().newsletters; track ev.id) {
-              <div
-                class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
-              >
-                <div class="flex items-center gap-3 overflow-hidden">
-                  <!-- Icon mappings for event types -->
-                  <div
-                    class="p-2 rounded-lg flex-shrink-0"
-                    [class.bg-info/10]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
-                    [class.text-info]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
-                    [class.bg-success/10]="ev.event_type === 'open'"
-                    [class.text-success]="ev.event_type === 'open'"
-                    [class.bg-warning/10]="ev.event_type === 'click'"
-                    [class.text-warning]="ev.event_type === 'click'"
-                    [class.bg-error/10]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
-                    [class.text-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
-                  >
-                    @if (ev.event_type === 'open') {
-                    <pc-icon name="eye" [size]="4"></pc-icon>
-                    } @else if (ev.event_type === 'click') {
-                    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-                    } @else if (ev.event_type === 'delivered') {
-                    <pc-icon name="check-circle" [size]="4"></pc-icon>
-                    } @else {
-                    <pc-icon name="information-circle" [size]="4"></pc-icon>
-                    }
-                  </div>
-                  <div class="flex flex-col overflow-hidden">
-                    <span class="font-medium text-base-content truncate"
-                      >{{ ev.newsletter_subject || ev.newsletter_name }}</span
-                    >
-                    @if (ev.url) {
-                    <span class="text-[10px] text-primary truncate hover:underline cursor-pointer"
-                      >Clicked URL: {{ ev.url }}</span
-                    >
-                    }
-                  </div>
-                </div>
-
-                <div class="flex items-center gap-3 flex-shrink-0">
-                  <pc-status-badge [type]="getEmailEventType(ev.event_type)" class="tracking-wider text-[9px]">
-                    {{ ev.event_type }}
-                  </pc-status-badge>
-                  <span class="text-base-content/40 text-[10px]">{{ ev.timestamp | date:'short' }}</span>
-                </div>
-              </div>
-              }
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="volunteer" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (volunteerHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No shift records found for this person</div>
-            } @else {
-            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table table-sm w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200">
-                    <th>Event Name</th>
-                    <th>Date & Time</th>
-                    <th>Status</th>
-                    <th>Hours</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (shift of volunteerHistory(); track shift.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td class="font-semibold">{{ shift.event_name }}</td>
-                    <td>{{ shift.start_time | date:'medium' }}</td>
-                    <td>
-                      <pc-status-badge [type]="getShiftStatusType(shift.status)"> {{ shift.status }} </pc-status-badge>
-                    </td>
-                    <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
-                    <td class="font-light">{{ shift.notes || '--' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="donations" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <!-- Summary card for limits progress -->
-            @if (donationStats()) {
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"
-            >
-              <div class="flex-1 w-full space-y-1">
-                <div class="flex justify-between text-xs font-bold text-base-content/75">
-                  <span>Annual Limit Progress</span>
-                  <span
-                    >${{ donationStats()!.cumulativeAmount.toLocaleString() }} / ${{
-                    donationStats()!.limitAmount.toLocaleString() }}</span
-                  >
-                </div>
-                <progress
-                  class="progress progress-success w-full h-2.5 bg-base-300"
-                  [value]="donationStats()!.cumulativeAmount"
-                  [max]="donationStats()!.limitAmount"
-                ></progress>
-                <p class="text-[10px] text-base-content/50">
-                  Remaining allowable donation this calendar year:
-                  <strong>${{ donationStats()!.remainingAmount.toLocaleString() }}</strong>
-                </p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-primary shrink-0 w-full md:w-auto font-semibold flex items-center justify-center gap-1.5"
-                (click)="openCollectDonation()"
-                [disabled]="donationStats()!.remainingAmount <= 0"
-              >
-                <pc-icon name="plus" [size]="4"></pc-icon>
-                Collect Donation
-              </button>
-            </div>
-            } @if (donationHistory().length === 0) {
-            <div
-              class="text-center py-10 text-base-content/40 italic bg-base-100 rounded-xl border border-dashed border-base-200"
-            >
-              No donations recorded yet for this person.
-            </div>
-            } @else {
-            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl shadow-sm">
-              <table class="table w-full text-xs">
-                <thead>
-                  <tr class="bg-base-50 border-b border-base-200">
-                    <th class="font-bold text-base-content/70">Date</th>
-                    <th class="font-bold text-base-content/70">Amount</th>
-                    <th class="font-bold text-base-content/70">Tax Credit</th>
-                    <th class="font-bold text-base-content/70">Residency Info</th>
-                    <th class="font-bold text-base-content/70">Status</th>
-                    <th class="font-bold text-base-content/70">Transaction ID</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (donation of donationHistory(); track donation.id) {
-                  <tr class="hover:bg-base-200/20 border-b border-base-200">
-                    <td class="font-medium text-base-content/75">{{ donation.created_at | date:'mediumDate' }}</td>
-                    <td class="font-bold text-base-content">${{ (donation.amount / 100).toFixed(2) }}</td>
-                    <td>
-                      <span class="badge badge-success gap-1 font-semibold py-2 px-2.5">
-                        ${{ ((donation.tax_credit_amount || 0) / 100).toFixed(2) }}
-                      </span>
-                    </td>
-                    <td class="text-base-content/65">
-                      {{ donation.residency_province || '--' }} {{ donation.residency_country || '' }}
-                    </td>
-                    <td>
-                      <pc-status-badge
-                        [type]="donation.status === 'succeeded' ? 'success' : donation.status === 'pending' ? 'warning' : 'error'"
-                      >
-                        {{ donation.status }}
-                      </pc-status-badge>
-                    </td>
-                    <td class="font-mono text-[10px] text-base-content/50">
-                      {{ donation.stripe_session_id || 'Manual' }}
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="events" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (eventHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">
-              No event registrations found for this person.
-            </div>
-            } @else {
-            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table table-sm w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200">
-                    <th>Event</th>
-                    <th>Date</th>
-                    <th>Ticket</th>
-                    <th>Status</th>
-                    <th>Checked In</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (reg of eventHistory(); track reg.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td>
-                      <a [routerLink]="['/events/pages', reg.event_id]" class="link link-primary font-bold">
-                        {{ reg.event_name }}
-                      </a>
-                    </td>
-                    <td>{{ reg.start_time | date:'mediumDate' }}</td>
-                    <td class="font-light">{{ reg.ticket_type_name || '—' }}</td>
-                    <td>
-                      <pc-status-badge [type]="getEventStatusType(reg.status)">{{ reg.status }}</pc-status-badge>
-                    </td>
-                    <td class="font-mono">{{ reg.checked_in_at ? (reg.checked_in_at | date:'shortTime') : '—' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="connections" [activeTab]="activeTab()">
-          <pc-person-connections [personId]="id()" (countChange)="connectionCount.set($event)"></pc-person-connections>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="household" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (householdId() && !isPlaceholderHousehold()) { @defer {
-            <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
-            } @placeholder {
-            <div class="skeleton w-full h-32"></div>
-            } } @else {
-            <div class="text-center py-10 text-base-content/40 italic">Contact does not belong to a household</div>
-            }
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-  <!-- Collect Donation Modal -->
-  @if (showDonationModal()) {
-  <div class="modal modal-open z-50">
-    <div class="modal-box rounded-2xl border border-base-200 max-w-md p-6 bg-base-100 shadow-2xl">
-      <div class="flex justify-between items-center border-b border-base-200 pb-3 mb-4">
-        <h3 class="text-lg font-bold flex items-center gap-2">
-          <pc-icon name="currency-dollar" class="text-primary" [size]="5"></pc-icon>
-          Collect Donation
-        </h3>
-        <button type="button" class="btn btn-sm btn-circle btn-ghost" (click)="closeDonationModal()">✕</button>
-      </div>
-
-      <div class="space-y-4">
-        <p class="text-xs text-base-content/60">
-          Enter the donation amount in dollars. Residency validation and limit verification will be performed
-          automatically before redirecting to the payment gateway.
-        </p>
-
-        <!-- Donor Residency Profile -->
-        <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
-          <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
-            >Donor Residency Profile</span
-          >
-          <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
-            <pc-icon name="map-pin" [size]="4"></pc-icon>
-            {{ addressString() }}
-          </div>
-        </div>
-
-        <!-- Donation Amount input -->
-        <div class="flex flex-col gap-1.5">
-          <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
-          <div class="relative">
-            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
-            <input
-              id="donation_input"
-              type="number"
-              min="1"
-              placeholder="250"
-              class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
-              [(ngModel)]="donationAmount"
-            />
-          </div>
-        </div>
-
-        <!-- Error alert -->
-        @if (eligibilityError()) {
-        <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
-          <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
-          <span>{{ eligibilityError() }}</span>
-        </div>
-        }
-      </div>
-
-      <div class="modal-action border-t border-base-200 pt-4 mt-6 flex justify-end gap-3">
-        <button
-          type="button"
-          class="btn btn-ghost text-sm font-semibold"
-          (click)="closeDonationModal()"
-          [disabled]="isCheckingEligibility()"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary min-w-[140px] text-sm font-semibold"
-          (click)="submitDonation()"
-          [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
-        >
-          @if (isCheckingEligibility()) {
-          <span class="loading loading-spinner loading-xs mr-1.5"></span>
-          Verifying... } @else { Verify & Proceed }
-        </button>
-      </div>
-    </div>
-    <div class="modal-backdrop bg-black/40 backdrop-blur-sm" (click)="closeDonationModal()"></div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
 ## File: apps/frontend/src/app/experiences/settings/account/account-settings.ts
 
 ```typescript
@@ -19740,105 +19969,360 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/ms-sync/ms-sync-settings.html
+## File: apps/frontend/src/app/experiences/settings/google-sync/google-sync-settings.ts
 
-```html
-<div class="space-y-6">
-  @if (isLoading()) {
-  <div class="flex items-center gap-3 text-base-content/60">
-    <span class="loading loading-spinner loading-sm"></span>
-    <span class="text-sm">Loading connection status…</span>
-  </div>
-  } @else if (status()?.connected) {
-  <!-- Connected state -->
-  <div class="rounded-xl border border-success/30 bg-success/10 px-5 py-4 flex items-start gap-4">
-    <pc-icon name="check-circle" class="text-success mt-0.5 shrink-0" [size]="5"></pc-icon>
-    <div class="flex-1 min-w-0">
-      <p class="font-semibold text-success">Connected</p>
-      <p class="text-sm text-base-content/70 mt-0.5 truncate">{{ status()?.msEmail }}</p>
-      @if (status()?.syncedAt) {
-      <p class="text-xs text-base-content/50 mt-1">Last synced: {{ formatDate(status()!.syncedAt) }}</p>
-      }
-    </div>
-  </div>
+```typescript
+import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TRPCService } from '../../../services/api/trpc-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
-  @if (status()?.lastSyncError) {
-  <div class="rounded-xl border border-warning/30 bg-warning/10 px-5 py-4 flex items-start gap-4">
-    <pc-icon name="exclamation-triangle" class="text-warning mt-0.5 shrink-0" [size]="5"></pc-icon>
-    <div class="flex-1 min-w-0">
-      <p class="font-semibold text-warning">Last sync failed</p>
-      <p class="text-sm text-base-content/70 mt-1">
-        Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with
-        this code:
-      </p>
-      <p class="font-mono text-sm font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
-    </div>
-  </div>
+@Component({
+  selector: 'pc-google-sync-settings',
+  imports: [Icon],
+  templateUrl: './google-sync-settings.html',
+})
+export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  protected readonly status = signal<{
+    connected: boolean;
+    googleEmail: string | null;
+    syncedAt: Date | string | null;
+    syncing?: boolean;
+    lastSyncError?: string | null;
+    lastSyncErrorAt?: Date | string | null;
+  } | null>(null);
+  protected readonly isLoading = signal(true);
+  protected readonly isConnecting = signal(false);
+  protected readonly isSyncing = signal(false);
+  protected readonly connectError = signal<string | null>(null);
+  protected readonly lastSyncResult = signal<{ inserted: number } | null>(null);
+  private pollingTimer: ReturnType<typeof setInterval> | null = null;
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
   }
 
-  <div class="flex flex-wrap gap-3">
-    <button id="ms-sync-now-btn" type="button" class="btn btn-primary" [disabled]="isSyncing()" (click)="syncNow()">
-      @if (isSyncing()) {
-      <span class="loading loading-spinner loading-xs mr-2"></span>
-      Syncing… } @else {
-      <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
-      Sync Now }
-    </button>
+  private async loadOnInit(): Promise<void> {
+    // Handle OAuth redirect result (google_connected or google_error query params)
+    const params = this.route.snapshot.queryParamMap;
+    if (params.has('google_connected')) {
+      this.alertSvc.showSuccess('Google Suite account connected successfully!');
+    } else if (params.has('google_error')) {
+      this.connectError.set(params.get('google_error'));
+    }
 
-    <button type="button" class="btn btn-ghost" [disabled]="isSyncing()" (click)="forceFullResync()">
-      <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
-      Force Full Re-sync
-    </button>
+    await this.loadStatus();
+  }
 
-    <button
-      id="ms-disconnect-btn"
-      type="button"
-      class="btn btn-ghost text-error hover:bg-error/10"
-      [disabled]="isSyncing()"
-      (click)="disconnect()"
-    >
-      <pc-icon name="x-circle" [size]="4" class="mr-2"></pc-icon>
-      Disconnect
-    </button>
-  </div>
+  protected async connect() {
+    this.isConnecting.set(true);
+    this.connectError.set(null);
+    try {
+      const returnTo = window.location.pathname + window.location.search;
+      const result = await this.api.googleSync.getAuthUrl.query({ returnTo });
+      window.location.href = result.url;
+    } catch {
+      this.connectError.set('Failed to initiate Google sign-in. Please try again.');
+      this.isConnecting.set(false);
+    }
+  }
 
-  @if (lastSyncResult()) {
-  <p class="text-sm text-base-content/60">✓ Sync complete — {{ lastSyncResult()!.inserted }} new email(s) imported.</p>
-  } } @else {
-  <!-- Disconnected state -->
-  <div class="rounded-xl border border-base-200 bg-base-50 px-5 py-4">
-    <p class="text-sm text-base-content/70">
-      Connect your Office 365 account to automatically sync incoming emails into your pplcrm inbox.
-    </p>
-  </div>
+  protected async syncNow() {
+    this.isSyncing.set(true);
+    this.lastSyncResult.set(null);
+    try {
+      await this.api.googleSync.syncNow.mutate();
+      await this.loadStatus();
+    } catch {
+      this.alertSvc.showError('Sync failed. Please try reconnecting your account.');
+      this.isSyncing.set(false);
+    }
+  }
 
-  <button
-    id="ms-connect-btn"
-    type="button"
-    class="btn btn-primary gap-2"
-    [disabled]="isConnecting()"
-    (click)="connect()"
-  >
-    @if (isConnecting()) {
-    <span class="loading loading-spinner loading-xs"></span>
-    } @else {
-    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
-      <path fill="#f3f3f3" d="M1 1h10v10H1z" />
-      <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
-      <path fill="#81bc06" d="M12 1h10v10H12z" />
-      <path fill="#05a6f0" d="M1 12h10v10H1z" />
-      <path fill="#ffba08" d="M12 12h10v10H12z" />
-    </svg>
-    } Connect Office 365
-  </button>
+  protected async forceFullResync() {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Force Full Re-sync',
+      message: 'This will reset the sync position and re-download all emails from scratch. Continue?',
+      variant: 'warning',
+      confirmText: 'Re-sync',
+    });
+    if (!confirmed) return;
 
-  @if (connectError()) {
-  <p class="text-sm text-error flex items-center gap-1.5">
-    <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-    {{ connectError() }}
-  </p>
-  } }
-</div>
+    this.isSyncing.set(true);
+    this.lastSyncResult.set(null);
+    try {
+      await this.api.googleSync.resetSync.mutate();
+      await this.api.googleSync.syncNow.mutate();
+      await this.loadStatus();
+    } catch {
+      this.alertSvc.showError('Failed to start re-sync. Please try again.');
+      this.isSyncing.set(false);
+    }
+  }
+
+  protected async disconnect() {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Disconnect Google Suite',
+      message: 'Are you sure you want to disconnect your Google Suite account?',
+      variant: 'warning',
+      confirmText: 'Disconnect',
+    });
+    if (!confirmed) return;
+
+    const removeLocal = await this.dialogs.confirm({
+      title: 'Delete Synced Emails',
+      message: 'Would you also like to delete all locally stored emails that were synced from this account?',
+      variant: 'danger',
+      confirmText: 'Delete Emails',
+      cancelText: 'Keep Emails',
+    });
+    try {
+      await this.api.googleSync.disconnect.mutate({ removeLocalEmails: removeLocal });
+      this.status.set({ connected: false, googleEmail: null, syncedAt: null });
+      this.lastSyncResult.set(null);
+      this.alertSvc.showSuccess('Google Suite account disconnected.');
+    } catch {
+      this.alertSvc.showError('Failed to disconnect. Please try again.');
+    }
+  }
+
+  protected formatDate(date: Date | string | null) {
+    if (!date) return 'Never';
+    return new Date(date).toLocaleString();
+  }
+
+  private async loadStatus() {
+    try {
+      const s = await this.api.googleSync.getConnectionStatus.query();
+      this.status.set(s);
+      if (s?.syncing) {
+        this.isSyncing.set(true);
+        this.startPollingStatus();
+      } else {
+        this.isSyncing.set(false);
+        this.stopPollingStatus();
+      }
+    } catch (err) {
+      console.error('Failed to load connection status:', err);
+      this.isSyncing.set(false);
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  private startPollingStatus() {
+    if (this.pollingTimer) return;
+    this.pollingTimer = setInterval(() => void this.pollStep(), 4000);
+    this.destroyRef.onDestroy(() => this.stopPollingStatus());
+  }
+
+  private async pollStep(): Promise<void> {
+    try {
+      const s = await this.api.googleSync.getConnectionStatus.query();
+      this.status.set(s);
+      if (!s?.syncing) {
+        this.isSyncing.set(false);
+        this.stopPollingStatus();
+        this.alertSvc.showSuccess('Google Suite mailbox sync completed.');
+      }
+    } catch (err) {
+      console.error('Error polling sync status:', err);
+      this.stopPollingStatus();
+    }
+  }
+
+  private stopPollingStatus() {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/settings/ms-sync/ms-sync-settings.ts
+
+```typescript
+import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TRPCService } from '../../../services/api/trpc-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+@Component({
+  selector: 'pc-ms-sync-settings',
+  imports: [Icon],
+  templateUrl: './ms-sync-settings.html',
+})
+export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  protected readonly status = signal<{
+    connected: boolean;
+    msEmail: string | null;
+    syncedAt: Date | string | null;
+    syncing?: boolean;
+    lastSyncError?: string | null;
+    lastSyncErrorAt?: Date | string | null;
+  } | null>(null);
+  protected readonly isLoading = signal(true);
+  protected readonly isConnecting = signal(false);
+  protected readonly isSyncing = signal(false);
+  protected readonly connectError = signal<string | null>(null);
+  protected readonly lastSyncResult = signal<{ inserted: number } | null>(null);
+  private pollingTimer: ReturnType<typeof setInterval> | null = null;
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    // Handle OAuth redirect result (ms_connected or ms_error query params)
+    const params = this.route.snapshot.queryParamMap;
+    if (params.has('ms_connected')) {
+      this.alertSvc.showSuccess('Office 365 account connected successfully!');
+    } else if (params.has('ms_error')) {
+      this.connectError.set(params.get('ms_error'));
+    }
+
+    await this.loadStatus();
+  }
+
+  protected async connect() {
+    this.isConnecting.set(true);
+    this.connectError.set(null);
+    try {
+      const returnTo = window.location.pathname + window.location.search;
+      const result = await this.api.msSync.getAuthUrl.query({ returnTo });
+      window.location.href = result.url;
+    } catch {
+      this.connectError.set('Failed to initiate Microsoft sign-in. Please try again.');
+      this.isConnecting.set(false);
+    }
+  }
+
+  protected async syncNow() {
+    this.isSyncing.set(true);
+    this.lastSyncResult.set(null);
+    try {
+      await this.api.msSync.syncNow.mutate();
+      await this.loadStatus();
+    } catch {
+      this.alertSvc.showError('Sync failed. Please try reconnecting your account.');
+      this.isSyncing.set(false);
+    }
+  }
+
+  protected async forceFullResync() {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Force Full Re-sync',
+      message: 'This will reset the sync position and re-download all emails from scratch. Continue?',
+      variant: 'warning',
+      confirmText: 'Re-sync',
+    });
+    if (!confirmed) return;
+
+    this.isSyncing.set(true);
+    this.lastSyncResult.set(null);
+    try {
+      await this.api.msSync.resetSync.mutate();
+      await this.api.msSync.syncNow.mutate();
+      await this.loadStatus();
+    } catch {
+      this.alertSvc.showError('Failed to start re-sync. Please try again.');
+      this.isSyncing.set(false);
+    }
+  }
+
+  protected async disconnect() {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Disconnect Office 365',
+      message: 'Are you sure you want to disconnect your Office 365 account?',
+      variant: 'warning',
+      confirmText: 'Disconnect',
+    });
+    if (!confirmed) return;
+
+    const removeLocal = await this.dialogs.confirm({
+      title: 'Delete Synced Emails',
+      message: 'Would you also like to delete all locally stored emails that were synced from this account?',
+      variant: 'danger',
+      confirmText: 'Delete Emails',
+      cancelText: 'Keep Emails',
+    });
+    try {
+      await this.api.msSync.disconnect.mutate({ removeLocalEmails: removeLocal });
+      this.status.set({ connected: false, msEmail: null, syncedAt: null });
+      this.lastSyncResult.set(null);
+      this.alertSvc.showSuccess('Office 365 account disconnected.');
+    } catch {
+      this.alertSvc.showError('Failed to disconnect. Please try again.');
+    }
+  }
+
+  protected formatDate(date: Date | string | null) {
+    if (!date) return 'Never';
+    return new Date(date).toLocaleString();
+  }
+
+  private async loadStatus() {
+    try {
+      const s = await this.api.msSync.getConnectionStatus.query();
+      this.status.set(s);
+      if (s?.syncing) {
+        this.isSyncing.set(true);
+        this.startPollingStatus();
+      } else {
+        this.isSyncing.set(false);
+        this.stopPollingStatus();
+      }
+    } catch (err) {
+      console.error('Failed to load connection status:', err);
+      this.isSyncing.set(false);
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  private startPollingStatus() {
+    if (this.pollingTimer) return;
+    this.pollingTimer = setInterval(() => void this.pollStep(), 4000);
+    this.destroyRef.onDestroy(() => this.stopPollingStatus());
+  }
+
+  private async pollStep(): Promise<void> {
+    try {
+      const s = await this.api.msSync.getConnectionStatus.query();
+      this.status.set(s);
+      if (!s?.syncing) {
+        this.isSyncing.set(false);
+        this.stopPollingStatus();
+        this.alertSvc.showSuccess('Office 365 mailbox sync completed.');
+      }
+    } catch (err) {
+      console.error('Error polling sync status:', err);
+      this.stopPollingStatus();
+    }
+  }
+
+  private stopPollingStatus() {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
+    }
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/security/passkey-settings.html
@@ -20887,6 +21371,74 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
 ];
 ```
 
+## File: apps/frontend/src/app/experiences/shifts/services/shifts-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import {
+  AddVolunteerEventType,
+  UpdateVolunteerEventType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Service()
+export class ShiftsService extends AbstractAPIService<'volunteer_events', UpdateVolunteerEventType> {
+  protected override readonly endpointName = 'volunteer';
+
+  public add(row: AddVolunteerEventType) {
+    return this.api.volunteer.add.mutate(row);
+  }
+
+  public addMany(_rows: AddVolunteerEventType[]) {
+    return Promise.resolve([]);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.volunteer.getAll.query({ startRow: 0, endRow: 1 }).then((res: { count: number }) => res.count ?? 0);
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.api.volunteer.getAll.query(options, { signal: this.ac.signal });
+  }
+
+  public getAllArchived(options?: getAllOptionsType) {
+    return this.api.volunteer.getAll.query({ ...options, includeArchived: true }, { signal: this.ac.signal });
+  }
+
+  public getById(id: string) {
+    return this.api.volunteer.getById.query(id);
+  }
+
+  public getTags(_id: string) {
+    return Promise.resolve([]);
+  }
+
+  public update(id: string, data: UpdateVolunteerEventType) {
+    return this.api.volunteer.update.mutate({ id, data });
+  }
+
+  public checkSlugUnique(slug: string, excludeId?: string | null) {
+    return this.api.volunteer.checkSlugUnique.query({ slug, excludeId });
+  }
+
+  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return Promise.reject(new Error('Volunteer export is not available'));
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/summary/summary.ts
 
 ```typescript
@@ -21587,192 +22139,6 @@ export class TagsGridComponent {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/teams/ui/team-view.html
-
-```html
-<pc-detail-layout
-  [title]="team()?.name || 'Team'"
-  [eyebrow]="'Team'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!team()"
-  [showDelete]="true"
-  [deleteText]="'Delete team'"
-  [btn1Text]="'Edit team'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editTeam()"
-  (delete)="deleteTeam()"
->
-  @if (team()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Team Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Team Card -->
-      <pc-profile-card iconName="user-group">
-        <!-- Name -->
-        <h2 class="text-2xl font-bold text-base-content text-center mb-4 leading-tight">{{ team().name }}</h2>
-
-        <!-- Details List -->
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          @if (team().description) {
-          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ team().description }}</div>
-          }
-
-          <pc-detail-row icon="user-circle" iconClass="text-teal-500">
-            <span>Team Captain:</span>
-            <span pc-row-action class="font-bold">{{ captainName() }}</span>
-          </pc-detail-row>
-
-          <pc-detail-row icon="user-circle" iconClass="text-purple-500">
-            <span>Team Lead:</span>
-            <span pc-row-action class="font-bold">{{ leadName() }}</span>
-          </pc-detail-row>
-        </div>
-
-        <!-- System Metadata -->
-        <div
-          class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
-        >
-          <span>Created by {{ getUserName(team().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span>
-          <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(team().updatedby_id) }}</span>
-        </div>
-      </pc-profile-card>
-    </div>
-
-    <!-- Right Column: Stats & Tabs -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Panel -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <pc-stat-card
-          [title]="'Volunteers'"
-          [value]="volunteers().length"
-          [description]="'Teammate members'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-teal-500'"
-          [iconColorClass]="'text-teal-500'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Target Lists'"
-          [value]="team().lists?.length || 0"
-          [description]="'Assigned lists'"
-          [icon]="'queue-list'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Active Tasks'"
-          [value]="activeTasksCount()"
-          [description]="'Tasks assigned'"
-          [icon]="'document-check'"
-          [valueColorClass]="'text-amber-500'"
-          [iconColorClass]="'text-amber-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Tabs Panel -->
-      <pc-tabs [tabs]="teamTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'teams'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="volunteers" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-3">
-            @if (volunteers().length === 0) {
-            <p class="text-sm text-base-content/40 italic">No volunteers assigned to this team.</p>
-            } @else {
-            <ul class="divide-y divide-base-200">
-              @for (volunteer of volunteers(); track volunteer.id) {
-              <li class="flex items-center justify-between py-2.5 text-sm">
-                <div>
-                  <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
-                  @if (volunteer.email) {
-                  <p class="text-xs text-base-content/50">{{ volunteer.email }}</p>
-                  }
-                </div>
-                <a [routerLink]="['/people', volunteer.id]" class="btn btn-xs btn-ghost text-primary">View profile</a>
-              </li>
-              }
-            </ul>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="lists" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-3">
-            @if (!team().lists?.length) {
-            <p class="text-sm text-base-content/40 italic">No target constituent lists assigned.</p>
-            } @else {
-            <ul class="divide-y divide-base-200">
-              @for (list of team().lists; track list.id) {
-              <li class="flex items-center justify-between py-2.5 text-sm">
-                <div>
-                  <p class="font-medium text-base-content">{{ list.name }}</p>
-                  <p class="text-xs text-base-content/50">
-                    {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
-                  </p>
-                </div>
-                <a [routerLink]="['/lists', list.id]" class="btn btn-xs btn-ghost text-primary">Open list</a>
-              </li>
-              }
-            </ul>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="tasks" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (teamTasks().length === 0) {
-            <p class="text-sm text-base-content/40 italic">No tasks currently assigned to this team.</p>
-            } @else {
-            <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
-              <table class="table table-sm table-zebra w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200 text-base-content/70">
-                    <th>Task</th>
-                    <th>Priority</th>
-                    <th>Status</th>
-                    <th>Due Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (task of teamTasks(); track task.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td class="font-semibold">
-                      <a [routerLink]="['/tasks', task.id]" class="link hover:no-underline text-primary">
-                        {{ task.name }}
-                      </a>
-                    </td>
-                    <td>
-                      <pc-status-badge [type]="getPriorityType(task.priority)">
-                        {{ task.priority || 'medium' }}
-                      </pc-status-badge>
-                    </td>
-                    <td>
-                      <pc-status-badge [type]="getStatusType(task.status)">
-                        {{ task.status || 'todo' }}
-                      </pc-status-badge>
-                    </td>
-                    <td>{{ task.due_at ? (task.due_at | date: 'mediumDate') : '—' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
 ## File: apps/frontend/src/app/experiences/teams/ui/teams-grid.ts
 
 ```typescript
@@ -21842,1056 +22208,6 @@ export class TeamsGridComponent {
     if (Number.isNaN(date.getTime())) return '';
     return this.dateFormatter.format(date);
   }
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-add.html
-
-```html
-<section class="w-full max-w-3xl p-6">
-  <pc-detail-header
-    title="Invite user"
-    [eyebrow]="'New'"
-    [crumbs]="[{ label: 'Users', route: '/users' }, { label: 'Invite user' }]"
-    subtitle="Send an invitation to add a new teammate to this tenant."
-    [form]="form"
-    [isLoading]="submitting()"
-    buttonsToShow="two"
-    btn1Text="Send invite"
-    (save)="submit($event)"
-  ></pc-detail-header>
-
-  <form class="space-y-4" (submit)="submit($event)" novalidate>
-    <pc-input label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
-
-    <div class="grid gap-4 sm:grid-cols-2">
-      <pc-input label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
-
-      <pc-input label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
-    </div>
-
-    <pc-select label="Role" [formField]="form.role">
-      @if (currentUserRole() !== 'admin') {
-      <option value="owner">Owner</option>
-      }
-      <option value="admin">Admin</option>
-      <option value="user">User</option>
-    </pc-select>
-
-    @if (error()) {
-    <p class="text-sm text-danger">{{ error() }}</p>
-    }
-  </form>
-</section>
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-view.html
-
-```html
-<pc-detail-layout
-  [title]="displayName() || 'User'"
-  [eyebrow]="'User'"
-  [crumbs]="crumbs()"
-  [isLoading]="loading()"
-  [error]="error()"
-  [hasRecord]="!initialized() || !!detail()"
-  [showDelete]="true"
-  [deleteText]="'Delete user'"
-  [btn1Text]="'Edit user'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editUser()"
-  (delete)="deleteUser()"
->
-  @if (detail()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: User Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <pc-profile-card [avatarUrl]="avatarUrl()" [iconName]="avatarUrl() ? undefined : 'user-circle'">
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ displayName() }}</h2>
-        <p class="text-sm text-base-content/70 mb-4">{{ detail()?.email }}</p>
-
-        <pc-status-badge [type]="'neutral'" [size]="'lg'" class="mb-6 font-medium capitalize flex gap-2">
-          <pc-icon name="identification" [size]="4"></pc-icon>
-          {{ detail()?.role }}
-        </pc-status-badge>
-
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          <pc-detail-row icon="check-circle" [iconClass]="detail()?.verified ? 'text-success' : 'text-base-content/40'">
-            <span>Verified:</span>
-            <pc-status-badge pc-row-action [type]="detail()?.verified ? 'success' : 'neutral'">
-              {{ detail()?.verified ? 'Yes' : 'No' }}
-            </pc-status-badge>
-          </pc-detail-row>
-        </div>
-
-        <pc-system-metadata
-          [createdAt]="detail()?.created_at"
-          [updatedAt]="detail()?.updated_at"
-          layout="col"
-          dateFormat="medium"
-        ></pc-system-metadata>
-      </pc-profile-card>
-    </div>
-
-    <!-- Right Column: Stats & Metadata & Activity -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Cards Grid -->
-      @if (stats()) {
-      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        @for (card of activityCards(); track card.key) {
-        <pc-stat-card [title]="card.title" [value]="card.value" [description]="card.subtitle">
-          @if (card.asOf) {
-          <span pc-stat-desc class="block">As of {{ formatAsOf(card.asOf) }}</span>
-          }
-        </pc-stat-card>
-        }
-      </div>
-      }
-
-      <!-- Account Metadata -->
-      <!-- Account Metadata -->
-      <pc-card title="Account Metadata">
-        <div class="grid gap-4 sm:grid-cols-2">
-          <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Role" [value]="detail()?.role"></pc-detail-item>
-          <pc-detail-item
-            label="Created"
-            [value]="detail()?.created_at ? (detail()?.created_at | date: 'medium') : null"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Last updated"
-            [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
-          ></pc-detail-item>
-        </div>
-      </pc-card>
-
-      <!-- Activity log track -->
-      <pc-card title="Activity Log">
-        <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-          <pc-record-activities [entity]="'authusers'" [entityId]="id()"></pc-record-activities>
-        </div>
-      </pc-card>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.html
-
-```html
-<div class="flex flex-col gap-6 p-6 max-w-7xl mx-auto h-full min-h-[calc(100vh-120px)]">
-  <!-- Navigation Header -->
-  <div class="flex items-center justify-between border-b border-base-200 pb-4 mb-2">
-    <div class="flex items-center gap-3">
-      <div class="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
-        <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
-      </div>
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight">
-          {{ isNew() && !triggerSelected() ? 'New Follow-up Workflow' : payload().name }}
-        </h1>
-        <p class="text-sm text-base-content/60 mt-0.5">
-          {{ isNew() && !triggerSelected() ? 'Choose a trigger event to start your drip campaign.' : 'Build sequences,
-          manage settings, and view active enrollments.' }}
-        </p>
-      </div>
-    </div>
-    <pc-form-actions
-      [isLoading]="isLoading()"
-      [signalForm]="form"
-      (btn1Clicked)="saveSettings($event)"
-      [buttonsToShow]="'two'"
-      [btn1Text]="'Save Automation'"
-      [btn1Icon]="'save'"
-      [showDelete]="!isNew()"
-      [deleteText]="'Delete Automation'"
-      (deleteClicked)="deleteWorkflow()"
-      [disabled]="!triggerSelected()"
-    ></pc-form-actions>
-  </div>
-
-  <!-- TRIGGER SELECTOR SCREEN FOR NEW WORKFLOWS -->
-  @if (isNew() && !triggerSelected()) {
-  <div class="flex flex-col gap-8 items-center justify-center py-12 max-w-5xl mx-auto">
-    <div class="text-center gap-2 flex flex-col">
-      <h2 class="text-2xl font-black tracking-tight text-base-content">Select a trigger event</h2>
-      <p class="text-sm text-base-content/60">
-        Choose what action will automatically enroll constituents into this workflow sequence
-      </p>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full mt-4">
-      <!-- Trigger Card: Manual Enrollment -->
-      <div
-        (click)="selectTrigger('manual')"
-        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-primary hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
-      >
-        <div
-          class="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-primary-content transition-all shadow-inner"
-        >
-          <pc-icon name="user-plus"></pc-icon>
-        </div>
-        <div class="flex flex-col gap-1">
-          <h3 class="font-bold text-lg text-base-content group-hover:text-primary transition-all">Manual Enrollment</h3>
-          <p class="text-xs text-base-content/50 leading-relaxed">
-            Triggers only when you manually select a constituent to enroll. Perfect for custom tracks.
-          </p>
-        </div>
-        <span
-          class="btn btn-xs btn-outline btn-primary mt-2 group-hover:bg-primary group-hover:text-primary-content transition-all px-4 rounded-lg"
-          >Select Trigger</span
-        >
-      </div>
-
-      <!-- Trigger Card: Volunteer Event Signup -->
-      <div
-        (click)="selectTrigger('volunteer_signup')"
-        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-success hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
-      >
-        <div
-          class="w-16 h-16 rounded-2xl bg-success/10 text-success flex items-center justify-center group-hover:bg-success group-hover:text-success-content transition-all shadow-inner"
-        >
-          <pc-icon name="volunteer"></pc-icon>
-        </div>
-        <div class="flex flex-col gap-1">
-          <h3 class="font-bold text-lg text-base-content group-hover:text-success transition-all">
-            Volunteer Event Signup
-          </h3>
-          <p class="text-xs text-base-content/50 leading-relaxed">
-            Runs when a constituent signs up for an event. Ideal for welcome series and check-ins.
-          </p>
-        </div>
-        <span
-          class="btn btn-xs btn-outline btn-success mt-2 group-hover:bg-success group-hover:text-success-content transition-all px-4 rounded-lg"
-          >Select Trigger</span
-        >
-      </div>
-
-      <!-- Trigger Card: Tag Added -->
-      <div
-        (click)="selectTrigger('tag_added')"
-        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-secondary hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
-      >
-        <div
-          class="w-16 h-16 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center group-hover:bg-secondary group-hover:text-secondary-content transition-all shadow-inner"
-        >
-          <pc-icon name="tag"></pc-icon>
-        </div>
-        <div class="flex flex-col gap-1">
-          <h3 class="font-bold text-lg text-base-content group-hover:text-secondary transition-all">Tag Added</h3>
-          <p class="text-xs text-base-content/50 leading-relaxed">
-            Triggers when a specific tag is attached to a constituent's profile.
-          </p>
-        </div>
-        <span
-          class="btn btn-xs btn-outline btn-secondary mt-2 group-hover:bg-secondary group-hover:text-secondary-content transition-all px-4 rounded-lg"
-          >Select Trigger</span
-        >
-      </div>
-
-      <!-- Trigger Card: Web Form Submitted -->
-      <div
-        (click)="selectTrigger('web_form_submitted')"
-        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-accent hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
-      >
-        <div
-          class="w-16 h-16 rounded-2xl bg-accent/10 text-accent flex items-center justify-center group-hover:bg-accent group-hover:text-accent-content transition-all shadow-inner"
-        >
-          <pc-icon name="document-text"></pc-icon>
-        </div>
-        <div class="flex flex-col gap-1">
-          <h3 class="font-bold text-lg text-base-content group-hover:text-accent transition-all">Web Form Submitted</h3>
-          <p class="text-xs text-base-content/50 leading-relaxed">
-            Runs when a constituent submits a public-facing contact or petition web form.
-          </p>
-        </div>
-        <span
-          class="btn btn-xs btn-outline btn-accent mt-2 group-hover:bg-accent group-hover:text-accent-content transition-all px-4 rounded-lg"
-          >Select Trigger</span
-        >
-      </div>
-
-      <!-- Trigger Card: Volunteer Shift Status -->
-      <div
-        (click)="selectTrigger('volunteer_shift_status')"
-        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-warning hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
-      >
-        <div
-          class="w-16 h-16 rounded-2xl bg-warning/10 text-warning flex items-center justify-center group-hover:bg-warning group-hover:text-warning-content transition-all shadow-inner"
-        >
-          <pc-icon name="volunteer"></pc-icon>
-        </div>
-        <div class="flex flex-col gap-1">
-          <h3 class="font-bold text-lg text-base-content group-hover:text-warning transition-all">
-            Volunteer Shift Status
-          </h3>
-          <p class="text-xs text-base-content/50 leading-relaxed">
-            Triggers when a shift is marked as Attended, No Show, or Cancelled.
-          </p>
-        </div>
-        <span
-          class="btn btn-xs btn-outline btn-warning mt-2 group-hover:bg-warning group-hover:text-warning-content transition-all px-4 rounded-lg"
-          >Select Trigger</span
-        >
-      </div>
-
-      <!-- Trigger Card: New Contact Created -->
-      <div
-        (click)="selectTrigger('contact_created')"
-        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-info hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
-      >
-        <div
-          class="w-16 h-16 rounded-2xl bg-info/10 text-info flex items-center justify-center group-hover:bg-info group-hover:text-info-content transition-all shadow-inner"
-        >
-          <pc-icon name="user-plus"></pc-icon>
-        </div>
-        <div class="flex flex-col gap-1">
-          <h3 class="font-bold text-lg text-base-content group-hover:text-info transition-all">New Contact Created</h3>
-          <p class="text-xs text-base-content/50 leading-relaxed">
-            Welcome series triggered automatically for any new constituent in the database.
-          </p>
-        </div>
-        <span
-          class="btn btn-xs btn-outline btn-info mt-2 group-hover:bg-info group-hover:text-info-content transition-all px-4 rounded-lg"
-          >Select Trigger</span
-        >
-      </div>
-
-      <!-- Trigger Card: List Joined -->
-      <div
-        (click)="selectTrigger('list_joined')"
-        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-primary hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
-      >
-        <div
-          class="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:bg-primary group-hover:text-primary-content transition-all shadow-inner"
-        >
-          <pc-icon name="queue-list"></pc-icon>
-        </div>
-        <div class="flex flex-col gap-1">
-          <h3 class="font-bold text-lg text-base-content group-hover:text-primary transition-all">List Joined</h3>
-          <p class="text-xs text-base-content/50 leading-relaxed">
-            Runs when a constituent is added to a specific static organizing list.
-          </p>
-        </div>
-        <span
-          class="btn btn-xs btn-outline btn-primary mt-2 group-hover:bg-primary group-hover:text-primary-content transition-all px-4 rounded-lg"
-          >Select Trigger</span
-        >
-      </div>
-
-      <!-- Trigger Card: Billing / Payment Event -->
-      <div
-        (click)="selectTrigger('payment_event')"
-        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-success hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
-      >
-        <div
-          class="w-16 h-16 rounded-2xl bg-success/10 text-success flex items-center justify-center group-hover:bg-success group-hover:text-success-content transition-all shadow-inner"
-        >
-          <pc-icon name="credit-card"></pc-icon>
-        </div>
-        <div class="flex flex-col gap-1">
-          <h3 class="font-bold text-lg text-base-content group-hover:text-success transition-all">
-            Billing / Payment Event
-          </h3>
-          <p class="text-xs text-base-content/50 leading-relaxed">
-            Triggers on Stripe webhook events (e.g. invoice paid or payment failed).
-          </p>
-        </div>
-        <span
-          class="btn btn-xs btn-outline btn-success mt-2 group-hover:bg-success group-hover:text-success-content transition-all px-4 rounded-lg"
-          >Select Trigger</span
-        >
-      </div>
-
-      <!-- Trigger Card: New Subscriber -->
-      <div
-        (click)="selectTrigger('new_subscriber')"
-        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-secondary hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
-      >
-        <div
-          class="w-16 h-16 rounded-2xl bg-secondary/10 text-secondary flex items-center justify-center group-hover:bg-secondary group-hover:text-secondary-content transition-all shadow-inner"
-        >
-          <pc-icon name="bell"></pc-icon>
-        </div>
-        <div class="flex flex-col gap-1">
-          <h3 class="font-bold text-lg text-base-content group-hover:text-secondary transition-all">New Subscriber</h3>
-          <p class="text-xs text-base-content/50 leading-relaxed">
-            Triggered automatically when a constituent becomes a subscriber (subscriber tag added).
-          </p>
-        </div>
-        <span
-          class="btn btn-xs btn-outline btn-secondary mt-2 group-hover:bg-secondary group-hover:text-secondary-content transition-all px-4 rounded-lg"
-          >Select Trigger</span
-        >
-      </div>
-
-      <!-- Trigger Card: New Unsubscriber -->
-      <div
-        (click)="selectTrigger('new_unsubscriber')"
-        class="card bg-base-100 border border-base-200 shadow-sm hover:shadow-md hover:border-accent hover:scale-[1.02] cursor-pointer transition-all p-6 flex flex-col items-center text-center gap-4 group rounded-2xl"
-      >
-        <div
-          class="w-16 h-16 rounded-2xl bg-accent/10 text-accent flex items-center justify-center group-hover:bg-accent group-hover:text-accent-content transition-all shadow-inner"
-        >
-          <pc-icon name="x-circle"></pc-icon>
-        </div>
-        <div class="flex flex-col gap-1">
-          <h3 class="font-bold text-lg text-base-content group-hover:text-accent transition-all">New Unsubscriber</h3>
-          <p class="text-xs text-base-content/50 leading-relaxed">
-            Triggered automatically when a constituent unsubscribes (unsubscribed tag added).
-          </p>
-        </div>
-        <span
-          class="btn btn-xs btn-outline btn-accent mt-2 group-hover:bg-accent group-hover:text-accent-content transition-all px-4 rounded-lg"
-          >Select Trigger</span
-        >
-      </div>
-    </div>
-  </div>
-  }
-
-  <!-- ACTIVE WORKSPACE: DESIGNER, ENROLLMENTS, OR LOGS -->
-  @if (triggerSelected()) {
-  <pc-tabs [tabs]="workflowTabs()" [(activeTab)]="activeTab">
-    <pc-tab-panel id="steps" [activeTab]="activeTab()">
-      <div class="flex flex-col lg:flex-row gap-6 items-start h-[calc(100vh-270px)] min-h-[600px] w-full">
-        <!-- Visual Canvas (Left/Center) -->
-        <div
-          class="flex-1 bg-base-200/50 border border-base-350 rounded-2xl p-8 flex flex-col items-center h-full overflow-y-auto relative shadow-inner"
-        >
-          <!-- Trigger Node -->
-          <div
-            (click)="selectedNodeType.set('trigger'); selectedNodeIndex.set(null)"
-            class="card bg-base-100 border-2 shadow-md rounded-2xl p-5 w-80 cursor-pointer transition-all hover:scale-[1.02] duration-200"
-            [class.border-success]="selectedNodeType() === 'trigger'"
-            [class.border-base-200]="selectedNodeType() !== 'trigger'"
-          >
-            <div class="flex items-center gap-3">
-              <div
-                class="w-10 h-10 rounded-xl bg-success/10 text-success flex items-center justify-center shadow-inner"
-              >
-                @switch (payload().trigger_type) { @case ('volunteer_signup') { <pc-icon name="volunteer"></pc-icon> }
-                @case ('volunteer_shift_status') { <pc-icon name="volunteer"></pc-icon> } @case ('tag_added') {
-                <pc-icon name="tag"></pc-icon> } @case ('web_form_submitted') {
-                <pc-icon name="document-text"></pc-icon> } @case ('contact_created') {
-                <pc-icon name="user-plus"></pc-icon> } @case ('list_joined') { <pc-icon name="queue-list"></pc-icon> }
-                @case ('payment_event') { <pc-icon name="credit-card"></pc-icon> } @case ('new_subscriber') {
-                <pc-icon name="bell"></pc-icon> } @case ('new_unsubscriber') { <pc-icon name="x-circle"></pc-icon> }
-                @default { <pc-icon name="user-plus"></pc-icon> } }
-              </div>
-              <div class="flex flex-col">
-                <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Trigger Node</span>
-                <span class="text-sm font-bold text-base-content">
-                  {{ formatTriggerType(payload().trigger_type) }}
-                </span>
-                @if (selectedEventName()) {
-                <span
-                  class="text-[10px] text-success font-semibold truncate max-w-[200px]"
-                  [title]="selectedEventName()"
-                >
-                  Filter: {{ selectedEventName() }}
-                </span>
-                }
-              </div>
-            </div>
-          </div>
-
-          <!-- Connector line + Add Button below trigger -->
-          <div class="flex flex-col items-center">
-            <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
-            <div class="dropdown dropdown-bottom dropdown-center">
-              <div
-                tabindex="0"
-                role="button"
-                class="btn btn-circle btn-xs btn-outline border-base-content/20 bg-base-100 hover:bg-primary hover:text-primary-content hover:border-primary shadow-sm"
-              >
-                <pc-icon name="plus"></pc-icon>
-              </div>
-              <ul
-                tabindex="0"
-                class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow-lg border border-base-200 mt-1"
-              >
-                <li>
-                  <a (click)="addStepAt(0)" class="text-xs font-semibold gap-2 py-2.5">
-                    <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
-                    Add Email Step
-                  </a>
-                </li>
-              </ul>
-            </div>
-            <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
-          </div>
-
-          <!-- Steps Flow List -->
-          @for (step of steps(); track $index) {
-          <div class="flex flex-col items-center w-full">
-            <!-- Delay Node (Hourglass/Clock) -->
-            <div
-              (click)="selectedNodeType.set('step'); selectedNodeIndex.set($index)"
-              class="bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold px-4 py-2 rounded-full flex items-center gap-1.5 shadow-sm cursor-pointer hover:bg-amber-100 hover:scale-[1.02] transition-all duration-150"
-              [class.ring-2]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
-              [class.ring-amber-400]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
-            >
-              <pc-icon name="clock"></pc-icon>
-              <span
-                >Wait <strong>{{ step.delay_days }}</strong> {{ (step.delay_unit === 'hours' ? 'hour' : 'day') +
-                (step.delay_days === 1 ? '' : 's') }}</span
-              >
-            </div>
-
-            <!-- Vertical connector line -->
-            <div class="w-0.5 h-8 bg-base-content/15 border-dashed border-l-2"></div>
-
-            <!-- Email Action Node Card -->
-            <div
-              (click)="selectedNodeType.set('step'); selectedNodeIndex.set($index)"
-              class="card bg-base-100 border-2 shadow-md rounded-2xl w-80 cursor-pointer transition-all hover:scale-[1.02] duration-200"
-              [class.border-primary]="selectedNodeType() === 'step' && selectedNodeIndex() === $index"
-              [class.border-base-200]="selectedNodeType() !== 'step' || selectedNodeIndex() !== $index"
-            >
-              <div class="card-body p-4 gap-3">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <div
-                      class="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shadow-inner"
-                    >
-                      <pc-icon name="envelope"></pc-icon>
-                    </div>
-                    <span class="text-[10px] font-black text-base-content/40 uppercase">Step {{ $index + 1 }}</span>
-                  </div>
-
-                  <button
-                    (click)="removeStep($index); $event.stopPropagation()"
-                    class="btn btn-ghost btn-xs text-error p-1 hover:bg-transparent rounded-full"
-                    title="Remove Step"
-                  >
-                    <pc-icon name="trash"></pc-icon>
-                  </button>
-                </div>
-
-                <div class="flex flex-col gap-1 border-b border-base-100 pb-2">
-                  <span class="text-[10px] font-bold text-base-content/40 uppercase">Email Subject</span>
-                  <span class="text-xs font-semibold text-base-content truncate"
-                    >{{ step.subject || '(No subject)' }}</span
-                  >
-                </div>
-
-                <div class="flex items-center justify-between pt-1">
-                  <button
-                    (click)="openEmailDesigner($index); $event.stopPropagation()"
-                    class="btn btn-xs btn-outline btn-primary gap-1 px-3 rounded-lg shadow-sm"
-                  >
-                    <pc-icon name="pencil-square"></pc-icon>
-                    Edit Email
-                  </button>
-                  <span class="text-[9px] text-base-content/40 font-medium italic">
-                    {{ step.html_content ? 'Visual Template' : 'Plain Text Only' }}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Connector line + Add Button below step -->
-            <div class="flex flex-col items-center">
-              <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
-              <div class="dropdown dropdown-bottom dropdown-center">
-                <div
-                  tabindex="0"
-                  role="button"
-                  class="btn btn-circle btn-xs btn-outline border-base-content/20 bg-base-100 hover:bg-primary hover:text-primary-content hover:border-primary shadow-sm"
-                >
-                  <pc-icon name="plus"></pc-icon>
-                </div>
-                <ul
-                  tabindex="0"
-                  class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow-lg border border-base-200 mt-1"
-                >
-                  <li>
-                    <a (click)="addStepAt($index + 1)" class="text-xs font-semibold gap-2 py-2.5">
-                      <pc-icon name="envelope" [size]="4" class="text-primary"></pc-icon>
-                      Add Email Step
-                    </a>
-                  </li>
-                </ul>
-              </div>
-              <div class="w-0.5 h-10 bg-base-content/15 border-dashed border-l-2"></div>
-            </div>
-          </div>
-          }
-
-          <!-- Exit Node -->
-          <div
-            (click)="selectedNodeType.set('settings'); selectedNodeIndex.set(null)"
-            class="bg-neutral text-neutral-content text-xs font-black px-6 py-3.5 rounded-2xl shadow-md uppercase tracking-wider flex items-center gap-2 cursor-pointer hover:bg-neutral-focus hover:scale-[1.02] transition-all duration-150"
-          >
-            <pc-icon name="x-circle"></pc-icon>
-            <span>Exit Automation</span>
-          </div>
-        </div>
-
-        <!-- Properties Panel Sidebar (Right) -->
-        <aside
-          class="w-full lg:w-96 shrink-0 border border-base-300 bg-base-100 p-6 flex flex-col gap-5 h-full rounded-2xl shadow-sm overflow-y-auto"
-        >
-          <!-- Option A: Trigger Node Selected -->
-          @if (selectedNodeType() === 'trigger') {
-          <div class="flex flex-col gap-4">
-            <div class="flex justify-between items-center pb-2 border-b border-base-200">
-              <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50">Selected: Trigger</h3>
-              <button (click)="selectedNodeType.set('settings')" class="btn btn-ghost btn-xs text-primary font-bold">
-                Automation Settings
-              </button>
-            </div>
-
-            <div
-              class="p-4 rounded-2xl bg-success/5 border border-success/10 text-success-content flex flex-col gap-2.5"
-            >
-              <div class="flex items-center gap-2 text-success">
-                <div class="w-8 h-8 rounded-lg bg-success/15 flex items-center justify-center shadow-inner">
-                  @switch (payload().trigger_type) { @case ('volunteer_signup') { <pc-icon name="volunteer"></pc-icon> }
-                  @case ('volunteer_shift_status') { <pc-icon name="volunteer"></pc-icon> } @case ('tag_added') {
-                  <pc-icon name="tag"></pc-icon> } @case ('web_form_submitted') {
-                  <pc-icon name="document-text"></pc-icon> } @case ('contact_created') {
-                  <pc-icon name="user-plus"></pc-icon> } @case ('list_joined') { <pc-icon name="queue-list"></pc-icon> }
-                  @case ('payment_event') { <pc-icon name="credit-card"></pc-icon> } @case ('new_subscriber') {
-                  <pc-icon name="bell"></pc-icon> } @case ('new_unsubscriber') { <pc-icon name="x-circle"></pc-icon> }
-                  @default { <pc-icon name="user-plus"></pc-icon> } }
-                </div>
-                <span class="font-black text-sm text-base-content">
-                  {{ formatTriggerType(payload().trigger_type) }}
-                </span>
-              </div>
-              <p class="text-xs text-base-content/75 leading-relaxed">
-                This trigger activates automatically based on system events or manual selection settings.
-              </p>
-            </div>
-
-            <div class="form-control">
-              <label class="label label-text font-semibold text-xs py-1">Trigger Type</label>
-              <select
-                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-                [formField]="form.trigger_type"
-              >
-                <option value="manual">Manual Enrollment</option>
-                <option value="volunteer_signup">Volunteer Event Signup</option>
-                <option value="tag_added">Tag Added</option>
-                <option value="web_form_submitted">Web Form Submitted</option>
-                <option value="volunteer_shift_status">Volunteer Shift Status</option>
-                <option value="contact_created">New Contact Created</option>
-                <option value="list_joined">List Joined</option>
-                <option value="payment_event">Billing / Payment Event</option>
-                <option value="new_subscriber">New Subscriber</option>
-                <option value="new_unsubscriber">New Unsubscriber</option>
-              </select>
-              <p class="text-[10px] text-base-content/50 mt-1.5">
-                Warning: Changing trigger type will modify how future subscribers enroll.
-              </p>
-            </div>
-
-            @if (payload().trigger_type === 'volunteer_signup') {
-            <div class="form-control mt-2">
-              <label class="label label-text font-semibold text-xs py-1">Volunteer Event</label>
-              <select
-                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-                [formField]="form.trigger_event_id"
-              >
-                <option value="">-- Any Event --</option>
-                @for (event of volunteerEvents(); track event.id) {
-                <option [value]="event.id">{{ event.name }}</option>
-                }
-              </select>
-              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
-                Select a specific event to trigger this campaign, or leave it as "Any Event" to trigger on any volunteer
-                event signup.
-              </p>
-            </div>
-            } @if (payload().trigger_type === 'tag_added') {
-            <div class="form-control mt-2">
-              <label class="label label-text font-semibold text-xs py-1">Tag Filter</label>
-              <select
-                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-                [formField]="form.trigger_event_id"
-              >
-                <option value="">-- Any Tag --</option>
-                @for (tag of tags(); track tag.id) {
-                <option [value]="tag.id">{{ tag.name }}</option>
-                }
-              </select>
-              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
-                Select a specific tag that triggers enrollment, or leave as "Any Tag".
-              </p>
-            </div>
-            } @if (payload().trigger_type === 'web_form_submitted') {
-            <div class="form-control mt-2">
-              <label class="label label-text font-semibold text-xs py-1">Web Form Filter</label>
-              <select
-                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-                [formField]="form.trigger_event_id"
-              >
-                <option value="">-- Any Web Form --</option>
-                @for (formEl of webForms(); track formEl.id) {
-                <option [value]="formEl.id">{{ formEl.name }}</option>
-                }
-              </select>
-              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
-                Select a specific web form that triggers enrollment, or leave as "Any Web Form".
-              </p>
-            </div>
-            } @if (payload().trigger_type === 'list_joined') {
-            <div class="form-control mt-2">
-              <label class="label label-text font-semibold text-xs py-1">Static List Filter</label>
-              <select
-                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-                [formField]="form.trigger_event_id"
-              >
-                <option value="">-- Any Static List --</option>
-                @for (listEl of lists(); track listEl.id) {
-                <option [value]="listEl.id">{{ listEl.name }}</option>
-                }
-              </select>
-              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
-                Select a static list that triggers enrollment when joined.
-              </p>
-            </div>
-            } @if (payload().trigger_type === 'volunteer_shift_status') {
-            <div class="form-control mt-2">
-              <label class="label label-text font-semibold text-xs py-1">Shift Status Filter</label>
-              <select
-                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-                [formField]="form.trigger_event_id"
-              >
-                <option value="">-- Any Status --</option>
-                <option value="attended">Attended</option>
-                <option value="no_show">No Show</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
-                Select a volunteer shift status update that triggers enrollment.
-              </p>
-            </div>
-            }
-          </div>
-          }
-
-          <!-- Option B: Step Node Selected -->
-          @else if (selectedNodeType() === 'step' && selectedNodeIndex() !== null) { @let idx = selectedNodeIndex()!;
-          @let step = steps()[idx]; @if (step) {
-          <div class="flex flex-col gap-4">
-            <div class="flex justify-between items-center pb-2 border-b border-base-200">
-              <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50">
-                Selected: Step {{ idx + 1 }}
-              </h3>
-              <button
-                (click)="removeStep(idx)"
-                class="btn btn-ghost btn-xs text-error gap-1 px-1.5 hover:bg-error/10 rounded"
-              >
-                <pc-icon name="trash"></pc-icon>
-                Delete Step
-              </button>
-            </div>
-
-            <div class="form-control">
-              <label class="label label-text font-semibold text-xs py-1">Delay Duration</label>
-              <div class="flex items-center gap-2">
-                <input
-                  type="number"
-                  class="input input-bordered input-sm w-20 text-center font-bold rounded-xl"
-                  [(ngModel)]="step.delay_days"
-                  min="0"
-                />
-                <select
-                  class="select select-bordered select-sm font-bold text-xs rounded-xl"
-                  [(ngModel)]="step.delay_unit"
-                >
-                  <option value="days">day(s)</option>
-                  <option value="hours">hour(s)</option>
-                </select>
-                <span class="text-xs text-base-content/60 font-semibold">after previous step</span>
-              </div>
-              <p class="text-[10px] text-base-content/50 mt-1">Set to 0 to send instantly.</p>
-            </div>
-
-            <div class="form-control">
-              <label class="label label-text font-semibold text-xs py-1">Email Subject Line</label>
-              <input
-                type="text"
-                class="input input-bordered input-sm w-full font-semibold rounded-xl"
-                placeholder="e.g. Welcome aboard!"
-                [(ngModel)]="step.subject"
-              />
-            </div>
-
-            <div class="form-control">
-              <label class="label label-text font-semibold text-xs py-1">Preview Text / Snippet</label>
-              <input
-                type="text"
-                class="input input-bordered input-sm w-full rounded-xl"
-                placeholder="Secondary subtitle in inbox preview..."
-                [(ngModel)]="step.preview_text"
-              />
-            </div>
-
-            <div class="form-control">
-              <label class="label label-text font-semibold text-xs py-1">Plain Text Fallback (Plain Text Only)</label>
-              <textarea
-                class="textarea textarea-bordered textarea-sm w-full text-xs rounded-xl"
-                rows="4"
-                placeholder="Fallback message without HTML formatting..."
-                [(ngModel)]="step.plain_text_content"
-              ></textarea>
-            </div>
-
-            <div class="border-t border-base-250 pt-4 flex flex-col gap-3">
-              <button (click)="openEmailDesigner(idx)" class="btn btn-primary w-full gap-2 shadow-sm rounded-xl">
-                <pc-icon name="pencil-square"></pc-icon>
-                Design Email Content
-              </button>
-              <div class="text-center">
-                <span class="text-[10px] text-base-content/40 italic font-semibold"
-                  >Opens drag-and-drop block designer</span
-                >
-              </div>
-            </div>
-          </div>
-          } }
-
-          <!-- Option C: Workflow Settings (Default/Fallback) -->
-          @else {
-          <div class="flex flex-col gap-4">
-            <h3 class="font-bold text-xs uppercase tracking-wider text-base-content/50 pb-2 border-b border-base-200">
-              Workflow Settings
-            </h3>
-
-            <div class="form-control">
-              <label class="label label-text font-semibold text-xs py-1">Workflow Name</label>
-              <input
-                type="text"
-                class="input input-bordered input-sm w-full font-semibold rounded-xl"
-                placeholder="e.g. Volunteer Welcome Series"
-                [formField]="form.name"
-                [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
-              />
-              @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
-              form.name().errors(); track err) {
-              <p class="text-xs text-error mt-1">{{ err.message }}</p>
-              } }
-            </div>
-
-            <div class="form-control">
-              <label class="label label-text font-semibold text-xs py-1">Description</label>
-              <textarea
-                class="textarea textarea-bordered textarea-sm w-full text-xs rounded-xl"
-                rows="4"
-                placeholder="Brief summary of what this drip campaign does..."
-                [formField]="form.description"
-                [class.textarea-error]="form.description().invalid() && (form.description().dirty() || form.description().touched())"
-              ></textarea>
-              @if (form.description().invalid() && (form.description().dirty() || form.description().touched())) { @for
-              (err of form.description().errors(); track err) {
-              <p class="text-xs text-error mt-1">{{ err.message }}</p>
-              } }
-            </div>
-
-            <div class="form-control">
-              <label class="label label-text font-semibold text-xs py-1">Campaign Status</label>
-              <select
-                class="select select-bordered select-sm w-full font-bold text-xs rounded-xl"
-                [formField]="form.status"
-              >
-                <option value="draft">Draft (Inactive)</option>
-                <option value="active">Active (Processing)</option>
-                <option value="paused">Paused</option>
-              </select>
-              <p class="text-[10px] text-base-content/50 mt-1.5 leading-relaxed">
-                Only active campaigns will parse background queues to send emails.
-              </p>
-            </div>
-
-            <div class="border-t border-base-200 pt-4 mt-2">
-              <span class="text-[10px] font-bold uppercase tracking-wider text-base-content/40">Sequence Overview</span>
-              <div class="flex items-center justify-between text-xs font-semibold mt-2 text-base-content/70">
-                <span>Total steps:</span>
-                <span class="font-mono font-black">{{ steps().length }}</span>
-              </div>
-            </div>
-          </div>
-          }
-        </aside>
-      </div>
-    </pc-tab-panel>
-
-    <pc-tab-panel id="enrollments" [activeTab]="activeTab()">
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full items-start">
-        <!-- Enrollment Search & Add (1/3 width) -->
-        <div class="card bg-base-100 border border-base-300 shadow-sm rounded-2xl lg:col-span-1 h-fit">
-          <div class="card-body gap-4 p-5">
-            <h3 class="card-title text-base font-bold">Enroll a Contact</h3>
-            <p class="text-xs text-base-content/60">
-              Search for a constituent to manually subscribe them to this sequence.
-            </p>
-
-            <div class="join w-full mt-1">
-              <input
-                type="text"
-                class="input input-bordered join-item w-full text-xs rounded-l-xl"
-                placeholder="Search by name or email..."
-                [(ngModel)]="searchQuery"
-                (keyup.enter)="searchContacts()"
-              />
-              <button (click)="searchContacts()" class="btn btn-secondary join-item px-4 rounded-r-xl">
-                @if (searchingContacts()) {
-                <span class="loading loading-spinner"></span>
-                } @else {
-                <pc-icon name="magnifying-glass"></pc-icon>
-                }
-              </button>
-            </div>
-
-            <!-- Search Results list -->
-            @if (searchResults().length > 0) {
-            <div
-              class="flex flex-col gap-2 max-h-60 overflow-y-auto mt-2 border border-base-200 p-2 rounded-xl bg-base-50"
-            >
-              @for (contact of searchResults(); track contact.id) {
-              <div
-                class="flex items-center justify-between p-2 rounded-lg bg-base-100 hover:bg-base-200 border border-base-150 transition-all text-xs"
-              >
-                <div class="flex flex-col">
-                  <span class="font-bold">{{ contact.first_name || '' }} {{ contact.last_name || '' }}</span>
-                  <span class="text-[10px] text-base-content/50">{{ contact.email || 'No email' }}</span>
-                </div>
-                <button
-                  (click)="enrollSelected(contact.id)"
-                  class="btn btn-xs btn-primary gap-1 px-3 rounded-lg shadow-sm"
-                  [disabled]="!contact.email"
-                >
-                  <pc-icon name="user-plus"></pc-icon>
-                  Enroll
-                </button>
-              </div>
-              }
-            </div>
-            } @else if (searchQuery() && !searchingContacts()) {
-            <span class="text-xs text-base-content/50 mt-1 italic">No contacts found for query.</span>
-            }
-          </div>
-        </div>
-
-        <!-- Enrollment list (2/3 width) -->
-        <div class="card bg-base-100 border border-base-300 shadow-sm rounded-2xl lg:col-span-2">
-          <div class="card-body gap-4 p-5">
-            <h3 class="card-title text-base font-bold">Active Enrollments Roster</h3>
-
-            @if (enrollments().length === 0) {
-            <div class="text-center py-12 border-2 border-dashed border-base-300 rounded-xl bg-base-50">
-              <pc-icon name="user-group" class="mx-auto text-base-content/30 mb-2"></pc-icon>
-              <p class="text-sm font-semibold text-base-content/50">
-                No contacts have been enrolled in this sequence yet.
-              </p>
-            </div>
-            } @else {
-            <div class="overflow-x-auto w-full mt-2">
-              <table class="table table-zebra table-sm w-full">
-                <thead>
-                  <tr>
-                    <th>Contact Name</th>
-                    <th>Email</th>
-                    <th class="text-center">Step #</th>
-                    <th>Status</th>
-                    <th>Next Run At</th>
-                    <th class="text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (en of enrollments(); track en.id) {
-                  <tr>
-                    <td class="font-bold text-xs">
-                      <a [routerLink]="['/people', en.person_id]" class="link link-primary">
-                        {{ en.person_first_name || '' }} {{ en.person_last_name || '' }}
-                      </a>
-                    </td>
-                    <td class="text-xs text-base-content/60">{{ en.person_email || '--' }}</td>
-                    <td class="text-xs font-mono font-bold text-center">
-                      <span class="bg-base-250 px-2 py-0.5 rounded">{{ en.current_step_number }}</span>
-                    </td>
-                    <td>
-                      <span
-                        class="badge badge-sm font-semibold border-none"
-                        [class.badge-success]="en.status === 'completed'"
-                        [class.badge-info]="en.status === 'active'"
-                        [class.badge-ghost]="en.status === 'cancelled'"
-                      >
-                        {{ en.status }}
-                      </span>
-                    </td>
-                    <td class="text-xs text-base-content/60">
-                      {{ en.next_run_at ? (en.next_run_at | date: 'short') : 'Ended' }}
-                    </td>
-                    <td class="text-right">
-                      @if (en.status === 'active') {
-                      <button
-                        (click)="cancelEnrollment(en.id)"
-                        class="btn btn-ghost btn-xs text-error gap-1 hover:bg-error/10 px-2 rounded"
-                      >
-                        <pc-icon name="trash"></pc-icon>
-                        Cancel
-                      </button>
-                      } @else {
-                      <span class="text-[10px] text-base-content/40 italic font-semibold">Inactive</span>
-                      }
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </div>
-      </div>
-    </pc-tab-panel>
-  </pc-tabs>
-
-  @if (!isNew() && workflowId()) {
-  <div class="mt-8 border-t border-base-200 pt-6">
-    <pc-record-activities [entity]="'workflows'" [entityId]="workflowId()!"></pc-record-activities>
-  </div>
-  } }
-</div>
-
-<!-- FULLSCREEN DIALOG: EMAIL TEMPLATE VISUAL DESIGNER -->
-@if (editingEmailStepIndex() !== null) {
-<div class="fixed inset-0 z-[150] flex flex-col bg-base-100 animate-fade-in">
-  <!-- Designer Header -->
-  <div class="flex justify-between items-center px-6 py-4 border-b border-base-300 bg-base-100 shadow-sm">
-    <div class="flex items-center gap-3">
-      <div class="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
-        <pc-icon name="envelope"></pc-icon>
-      </div>
-      <div class="flex flex-col">
-        <h2 class="text-base font-black text-base-content">Visual Email Designer</h2>
-        <p class="text-xs text-base-content/50">Sequence Step {{ editingEmailStepIndex()! + 1 }} Email Template</p>
-      </div>
-    </div>
-
-    <button (click)="closeEmailDesigner()" class="btn btn-primary btn-sm gap-2 px-5 rounded-xl shadow-md">
-      <pc-icon name="check-circle"></pc-icon>
-      Done Designing
-    </button>
-  </div>
-
-  <!-- Visual Designer Frame -->
-  <div class="flex-1 overflow-hidden p-6 bg-base-200">
-    <pc-visual-newsletter-editor
-      [htmlContent]="getEditingHtml()"
-      [plainTextContent]="getEditingText()"
-      (htmlContentChange)="onStepHtmlChange($event)"
-      (plainTextContentChange)="onStepTextChange($event)"
-    ></pc-visual-newsletter-editor>
-  </div>
-</div>
 }
 ```
 
@@ -23054,109 +22370,6 @@ export class Dashboard {
 
   protected isMobileOpen() {
     return this.sidebarSvc.isMobileOpen();
-  }
-}
-```
-
-## File: apps/frontend/src/app/layout/favourite-toggle/favourite-toggle.ts
-
-```typescript
-import { Component, computed, effect, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
-
-import { Icon } from '@icons/icon';
-import { ISidebarItem } from '../sidebar/sidebar-items';
-import { SidebarService } from '../sidebar/sidebar-service';
-
-/**
- * Bookmark button for the navbar: favourites the sidebar item matching the
- * current route. Extracted from the retired URL-segment breadcrumb bar; page
- * orientation is now handled by pc-breadcrumbs inside each page header.
- */
-@Component({
-  selector: 'pc-favourite-toggle',
-  imports: [Icon],
-  template: `
-    @if (canToggleFavourite()) {
-      <button
-        type="button"
-        class="btn btn-circle btn-ghost btn-sm tooltip tooltip-bottom"
-        [attr.aria-label]="tooltip()"
-        [attr.data-tip]="tooltip()"
-        (mouseenter)="hovered.set(true)"
-        (mouseleave)="hovered.set(false)"
-        (click)="toggleFavourite()"
-      >
-        <pc-icon
-          [name]="iconName()"
-          [size]="5"
-          class="text-base-400 hover:text-primary"
-          [class.text-primary]="favourite()"
-        ></pc-icon>
-      </button>
-    }
-  `,
-})
-export class FavouriteToggle {
-  private readonly router = inject(Router);
-  private readonly sidebarSvc = inject(SidebarService);
-
-  private readonly navigationUrl = computed(() => {
-    const navigation = this.router.currentNavigation();
-    if (navigation) {
-      const finalUrl = navigation.finalUrl ?? navigation.initialUrl;
-      return finalUrl.toString();
-    }
-    return this.router.url;
-  });
-
-  private currentItem?: ISidebarItem;
-  protected readonly favourite = signal(false);
-  protected readonly hovered = signal(false);
-  protected readonly canToggleFavourite = signal(false);
-  protected readonly itemName = signal('');
-
-  protected readonly iconName = computed(() => {
-    if (this.favourite()) return this.hovered() ? 'bookmark-slash' : 'bookmark-filled';
-    return this.hovered() ? 'bookmark-plus' : 'bookmark';
-  });
-
-  protected readonly tooltip = computed(() =>
-    this.favourite()
-      ? `Remove '${this.itemName()}' from sidebar bookmarks`
-      : `Bookmark '${this.itemName()}' in the sidebar`,
-  );
-
-  constructor() {
-    effect(() => this.handleNavigationChange(this.navigationUrl()));
-  }
-
-  protected toggleFavourite(): void {
-    if (!this.currentItem?.route) {
-      return;
-    }
-    const next = this.sidebarSvc.toggleFavourite(this.currentItem.route);
-    this.favourite.set(next);
-    this.currentItem.favourite = next;
-  }
-
-  private handleNavigationChange(url: string): void {
-    const item = this.sidebarSvc.findItemForUrl(url);
-    // Sidebar bookmarks hold sections, not records. The service matches by
-    // prefix, so on a record page (/people/123) the star would read as
-    // "bookmark this person" while actually bookmarking People — only offer
-    // the toggle when the URL is the sidebar item's own page.
-    const exact = !!item?.route && this.normalizePath(url) === this.normalizePath(item.route);
-    this.currentItem = exact ? item : undefined;
-    this.favourite.set(exact && !!item?.favourite);
-    this.canToggleFavourite.set(exact);
-    this.itemName.set(exact ? (item?.name ?? '') : '');
-  }
-
-  private normalizePath(route: string): string {
-    const path = (route.split('?')[0] ?? '').split('#')[0] ?? '';
-    const trimmed = path.endsWith('/') && path !== '/' ? path.slice(0, -1) : path;
-    return trimmed || '/';
   }
 }
 ```
@@ -23394,6 +22607,137 @@ export class FavouriteToggle {
 </div>
 ```
 
+## File: apps/frontend/src/app/routing/route-reuse-strategy.ts
+
+```typescript
+import { Injectable, inject, Injector } from '@angular/core';
+import {
+  ActivatedRouteSnapshot,
+  destroyDetachedRouteHandle,
+  DetachedRouteHandle,
+  NavigationEnd,
+  Router,
+  RouteReuseStrategy,
+} from '@angular/router';
+
+@Injectable()
+export class CustomRouteReuseStrategy implements RouteReuseStrategy {
+  private handlers = new Map<string, DetachedRouteHandle>();
+
+  private readonly maxCacheSize = 5;
+
+  private injector = inject(Injector);
+  private _router: Router | null = null;
+  private isSubscribedToRouterEvents = false;
+
+  private get router(): Router {
+    if (!this._router) {
+      this._router = this.injector.get(Router);
+    }
+    return this._router;
+  }
+
+  private ensureRouterSubscription(): void {
+    if (this.isSubscribedToRouterEvents) {
+      return;
+    }
+    this.isSubscribedToRouterEvents = true;
+    try {
+      this.router.events.subscribe((event) => {
+        if (event instanceof NavigationEnd) {
+          if (event.urlAfterRedirects.includes('/signin') || event.urlAfterRedirects.includes('/signup')) {
+            this.clearAllHandlers();
+          }
+        }
+      });
+    } catch (_e) {
+      // Reset flag if router couldn't be resolved yet
+      this.isSubscribedToRouterEvents = false;
+    }
+  }
+
+  private getKey(route: ActivatedRouteSnapshot): string {
+    return route.data['key'] || route.routeConfig?.path || 'unknown';
+  }
+
+  public retrieve(route: ActivatedRouteSnapshot): DetachedRouteHandle | null {
+    this.ensureRouterSubscription();
+    if (!route.data['shouldReuse']) {
+      return null;
+    }
+    const key = this.getKey(route);
+    const handle = this.handlers.get(key) || null;
+    if (handle) {
+      this.handlers.delete(key);
+    }
+    return handle;
+  }
+
+  public shouldAttach(route: ActivatedRouteSnapshot): boolean {
+    this.ensureRouterSubscription();
+    return !!route.data['shouldReuse'] && this.handlers.has(this.getKey(route));
+  }
+
+  public shouldDetach(route: ActivatedRouteSnapshot): boolean {
+    this.ensureRouterSubscription();
+    return !!route.data['shouldReuse'];
+  }
+
+  public shouldReuseRoute(future: ActivatedRouteSnapshot, curr: ActivatedRouteSnapshot): boolean {
+    this.ensureRouterSubscription();
+    return future.routeConfig === curr.routeConfig;
+  }
+
+  public store(route: ActivatedRouteSnapshot, handle: DetachedRouteHandle | null): void {
+    this.ensureRouterSubscription();
+    if (!route.data['shouldReuse']) {
+      return;
+    }
+    const key = this.getKey(route);
+
+    if (!handle) {
+      this.clearHandle(key);
+      return;
+    }
+
+    if (this.handlers.has(key)) {
+      const oldHandle = this.handlers.get(key);
+      if (oldHandle && oldHandle !== handle) {
+        destroyDetachedRouteHandle(oldHandle);
+      }
+      this.handlers.delete(key);
+    } else if (this.handlers.size >= this.maxCacheSize) {
+      // Evict oldest (Map maintains insertion order, so keys().next().value is the oldest)
+      const oldestKey = this.handlers.keys().next().value;
+      if (oldestKey !== undefined) {
+        const oldestHandle = this.handlers.get(oldestKey);
+        if (oldestHandle) {
+          destroyDetachedRouteHandle(oldestHandle);
+        }
+        this.handlers.delete(oldestKey);
+      }
+    }
+
+    this.handlers.set(key, handle);
+  }
+
+  private clearHandle(key: string): void {
+    const handle = this.handlers.get(key);
+    if (handle) {
+      destroyDetachedRouteHandle(handle);
+      this.handlers.delete(key);
+    }
+  }
+
+  public clearAllHandlers(): void {
+    this.handlers.forEach((handle) => {
+      destroyDetachedRouteHandle(handle);
+    });
+    this.handlers.clear();
+  }
+}
+```
+
 ## File: apps/frontend/src/app/services/api/abstract-api.service.ts
 
 ```typescript
@@ -23528,6 +22872,7 @@ import { JSendServerError } from '../../../../../libs/common/src';
 import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ApiError } from './api/api-error';
+import { getUserErrorMessage } from './api/user-message';
 
 import { TokenService } from './api/token-service';
 
@@ -23570,8 +22915,9 @@ export class ErrorService {
       return;
     }
 
-    const msg = error instanceof Error ? error.message : 'An unexpected error occurred';
-    this.alerts.showError(msg);
+    // Uncaught exceptions land here via GlobalErrorHandler — never show their
+    // raw message (e.g. a TypeError) to the user; the console has the details.
+    this.alerts.showError(getUserErrorMessage(error, 'Something went wrong, please try again'));
   }
 
   private redirect(): boolean {
@@ -23686,6 +23032,231 @@ export const jsendInterceptor: HttpInterceptorFn = (req, next) => {
     }),
   );
 };
+```
+
+## File: apps/frontend/src/app/services/record-navigation.service.ts
+
+```typescript
+import { computed, inject, Injectable, signal, Signal } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+
+interface RecordNavContext {
+  entityKey: string;
+  ids: string[];
+  total: number;
+}
+
+interface StoredRecordNavContext {
+  ids: string[];
+  total: number;
+}
+
+/**
+ * Remembers the filtered id list a grid handed off when the user opened a
+ * record, so detail pages can walk "N of M filtered" without a round trip
+ * through the grid. Survives a deep link/refresh via sessionStorage since
+ * the grid's own filter state (GridStoreService) is destroyed on navigation.
+ */
+@Injectable({ providedIn: 'root' })
+export class RecordNavigationService {
+  private readonly context = signal<RecordNavContext | null>(null);
+
+  setContext(entityKey: string, ids: string[], total: number): void {
+    const next: RecordNavContext = { entityKey, ids, total };
+    this.context.set(next);
+    sessionStorage.setItem(this.storageKey(entityKey), JSON.stringify({ ids, total }));
+  }
+
+  positionOf(entityKey: string, id: string): { index: number; total: number } | null {
+    const ctx = this.resolve(entityKey);
+    if (!ctx) return null;
+    const index = ctx.ids.indexOf(id);
+    if (index === -1) return null;
+    return { index: index + 1, total: ctx.total };
+  }
+
+  adjacentId(entityKey: string, id: string, direction: 'prev' | 'next'): string | null {
+    const ctx = this.resolve(entityKey);
+    if (!ctx) return null;
+    const index = ctx.ids.indexOf(id);
+    if (index === -1) return null;
+    const targetIndex = direction === 'prev' ? index - 1 : index + 1;
+    return ctx.ids[targetIndex] ?? null;
+  }
+
+  private resolve(entityKey: string): RecordNavContext | null {
+    const current = this.context();
+    if (current?.entityKey === entityKey) return current;
+
+    const raw = sessionStorage.getItem(this.storageKey(entityKey));
+    if (!raw) return null;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+    if (!isStoredRecordNavContext(parsed)) return null;
+
+    const restored: RecordNavContext = { entityKey, ids: parsed.ids, total: parsed.total };
+    this.context.set(restored);
+    return restored;
+  }
+
+  private storageKey(entityKey: string): string {
+    return `pc-record-nav:${entityKey}`;
+  }
+}
+
+export interface RecordNavHandle {
+  positionLabel: Signal<string | null>;
+  hasPrev: Signal<boolean>;
+  hasNext: Signal<boolean>;
+  prevLabel: Signal<string>;
+  nextLabel: Signal<string>;
+  goToPrev(): void;
+  goToNext(): void;
+}
+
+/**
+ * Wires a `*-view` component's `id` signal up to the filtered-set pager on
+ * `pc-detail-layout`. The entity's list route (e.g. `/people`) is derived
+ * from the activated route itself - the same URL a grid was mounted at
+ * when it captured the filtered id list - so this needs no route string of
+ * its own to keep in sync. `noun` names the record in aria-labels (e.g.
+ * "person" -> "Previous person").
+ */
+export function injectRecordNavigation(noun: string, id: Signal<string>): RecordNavHandle {
+  const recordNav = inject(RecordNavigationService);
+  const router = inject(Router);
+  const route = inject(ActivatedRoute);
+
+  const entityRoute = (): string => {
+    const pathFromRoot = route.snapshot.pathFromRoot;
+    const segments = Array.isArray(pathFromRoot)
+      ? pathFromRoot.flatMap((r) => r.url.map((u) => u.path)).filter(Boolean)
+      : [];
+    if (segments.length > 0) {
+      segments.pop(); // drop this record's own id segment
+      return '/' + segments.join('/');
+    }
+    // Fallback for callers whose Router/ActivatedRoute doesn't expose a real url/pathFromRoot (e.g. test doubles).
+    const url = typeof router.url === 'string' ? router.url : '';
+    const [withoutFragment] = url.split('#');
+    const [path] = (withoutFragment ?? url).split('?');
+    return (path ?? url).replace(new RegExp(`/${id()}$`), '') || '/';
+  };
+
+  const positionLabel = computed<string | null>(() => {
+    const pos = recordNav.positionOf(entityRoute(), id());
+    return pos ? `${pos.index} of ${pos.total} filtered` : null;
+  });
+  const hasPrev = computed(() => recordNav.adjacentId(entityRoute(), id(), 'prev') !== null);
+  const hasNext = computed(() => recordNav.adjacentId(entityRoute(), id(), 'next') !== null);
+
+  const goTo = (direction: 'prev' | 'next'): void => {
+    const base = entityRoute();
+    const target = recordNav.adjacentId(base, id(), direction);
+    if (target) void router.navigate([base, target]);
+  };
+
+  return {
+    positionLabel,
+    hasPrev,
+    hasNext,
+    prevLabel: computed(() => `Previous ${noun}`),
+    nextLabel: computed(() => `Next ${noun}`),
+    goToPrev: () => goTo('prev'),
+    goToNext: () => goTo('next'),
+  };
+}
+
+function isStoredRecordNavContext(value: unknown): value is StoredRecordNavContext {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    Array.isArray(candidate['ids']) &&
+    candidate['ids'].every((id) => typeof id === 'string') &&
+    typeof candidate['total'] === 'number'
+  );
+}
+```
+
+## File: apps/frontend/src/app/services/unsaved-changes-guard.ts
+
+```typescript
+import { computed, inject } from '@angular/core';
+import type { Signal } from '@angular/core';
+import type { CanDeactivateFn } from '@angular/router';
+import type { FieldTree } from '@angular/forms/signals';
+import { ConfirmDialogService } from './shared-dialog.service';
+
+export interface UnsavedChangesHandle {
+  dirtyCount: Signal<number>;
+  headerLine: Signal<string | null>;
+  confirmDiscardIfDirty(recordName: string): Promise<boolean>;
+}
+
+interface Deactivatable {
+  canDeactivate?(): boolean | Promise<boolean>;
+}
+
+/** Route-level guard: lets any edit-page component veto navigation away while it has unsaved changes. */
+export const unsavedChangesGuard: CanDeactivateFn<Deactivatable> = (component) =>
+  component.canDeactivate ? component.canDeactivate() : true;
+
+/**
+ * Wires an Angular Signal Forms `form`/`payload` pair up to the "Unsaved changes · N fields" header
+ * line and a leave-confirm dialog naming the changed fields. `dirty()` is per-field and already used
+ * to gate the Save button (see pc-form-actions) - this just reads the same signals.
+ */
+export function injectUnsavedChanges<TModel extends Record<string, unknown>>(
+  form: FieldTree<TModel>,
+  payload: Signal<TModel>,
+): UnsavedChangesHandle {
+  const dialogs = inject(ConfirmDialogService);
+
+  // Subfields<TModel> guarantees one FieldTree per data key, so indexing by the payload's
+  // own keys is safe even though TypeScript can't express a dynamic per-key lookup here.
+  const fields = form as unknown as Record<string, () => { dirty(): boolean }>;
+
+  const dirtyKeys = computed(() => Object.keys(payload()).filter((key) => fields[key]?.().dirty()));
+  const dirtyCount = computed(() => dirtyKeys().length);
+  const headerLine = computed(() =>
+    dirtyCount() > 0 ? `Unsaved changes · ${dirtyCount()} field${dirtyCount() === 1 ? '' : 's'}` : null,
+  );
+
+  return {
+    dirtyCount,
+    headerLine,
+    confirmDiscardIfDirty(recordName: string): Promise<boolean> {
+      if (dirtyCount() === 0) return Promise.resolve(true);
+      const fieldList = joinWithAnd(dirtyKeys().map(humanizeFieldKey));
+      return dialogs.confirm({
+        title: 'Leave without saving?',
+        message: `Your changes to ${recordName} — ${fieldList} — will be lost.`,
+        variant: 'warning',
+        confirmText: 'Discard changes',
+        cancelText: 'Keep editing',
+        emphasizeCancel: true,
+      });
+    },
+  };
+}
+
+function humanizeFieldKey(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .toLowerCase();
+}
+
+function joinWithAnd(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/controllers/fetch.controller.ts
@@ -25146,6 +24717,202 @@ type CellRendererResult = string | HTMLElement;
 export const SELECTION_COLUMN: ColumnDef = {};
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/undo-redo-mgr.ts
+
+```typescript
+import { computed, signal } from '@angular/core';
+import type { GridHost, GridRow, GridSnapshot } from './types';
+
+export class UndoManager {
+  private readonly isOperating = signal(false);
+
+  private readonly undoStack = signal<GridSnapshot[]>([]);
+  private readonly redoStack = signal<GridSnapshot[]>([]);
+  private grid: GridHost | null = null;
+
+  public readonly canRedo = computed(() => this.redoStack().length > 0 && !this.isOperating());
+  public readonly canUndo = computed(() => this.undoStack().length > 0 && !this.isOperating());
+
+  public getRedoSize(): number {
+    return this.redoStack().length;
+  }
+
+  public getUndoSize(): number {
+    return this.undoStack().length;
+  }
+
+  public initialize(api: GridHost): void {
+    this.grid = api;
+    this.isOperating.set(false);
+  }
+
+  public pushUndo(snapshot: GridSnapshot): void {
+    this.undoStack.update((s) => {
+      const next = [...s, snapshot];
+      return next.length > 50 ? next.slice(1) : next;
+    });
+    this.redoStack.set([]);
+  }
+
+  public async redo() {
+    const redoStack = this.redoStack();
+    if (this.isOperating() || redoStack.length === 0 || !this.grid) return;
+
+    const target = redoStack[redoStack.length - 1];
+    if (!target) return;
+
+    this.isOperating.set(true);
+    try {
+      this.redoStack.update((s) => s.slice(0, -1));
+
+      const current = this.captureCurrentState();
+      if (current && target.editMeta) {
+        current.editMeta = target.editMeta;
+      }
+      if (current) {
+        this.undoStack.update((s) => {
+          const next = [...s, current];
+          return next.length > 50 ? next.slice(1) : next;
+        });
+      }
+
+      await this.applySnapshot(target, 'redo');
+    } finally {
+      this.isOperating.set(false);
+    }
+  }
+
+  public async undo() {
+    const undoStack = this.undoStack();
+    if (this.isOperating() || undoStack.length === 0 || !this.grid) return;
+
+    const target = undoStack[undoStack.length - 1];
+    if (!target) return;
+
+    this.isOperating.set(true);
+    try {
+      this.undoStack.update((s) => s.slice(0, -1));
+
+      const current = this.captureCurrentState();
+      if (current && target.editMeta) {
+        current.editMeta = target.editMeta;
+      }
+      if (current) {
+        this.redoStack.update((s) => {
+          const next = [...s, current];
+          return next.length > 50 ? next.slice(1) : next;
+        });
+      }
+
+      await this.applySnapshot(target, 'undo');
+    } finally {
+      this.isOperating.set(false);
+    }
+  }
+
+  private captureCurrentState(): GridSnapshot | null {
+    const store = this.grid?.store;
+    if (!store) return null;
+
+    let rowsCopy: GridRow[] = [];
+    try {
+      rowsCopy = JSON.parse(JSON.stringify(store.rows() || [])) as GridRow[];
+    } catch {
+      rowsCopy = (store.rows() || []).map((r) => {
+        const copy: GridRow = { ...r };
+        if (Array.isArray(r['tags'])) copy['tags'] = [...(r['tags'] as unknown[])];
+        if (Array.isArray(r['issues'])) copy['issues'] = [...(r['issues'] as unknown[])];
+        return copy;
+      });
+    }
+
+    return {
+      rows: rowsCopy,
+      selectedIdSet: new Set(store.selectedIdSet()),
+      filterValues: { ...store.filterValues() },
+      sorting: [...store.sorting()],
+      pageIndex: store.pageIndex(),
+      pageSize: store.pageSize(),
+    };
+  }
+
+  private async applySnapshot(target: GridSnapshot, actionType: 'undo' | 'redo') {
+    if (!this.grid || !this.grid.store) return;
+    const store = this.grid.store;
+    const flashedCells: { id: string; field: string }[] = [];
+
+    if (target.editMeta) {
+      try {
+        const { id, field, prevValue, newValue } = target.editMeta;
+        const valToSet = actionType === 'undo' ? prevValue : newValue;
+        const payload = { [field]: valToSet };
+        await this.grid.gridSvc.update(id, payload);
+        flashedCells.push({ id: String(id), field });
+      } catch (err) {
+        console.error(`Failed to update backend on ${actionType}:`, err);
+        if (this.grid.alertSvc) {
+          this.grid.alertSvc.showError('Reverting changes on the server failed');
+        }
+      }
+    } else {
+      try {
+        const currentRows = store.rows() || [];
+        const diffs = this.findRowsDiff(currentRows, target.rows);
+        for (const diff of diffs) {
+          const payload = { [diff.field]: diff.newValue };
+          await this.grid.gridSvc.update(diff.id, payload);
+          flashedCells.push({ id: String(diff.id), field: diff.field });
+        }
+      } catch (err) {
+        console.error(`Failed to update backend on ${actionType} fallback:`, err);
+      }
+    }
+
+    store.rows.set(target.rows);
+    store.selectedIdSet.set(target.selectedIdSet);
+    store.filterValues.set(target.filterValues);
+    store.sorting.set(target.sorting);
+    store.pageIndex.set(target.pageIndex);
+    store.pageSize.set(target.pageSize);
+
+    this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
+
+    for (const item of flashedCells) {
+      if (typeof this.grid.triggerCellFlash === 'function') {
+        this.grid.triggerCellFlash(item.id, item.field);
+      }
+    }
+  }
+
+  private findRowsDiff(
+    oldRows: GridRow[],
+    newRows: GridRow[],
+  ): { id: string; field: string; prevValue: unknown; newValue: unknown }[] {
+    const diffs: { id: string; field: string; prevValue: unknown; newValue: unknown }[] = [];
+    const oldMap = new Map<string, GridRow>();
+    for (const r of oldRows) {
+      if (r && r['id']) oldMap.set(String(r['id']), r);
+    }
+    for (const r of newRows) {
+      if (!r || !r['id']) continue;
+      const idStr = String(r['id']);
+      const oldRow = oldMap.get(idStr);
+      if (oldRow) {
+        for (const key of Object.keys(r)) {
+          if (key === 'id') continue;
+          const val1 = oldRow[key];
+          const val2 = r[key];
+          if (JSON.stringify(val1) !== JSON.stringify(val2)) {
+            diffs.push({ id: idStr, field: key, prevValue: val1, newValue: val2 });
+          }
+        }
+      }
+    }
+    return diffs;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/query-builder/query-builder.ts
 
 ```typescript
@@ -25433,455 +25200,6 @@ export const appRoutes = [
 ] as const satisfies Routes;
 ```
 
-## File: apps/frontend/src/app/dashboard.routes.ts
-
-```typescript
-import type { Routes } from '@angular/router';
-import { roleGuard } from './auth/role-guard';
-
-export const dashboardRoutes: Routes = [
-  { path: '', redirectTo: 'summary', pathMatch: 'full' },
-
-  {
-    path: 'summary',
-    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
-  },
-
-  {
-    path: 'people',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
-        data: { shouldReuse: true, key: 'persongridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-      },
-    ],
-  },
-
-  {
-    path: 'households',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
-        data: { shouldReuse: true, key: 'householdsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-      },
-    ],
-  },
-  {
-    path: 'duplicates',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
-      },
-      {
-        path: 'people',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
-      },
-      {
-        path: 'households',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
-      },
-      {
-        path: 'companies',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
-      },
-    ],
-  },
-  {
-    path: 'tags',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/tags-grid').then((m) => m.TagsGridComponent),
-        data: { shouldReuse: true, key: 'tagsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
-      },
-    ],
-  },
-
-  {
-    path: 'issues',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/issues-grid').then((m) => m.IssuesGridComponent),
-        data: { shouldReuse: true, key: 'issuesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
-      },
-    ],
-  },
-
-  {
-    path: 'lists',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
-        data: { shouldReuse: true, key: 'listsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'new' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'edit' },
-      },
-    ],
-  },
-
-  {
-    path: 'newsletters',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'newslettersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'workflows',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'workflowsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'events',
-    children: [
-      {
-        path: '',
-        redirectTo: 'pages',
-        pathMatch: 'full',
-      },
-      {
-        path: 'shifts',
-        children: [
-          {
-            path: '',
-            loadComponent: () => import('./experiences/shifts/ui/shifts-grid').then((m) => m.ShiftsGridComponent),
-            data: { shouldReuse: true, key: 'eventsgridroot' },
-          },
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-          },
-        ],
-      },
-      {
-        path: 'pages',
-        children: [
-          {
-            path: '',
-            loadComponent: () => import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
-            data: { shouldReuse: true, key: 'eventpagesgridroot' },
-          },
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-          },
-        ],
-      },
-    ],
-  },
-
-  {
-    path: 'donations',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
-        data: { shouldReuse: true, key: 'donationsgridroot' },
-      },
-      {
-        path: 'pledges',
-        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
-        data: { shouldReuse: true, key: 'pledgesgridroot' },
-      },
-    ],
-  },
-
-  {
-    path: 'inbox',
-    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
-  },
-  {
-    path: 'tasks',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tasks/ui/tasks-grid').then((m) => m.TasksGrid),
-        data: { shouldReuse: true, key: 'tasksgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
-      },
-    ],
-  },
-  {
-    path: 'board',
-    loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
-  },
-
-  {
-    path: 'teams',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
-        data: { shouldReuse: true, key: 'teamsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'new' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'edit' },
-      },
-    ],
-  },
-  {
-    path: 'users',
-    canActivate: [roleGuard],
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
-        data: { shouldReuse: true, key: 'usersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
-      },
-    ],
-  },
-  {
-    path: 'forms',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/forms/ui/forms-grid').then((m) => m.FormsGridComponent),
-        data: { shouldReuse: true, key: 'formsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
-      },
-    ],
-  },
-  {
-    path: 'donation-pages',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-grid').then((m) => m.FundraisingGridComponent),
-        data: { shouldReuse: true, key: 'donationpagesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-        data: { backRoute: '/donation-pages' },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'settings',
-    children: [
-      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'settings' },
-      },
-    ],
-  },
-  {
-    path: 'configuration',
-    canActivate: [roleGuard],
-    children: [
-      { path: '', redirectTo: 'organization', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'configuration' },
-      },
-    ],
-  },
-  {
-    path: 'billing',
-    redirectTo: '/configuration/billing',
-    pathMatch: 'full',
-  },
-  {
-    path: 'profile',
-    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
-  },
-  {
-    path: 'imports',
-    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
-  },
-  {
-    path: 'exports',
-    loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
-  },
-  {
-    path: 'companies',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
-        data: { shouldReuse: true, key: 'companiesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-      },
-    ],
-  },
-  {
-    path: 'files',
-    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
-  },
-  {
-    path: 'activities',
-    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
-  },
-];
-```
-
 ## File: apps/frontend/vite.config.ts
 
 ```typescript
@@ -25946,6 +25264,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
+import { getUserErrorMessage } from 'apps/frontend/src/app/services/api/user-message';
 
 @Component({
   selector: 'pc-new-password',
@@ -26019,9 +25338,7 @@ export class NewPasswordPage implements OnInit {
           void this.router.navigateByUrl('signin');
         } catch (err) {
           // Catch backend/network rejections properly
-          this.alertSvc.showError(
-            err instanceof Error && err.message ? err.message : 'Failed to reset password. Please try again.',
-          );
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not reset the password. Please try again.'));
           this.error.set(true);
         } finally {
           end();
@@ -26047,6 +25364,7 @@ import { Alerts } from '@uxcommon/components/alerts/alerts';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { getUserErrorMessage } from '../../services/api/user-message';
 
 @Component({
   selector: 'pc-reset-password',
@@ -26102,7 +25420,7 @@ export class ResetPasswordPage {
           this.emailSent.set(true);
           void this.router.navigateByUrl('signin');
         } catch (err) {
-          this.alertSvc.showError(err instanceof Error && err.message ? err.message : String(err));
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not send the reset email. Please try again.'));
         } finally {
           end();
         }
@@ -26182,6 +25500,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
+import { getUserErrorMessage } from 'apps/frontend/src/app/services/api/user-message';
 
 @Component({
   selector: 'pc-signup',
@@ -26253,7 +25572,7 @@ export class SignUpPage {
             this.alertSvc.showError('Unable to complete signup.');
           }
         } catch (err) {
-          this.alertSvc.showError(err instanceof Error ? err.message : 'Signup failed.');
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not complete the signup. Please try again.'));
         } finally {
           end();
         }
@@ -26588,97 +25907,150 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
+## File: apps/frontend/src/app/experiences/companies/ui/company-view.html
 
 ```html
-<div class="p-6 max-w-4xl">
-  <!-- Loading State -->
-  @if (isLoading()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading company details...</p>
-  </div>
-  } @else {
-  <div class="space-y-6">
-    <pc-detail-header
-      [title]="isNewMode() ? 'New company' : company()?.name || 'Company'"
-      [eyebrow]="isNewMode() ? 'New' : 'Editing'"
-      [crumbs]="crumbs()"
-      [subtitle]="isNewMode() ? 'Create a new company record' : 'View and update company information'"
-      [form]="form"
-      [isLoading]="isLoading()"
-      buttonsToShow="two"
-      [btn1Text]="isNewMode() ? 'Create company' : 'Save company'"
-      [showDelete]="!isNewMode()"
-      deleteText="Delete company"
-      (save)="save($event)"
-      (delete)="deleteCompany()"
-    ></pc-detail-header>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Form Section -->
-      <pc-card class="lg:col-span-2">
-        <!-- Name -->
-        <pc-input label="Company Name" placeholder="e.g. Acme Corp" [formField]="form.name"></pc-input>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Website -->
-          <pc-input label="Website" type="url" placeholder="https://example.com" [formField]="form.website"></pc-input>
-
-          <!-- Industry -->
-          <pc-input label="Industry" placeholder="e.g. Technology" [formField]="form.industry"></pc-input>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Email -->
-          <pc-input label="Email" type="email" placeholder="info@example.com" [formField]="form.email"></pc-input>
-
-          <!-- Phone -->
-          <pc-input label="Phone" type="tel" placeholder="+1 555-0100" [formField]="form.phone"></pc-input>
-        </div>
-
-        <!-- Description -->
-        <pc-textarea
-          label="Description"
-          placeholder="Company description..."
-          [formField]="form.description"
-          [rows]="3"
-        ></pc-textarea>
-
-        <!-- Notes -->
-        <pc-textarea
-          label="Internal Notes"
-          placeholder="Any additional notes..."
-          [formField]="form.notes"
-          [rows]="4"
-        ></pc-textarea>
-      </pc-card>
-
-      <!-- Members & Info Panel -->
-      <div class="space-y-6">
-        <!-- Employee List (Only when edit mode) -->
-        @if (!isNewMode() && id()) {
-        <pc-card title="Associated Employees" icon="user-group">
-          @defer (on viewport) {
-          <pc-people-in-company [companyId]="id()!"></pc-people-in-company>
-          } @placeholder {
-          <div class="skeleton w-full h-32"></div>
-          }
-        </pc-card>
+<pc-detail-layout
+  [title]="company()?.name || 'Company'"
+  [eyebrow]="'Company'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!company()"
+  [showDelete]="true"
+  [deleteText]="'Delete company'"
+  [btn1Text]="'Edit company'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editCompany()"
+  (delete)="deleteCompany()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (company()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Company Details Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Company Card -->
+      <pc-profile-card [avatarText]="initials()">
+        <!-- Name & Industry -->
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ company().name }}</h2>
+        @if (company().industry) {
+        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">{{ company().industry }}</div>
+        } @else {
+        <span class="text-xs text-base-content/40 italic mb-4">No industry assigned</span>
         }
 
-        <!-- Metadata Card -->
-        @if (!isNewMode()) {
-        <pc-entity-overview
-          [createdAt]="company()?.created_at"
-          [updatedAt]="company()?.updated_at"
-        ></pc-entity-overview>
+        <!-- Contact details list -->
+        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
+          <pc-detail-item
+            label="Website"
+            [value]="company().website"
+            icon="globe-americas"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Email Address"
+            [value]="company().email"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Phone Number"
+            [value]="company().phone"
+            icon="identification"
+            [copyable]="true"
+          ></pc-detail-item>
+        </div>
+
+        <!-- Internal Notes (Short summary) -->
+        @if (company().notes) {
+        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
+          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1">
+            Internal Notes
+          </span>
+          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
+            {{ company().notes }}
+          </p>
+        </div>
         }
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="company().created_at"
+          [createdBy]="getUserName(company().createdby_id)"
+          [updatedAt]="company().updated_at"
+          [updatedBy]="getUserName(company().updatedby_id)"
+        ></pc-system-metadata>
+      </pc-profile-card>
+    </div>
+
+    <!-- Right Column: Stats & Tabs -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats Panel -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <pc-stat-card
+          [title]="'Employees'"
+          [value]="employeeCount()"
+          [description]="'Total staff listed'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-teal-500'"
+          [iconColorClass]="'text-teal-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Enriched from Google'"
+          [value]="isEnriched() ? 'Yes' : 'No'"
+          [description]="'Google Places sync status'"
+          [icon]="'check-circle'"
+          [valueColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
+          [iconColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
+        ></pc-stat-card>
       </div>
+
+      <!-- Tabs Panel -->
+      <pc-tabs [tabs]="companyTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'companies'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="employees" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @defer (on viewport) {
+            <pc-people-in-company [companyId]="id()"></pc-people-in-company>
+            } @placeholder {
+            <div class="skeleton w-full h-32"></div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="details" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (company().description) {
+            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2">
+                Company Description
+              </span>
+              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">
+                {{ company().description }}
+              </p>
+            </div>
+            } @else {
+            <div class="text-center py-10 text-base-content/40 italic">No company description recorded.</div>
+            }
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
     </div>
   </div>
   }
-</div>
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-body/email-body.ts
@@ -26934,513 +26306,279 @@ export class EmailBody {
 </aside>
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
+## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts
 
-```html
-<header class="border-b border-base-300 px-4 pb-4">
-  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
-    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
-  </div>
-  <div class="flex items-start gap-3 mt-2">
-    <pc-email-assign [email]="email()"></pc-email-assign>
-    <div class="min-w-0 flex-1"></div>
+```typescript
+import { DatePipe, UpperCasePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { Tags } from '@experiences/tags/ui/tags';
+import { PersonsService } from '@experiences/persons/services/persons-service';
 
-    <div class="flex items-center gap-1 text-sm text-base-content/70">
-      <span class="whitespace-nowrap pr-2">
-        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
-      </span>
+import { EmailsStore } from '../../services/store/emailstore';
+import { EmailAssign } from '../email-assign/email-assign';
+import { EmailCreateTaskDialog } from '../email-create-task-dialog/email-create-task-dialog';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 
-      <div class="border-t border-base-300 my-1 h-0"></div>
-      <div class="hidden md:block">
-        <!-- Reply -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="reply"
-          aria-label="Reply"
-          (click)="handleReply()"
-        >
-          <pc-icon name="reply" [size]="4"></pc-icon>
-        </button>
+@Component({
+  selector: 'pc-email-header',
+  // include swap for expand/collapse control
+  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon, RouterLink, TagItem, Tags, EmailCreateTaskDialog],
+  host: {
+    '(document:keydown)': 'handleDocumentKeydown($event)',
+  },
+  templateUrl: 'email-header.html',
+})
+export class EmailHeader {
+  private alertSvc = inject(AlertService);
+  private store = inject(EmailsStore);
+  private personsSvc = inject(PersonsService);
 
-        <!-- Reply All -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Reply All"
-          aria-label="Reply All"
-          (click)="handleReplyAll()"
-        >
-          <pc-icon name="reply-all" [size]="4"></pc-icon>
-        </button>
+  private readonly createTaskDialog = viewChild<EmailCreateTaskDialog>('createTaskDialog');
 
-        <!-- Forward-->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Forward"
-          aria-label="Forward"
-          (click)="handleForward()"
-        >
-          <pc-icon name="forward" [size]="4"></pc-icon>
-        </button>
+  protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
+  protected isClosed = signal(false);
+  protected isFavourite = signal(false);
 
-        @if (!isFolderTrash()) {
-        <!-- Star/Favorite -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Toggle favourite"
-          aria-label="Star"
-          data-testid="favorite-button"
-          (click)="toggleFavourite()"
-        >
-          <pc-icon [size]="4" [name]="getFavouriteIcon()" [class.text-primary]="isFavourite()"></pc-icon>
-        </button>
+  protected personTags = computed(() => {
+    const person = this.headerData()?.person;
+    return person?.tags?.map((t: any) => t.name) ?? [];
+  });
 
-        <!-- Close/Mark as Done -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          [attr.data-tip]="markAsDoneText()"
-          aria-label="Mark as Done"
-          (click)="toggleClosed()"
-        >
-          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
-        </button>
-        } @else {
-        <!-- Restore from Trash -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Restore from Trash"
-          aria-label="Restore from Trash"
-          (click)="restoreFromTrash()"
-        >
-          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
-        </button>
-        }
+  protected personIssues = computed(() => {
+    const person = this.headerData()?.person;
+    return person?.issues?.map((t: any) => t.name) ?? [];
+  });
 
-        <!-- Delete -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          [attr.data-tip]="getTrashText()"
-          [attr.aria-label]="getTrashText()"
-          (click)="deleteEmail()"
-        >
-          @if (isFolderTrash()) {
-          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
-          } @else {
-          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
-          }
-        </button>
-      </div>
-      <!-- More Actions Dropdown -->
-      <div class="dropdown dropdown-end">
-        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
-          <svg viewBox="0 0 24 24" class="h-5 w-5">
-            <path
-              fill="currentColor"
-              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
-            />
-          </svg>
-        </button>
-        <ul
-          tabindex="0"
-          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
-        >
-          <li>
-            <a
-              (click)="handleCreateTask()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create Task
-            </a>
-          </li>
-          <div class="border-t border-base-300 my-1 h-0"></div>
-          <li>
-            <a
-              (click)="handleReply()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleReplyAll()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply All
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleForward()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
-            </a>
-          </li>
+  protected async onTagAdded(tagName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.attachTag(person.id, tagName, 'tag');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Tag "${tagName}" added`);
+    } catch (e) {
+      console.error('Failed to attach tag:', e);
+      this.alertSvc.showError('Failed to add tag');
+    }
+  }
 
-          <div class="border-t border-base-300 my-1 h-0"></div>
+  protected async onTagRemoved(tagName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.detachTag(person.id, tagName, 'tag');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Tag "${tagName}" removed`);
+    } catch (e) {
+      console.error('Failed to detach tag:', e);
+      this.alertSvc.showError('Failed to remove tag');
+    }
+  }
 
-          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
-          <li>
-            <a
-              (click)="markAsSpam()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
-            </a>
-          </li>
-          } @else {
-          <li>
-            <a
-              (click)="moveToInbox()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
-            </a>
-          </li>
-          } }
-          <li>
-            <a
-              (click)="handleMarkAsUnread()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
-            </a>
-          </li>
+  protected async onIssueAdded(issueName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.attachTag(person.id, issueName, 'issue');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Issue "${issueName}" added`);
+    } catch (e) {
+      console.error('Failed to attach issue:', e);
+      this.alertSvc.showError('Failed to add issue');
+    }
+  }
 
-          <div class="border-t border-base-300 my-1 h-0"></div>
+  protected async onIssueRemoved(issueName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.detachTag(person.id, issueName, 'issue');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Issue "${issueName}" removed`);
+    } catch (e) {
+      console.error('Failed to detach issue:', e);
+      this.alertSvc.showError('Failed to remove issue');
+    }
+  }
 
-          <li>
-            <a
-              (click)="toggleFavourite()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                [name]="getFavouriteIcon()"
-                [size]="4"
-                [class.text-amber-500]="isFavourite()"
-                [class.text-base-content/60]="!isFavourite()"
-              ></pc-icon>
-              {{ isFavourite() ? 'Unstar' : 'Star' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="toggleClosed()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                name="check-circle"
-                [size]="4"
-                [class.text-success]="isClosed()"
-                [class.text-base-content/60]="!isClosed()"
-              ></pc-icon>
-              {{ isClosed() ? 'Mark as Open' : 'Mark as Done' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="deleteEmail()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
-            </a>
-          </li>
+  public readonly forward = output<void>();
+  public readonly reply = output<void>();
+  public readonly replyAll = output<void>();
 
-          <div class="border-t border-base-300 my-1 h-0"></div>
+  public email = input.required<EmailType>();
 
-          <li>
-            <a
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
-            </a>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </div>
+  public isExpanded = this.store.isBodyExpanded;
 
-  <div class="mt-3 flex items-center gap-3">
-    <div class="avatar">
-      @if (headerData()?.person; as person) {
-      <a
-        [routerLink]="['/people', person.id]"
-        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
-      >
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </a>
-      } @else {
-      <div class="w-10 rounded-full bg-base-200">
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </div>
-      }
-    </div>
+  constructor() {
+    // isFavourite and isClosed are settable, so can't use computed
+    effect(() => {
+      const email = this.email();
 
-    <div class="min-w-0 flex-1">
-      <div class="flex items-center gap-1.5 min-w-0">
-        @if (headerData()?.person; as person) {
-        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
-          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
-          (email()!.from_name || email()!.from_email) }}
-        </a>
-        <div class="dropdown dropdown-bottom inline-block">
-          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
-            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
-          </button>
-          <div
-            tabindex="0"
-            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
-          >
-            <div class="space-y-4">
-              <div class="flex items-center gap-3">
-                <div class="avatar placeholder">
-                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
-                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
-                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <h3 class="font-bold text-sm">{{ person.first_name }} {{ person.last_name }}</h3>
-                  @if (person.company_name) {
-                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
-                  }
-                </div>
-              </div>
+      this.isFavourite.set(email.is_favourite);
+      this.isClosed.set(email.status === 'closed');
+    });
+  }
 
-              <div class="divider my-1"></div>
+  public getFavouriteIcon() {
+    return this.isFavourite() ? 'star-filled' : 'star';
+  }
 
-              <div class="space-y-2 text-xs">
-                <div class="flex items-center gap-2">
-                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span class="truncate">{{ person.email }}</span>
-                </div>
-                @if (person.mobile) {
-                <div class="flex items-center gap-2">
-                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span>{{ person.mobile }}</span>
-                </div>
-                } @if (person.notes) {
-                <div class="flex flex-col gap-1 mt-1">
-                  <span class="font-semibold text-base-content/60">Notes:</span>
-                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
-                    {{ person.notes }}
-                  </p>
-                </div>
-                }
-              </div>
+  protected async deleteEmail() {
+    try {
+      await this.store.deleteEmail(this.email().id);
+    } catch (e) {
+      console.error('Failed to delete email', e);
+      this.alertSvc.showError('Failed to delete email');
+    }
+  }
 
-              <div class="divider my-1"></div>
+  protected getAllRecipients(): any[] {
+    return [...this.getToRecipients(), ...this.getCcRecipients(), ...this.getBccRecipients()];
+  }
 
-              <div class="space-y-3">
-                <div>
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
-                    >Tags:</span
-                  >
-                  <pc-tags
-                    [tags]="personTags()"
-                    [type]="'tag'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add tag...'"
-                    (tagAdded)="onTagAdded($event)"
-                    (tagRemoved)="onTagRemoved($event)"
-                  ></pc-tags>
-                  @if (!personTags().length) {
-                  <span class="text-xs italic text-base-content/40 block mt-1">No tags</span>
-                  }
-                </div>
+  protected getBccRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.bcc_list || [];
+  }
 
-                <div>
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
-                    >Issues:</span
-                  >
-                  <pc-tags
-                    [tags]="personIssues()"
-                    [type]="'issue'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add issue...'"
-                    (tagAdded)="onIssueAdded($event)"
-                    (tagRemoved)="onIssueRemoved($event)"
-                  ></pc-tags>
-                  @if (!personIssues().length) {
-                  <span class="text-xs italic text-base-content/40 block mt-1">No issues</span>
-                  }
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        } @else {
-        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
-        }
-        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
-      </div>
+  protected getCcRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.cc_list || [];
+  }
 
-      @if (headerData()?.person; as person) { @if (person.tags?.length || person.issues?.length) {
-      <div class="flex flex-wrap gap-1.5 mt-1 items-center">
-        @for (tag of person.tags; track tag.name) {
-        <pc-tagitem [name]="tag.name" [color]="tag.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-        } @for (issue of person.issues; track issue.name) {
-        <pc-tagitem [name]="issue.name" [color]="issue.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-        }
-      </div>
-      } }
+  protected getDateSent(): Date | null {
+    const header = this.headerData();
+    return header?.email?.date_sent ? new Date(header.email.date_sent) : null;
+  }
 
-      <div class="text-xs text-base-content/60 mt-1">
-        to
-        <div class="dropdown inline-block">
-          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
-            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
-            (getToRecipients().length > 1) {
-            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
-            } } @else { {{ email()!.to_email }} }
-            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
-              />
-            </svg>
-          </button>
-          <ul
-            tabindex="0"
-            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
-          >
-            <!-- Recipients Section -->
-            <li class="menu-title text-xs">Recipients</li>
+  protected getHeaderInfo() {
+    const header = this.headerData();
+    const email = this.email();
 
-            @if (getToRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">To:</li>
-            @for (recipient of getToRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getCcRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">CC:</li>
-            @for (recipient of getCcRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getBccRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">BCC:</li>
-            @for (recipient of getBccRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
-            0) {
-            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
-            }
+    return {
+      subject: email.subject,
+      date: this.getDateSent() || email.updated_at,
+      from: email.from_email,
+      to: email.to_email,
+      messageId: header?.email?.headers_json?.['message-id'] || 'N/A',
+      mailedBy: header?.email?.headers_json?.['x-mailer'] || header?.email?.headers_json?.['user-agent'] || 'N/A',
+      signedBy: header?.email?.headers_json?.['dkim-signature'] ? 'DKIM Verified' : 'Not signed',
+      security: header?.email?.headers_json?.['received-spf'] || 'N/A',
+      returnPath: header?.email?.headers_json?.['return-path'] || 'N/A',
+      replyTo: header?.email?.headers_json?.['reply-to'] || email.from_email,
+    };
+  }
 
-            <!-- Email Details Section -->
-            <li class="divider mt-3"></li>
-            <li class="menu-title text-xs">Email Details</li>
+  protected getToRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.to_list || [];
+  }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Subject:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
-                </div>
-              </div>
-            </li>
+  protected getTrashText() {
+    return this.isFolderTrash() ? 'Delete Permanently' : 'Move to Trash';
+  }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Date:</span>
-                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
-                </div>
-              </div>
-            </li>
+  protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    if (ev.key === 'Escape' && this.isExpanded()) {
+      this.store.toggleBodyExpanded();
+      ev.stopPropagation();
+      ev.preventDefault();
+    }
+  }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">From:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
-                </div>
-              </div>
-            </li>
+  protected handleForward() {
+    this.forward.emit();
+  }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Reply-To:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
-                </div>
-              </div>
-            </li>
+  protected handleMarkAsUnread() {
+    void this.store.toggleEmailReadStatus(this.email().id, false);
+    this.store.selectEmail(null);
+  }
 
-            <!-- Technical Details Section -->
-            <li class="divider mt-2"></li>
-            <li class="menu-title text-xs">Technical Details</li>
+  protected handleReply() {
+    this.reply.emit();
+  }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Message-ID:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
-                </div>
-              </div>
-            </li>
+  protected handleReplyAll() {
+    this.replyAll.emit();
+  }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Mailed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
-                </div>
-              </div>
-            </li>
+  protected isFolderTrash(): boolean {
+    const fid = this.store.currentSelectedFolderId();
+    return fid === ALL_FOLDERS.TRASH;
+  }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Security:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
-                </div>
-              </div>
-            </li>
+  protected isFolderSpam(): boolean {
+    const fid = this.store.currentSelectedFolderId();
+    return fid === ALL_FOLDERS.SPAM;
+  }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Signed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
-                </div>
-              </div>
-            </li>
+  protected async markAsSpam() {
+    try {
+      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.SPAM);
+      this.alertSvc.showSuccess('Email marked as spam');
+      this.store.selectEmail(null);
+    } catch (e) {
+      console.error('Failed to mark email as spam', e);
+      this.alertSvc.showError('Failed to mark email as spam');
+    }
+  }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Return-Path:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
-                </div>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-    <div class="flex items-center gap-1">
-      <pc-icon
-        class="hover:text-primary tooltip tooltip-left cursor-pointer"
-        [attr.data-tip]="'Expand email body'"
-        name="expand-content"
-        [size]="4"
-        (click)="toggleExpand()"
-      ></pc-icon>
-    </div>
-  </div>
-</header>
+  protected async moveToInbox() {
+    try {
+      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.INBOX);
+      this.alertSvc.showSuccess('Email moved to Inbox');
+      this.store.selectEmail(null);
+    } catch (e) {
+      console.error('Failed to move email to Inbox', e);
+      this.alertSvc.showError('Failed to move email to Inbox');
+    }
+  }
 
-<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
+  protected markAsDoneText() {
+    return this.isClosed() ? 'Mark as Open' : 'Mark as Done';
+  }
+
+  protected restoreFromTrash() {
+    void this.store.restoreFromTrash(this.email().id);
+  }
+
+  protected async toggleClosed() {
+    const email = this.email();
+    const currentStatus = email.status || 'open';
+    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
+
+    // Optimistically update UI
+    this.isClosed.set(newStatus === 'closed');
+
+    try {
+      await this.store.updateEmailStatus(email.id, newStatus);
+    } catch (_error) {
+      // Revert UI state on error
+      this.isClosed.set(currentStatus === 'closed');
+      this.alertSvc.showError('Failed to update email status');
+    }
+  }
+
+  protected handleCreateTask(): void {
+    void this.createTaskDialog()?.open();
+  }
+
+  protected toggleExpand(): void {
+    this.store.toggleBodyExpanded();
+  }
+
+  protected async toggleFavourite() {
+    const e = this.email();
+    this.isFavourite.update((value) => !value);
+    return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.html
@@ -27551,6 +26689,321 @@ export class EmailBody {
 </section>
 ```
 
+## File: apps/frontend/src/app/experiences/events/ui/event-view.html
+
+```html
+<pc-detail-layout
+  [title]="event()?.name || 'Event'"
+  [eyebrow]="'Event'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!event()"
+  [showDelete]="true"
+  [deleteText]="'Delete event'"
+  [btn1Text]="'Edit event'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editEvent()"
+  (delete)="deleteEvent()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (event()) {
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left: Event Info Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <pc-profile-card iconName="calendar">
+        <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
+        <div class="flex flex-wrap gap-2 mb-4 justify-center">
+          @if (event().is_published) {
+          <span class="badge badge-success font-semibold uppercase text-xs">Published</span>
+          } @else {
+          <span class="badge badge-warning font-semibold uppercase text-xs">Draft</span>
+          } @if (eventPassed()) {
+          <span class="badge badge-neutral font-semibold uppercase text-xs">Past</span>
+          } @else {
+          <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
+          }
+        </div>
+
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          @if (event().description) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ event().description }}</div>
+          }
+
+          <pc-detail-row icon="map-pin" iconClass="text-error">
+            <span class="text-xs">
+              <strong>Location:</strong> {{ event().location_address || 'No Address Provided' }}
+            </span>
+          </pc-detail-row>
+
+          <pc-detail-row icon="calendar" iconClass="text-info">
+            <div class="text-xs flex flex-col">
+              <span><strong>Start:</strong> {{ event().start_time | date: 'medium' }}</span>
+              <span><strong>End:</strong> {{ event().end_time | date: 'medium' }}</span>
+            </div>
+          </pc-detail-row>
+
+          @if (event().contact_email || event().contact_phone) {
+          <div class="divider my-1"></div>
+          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">Organizer Contact</div>
+          @if (event().contact_email) {
+          <pc-detail-row icon="envelope" iconClass="text-teal-500">
+            <span class="text-xs">{{ event().contact_email }}</span>
+          </pc-detail-row>
+          } @if (event().contact_phone) {
+          <pc-detail-row icon="phone" iconClass="text-purple-500">
+            <span class="text-xs">{{ event().contact_phone }}</span>
+          </pc-detail-row>
+          } } @if (ticketTypes().length > 0) {
+          <div class="divider my-1"></div>
+          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">Ticket Types</div>
+          @for (ticket of ticketTypes(); track ticket.id) {
+          <div class="flex justify-between text-xs px-1">
+            <span class="font-semibold">{{ ticket.name }}</span>
+            <span class="text-base-content/60">
+              {{ ticket.price_cents ? '$' + (ticket.price_cents / 100).toFixed(2) : 'Free' }} @if (ticket.capacity) { ·
+              {{ ticket.capacity }} max }
+            </span>
+          </div>
+          } }
+        </div>
+      </pc-profile-card>
+
+      @if (publicUrl()) {
+      <pc-card title="Public RSVP Link" icon="globe-americas">
+        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copyPublicUrl()">
+          <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
+        </button>
+        <div class="flex gap-2">
+          <input
+            type="text"
+            [value]="publicUrl()"
+            readonly
+            class="input input-bordered input-xs flex-1 font-mono text-[10px]"
+          />
+          <a [href]="publicUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
+            <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
+          </a>
+        </div>
+        @if (!event().is_published) {
+        <div class="alert alert-warning py-2 text-xs flex gap-2 mt-1">
+          <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+          <span>This event is not published yet. Publish it to make the RSVP page live.</span>
+        </div>
+        }
+      </pc-card>
+      }
+    </div>
+
+    <!-- Right: Stats + Tabs -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <pc-stat-card
+          [title]="'Registered'"
+          [value]="activeCount()"
+          [description]="'Active registrations'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Attended'"
+          [value]="attendedCount()"
+          [description]="'Checked in'"
+          [icon]="'check-circle'"
+          [valueColorClass]="'text-teal-500'"
+          [iconColorClass]="'text-teal-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Capacity Left'"
+          [value]="remainingCapacity()"
+          [description]="'of ' + (event().capacity ?? 'unlimited') + ' total'"
+          [icon]="'adjustments-horizontal'"
+          [valueColorClass]="'text-orange-500'"
+          [iconColorClass]="'text-orange-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Tabs -->
+      <pc-tabs [tabs]="eventTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="attendees" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <!-- Add Registration -->
+            <pc-card title="Add Registration" icon="user-plus">
+              <div class="flex flex-col sm:flex-row gap-3 items-end">
+                <div class="relative flex-1 space-y-1">
+                  <label class="label text-xs font-semibold text-base-content/65 uppercase">Search People</label>
+                  <div class="relative">
+                    <input
+                      type="text"
+                      class="input input-bordered input-sm w-full pl-9"
+                      placeholder="Search by name or email..."
+                      [ngModel]="personSearch()"
+                      (ngModelChange)="onPersonSearch($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                    <div
+                      class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-base-content/40"
+                    >
+                      <pc-icon name="magnifying-glass" [size]="4"></pc-icon>
+                    </div>
+                  </div>
+                  @if (personSearchResults().length > 0) {
+                  <div
+                    class="absolute z-10 w-full mt-0.5 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
+                  >
+                    @for (p of personSearchResults(); track p.id) {
+                    <div (click)="selectPerson(p)" class="px-3 py-2 hover:bg-base-200 cursor-pointer">
+                      <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
+                      <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
+                    </div>
+                    }
+                  </div>
+                  }
+                </div>
+
+                @if (ticketTypes().length > 0) {
+                <div class="space-y-1 w-40">
+                  <label class="label text-xs font-semibold text-base-content/65 uppercase">Ticket Type</label>
+                  <select
+                    class="select select-bordered select-sm w-full"
+                    [ngModel]="selectedTicketTypeId()"
+                    (ngModelChange)="selectedTicketTypeId.set($event || null)"
+                    [ngModelOptions]="{standalone: true}"
+                  >
+                    <option [value]="null">No ticket</option>
+                    @for (t of ticketTypes(); track t.id) {
+                    <option [value]="t.id">{{ t.name }}</option>
+                    }
+                  </select>
+                </div>
+                }
+
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm shrink-0"
+                  [disabled]="!selectedPersonId() || addingRegistration()"
+                  (click)="addRegistration()"
+                >
+                  @if (addingRegistration()) {
+                  <span class="loading loading-spinner loading-xs"></span>
+                  } @else {
+                  <pc-icon name="plus" [size]="4"></pc-icon>
+                  } Register
+                </button>
+              </div>
+            </pc-card>
+
+            <!-- Attendees Table -->
+            <div class="flex justify-between items-center">
+              <h4 class="font-semibold text-sm text-base-content/70">Attendee List</h4>
+              @if (registrations().length > 0) {
+              <button type="button" class="btn btn-xs btn-outline gap-1" (click)="exportCsv()">
+                <pc-icon name="arrow-down-tray" [size]="3"></pc-icon> Export CSV
+              </button>
+              }
+            </div>
+
+            @if (registrations().length === 0) {
+            <p class="text-sm text-base-content/40 italic text-center py-8">No registrations yet for this event.</p>
+            } @else {
+            <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
+              <table class="table table-sm w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200 text-base-content/70">
+                    <th>Name</th>
+                    <th>Ticket</th>
+                    <th>Status</th>
+                    <th>Checked In</th>
+                    <th class="text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (reg of registrations(); track reg.id) {
+                  <tr class="hover:bg-base-200/50" [class.opacity-50]="reg.status === 'cancelled'">
+                    <td>
+                      <a [routerLink]="['/people', reg.person_id]" class="link link-primary font-bold">
+                        {{ reg.first_name }} {{ reg.last_name }}
+                      </a>
+                      <div class="text-[10px] text-base-content/50 mt-0.5">{{ reg.email || 'No email' }}</div>
+                    </td>
+                    <td>
+                      @if (reg.ticket_type_name) {
+                      <span class="badge badge-ghost badge-sm">{{ reg.ticket_type_name }}</span>
+                      } @else {
+                      <span class="text-base-content/30">—</span>
+                      }
+                    </td>
+                    <td>
+                      <select
+                        class="select select-bordered select-xs font-medium"
+                        [ngModel]="reg.status"
+                        (ngModelChange)="updateStatus(reg, $event)"
+                        [ngModelOptions]="{standalone: true}"
+                        [class.select-success]="reg.status === 'attended'"
+                        [class.select-warning]="reg.status === 'registered'"
+                        [class.select-error]="reg.status === 'no_show'"
+                      >
+                        <option value="registered">Registered</option>
+                        <option value="attended">Attended</option>
+                        <option value="no_show">No Show</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </td>
+                    <td class="font-mono text-[10px]">
+                      {{ reg.checked_in_at ? (reg.checked_in_at | date: 'shortTime') : '—' }}
+                    </td>
+                    <td>
+                      <div class="flex items-center justify-center gap-1">
+                        @if (reg.status === 'registered') {
+                        <button
+                          type="button"
+                          class="btn btn-ghost btn-xs text-success"
+                          title="Check in"
+                          (click)="checkIn(reg)"
+                        >
+                          <pc-icon name="check-circle" [size]="4"></pc-icon>
+                        </button>
+                        }
+                        <button
+                          type="button"
+                          class="btn btn-ghost btn-xs text-error"
+                          title="Remove"
+                          (click)="deleteRegistration(reg)"
+                        >
+                          <pc-icon name="trash" [size]="4"></pc-icon>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'events'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
+```
+
 ## File: apps/frontend/src/app/experiences/exports/ui/exports-page.ts
 
 ```typescript
@@ -27654,192 +27107,826 @@ export class ExportsPage extends TRPCService<any> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/forms/ui/forms-grid.ts
+## File: apps/frontend/src/app/experiences/forms/ui/form-view.html
+
+```html
+<pc-detail-layout
+  [title]="formRecord()?.name || 'Form'"
+  [eyebrow]="'Form'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!formRecord()"
+  [showDelete]="true"
+  [deleteText]="'Delete form'"
+  [btn1Text]="'Edit form'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editForm()"
+  (delete)="deleteForm()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (formRecord()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Form Info & Embed Code -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Form Details Card -->
+      <pc-profile-card iconName="clipboard-document-list">
+        <!-- Name & Status -->
+        <h2 class="text-xl font-bold text-base-content text-center mb-1">{{ formRecord().name }}</h2>
+        <div class="flex gap-2 mb-4">
+          <span
+            class="badge font-semibold uppercase text-xs"
+            [class.badge-success]="formRecord().status === 'active'"
+            [class.badge-warning]="formRecord().status === 'archived'"
+          >
+            {{ formRecord().status }}
+          </span>
+        </div>
+
+        <!-- Details and settings list -->
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          @if (formRecord().description) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ formRecord().description }}</div>
+          } @if (formRecord().redirect_url) {
+          <pc-detail-row icon="arrow-top-right-on-square" iconClass="text-indigo-500">
+            <span class="truncate">Redirect: <strong>{{ formRecord().redirect_url }}</strong></span>
+          </pc-detail-row>
+          }
+
+          <pc-detail-row icon="envelope" iconClass="text-teal-500">
+            <span>Send Confirmation:</span>
+            <span pc-row-action class="font-bold">{{ formRecord().send_confirmation !== false ? 'Yes' : 'No' }}</span>
+          </pc-detail-row>
+
+          <pc-detail-row icon="bell" iconClass="text-purple-500">
+            <span>Send Admin Alert:</span>
+            <span pc-row-action class="font-bold">{{ formRecord().send_alert !== false ? 'Yes' : 'No' }}</span>
+          </pc-detail-row>
+        </div>
+
+        <!-- System Metadata -->
+        <div
+          class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
+        >
+          <span
+            >Created by {{ getUserName(formRecord().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span
+          >
+          <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(formRecord().updatedby_id) }}</span>
+        </div>
+      </pc-profile-card>
+
+      <!-- HTML Embed Snippet Card -->
+      <pc-card title="Deploy & Embed">
+        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
+          <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy Code
+        </button>
+
+        <div class="form-control text-xs">
+          <label class="label font-semibold py-1">Public Landing Page URL</label>
+          <div class="flex gap-2">
+            <input
+              type="text"
+              [value]="formUrl()"
+              readonly
+              class="input input-bordered input-xs flex-1 font-mono text-[10px]"
+            />
+            <a [href]="formUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
+              <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
+            </a>
+          </div>
+        </div>
+
+        <div class="form-control text-xs">
+          <label class="label font-semibold py-1">Embed HTML Code</label>
+          <pre
+            class="bg-neutral text-neutral-content p-3 rounded-lg text-[10px] font-mono max-h-40 overflow-y-auto select-all leading-snug"
+          >
+{{ embedSnippet() }}</pre
+          >
+        </div>
+      </pc-card>
+    </div>
+
+    <!-- Right Column: Stats & Tabs -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats Panel -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <pc-stat-card
+          [title]="'Submissions'"
+          [value]="submissionsCount()"
+          [description]="'Total lead contacts collected'"
+          [icon]="'envelope'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Fields Included'"
+          [value]="fieldsCount()"
+          [description]="'Active field inputs'"
+          [icon]="'queue-list'"
+          [valueColorClass]="'text-amber-500'"
+          [iconColorClass]="'text-amber-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Tabs Panel -->
+      <!-- Tabs Panel -->
+      <pc-tabs [tabs]="formTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'web_forms'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="targetActions" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-5 text-sm">
+            <div>
+              <h4 class="font-semibold text-base-content mb-1">Add to Lists</h4>
+              @if (targetListsNames().length > 0) {
+              <div class="flex flex-wrap gap-1.5">
+                @for (list of targetListsNames(); track list) {
+                <span class="badge badge-neutral px-3 py-2.5">{{ list }}</span>
+                }
+              </div>
+              } @else {
+              <span class="text-xs text-base-content/40 italic">No specific list assigned.</span>
+              }
+            </div>
+
+            <div>
+              <h4 class="font-semibold text-base-content mb-1">Apply Tags</h4>
+              <div class="flex flex-wrap gap-1.5">
+                @if (formRecord().target_tags?.length > 0) { @for (tag of formRecord().target_tags; track tag) {
+                <span class="badge badge-outline badge-primary px-3 py-2.5">{{ tag }}</span>
+                } }
+                <!-- Automatic system tag -->
+                <span class="badge badge-outline badge-secondary px-3 py-2.5">Source: {{ formRecord().name }}</span>
+                @if (formRecord().form_type === 'donation' || formRecord().form_type === 'recurring_donation') {
+                <span class="badge badge-outline badge-success px-3 py-2.5 flex items-center gap-1">
+                  <pc-icon name="tag" [size]="3"></pc-icon>
+                  donor <span class="text-[10px] opacity-60">(auto)</span>
+                </span>
+                }
+              </div>
+            </div>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="fieldsPreview" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <h4 class="font-semibold text-base-content">Form Input Preview</h4>
+            <div class="rounded-xl border border-base-200 bg-base-200/20 p-4 max-w-sm">
+              @if (selectedFields().includes('first_name')) {
+              <div class="form-control mb-3">
+                <span class="text-[10px] font-semibold uppercase text-base-content/50">First Name</span>
+                <input type="text" class="input input-bordered input-xs" placeholder="First Name" disabled />
+              </div>
+              } @if (selectedFields().includes('last_name')) {
+              <div class="form-control mb-3">
+                <span class="text-[10px] font-semibold uppercase text-base-content/50">Last Name</span>
+                <input type="text" class="input input-bordered input-xs" placeholder="Last Name" disabled />
+              </div>
+              }
+              <div class="form-control mb-3">
+                <span class="text-[10px] font-semibold uppercase text-base-content/50">Email Address *</span>
+                <input type="text" class="input input-bordered input-xs" placeholder="you@example.com" disabled />
+              </div>
+              @if (selectedFields().includes('mobile')) {
+              <div class="form-control mb-3">
+                <span class="text-[10px] font-semibold uppercase text-base-content/50">Mobile / Phone</span>
+                <input type="text" class="input input-bordered input-xs" placeholder="Phone Number" disabled />
+              </div>
+              } @if (selectedFields().includes('notes')) {
+              <div class="form-control mb-3">
+                <span class="text-[10px] font-semibold uppercase text-base-content/50">Notes / Message</span>
+                <textarea
+                  class="textarea textarea-bordered textarea-xs"
+                  placeholder="How can we help?"
+                  disabled
+                ></textarea>
+              </div>
+              }
+            </div>
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.ts
 
 ```typescript
-import { Component } from '@angular/core';
-import { StandardFormsService } from '@experiences/forms/services/standard-forms-service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { Component, OnInit, signal, computed, inject } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { form, FormField, validateStandardSchema, submit } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AddWebFormObj } from '../../../../../../../libs/common/src';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { FormsService } from '@experiences/forms/services/forms-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Tags } from '@experiences/tags/ui/tags';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { Icon } from '@icons/icon';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { SettingsService } from '@experiences/settings/services/settings-service';
+import { environment } from '../../../../environments/environment';
 
 @Component({
-  selector: 'pc-forms-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Forms"
-        i18n-title
-        description="Manage public and internal web forms, configure fields, and view submission statistics."
-        i18n-description
-        [colDefs]="col"
-        [showDescription]="true"
-        [disableDelete]="false"
-        [allowFilter]="false"
-        [disableView]="false"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="add-form"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: StandardFormsService },
-    provideDataGridConfig({ messages: { exportEntity: 'forms', exportFileName: 'forms-export.csv' } }),
-  ],
+  selector: 'pc-fundraising-form',
+  imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions, PcCard],
+  templateUrl: './fundraising-form.html',
 })
-export class FormsGridComponent {
-  protected col = [
-    { field: 'name', headerName: 'Form Name', editable: false },
-    { field: 'description', headerName: 'Description', editable: false },
-    { field: 'redirect_url', headerName: 'Redirect URL', editable: false },
-    { field: 'status', headerName: 'Status', editable: true },
-    {
-      field: 'created_at',
-      headerName: 'Created At',
-      valueFormatter: (p: any) => (p.value ? new Date(p.value).toLocaleDateString() : ''),
-    },
-  ];
+export class FundraisingFormComponent implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly settingsSvc = inject(SettingsService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly isInitialized = signal(false);
+  protected readonly saving = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly isNew = signal(true);
+  protected readonly formId = signal<string | null>(null);
+
+  protected setType(type: 'donation' | 'recurring_donation') {
+    this.payload.update((p) => ({ ...p, form_type: type }));
+  }
+
+  protected readonly hasStripeKey = computed(() => {
+    const key = this.settingsSvc.getValue<string>('donations.stripe_secret_key', '');
+    return !!key.trim();
+  });
+
+  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
+  protected readonly selectedLists = signal<string[]>([]);
+  protected readonly selectedTags = signal<string[]>([]);
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    redirect_url: '',
+    status: 'active' as 'active' | 'archived',
+    send_confirmation: true,
+    send_alert: true,
+    form_type: 'donation' as 'donation' | 'recurring_donation',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddWebFormObj);
+  });
+
+  protected readonly isRecurring = computed(() => this.payload().form_type === 'recurring_donation');
+
+  protected readonly embedSnippet = computed(() => {
+    const id = this.formId();
+    if (!id) return '';
+    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
+    const recurring = this.isRecurring();
+
+    const amountField = recurring
+      ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
+    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
+  </div>`
+      : `
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($ CAD) *</label>
+    <input type="number" name="amount" min="1" step="any" placeholder="E.g. 50.00" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`;
+
+    const submitLabel = recurring ? 'Start Monthly Pledge' : 'Donate Now';
+
+    return `<!-- PeopleCRM Embeddable Donation Form -->
+<form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name *</label>
+    <input type="text" name="first_name" placeholder="John" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name *</label>
+    <input type="text" name="last_name" placeholder="Doe" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
+    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
+    <input type="text" name="street1" placeholder="E.g. 123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
+    <input type="text" name="city" placeholder="E.g. Toronto" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country of Residence *</label>
+    <select name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+      <option value="CA">Canada</option>
+      <option value="US">United States</option>
+      <option value="GB">United Kingdom</option>
+      <option value="AU">Australia</option>
+    </select>
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
+    <input type="text" name="state" placeholder="E.g. ON or NY" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal Code *</label>
+    <input type="text" name="zip" placeholder="E.g. M5V 2T6" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>${amountField}
+
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
+</form>`;
+  });
+
+  protected readonly formUrl = computed(() => {
+    const id = this.formId();
+    if (!id) return '';
+    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${id}`;
+  });
+
+  public ngOnInit(): void {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id && id !== 'add') {
+      this.isNew.set(false);
+      this.formId.set(id);
+    }
+    void this.loadLists();
+    void this.settingsSvc.load();
+  }
+
+  protected listName(id: string): string {
+    const match = this.availableLists().find((list) => list.id === id);
+    return match?.name ?? 'List';
+  }
+
+  protected handleListSelect(event: Event): void {
+    const select = event.target as HTMLSelectElement | null;
+    if (!select) return;
+    const value = select.value;
+    if (!value) return;
+    const current = new Set(this.selectedLists());
+    if (!current.has(value)) {
+      current.add(value);
+      this.selectedLists.set(Array.from(current));
+    }
+    select.value = '';
+  }
+
+  protected removeList(listId: string): void {
+    this.selectedLists.set(this.selectedLists().filter((id) => id !== listId));
+  }
+
+  protected handleTagsChange(tags: string[]): void {
+    this.selectedTags.set(Array.isArray(tags) ? [...tags] : []);
+  }
+
+  protected copySnippet(): void {
+    const code = this.embedSnippet();
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(
+      () => this.alertSvc.showSuccess('Donation page snippet copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected copyUrl(): void {
+    const url = this.formUrl();
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(
+      () => this.alertSvc.showSuccess('Donation page URL copied!'),
+      () => this.alertSvc.showError('Failed to copy URL.'),
+    );
+  }
+
+  protected async deleteForm() {
+    const id = this.formId();
+    if (!id) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Donation Page',
+      message: 'Are you sure you want to delete this donation page? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.saving.set(true);
+    try {
+      await this.formsSvc.delete(id);
+      this.formsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Donation page deleted');
+      await this.router.navigate(['/donation-pages']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete donation page';
+      this.alertSvc.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      this.alertSvc.showError('Please check your inputs.');
+      return;
+    }
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    await submit(this.form, {
+      action: async () => {
+        const values = this.payload();
+
+        try {
+          if (this.isNew()) {
+            const payload = {
+              name: values.name?.trim() ?? '',
+              description: values.description?.trim() || null,
+              redirect_url: values.redirect_url?.trim() || null,
+              target_tags: this.selectedTags().length ? this.selectedTags() : null,
+              target_lists: this.selectedLists().length ? this.selectedLists() : null,
+              status: values.status,
+              fields: this.selectedFields(),
+              send_confirmation: !!values.send_confirmation,
+              send_alert: !!values.send_alert,
+              form_type: values.form_type,
+            };
+            const result = (await this.formsSvc.add(payload)) as { id: string };
+            this.alertSvc.showSuccess('Donation page created successfully!');
+            void this.router.navigate(['/donation-pages', result.id]);
+          } else {
+            const id = this.formId()!;
+            const payload = {
+              name: values.name?.trim() ?? '',
+              description: values.description?.trim() || null,
+              redirect_url: values.redirect_url?.trim() || null,
+              target_tags: this.selectedTags().length ? this.selectedTags() : null,
+              target_lists: this.selectedLists().length ? this.selectedLists() : null,
+              status: values.status,
+              fields: this.selectedFields(),
+              send_confirmation: !!values.send_confirmation,
+              send_alert: !!values.send_alert,
+            };
+            await this.formsSvc.update(id, payload);
+            this.alertSvc.showSuccess('Donation page updated successfully!');
+            if (typeof done === 'function') {
+              done();
+            } else {
+              void this.router.navigate(['/donation-pages', id]);
+            }
+          }
+        } catch (err) {
+          const msg = err instanceof Error && err.message ? err.message : 'An error occurred while saving.';
+          this.error.set(msg);
+          this.alertSvc.showError(msg);
+        } finally {
+          this.saving.set(false);
+        }
+        return null;
+      },
+    });
+  }
+
+  private async loadLists(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const result = await this.listsSvc.getAll({ limit: 100 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows.map((row: any) => ({
+          id: String(row.id),
+          name: String(row.name),
+        })),
+      );
+      if (!this.isNew()) {
+        await this.loadPageDetails();
+      }
+    } catch (err) {
+      console.error('Failed to load lists', err);
+    } finally {
+      this.isInitialized.set(true);
+      end();
+    }
+  }
+
+  private async loadPageDetails(): Promise<void> {
+    const id = this.formId();
+    if (!id) return;
+    const end = this._loading.begin();
+    try {
+      const record = (await this.formsSvc.getById(id)) as any;
+      if (record) {
+        this.payload.set({
+          name: record.name ?? '',
+          description: record.description ?? '',
+          redirect_url: record.redirect_url ?? '',
+          status: (record.status as 'active' | 'archived') ?? 'active',
+          send_confirmation: record.send_confirmation !== false,
+          send_alert: record.send_alert !== false,
+          form_type: (record.form_type as 'donation' | 'recurring_donation') ?? 'donation',
+        });
+        this.form().reset();
+        this.selectedTags.set(Array.isArray(record.target_tags) ? record.target_tags : []);
+        this.selectedLists.set(Array.isArray(record.target_lists) ? record.target_lists : []);
+        if (record.fields) {
+          const fields = Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
+          this.selectedFields.set(fields);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load page details', err);
+      this.error.set('Failed to load page details.');
+    } finally {
+      end();
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
-## File: apps/frontend/src/app/experiences/households/ui/household-form.html
+## File: apps/frontend/src/app/experiences/households/ui/household-view.html
 
 ```html
-<!-- Template for household edit form -->
-<div class="flex min-h-full flex-col bg-base-100 p-6">
-  <div class="w-full max-w-4xl">
-    @if (household()?.is_placeholder) {
-    <div class="alert alert-warning mb-6 shadow rounded-lg flex gap-3">
-      <pc-icon name="exclamation-triangle" class="shrink-0" [size]="5"></pc-icon>
-      <div class="flex flex-col">
-        <span class="font-bold">System Placeholder Household</span>
-        <span class="text-xs font-light"
-          >This household is a permanent placeholder for people with no address and cannot be edited.</span
-        >
+<pc-detail-layout
+  [title]="addressString()"
+  [eyebrow]="'Household'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!household()"
+  [showActions]="!!(household() && !household()?.is_placeholder)"
+  [showDelete]="true"
+  [deleteText]="'Delete household'"
+  [btn1Text]="'Edit household'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editHousehold()"
+  (delete)="deleteHousehold()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (household(); as h) { @if (h.is_placeholder) {
+  <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
+    <div class="avatar placeholder mb-4">
+      <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
+        <pc-icon name="exclamation-triangle" [size]="8"></pc-icon>
       </div>
     </div>
-    } @else {
-    <pc-detail-header
-      [title]="id() ? 'Edit household' : 'New household'"
-      [eyebrow]="id() ? 'Editing' : 'New'"
-      [crumbs]="crumbs()"
-      [form]="form"
-      [isLoading]="isLoading()"
-      [buttonsToShow]="household()?.id ? 'two' : 'three'"
-      [btn1Text]="household()?.id ? 'Save household' : 'Create household'"
-      [showDelete]="!isNewMode()"
-      deleteText="Delete household"
-      (save)="save($event)"
-      (delete)="deleteHousehold()"
-    ></pc-detail-header>
-
-    <progress class="progress w-full mb-6" [class.hidden]="!isLoading()"></progress>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Form Section -->
-      <div class="lg:col-span-2">
-        <form (submit)="$event.preventDefault()">
-          <fieldset [disabled]="isLoading() || (household()?.is_placeholder ?? false)">
-            <div class="flex flex-col gap-6">
-              <!-- Current Address Display -->
-              @if (!household()?.is_placeholder && addressString()) {
-              <div class="flex items-start gap-3 bg-base-200 p-4 rounded-xl border border-base-300 shadow-sm">
-                <pc-icon name="map-pin" class="text-primary shrink-0 mt-0.5" [size]="5"></pc-icon>
-                <div class="flex flex-col">
-                  <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50"
-                    >Current Address</span
-                  >
-                  <span class="text-sm font-medium text-base-content">{{ addressString() }}</span>
-                </div>
-              </div>
-              }
-
-              <!-- Autocomplete Address Search -->
-              <div class="flex flex-col gap-2">
-                <label class="text-sm font-semibold text-base-content/75">Search address</label>
-                <pc-address-autocomplete
-                  (addressSelected)="handleAddressChange($event)"
-                  [disabled]="isLoading() || (household()?.is_placeholder ?? false)"
-                ></pc-address-autocomplete>
-              </div>
-
-              <!-- Collapsible manual entry -->
-              <details class="group">
-                <summary
-                  class="cursor-pointer list-none flex items-center gap-2 text-sm font-medium text-base-content/60 hover:text-base-content select-none py-1"
-                >
-                  <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
-                  Enter address manually
-                </summary>
-                <div class="mt-4 pl-3 border-l-2 border-base-300">
-                  <pc-address-form-group [form]="form"></pc-address-form-group>
-                </div>
-              </details>
-
-              <div class="divider mb-1 uppercase tracking-wider text-xs font-semibold text-base-content/40">
-                Segmentation
-              </div>
-
-              <!-- Tags -->
-              <div class="flex flex-col gap-2">
-                <label class="text-sm font-semibold text-base-content/75">Tags</label>
-                <pc-tags
-                  [tags]="tags"
-                  type="tag"
-                  [enableAutoComplete]="true"
-                  [readonly]="household()?.is_placeholder ?? false"
-                  [canDelete]="!(household()?.is_placeholder ?? false)"
-                  (tagAdded)="tagAdded($event)"
-                  (tagRemoved)="tagRemoved($event)"
-                ></pc-tags>
-              </div>
-
-              <!-- Issues -->
-              <div class="flex flex-col gap-2">
-                <label class="text-sm font-semibold text-base-content/75">Issues of Interest</label>
-                <pc-tags
-                  [tags]="issues"
-                  type="issue"
-                  [enableAutoComplete]="true"
-                  placeholder="Enter issues, separated by comma"
-                  [readonly]="household()?.is_placeholder ?? false"
-                  [canDelete]="!(household()?.is_placeholder ?? false)"
-                  (tagAdded)="issueAdded($event)"
-                  (tagRemoved)="issueRemoved($event)"
-                ></pc-tags>
-              </div>
-
-              <!-- Notes -->
-              <pc-textarea
-                label="Internal Notes"
-                placeholder="Internal notes regarding this household..."
-                [formField]="form.notes"
-                [rows]="3"
-              ></pc-textarea>
-
-              <div class="h-2"></div>
-            </div>
-          </fieldset>
-        </form>
-      </div>
-
-      <!-- Overview Sidebar -->
-      <div>
-        @if (!isNewMode()) {
-        <pc-entity-overview
-          [createdAt]="household()?.created_at"
-          [updatedAt]="household()?.updated_at"
-        ></pc-entity-overview>
-        }
-      </div>
-    </div>
-    }
+    <h2 class="text-xl font-bold text-base-content mb-2">No Household Assigned</h2>
+    <p class="text-sm text-base-content/60 mb-6">
+      This is a system placeholder representing individuals who do not currently have a household or address assigned.
+      It is not a real household record and cannot be edited.
+    </p>
+    <a routerLink="/people" class="btn btn-primary btn-sm gap-2">
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Return to People
+    </a>
   </div>
-</div>
+  } @else {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Household Card, Map & Segmentation -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Household Card -->
+      <pc-profile-card iconName="home">
+        <!-- Address Title -->
+        <h2 class="text-xl font-bold text-base-content text-center mb-4 leading-tight">{{ addressString() }}</h2>
+
+        <!-- Contact Details List -->
+        <div class="w-full flex flex-col text-sm">
+          <pc-detail-item label="Home Phone" [value]="h.home_phone" icon="phone" [copyable]="true"></pc-detail-item>
+          <pc-detail-item label="Household Type" [value]="h.type" icon="information-circle"></pc-detail-item>
+        </div>
+
+        <!-- Mapped Districts (GIS) -->
+        @if (h.district || h.precinct || h.ward || h.geocoding_status) {
+        <div
+          class="flex flex-col gap-2 p-3 rounded-lg bg-base-200/50 text-base-content/80 mt-2 border border-base-300/40 w-full"
+        >
+          <div class="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-base-content/50">
+            <pc-icon name="map" [size]="4" class="text-primary"></pc-icon>
+            <span>Electoral Boundaries</span>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-1 text-center text-xs">
+            @if (h.district) {
+            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+              <span class="text-[10px] text-base-content/40 block">District / Riding</span>
+              <span class="font-bold text-base-content">{{ h.district }}</span>
+            </div>
+            } @if (h.ward) {
+            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+              <span class="text-[10px] text-base-content/40 block">Ward</span>
+              <span class="font-bold text-base-content">{{ h.ward }}</span>
+            </div>
+            } @if (h.precinct) {
+            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+              <span class="text-[10px] text-base-content/40 block">Precinct / Polling Div.</span>
+              <span class="font-bold text-base-content">{{ h.precinct }}</span>
+            </div>
+            }
+          </div>
+
+          <!-- Geocoding Status Badge -->
+          <div class="flex justify-between items-center mt-2 pt-2 border-t border-base-300/40 text-xs">
+            <span class="text-base-content/60">Geocoding Status:</span>
+            @if (h.geocoding_status === 'success') {
+            <span class="badge badge-success badge-sm font-medium">Success</span>
+            } @else if (h.geocoding_status === 'pending') {
+            <span class="badge badge-warning badge-sm font-medium gap-1 flex items-center">
+              <span class="loading loading-spinner loading-xs scale-75"></span>
+              Pending
+            </span>
+            } @else if (h.geocoding_status === 'failed') {
+            <span class="badge badge-error badge-sm text-xs">Unresolved</span>
+            } @else {
+            <span class="badge badge-ghost badge-sm font-medium">Skipped</span>
+            }
+          </div>
+        </div>
+        }
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="h.created_at"
+          [createdBy]="getUserName(h.createdby_id)"
+          [updatedAt]="h.updated_at"
+          [updatedBy]="getUserName(h.updatedby_id)"
+        ></pc-system-metadata>
+      </pc-profile-card>
+
+      <!-- Google Maps Card -->
+      <pc-card title="Map Location" icon="map">
+        <div class="relative w-full h-64 bg-base-200 flex items-center justify-center rounded-lg overflow-hidden">
+          @if (hasMap()) { @defer (on viewport) {
+          <div #mapContainer id="household-map" class="w-full h-full"></div>
+          } @placeholder {
+          <div class="skeleton w-full h-full"></div>
+          } } @else {
+          <!-- Unverified Map Placeholder -->
+          <div class="p-6 flex flex-col items-center gap-2 text-center text-base-content/40 select-none">
+            <pc-icon name="map-pin" [size]="8" class="text-base-content/20 mb-1"></pc-icon>
+            <h4 class="font-semibold text-sm text-base-content/60">Location Not Verified</h4>
+            <p class="text-xs max-w-[220px] font-light leading-snug">
+              Map pins are only available for addresses geocoded via autocomplete search or when we have verified the
+              address.
+            </p>
+          </div>
+          }
+        </div>
+      </pc-card>
+
+      <!-- Segmentation Card -->
+      <pc-card title="Segmentation">
+        <div class="flex flex-col gap-3">
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
+            @if (tags().length > 0) {
+            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
+            }
+          </div>
+
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
+            @if (issues().length > 0) {
+            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
+            }
+          </div>
+        </div>
+      </pc-card>
+    </div>
+
+    <!-- Right Column: Stats & Tabs Panel -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Dashboard Stats Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Stats: People -->
+        <pc-stat-card
+          [title]="'People'"
+          [value]="peopleCount()"
+          [description]="'Household members'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-teal-500'"
+          [iconColorClass]="'text-teal-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Interactions -->
+        <pc-stat-card
+          [title]="'Interactions'"
+          [value]="0"
+          [description]="'Logged contacts'"
+          [icon]="'envelope'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Donations -->
+        <pc-stat-card
+          [title]="'Donations'"
+          [value]="'$0'"
+          [description]="'Financial support'"
+          [icon]="'currency-dollar'"
+          [valueColorClass]="'text-emerald-500'"
+          [iconColorClass]="'text-emerald-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Volunteers -->
+        <pc-stat-card
+          [title]="'Volunteers'"
+          [value]="0"
+          [description]="'Active assignments'"
+          [icon]="'volunteer'"
+          [valueColorClass]="'text-purple-500'"
+          [iconColorClass]="'text-purple-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Multi-Tab Details & History Panel -->
+      <pc-tabs [tabs]="householdTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="members" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <pc-people-in-household [householdId]="id()!"></pc-people-in-household>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'households'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="details" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (h.notes) {
+            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2"
+                >Household Notes</span
+              >
+              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">{{ h.notes }}</p>
+            </div>
+            } @else {
+            <div class="text-center py-10 text-base-content/40 italic">
+              No internal notes recorded for this household
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  } }
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
@@ -28596,276 +28683,620 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
 export type DATA_TYPE = 'persons' | 'households';
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
+## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
 
 ```html
-<!-- Template for person edit/add view -->
-<div class="flex min-h-full flex-col bg-base-100 p-6">
-  <progress class="progress w-full" [class.hidden]="!isLoading()"></progress>
+<pc-detail-layout
+  [title]="fullName() || 'Person'"
+  [eyebrow]="'Person'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!person()"
+  [showDelete]="true"
+  [deleteText]="'Delete person'"
+  [btn1Text]="'Edit person'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editPerson()"
+  (delete)="deletePerson()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (person()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Contact Card & Bio -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Contact Card -->
+      <pc-profile-card [avatarText]="initials()">
+        <!-- Name & Company -->
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ fullName() }}</h2>
+        @if (person().company_name) {
+        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">
+          <pc-icon name="briefcase" [size]="4"></pc-icon>
+          {{ person().company_name }}
+        </div>
+        } @else {
+        <span class="text-sm text-base-content/50 italic mb-4">No company assigned</span>
+        }
 
-  <div class="w-full max-w-4xl">
-    <!-- Back to profile or list -->
-    <pc-detail-header
-      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
-      [eyebrow]="person()?.id ? 'Editing' : 'New'"
-      [crumbs]="crumbs()"
-      [form]="form"
-      [isLoading]="isLoading()"
-      [buttonsToShow]="buttonsToShow()"
-      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
-      [showDelete]="!!person()?.id"
-      deleteText="Delete person"
-      (save)="save($event)"
-      (delete)="deletePerson()"
-    ></pc-detail-header>
+        <!-- Social Media Buttons -->
+        <div class="flex justify-center gap-3 w-full border-y border-base-200 py-4 mb-6">
+          @for (link of socialLinks(); track link.name) {
+          <a
+            [attr.href]="link.url || null"
+            [attr.target]="link.url ? '_blank' : null"
+            [attr.data-tip]="link.url ? link.name + ' profile' : link.name + ' URL not set'"
+            class="btn btn-circle btn-sm tooltip"
+            [class]="link.url 
+        ? 'shadow-md hover:scale-110 transition-transform text-white border-none ' + link.color 
+        : 'bg-base-200 text-base-content/30 border-base-300 cursor-not-allowed'"
+          >
+            <pc-icon [name]="link.icon" [size]="4"></pc-icon>
+          </a>
+          }
+        </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-      <div class="lg:col-span-2">
-        <form (submit)="save()" novalidate class="flex flex-col gap-5">
-          <fieldset [disabled]="isLoading()" class="flex flex-col gap-5">
-            @if (!person()?.id) {
-            <label class="label text-xs text-base-content/50 -mb-2"
-              >All fields are optional, but try to add as much as possible</label
+        <!-- Contact & Address Details List -->
+        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
+          <pc-detail-item
+            label="Primary Email"
+            [value]="person().email"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Secondary Email"
+            [value]="person().email2"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Mobile Phone"
+            [value]="person().mobile"
+            icon="phone"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Home Phone"
+            [value]="person().home_phone"
+            icon="home"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item label="Address" [value]="addressString()" icon="map-pin"></pc-detail-item>
+        </div>
+
+        <!-- Notes Section -->
+        @if (person().notes) {
+        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
+          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1"
+            >Internal Notes</span
+          >
+          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
+            {{ person().notes }}
+          </p>
+        </div>
+        }
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="person().created_at"
+          [createdBy]="getUserName(person().createdby_id)"
+          [updatedAt]="person().updated_at"
+          [updatedBy]="getUserName(person().updatedby_id)"
+        ></pc-system-metadata>
+      </pc-profile-card>
+
+      <!-- Segmentation Card -->
+      <pc-card title="Segmentation">
+        <div class="flex flex-col gap-3">
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
+            @if (tags().length > 0) {
+            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
+            }
+          </div>
+
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
+            @if (issues().length > 0) {
+            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
+            }
+          </div>
+        </div>
+      </pc-card>
+
+      <!-- Sentiment Score Card (frosted glass coming soon overlay) -->
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden relative">
+        <div class="p-6 flex flex-col items-center gap-3">
+          <h3 class="text-sm font-bold uppercase tracking-wider text-base-content/70 self-start">Sentiment Score</h3>
+
+          <!-- Placeholder Graphic -->
+          <div
+            class="flex items-center justify-center w-28 h-28 rounded-full border-4 border-dashed border-base-300 relative my-2"
+          >
+            <span class="text-4xl text-base-content/20">😐</span>
+            <span class="text-xs text-base-content/30 mt-1 absolute bottom-4 font-mono">Neutral</span>
+          </div>
+          <div class="text-xs text-base-content/40 text-center font-light leading-relaxed">
+            Aggregates communication email history and tags to automatically gauge contact affinity.
+          </div>
+        </div>
+
+        <!-- Premium Overlay for "Coming Soon" -->
+        <div
+          class="absolute inset-0 bg-base-100/80 backdrop-blur-md flex flex-col justify-center items-center p-4 text-center select-none"
+        >
+          <div class="p-3 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white rounded-2xl shadow-lg mb-2">
+            <pc-icon name="chart-pie" [size]="8"></pc-icon>
+          </div>
+          <h4 class="font-bold text-lg text-base-content">Affinity Analytics</h4>
+          <span class="badge badge-primary badge-sm font-semibold tracking-wider my-1">COMING SOON</span>
+          <p class="text-xs text-base-content/60 max-w-[200px] mt-1 font-light leading-snug">
+            AI-driven sentiment analysis of email conversations is currently in beta.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Stats & Multi-Tab Activity Feed -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Dashboard Stats Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Stats: Emails Sent -->
+        <pc-stat-card
+          [title]="'Emails Sent'"
+          [value]="activityData().emails.length"
+          [description]="'Total emails sent'"
+          [icon]="'paper-airplane'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Emails Opened -->
+        <pc-stat-card
+          [title]="'Opened'"
+          [value]="openedNewslettersCount()"
+          [description]="'Opens & clicks'"
+          [icon]="'eye'"
+          [valueColorClass]="'text-emerald-500'"
+          [iconColorClass]="'text-emerald-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Active Lists -->
+        <pc-stat-card
+          [title]="'Active Lists'"
+          [value]="0"
+          [description]="'List subscriptions'"
+          [icon]="'queue-list'"
+          [valueColorClass]="'text-amber-500'"
+          [iconColorClass]="'text-amber-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Volunteer Shifts -->
+        <pc-stat-card
+          [title]="'Volunteered'"
+          [value]="volunteerStats()?.shifts_count || 0"
+          [description]="'Shifts completed'"
+          [icon]="'volunteer'"
+          [valueColorClass]="'text-purple-500'"
+          [iconColorClass]="'text-purple-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Volunteer Hours -->
+        <pc-stat-card
+          [title]="'Total Hours'"
+          [value]="volunteerStats()?.total_hours || 0.0"
+          [description]="'Hours logged'"
+          [icon]="'clock'"
+          [valueColorClass]="'text-pink-500'"
+          [iconColorClass]="'text-pink-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Donations -->
+        <pc-stat-card
+          [title]="'Donations'"
+          [value]="donationStats() ? '$' + donationStats()!.cumulativeAmount.toLocaleString() : '$0'"
+          [description]="'Financial support'"
+          [icon]="'currency-dollar'"
+          [valueColorClass]="'text-emerald-500'"
+          [iconColorClass]="'text-emerald-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Connections -->
+        <pc-stat-card
+          [title]="'Connections'"
+          [value]="connectionCount()"
+          [description]="'Network connections'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-violet-500'"
+          [iconColorClass]="'text-violet-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Activities, Interactions & History Tabs -->
+      <!-- Activities, Interactions & History Tabs -->
+      <pc-tabs [tabs]="personTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+            <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="emails" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (activityData().emails.length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">No direct email correspondence recorded</div>
+            } @else {
+            <div class="flex flex-col gap-3">
+              @for (mail of activityData().emails; track mail.id) {
+              <a
+                [routerLink]="['/inbox']"
+                [queryParams]="{ email: mail.id }"
+                class="p-4 rounded-xl border border-base-200 hover:border-indigo-300 bg-base-50/20 hover:bg-base-100 transition-all flex flex-col gap-2 no-underline text-current group cursor-pointer hover:shadow-sm"
+              >
+                <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
+                  <span class="font-mono text-base-content/60">
+                    From: <strong class="text-base-content">{{ mail.from_email }}</strong> &rarr; To:
+                    <strong>{{ mail.to_email }}</strong>
+                  </span>
+                  <span class="text-base-content/40">{{ mail.created_at | date:'medium' }}</span>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                  <h4 class="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">
+                    {{ mail.subject || '(No Subject)' }}
+                  </h4>
+                  <pc-icon
+                    name="arrow-top-right-on-square"
+                    [size]="4"
+                    class="text-base-content/30 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+                  ></pc-icon>
+                </div>
+                @if (mail.preview) {
+                <p
+                  class="text-xs text-base-content/60 line-clamp-2 leading-relaxed bg-base-200/20 p-2.5 rounded-lg border border-base-200/50"
+                >
+                  {{ mail.preview }}
+                </p>
+                }
+                <div class="flex justify-end mt-1">
+                  <pc-status-badge [type]="getMailStatusType(mail.status)">
+                    {{ mail.status || 'received' }}
+                  </pc-status-badge>
+                </div>
+              </a>
+              }
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (activityData().newsletters.length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">No newsletter logs found</div>
+            } @else {
+            <div class="flex flex-col gap-2">
+              @for (ev of activityData().newsletters; track ev.id) {
+              <div
+                class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
+              >
+                <div class="flex items-center gap-3 overflow-hidden">
+                  <!-- Icon mappings for event types -->
+                  <div
+                    class="p-2 rounded-lg flex-shrink-0"
+                    [class.bg-info/10]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                    [class.text-info]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                    [class.bg-success/10]="ev.event_type === 'open'"
+                    [class.text-success]="ev.event_type === 'open'"
+                    [class.bg-warning/10]="ev.event_type === 'click'"
+                    [class.text-warning]="ev.event_type === 'click'"
+                    [class.bg-error/10]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                    [class.text-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                  >
+                    @if (ev.event_type === 'open') {
+                    <pc-icon name="eye" [size]="4"></pc-icon>
+                    } @else if (ev.event_type === 'click') {
+                    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+                    } @else if (ev.event_type === 'delivered') {
+                    <pc-icon name="check-circle" [size]="4"></pc-icon>
+                    } @else {
+                    <pc-icon name="information-circle" [size]="4"></pc-icon>
+                    }
+                  </div>
+                  <div class="flex flex-col overflow-hidden">
+                    <span class="font-medium text-base-content truncate"
+                      >{{ ev.newsletter_subject || ev.newsletter_name }}</span
+                    >
+                    @if (ev.url) {
+                    <span class="text-[10px] text-primary truncate hover:underline cursor-pointer"
+                      >Clicked URL: {{ ev.url }}</span
+                    >
+                    }
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-3 flex-shrink-0">
+                  <pc-status-badge [type]="getEmailEventType(ev.event_type)" class="tracking-wider text-[9px]">
+                    {{ ev.event_type }}
+                  </pc-status-badge>
+                  <span class="text-base-content/40 text-[10px]">{{ ev.timestamp | date:'short' }}</span>
+                </div>
+              </div>
+              }
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="volunteer" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (volunteerHistory().length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">No shift records found for this person</div>
+            } @else {
+            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
+              <table class="table table-sm w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th>Event Name</th>
+                    <th>Date & Time</th>
+                    <th>Status</th>
+                    <th>Hours</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (shift of volunteerHistory(); track shift.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td class="font-semibold">{{ shift.event_name }}</td>
+                    <td>{{ shift.start_time | date:'medium' }}</td>
+                    <td>
+                      <pc-status-badge [type]="getShiftStatusType(shift.status)"> {{ shift.status }} </pc-status-badge>
+                    </td>
+                    <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
+                    <td class="font-light">{{ shift.notes || '--' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="donations" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <!-- Summary card for limits progress -->
+            @if (donationStats()) {
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"
             >
-            }
-
-            <!-- Name Inputs -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/3"
-                placeholder="First Name"
-                aria-label="First Name"
-                [formField]="form.first_name"
-              ></pc-input>
-              <pc-input
-                class="basis-1/3"
-                placeholder="Middle Name(s)"
-                aria-label="Middle Name(s)"
-                [formField]="form.middle_names"
-              ></pc-input>
-              <pc-input
-                class="basis-1/3"
-                placeholder="Last Name"
-                aria-label="Last Name"
-                [formField]="form.last_name"
-              ></pc-input>
-            </div>
-
-            <!-- Emails -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                type="email"
-                placeholder="Email"
-                aria-label="Email Address"
-                [formField]="form.email"
-                [hasError]="!!emailError()"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                type="email"
-                placeholder="Email 2"
-                aria-label="Secondary Email Address"
-                [formField]="form.email2"
-              ></pc-input>
-            </div>
-            @if (emailError()) {
-            <div class="text-error text-sm pl-1 -mt-2 flex items-center gap-1">
-              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-              {{ emailError() }}
-            </div>
-            }
-
-            <!-- Phones -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                type="tel"
-                placeholder="Mobile Phone"
-                aria-label="Mobile Phone"
-                [formField]="form.mobile"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                type="tel"
-                placeholder="Home Phone"
-                aria-label="Home Phone"
-                [formField]="form.home_phone"
-              ></pc-input>
-            </div>
-
-            <!-- Company Select -->
-            <pc-select placeholder="-- Select Company --" aria-label="Company" [formField]="form.company_id">
-              @for (c of companies(); track c.id) {
-              <option [value]="c.id">{{ c.name }}</option>
-              }
-            </pc-select>
-
-            <!-- Assigned To / Owner Select -->
-            <pc-select placeholder="-- Select Contact Owner --" aria-label="Assigned To" [formField]="form.assigned_to">
-              @for (u of users(); track u.id) {
-              <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-              }
-            </pc-select>
-
-            <!-- Address & Household Assignment -->
-            @if (householdId() && !isPlaceholderHousehold()) {
-            <div class="text-sm pl-1 flex items-center gap-2 bg-base-200/50 p-2.5 rounded-lg border border-base-300/50">
-              <span class="text-base-content/60">Address:</span>
-              <span class="font-medium text-base-content flex-grow">{{ addressString() }}</span>
+              <div class="flex-1 w-full space-y-1">
+                <div class="flex justify-between text-xs font-bold text-base-content/75">
+                  <span>Annual Limit Progress</span>
+                  <span
+                    >${{ donationStats()!.cumulativeAmount.toLocaleString() }} / ${{
+                    donationStats()!.limitAmount.toLocaleString() }}</span
+                  >
+                </div>
+                <progress
+                  class="progress progress-success w-full h-2.5 bg-base-300"
+                  [value]="donationStats()!.cumulativeAmount"
+                  [max]="donationStats()!.limitAmount"
+                ></progress>
+                <p class="text-[10px] text-base-content/50">
+                  Remaining allowable donation this calendar year:
+                  <strong>${{ donationStats()!.remainingAmount.toLocaleString() }}</strong>
+                </p>
+              </div>
               <button
                 type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
-                data-tip="Change Household"
-                (click)="openAssignDrawer()"
+                class="btn btn-sm btn-primary shrink-0 w-full md:w-auto font-semibold flex items-center justify-center gap-1.5"
+                (click)="openCollectDonation()"
+                [disabled]="donationStats()!.remainingAmount <= 0"
               >
-                <pc-icon name="chevron-down" [size]="4"></pc-icon>
+                <pc-icon name="plus" [size]="4"></pc-icon>
+                Collect Donation
               </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
-                data-tip="Go to Household"
-                (click)="navigateToHousehold()"
-              >
-                <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-error tooltip"
-                data-tip="Remove Address"
-                (click)="removeAddress()"
-              >
-                <pc-icon name="trash" [size]="4"></pc-icon>
-              </button>
+            </div>
+            } @if (donationHistory().length === 0) {
+            <div
+              class="text-center py-10 text-base-content/40 italic bg-base-100 rounded-xl border border-dashed border-base-200"
+            >
+              No donations recorded yet for this person.
             </div>
             } @else {
-            <div
-              class="flex items-center justify-between text-sm pl-1 bg-base-200/30 p-2.5 rounded-lg border border-base-200 border-dashed"
-            >
-              <div class="flex items-center gap-2">
-                <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
-                <span class="text-base-content/50 italic">No address assigned</span>
-              </div>
-              <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
-                <pc-icon name="plus" [size]="3"></pc-icon>
-                Assign Household
-              </button>
+            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl shadow-sm">
+              <table class="table w-full text-xs">
+                <thead>
+                  <tr class="bg-base-50 border-b border-base-200">
+                    <th class="font-bold text-base-content/70">Date</th>
+                    <th class="font-bold text-base-content/70">Amount</th>
+                    <th class="font-bold text-base-content/70">Tax Credit</th>
+                    <th class="font-bold text-base-content/70">Residency Info</th>
+                    <th class="font-bold text-base-content/70">Status</th>
+                    <th class="font-bold text-base-content/70">Transaction ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (donation of donationHistory(); track donation.id) {
+                  <tr class="hover:bg-base-200/20 border-b border-base-200">
+                    <td class="font-medium text-base-content/75">{{ donation.created_at | date:'mediumDate' }}</td>
+                    <td class="font-bold text-base-content">${{ (donation.amount / 100).toFixed(2) }}</td>
+                    <td>
+                      <span class="badge badge-success gap-1 font-semibold py-2 px-2.5">
+                        ${{ ((donation.tax_credit_amount || 0) / 100).toFixed(2) }}
+                      </span>
+                    </td>
+                    <td class="text-base-content/65">
+                      {{ donation.residency_province || '--' }} {{ donation.residency_country || '' }}
+                    </td>
+                    <td>
+                      <pc-status-badge
+                        [type]="donation.status === 'succeeded' ? 'success' : donation.status === 'pending' ? 'warning' : 'error'"
+                      >
+                        {{ donation.status }}
+                      </pc-status-badge>
+                    </td>
+                    <td class="font-mono text-[10px] text-base-content/50">
+                      {{ donation.stripe_session_id || 'Manual' }}
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
             </div>
             }
+          </div>
+        </pc-tab-panel>
 
-            <!-- Social Media Profile Links -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
-              Social Media Profiles
+        <pc-tab-panel id="events" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (eventHistory().length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">
+              No event registrations found for this person.
             </div>
-
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                placeholder="LinkedIn URL"
-                aria-label="LinkedIn URL"
-                [formField]="form.linkedin"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                placeholder="Twitter/X URL"
-                aria-label="Twitter/X URL"
-                [formField]="form.twitter"
-              ></pc-input>
+            } @else {
+            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
+              <table class="table table-sm w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th>Event</th>
+                    <th>Date</th>
+                    <th>Ticket</th>
+                    <th>Status</th>
+                    <th>Checked In</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (reg of eventHistory(); track reg.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td>
+                      <a [routerLink]="['/events/pages', reg.event_id]" class="link link-primary font-bold">
+                        {{ reg.event_name }}
+                      </a>
+                    </td>
+                    <td>{{ reg.start_time | date:'mediumDate' }}</td>
+                    <td class="font-light">{{ reg.ticket_type_name || '—' }}</td>
+                    <td>
+                      <pc-status-badge [type]="getEventStatusType(reg.status)">{{ reg.status }}</pc-status-badge>
+                    </td>
+                    <td class="font-mono">{{ reg.checked_in_at ? (reg.checked_in_at | date:'shortTime') : '—' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
             </div>
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                placeholder="Facebook URL"
-                aria-label="Facebook URL"
-                [formField]="form.facebook"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                placeholder="Instagram URL"
-                aria-label="Instagram URL"
-                [formField]="form.instagram"
-              ></pc-input>
-            </div>
+            }
+          </div>
+        </pc-tab-panel>
 
-            <!-- Tags & Segmentation -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
-              Tags & Issues
-            </div>
+        <pc-tab-panel id="connections" [activeTab]="activeTab()">
+          <pc-person-connections [personId]="id()" (countChange)="connectionCount.set($event)"></pc-person-connections>
+        </pc-tab-panel>
 
-            <pc-tags
-              [tags]="tags()"
-              type="tag"
-              [enableAutoComplete]="true"
-              (tagAdded)="tagAdded($event)"
-              (tagRemoved)="tagRemoved($event)"
-            ></pc-tags>
-
-            <pc-tags
-              [tags]="issues()"
-              type="issue"
-              [enableAutoComplete]="true"
-              placeholder="Enter issues, separated by comma"
-              (tagAdded)="issueAdded($event)"
-              (tagRemoved)="issueRemoved($event)"
-            ></pc-tags>
-
-            <!-- Internal Notes -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">Notes</div>
-
-            <pc-textarea
-              placeholder="Internal Notes..."
-              aria-label="Notes"
-              [formField]="form.notes"
-              [rows]="3"
-            ></pc-textarea>
-          </fieldset>
-        </form>
-      </div>
-
-      <!-- Overview Sidebar -->
-      <div>
-        @if (!isNewMode()) {
-        <pc-entity-overview [createdAt]="person()?.created_at" [updatedAt]="person()?.updated_at"></pc-entity-overview>
-        }
-      </div>
+        <pc-tab-panel id="household" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (householdId() && !isPlaceholderHousehold()) { @defer {
+            <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
+            } @placeholder {
+            <div class="skeleton w-full h-32"></div>
+            } } @else {
+            <div class="text-center py-10 text-base-content/40 italic">Contact does not belong to a household</div>
+            }
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
     </div>
   </div>
+  }
+  <!-- Collect Donation Modal -->
+  @if (showDonationModal()) {
+  <div class="modal modal-open z-50">
+    <div class="modal-box rounded-2xl border border-base-200 max-w-md p-6 bg-base-100 shadow-2xl">
+      <div class="flex justify-between items-center border-b border-base-200 pb-3 mb-4">
+        <h3 class="text-lg font-bold flex items-center gap-2">
+          <pc-icon name="currency-dollar" class="text-primary" [size]="5"></pc-icon>
+          Collect Donation
+        </h3>
+        <button type="button" class="btn btn-sm btn-circle btn-ghost" (click)="closeDonationModal()">✕</button>
+      </div>
 
-  <!-- Right-side drawer: Assign to a different household -->
-  <pc-side-drawer
-    [isOpen]="assignDrawerOpen()"
-    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
-    (close)="closeAssignDrawer()"
-  >
-    <div class="flex flex-col gap-3">
-      <input
-        type="text"
-        class="input w-full"
-        placeholder="Search address, city, zip, tag..."
-        aria-label="Search address, city, zip, or tag to assign a household"
-        [value]="householdSearch()"
-        (input)="onHouseholdSearch($event)"
-      />
-      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
-      <div
-        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
-        [class.hidden]="householdsLoading() && householdResults().length === 0"
-      >
-        @for (h of householdResults(); track h.id) {
-        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
-          <div class="text-sm">
-            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
-            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
+      <div class="space-y-4">
+        <p class="text-xs text-base-content/60">
+          Enter the donation amount in dollars. Residency validation and limit verification will be performed
+          automatically before redirecting to the payment gateway.
+        </p>
+
+        <!-- Donor Residency Profile -->
+        <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
+          <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
+            >Donor Residency Profile</span
+          >
+          <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
+            <pc-icon name="map-pin" [size]="4"></pc-icon>
+            {{ addressString() }}
           </div>
-          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
         </div>
-        } @if (!householdsLoading() && householdResults().length === 0) {
-        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
+
+        <!-- Donation Amount input -->
+        <div class="flex flex-col gap-1.5">
+          <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
+          <div class="relative">
+            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
+            <input
+              id="donation_input"
+              type="number"
+              min="1"
+              placeholder="250"
+              class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
+              [(ngModel)]="donationAmount"
+            />
+          </div>
+        </div>
+
+        <!-- Error alert -->
+        @if (eligibilityError()) {
+        <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
+          <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
+          <span>{{ eligibilityError() }}</span>
+        </div>
         }
       </div>
+
+      <div class="modal-action border-t border-base-200 pt-4 mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          class="btn btn-ghost text-sm font-semibold"
+          (click)="closeDonationModal()"
+          [disabled]="isCheckingEligibility()"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary min-w-[140px] text-sm font-semibold"
+          (click)="submitDonation()"
+          [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
+        >
+          @if (isCheckingEligibility()) {
+          <span class="loading loading-spinner loading-xs mr-1.5"></span>
+          Verifying... } @else { Verify & Proceed }
+        </button>
+      </div>
     </div>
-  </pc-side-drawer>
-</div>
+    <div class="modal-backdrop bg-black/40 backdrop-blur-sm" (click)="closeDonationModal()"></div>
+  </div>
+  }
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/profile/profile-page.ts
@@ -29448,118 +29879,6 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/google-sync/google-sync-settings.html
-
-```html
-<div class="space-y-6">
-  @if (isLoading()) {
-  <div class="flex items-center gap-3 text-base-content/60">
-    <span class="loading loading-spinner loading-sm"></span>
-    <span class="text-sm">Loading connection status…</span>
-  </div>
-  } @else if (status()?.connected) {
-  <!-- Connected state -->
-  <div class="rounded-xl border border-success/30 bg-success/10 px-5 py-4 flex items-start gap-4">
-    <pc-icon name="check-circle" class="text-success mt-0.5 shrink-0" [size]="5"></pc-icon>
-    <div class="flex-1 min-w-0">
-      <p class="font-semibold text-success">Connected</p>
-      <p class="text-sm text-base-content/70 mt-0.5 truncate">{{ status()?.googleEmail }}</p>
-      @if (status()?.syncedAt) {
-      <p class="text-xs text-base-content/50 mt-1">Last synced: {{ formatDate(status()!.syncedAt) }}</p>
-      }
-    </div>
-  </div>
-
-  @if (status()?.lastSyncError) {
-  <div class="rounded-xl border border-warning/30 bg-warning/10 px-5 py-4 flex items-start gap-4">
-    <pc-icon name="exclamation-triangle" class="text-warning mt-0.5 shrink-0" [size]="5"></pc-icon>
-    <div class="flex-1 min-w-0">
-      <p class="font-semibold text-warning">Last sync failed</p>
-      <p class="text-sm text-base-content/70 mt-1">
-        Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with
-        this code:
-      </p>
-      <p class="font-mono text-sm font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
-    </div>
-  </div>
-  }
-
-  <div class="flex flex-wrap gap-3">
-    <button id="google-sync-now-btn" type="button" class="btn btn-primary" [disabled]="isSyncing()" (click)="syncNow()">
-      @if (isSyncing()) {
-      <span class="loading loading-spinner loading-xs mr-2"></span>
-      Syncing… } @else {
-      <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
-      Sync Now }
-    </button>
-
-    <button type="button" class="btn btn-ghost" [disabled]="isSyncing()" (click)="forceFullResync()">
-      <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
-      Force Full Re-sync
-    </button>
-
-    <button
-      id="google-disconnect-btn"
-      type="button"
-      class="btn btn-ghost text-error hover:bg-error/10"
-      [disabled]="isSyncing()"
-      (click)="disconnect()"
-    >
-      <pc-icon name="x-circle" [size]="4" class="mr-2"></pc-icon>
-      Disconnect
-    </button>
-  </div>
-
-  @if (lastSyncResult()) {
-  <p class="text-sm text-base-content/60">✓ Sync complete — {{ lastSyncResult()!.inserted }} new email(s) imported.</p>
-  } } @else {
-  <!-- Disconnected state -->
-  <div class="rounded-xl border border-base-200 bg-base-50 px-5 py-4">
-    <p class="text-sm text-base-content/70">
-      Connect your Google Suite account to automatically sync incoming and outgoing emails into your pplcrm inbox.
-    </p>
-  </div>
-
-  <button
-    id="google-connect-btn"
-    type="button"
-    class="btn btn-primary gap-2"
-    [disabled]="isConnecting()"
-    (click)="connect()"
-  >
-    @if (isConnecting()) {
-    <span class="loading loading-spinner loading-xs"></span>
-    } @else {
-    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-        fill="#4285F4"
-      />
-      <path
-        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-        fill="#34A853"
-      />
-      <path
-        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-        fill="#FBBC05"
-      />
-      <path
-        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-        fill="#EA4335"
-      />
-    </svg>
-    } Connect Google Suite
-  </button>
-
-  @if (connectError()) {
-  <p class="text-sm text-error flex items-center gap-1.5">
-    <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-    {{ connectError() }}
-  </p>
-  } }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/settings/security/passkey-settings.ts
 
 ```typescript
@@ -29686,540 +30005,6 @@ export class PasskeySettingsComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/shifts/services/shifts-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import {
-  AddVolunteerEventType,
-  UpdateVolunteerEventType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Service()
-export class ShiftsService extends AbstractAPIService<'volunteer_events', UpdateVolunteerEventType> {
-  protected override readonly endpointName = 'volunteer';
-
-  public add(row: AddVolunteerEventType) {
-    return this.api.volunteer.add.mutate(row);
-  }
-
-  public addMany(_rows: AddVolunteerEventType[]) {
-    return Promise.resolve([]);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return this.api.volunteer.getAll.query({ startRow: 0, endRow: 1 }).then((res: { count: number }) => res.count ?? 0);
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.api.volunteer.getAll.query(options, { signal: this.ac.signal });
-  }
-
-  public getAllArchived(options?: getAllOptionsType) {
-    return this.api.volunteer.getAll.query({ ...options, includeArchived: true }, { signal: this.ac.signal });
-  }
-
-  public getById(id: string) {
-    return this.api.volunteer.getById.query(id);
-  }
-
-  public getTags(_id: string) {
-    return Promise.resolve([]);
-  }
-
-  public update(id: string, data: UpdateVolunteerEventType) {
-    return this.api.volunteer.update.mutate({ id, data });
-  }
-
-  public checkSlugUnique(slug: string, excludeId?: string | null) {
-    return this.api.volunteer.checkSlugUnique.query({ slug, excludeId });
-  }
-
-  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return Promise.reject(new Error('Volunteer export is not available'));
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.html
-
-```html
-<div class="p-6 max-w-5xl space-y-6">
-  <!-- Loading State -->
-  @if (error() && !detail() && !isNew()) {
-  <div class="alert alert-error m-4">
-    <span>{{ error() }}</span>
-  </div>
-  } @else if (!isNew() && !detail()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading event details...</p>
-  </div>
-  } @else {
-  <div class="space-y-6">
-    <!-- Header -->
-    <pc-detail-header
-      [title]="isNew() ? 'New volunteer event' : detail()?.name || 'Volunteer event'"
-      [eyebrow]="isNew() ? 'New' : 'Editing'"
-      [crumbs]="crumbs()"
-      [subtitle]="isNew() ? 'Schedule a new volunteer opportunity.' : 'Manage volunteer settings and log attendance roster.'"
-      [form]="form"
-      [isLoading]="saving()"
-      [disabled]="slugChecking() || slugUnique() === false"
-      buttonsToShow="two"
-      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
-      [showDelete]="!isNew()"
-      deleteText="Delete event"
-      (save)="save($event)"
-      (delete)="deleteEvent()"
-    ></pc-detail-header>
-
-    <!-- Error alert -->
-    @if (error()) {
-    <div class="alert alert-error shadow-sm py-3 text-sm">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <!-- Event has passed alert -->
-    @if (eventPassed()) {
-    <div class="alert alert-warning shadow-sm py-3 text-sm flex items-center gap-2">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>This event has passed. Roster and details are now archived.</span>
-    </div>
-    }
-
-    <!-- Event details form -->
-    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
-      <!-- Left 2 cols: Main details -->
-      <div class="md:col-span-2 space-y-6">
-        <pc-card title="Event Details">
-          <pc-input
-            id="event-name"
-            label="Event Name *"
-            [formField]="form.name"
-            placeholder="E.g., Weekend Door Knocking Campaign"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="event-slug"
-              label="URL Slug *"
-              [formField]="form.slug"
-              placeholder="e.g. weekend-knocking"
-              [hasError]="slugUnique() === false"
-              (input)="onSlugInput()"
-            >
-              <span pc-prefix class="text-xs text-base-content/50 font-mono">/api/events/view/</span>
-            </pc-input>
-            @if (slugChecking()) {
-            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
-              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
-            </p>
-            } @else if (slugUnique() === true) {
-            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
-            } @else if (slugUnique() === false) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
-            }
-          </div>
-
-          <pc-textarea
-            id="event-desc"
-            label="Description"
-            [formField]="form.description"
-            placeholder="Describe the purpose, tasks, and instructions for volunteers..."
-            [rows]="4"
-          ></pc-textarea>
-
-          <pc-input
-            id="event-location"
-            label="Location Address"
-            [formField]="form.location_address"
-            placeholder="E.g., Central Park Pavilion, or street coordinates"
-          ></pc-input>
-
-          <div class="divider mt-4"></div>
-          <div>
-            <h4 class="font-bold text-md">Collected Fields</h4>
-            <h5>Choose which fields appear on the public signup form.</h5>
-            <pc-fields-selector
-              [selectedFields]="selectedFields()"
-              (fieldsChange)="selectedFields.set($event)"
-            ></pc-fields-selector>
-          </div>
-          <div class="divider"></div>
-
-          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
-            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
-            Organizer Contact Point
-          </h4>
-          <p class="text-xs text-base-content/60">
-            Provide contact info for constituents who have questions about this shift.
-          </p>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <pc-input
-              id="contact-email"
-              label="Contact Email"
-              type="email"
-              [formField]="form.contact_email"
-              placeholder="organizer@example.com"
-            ></pc-input>
-            <pc-input
-              id="contact-phone"
-              label="Contact Phone"
-              [formField]="form.contact_phone"
-              placeholder="E.g., 555-0199"
-            ></pc-input>
-          </div>
-        </pc-card>
-
-        <!-- Roster Management (Only for existing events) -->
-        @if (!isNew()) {
-        <pc-card
-          title="Shift Roster"
-          subtitle="Sign up volunteers and record their attendance and hours."
-          icon="user-group"
-        >
-          <div pc-card-actions class="badge badge-primary gap-1">
-            {{ roster().length }} Signed Up @if (detail()?.capacity) {
-            <span>/ {{ detail()?.capacity }} Max</span>
-            }
-          </div>
-
-          <!-- Search to Add Volunteers -->
-          <div class="relative space-y-1">
-            <label class="label text-xs font-semibold text-base-content/65 uppercase">Add Volunteer to Roster</label>
-            <div class="relative">
-              <input
-                type="text"
-                class="input input-bordered w-full pl-10"
-                placeholder="Search volunteers by name or email..."
-                [ngModel]="volunteerSearch()"
-                (ngModelChange)="volunteerSearch.set($event)"
-                [ngModelOptions]="{standalone: true}"
-              />
-              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-base-content/40">
-                <pc-icon name="magnifying-glass" [size]="5"></pc-icon>
-              </div>
-            </div>
-
-            <!-- Search suggestions -->
-            @if (volunteerSearchResults().length > 0) {
-            <div
-              class="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
-            >
-              @for (p of volunteerSearchResults(); track p.id) {
-              <div
-                (click)="addVolunteer(p)"
-                class="p-3 hover:bg-base-200 cursor-pointer flex items-center justify-between"
-              >
-                <div>
-                  <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
-                  <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
-                </div>
-                <button type="button" class="btn btn-primary btn-xs gap-1">
-                  <pc-icon name="plus" [size]="3"></pc-icon>
-                  Add
-                </button>
-              </div>
-              }
-            </div>
-            }
-          </div>
-
-          <!-- Roster Table -->
-          <div class="overflow-x-auto border border-base-300 rounded-lg">
-            <table class="table w-full text-sm">
-              <thead>
-                <tr class="bg-base-200 text-xs">
-                  <th>Volunteer</th>
-                  <th class="w-40">Status</th>
-                  <th class="w-24">Hours</th>
-                  <th>Notes</th>
-                  <th class="w-20 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-base-200">
-                @if (roster().length === 0) {
-                <tr>
-                  <td colspan="5" class="text-center py-8 text-base-content/60 font-light italic">
-                    No volunteers signed up for this event yet.
-                  </td>
-                </tr>
-                } @for (shift of roster(); track shift.id) {
-                <tr class="hover:bg-base-200/40">
-                  <!-- Contact details -->
-                  <td>
-                    <div>
-                      <a
-                        [routerLink]="['/people', shift.person_id]"
-                        class="font-bold text-primary hover:underline hover:cursor-pointer"
-                      >
-                        {{ shift.first_name }} {{ shift.last_name }}
-                      </a>
-                    </div>
-                    <div class="text-xs text-base-content/60">{{ shift.email || 'No email' }}</div>
-                  </td>
-                  <!-- Shift status dropdown -->
-                  <td>
-                    <select
-                      class="select select-bordered select-sm w-full font-medium"
-                      [ngModel]="shift.status"
-                      (ngModelChange)="updateShiftStatus(shift, $event)"
-                      [ngModelOptions]="{standalone: true}"
-                      [class.select-success]="shift.status === 'attended'"
-                      [class.select-warning]="shift.status === 'signed_up'"
-                      [class.select-error]="shift.status === 'no_show'"
-                    >
-                      <option value="signed_up">Signed Up</option>
-                      <option value="attended">Attended</option>
-                      <option value="no_show">No Show</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </td>
-                  <!-- Hours worked input -->
-                  <td>
-                    <input
-                      type="number"
-                      class="input input-bordered input-sm w-full text-center font-mono"
-                      placeholder="--"
-                      min="0"
-                      max="24"
-                      step="0.5"
-                      [ngModel]="shift.hours_worked"
-                      (ngModelChange)="updateShiftHours(shift, $event)"
-                      [ngModelOptions]="{standalone: true}"
-                      [disabled]="shift.status !== 'attended'"
-                    />
-                  </td>
-                  <!-- Notes -->
-                  <td>
-                    <input
-                      type="text"
-                      class="input input-bordered input-sm w-full"
-                      placeholder="Optional details..."
-                      [ngModel]="shift.notes"
-                      (ngModelChange)="updateShiftNotes(shift, $event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                  </td>
-                  <!-- Actions -->
-                  <td>
-                    <div class="flex items-center justify-center gap-1.5">
-                      <button
-                        type="button"
-                        class="btn btn-ghost btn-xs text-primary"
-                        title="Save shift edits"
-                        (click)="saveShiftDetails(shift)"
-                      >
-                        <pc-icon name="check-circle" [size]="6"></pc-icon>
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-ghost btn-xs text-error"
-                        title="Remove volunteer"
-                        (click)="removeVolunteer(shift)"
-                      >
-                        <pc-icon name="trash" [size]="5"></pc-icon>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        </pc-card>
-        }
-      </div>
-
-      <!-- Right 1 col: Timing, Capacity, Actions -->
-      <div class="space-y-6">
-        @if (!isNew() && detail()?.public_url) {
-        <pc-card
-          title="Public Signup Link"
-          subtitle="Constituents can use this URL to view the event and sign up for this shift."
-          icon="globe-americas"
-        >
-          <div class="flex gap-2 items-center">
-            <input
-              #publicUrlInput
-              readonly
-              type="text"
-              class="input input-bordered input-sm flex-1 font-mono text-xs"
-              [value]="environment.apiUrl + detail()?.public_url"
-            />
-            <button
-              type="button"
-              class="btn btn-primary btn-sm btn-square"
-              title="Copy Link"
-              (click)="copyToClipboard(environment.apiUrl + detail()?.public_url)"
-            >
-              <pc-icon name="document-duplicate" [size]="5"></pc-icon>
-            </button>
-          </div>
-
-          @if (detail()?.is_private) {
-          <div class="alert alert-warning py-2 text-xs flex gap-2 mt-2">
-            <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-            <span>This event is <strong>Private</strong>. Only constituents with this direct link can view it.</span>
-          </div>
-          } @else {
-          <div class="text-xs text-base-content/50 mt-1 flex flex-col gap-1">
-            <span>Public Dashboard Link:</span>
-            <a
-              [href]="environment.apiUrl + detail()?.tenant_public_url"
-              target="_blank"
-              class="link link-primary font-mono text-[10px] break-all"
-            >
-              {{ environment.apiUrl + detail()?.tenant_public_url }}
-            </a>
-          </div>
-          }
-        </pc-card>
-        }
-        <pc-card title="Scheduling">
-          <pc-input
-            id="start-time"
-            label="Start Date & Time *"
-            type="datetime-local"
-            [formField]="form.start_time"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="end-time"
-              label="End Date & Time *"
-              type="datetime-local"
-              [formField]="form.end_time"
-              [hasError]="endBeforeStartError()"
-            ></pc-input>
-            @if (endBeforeStartError()) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
-            }
-          </div>
-
-          <pc-input
-            id="capacity"
-            label="Volunteer Capacity"
-            type="number"
-            [formField]="form.capacity"
-            placeholder="Unlimited"
-          ></pc-input>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Shift Reminder</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send automated reminder emails to signed up volunteers 24 hours before the shift start time.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Signup Confirmation</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send a confirmation email with shift and coordinator details to constituents when they sign up.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                class="toggle toggle-primary mt-1 shrink-0"
-                [formField]="form.send_signup_confirmation"
-              />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Volunteer Alert</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send email alert notifications to the event coordinator or organization admins upon new volunteer
-                  signups.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                class="toggle toggle-primary mt-1 shrink-0"
-                [formField]="form.send_volunteer_alert"
-              />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Private Event</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  If enabled, this event will not be shown on the public upcoming list. Only constituents with the
-                  direct link can sign up.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_private" />
-            </label>
-          </div>
-        </pc-card>
-
-        <!-- Event Summary Panel -->
-        @if (!isNew()) {
-        <pc-entity-overview title="Event Overview" [createdAt]="detail()?.created_at" createdBy="Representative">
-          <div pc-overview-prefix class="space-y-2 mb-2">
-            <div class="flex justify-between">
-              <span>Start:</span>
-              <span class="font-semibold">{{ detail()?.start_time | date:'medium' }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span>End:</span>
-              <span class="font-semibold">{{ detail()?.end_time | date:'medium' }}</span>
-            </div>
-          </div>
-        </pc-entity-overview>
-        }
-      </div>
-    </form>
-
-    @if (!isNew() && publicUrl()) {
-    <pc-public-link-panel
-      [url]="publicUrl()"
-      label="Public Signup Link"
-      subtitle="Share this link so volunteers can sign up for the shift."
-    ></pc-public-link-panel>
-    }
-  </div>
-
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/shifts/ui/shift-view.html
 
 ```html
@@ -30233,8 +30018,15 @@ export class ShiftsService extends AbstractAPIService<'volunteer_events', Update
   [deleteText]="'Delete event'"
   [btn1Text]="'Edit event'"
   [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
   (save)="editEvent()"
   (delete)="deleteEvent()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
 >
   @if (event()) {
   <!-- Main Content Grid -->
@@ -30401,6 +30193,92 @@ export class ShiftsService extends AbstractAPIService<'volunteer_events', Update
   </div>
   }
 </pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/shifts/ui/shifts-grid.ts
+
+```typescript
+import { Component } from '@angular/core';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ShiftsService } from '../services/shifts-service';
+
+@Component({
+  selector: 'pc-shifts-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Shifts"
+        i18n-title
+        description="Manage volunteer shifts, schedule events, and track attendance records."
+        i18n-description
+        [showDescription]="true"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="true"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        plusIcon="add-schedule"
+        i18n-plusIcon
+        [showArchiveIcon]="true"
+        archiveIcon="archive-box-arrow-down"
+        i18n-archiveIcon
+        archiveTip="See archived events"
+        i18n-archiveTip
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: ShiftsService },
+    provideDataGridConfig({ messages: { exportEntity: 'volunteer', exportFileName: 'volunteer-export.csv' } }),
+  ],
+})
+export class ShiftsGridComponent {
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
+  protected col = [
+    { field: 'name', headerName: 'Event Name', editable: true },
+    { field: 'description', headerName: 'Description', editable: true },
+    { field: 'location_address', headerName: 'Location', editable: true },
+    {
+      field: 'start_time',
+      headerName: 'Start Time',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.start_time),
+      editable: false,
+    },
+    {
+      field: 'end_time',
+      headerName: 'End Time',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.end_time),
+      editable: false,
+    },
+    {
+      field: 'volunteers_count',
+      headerName: 'Signed Up',
+      editable: false,
+    },
+    {
+      field: 'capacity',
+      headerName: 'Capacity',
+      editable: true,
+    },
+  ];
+
+  private formatDate(value: unknown): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '';
+    return this.dateFormatter.format(date);
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/add-issue.ts
@@ -30806,6 +30684,7 @@ import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { UserService } from '../../../services/user.service';
 import { TasksService } from '../services/tasks-service';
 import { TeamsService } from '../../teams/services/teams-service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-task-add',
@@ -30880,7 +30759,7 @@ export class TaskAddComponent implements OnInit {
         });
       }
     } catch (err) {
-      this.alertSvc.showError('Failed to load teammates or teams list: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load teammates and teams. Please try again.'));
     } finally {
       end();
     }
@@ -30973,6 +30852,7 @@ import { RecordActivities } from '@experiences/activity/ui/record-activities/rec
 import { UserService } from '../../../services/user.service';
 
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-task-view',
@@ -31080,7 +30960,7 @@ export class TaskView {
       // Load subtasks, comments, attachments
       await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
     } catch (err) {
-      this.alertSvc.showError('Failed to load task details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the task. Please try again.'));
     } finally {
       end();
     }
@@ -31129,7 +31009,7 @@ export class TaskView {
       this.alertSvc.showSuccess('Task updated successfully');
       this.refreshActivities();
     } catch (err) {
-      this.alertSvc.showError('Failed to update task: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not update the task. Please try again.'));
     }
   }
 
@@ -31293,7 +31173,7 @@ export class TaskView {
           this.alertSvc.showError('Failed to delete task.');
         }
       } catch (err) {
-        this.alertSvc.showError('Failed to delete task: ' + String(err));
+        this.alertSvc.showError(getUserErrorMessage(err, 'Could not delete the task. Please try again.'));
       } finally {
         end();
       }
@@ -31419,216 +31299,197 @@ export class TaskView {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/teams/ui/team-form.html
+## File: apps/frontend/src/app/experiences/teams/ui/team-view.html
 
 ```html
-@if (error() && !detail() && !isNew()) {
-<div class="p-6 alert alert-error m-4">
-  <span>{{ error() }}</span>
-</div>
-} @else if (!isNew() && !detail()) {
-<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
-  <span class="loading loading-spinner loading-xs"></span>
-  Loading team…
-</div>
-} @else {
-<section class="max-w-4xl space-y-6 p-6">
-  <pc-detail-header
-    [title]="isNew() ? 'New team' : (detail()?.name || 'Team')"
-    [eyebrow]="isNew() ? 'New' : 'Editing'"
-    [crumbs]="crumbs()"
-    subtitle="Teams group volunteers for easier coordination."
-    [form]="form"
-    [isLoading]="saving()"
-    buttonsToShow="two"
-    [btn1Text]="isNew() ? 'Create team' : 'Save team'"
-    [showDelete]="!isNew()"
-    deleteText="Delete team"
-    (save)="save($event)"
-    (delete)="deleteTeam()"
-  ></pc-detail-header>
+<pc-detail-layout
+  [title]="team()?.name || 'Team'"
+  [eyebrow]="'Team'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!team()"
+  [showDelete]="true"
+  [deleteText]="'Delete team'"
+  [btn1Text]="'Edit team'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editTeam()"
+  (delete)="deleteTeam()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (team()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Team Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Team Card -->
+      <pc-profile-card iconName="user-group">
+        <!-- Name -->
+        <h2 class="text-2xl font-bold text-base-content text-center mb-4 leading-tight">{{ team().name }}</h2>
 
-  @if (error()) {
-  <div class="alert alert-error">
-    <span>{{ error() }}</span>
-  </div>
-  }
-
-  <form class="grid gap-6" (submit)="save($event)" novalidate>
-    <pc-card>
-      <div class="grid gap-4 sm:grid-cols-3">
-        <pc-input id="team-name" label="Team Name" [formField]="form.name" placeholder="Community Outreach"></pc-input>
-
-        <pc-select id="team-captain" label="Team Captain (Volunteer)" [formField]="form.team_captain_id">
-          <option value="">No captain</option>
-          @for (person of people(); track person.id) {
-          <option [value]="person.id">{{ person.label }}</option>
+        <!-- Details List -->
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          @if (team().description) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ team().description }}</div>
           }
-        </pc-select>
 
-        <pc-select id="team-lead" label="Team Lead (Organizer)" [formField]="form.team_lead_user_id">
-          <option value="">No lead</option>
-          @for (user of users(); track user.id) {
-          <option [value]="user.id">{{ user.first_name }} {{ user.last_name || '' }}</option>
-          }
-        </pc-select>
-      </div>
+          <pc-detail-row icon="user-circle" iconClass="text-teal-500">
+            <span>Team Captain:</span>
+            <span pc-row-action class="font-bold">{{ captainName() }}</span>
+          </pc-detail-row>
 
-      <pc-textarea
-        id="team-description"
-        label="Description"
-        [rows]="3"
-        [formField]="form.description"
-        placeholder="Describe this team's focus"
-      ></pc-textarea>
-    </pc-card>
-
-    <!-- Volunteers Section -->
-    <pc-card title="Volunteers" subtitle="Select volunteers who belong to this team.">
-      <div pc-card-actions class="text-sm text-base-content/60">
-        Captain: {{ captainLabel(form.team_captain_id().value() || null) }}
-      </div>
-
-      <div class="grid gap-4 sm:grid-cols-2">
-        <div class="space-y-2">
-          <label class="text-sm font-medium text-base-content/80" for="volunteer-select">Select Volunteers</label>
-          <select
-            id="volunteer-select"
-            class="select select-bordered h-40 w-full"
-            (change)="onVolunteersChange($event)"
-            multiple
-          >
-            @for (person of people(); track person.id) {
-            <option [value]="person.id" [selected]="isVolunteerSelected(person.id)">{{ person.label }}</option>
-            }
-          </select>
-          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple volunteers.</p>
+          <pc-detail-row icon="user-circle" iconClass="text-purple-500">
+            <span>Team Lead:</span>
+            <span pc-row-action class="font-bold">{{ leadName() }}</span>
+          </pc-detail-row>
         </div>
-        <div class="space-y-2">
-          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned</h3>
-          <div class="max-h-40 overflow-auto rounded border border-base-200">
+
+        <!-- System Metadata -->
+        <div
+          class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
+        >
+          <span>Created by {{ getUserName(team().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span>
+          <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(team().updatedby_id) }}</span>
+        </div>
+      </pc-profile-card>
+    </div>
+
+    <!-- Right Column: Stats & Tabs -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats Panel -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <pc-stat-card
+          [title]="'Volunteers'"
+          [value]="volunteers().length"
+          [description]="'Teammate members'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-teal-500'"
+          [iconColorClass]="'text-teal-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Target Lists'"
+          [value]="team().lists?.length || 0"
+          [description]="'Assigned lists'"
+          [icon]="'queue-list'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Active Tasks'"
+          [value]="activeTasksCount()"
+          [description]="'Tasks assigned'"
+          [icon]="'document-check'"
+          [valueColorClass]="'text-amber-500'"
+          [iconColorClass]="'text-amber-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Tabs Panel -->
+      <pc-tabs [tabs]="teamTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'teams'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="volunteers" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-3">
             @if (volunteers().length === 0) {
-            <p class="p-3 text-sm text-base-content/60">No volunteers assigned yet.</p>
+            <p class="text-sm text-base-content/40 italic">No volunteers assigned to this team.</p>
             } @else {
             <ul class="divide-y divide-base-200">
               @for (volunteer of volunteers(); track volunteer.id) {
-              <li class="flex items-center justify-between p-3 text-sm">
+              <li class="flex items-center justify-between py-2.5 text-sm">
                 <div>
                   <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
                   @if (volunteer.email) {
-                  <p class="text-xs text-base-content/60">{{ volunteer.email }}</p>
+                  <p class="text-xs text-base-content/50">{{ volunteer.email }}</p>
                   }
                 </div>
+                <a [routerLink]="['/people', volunteer.id]" class="btn btn-xs btn-ghost text-primary">View profile</a>
               </li>
               }
             </ul>
             }
           </div>
-        </div>
-      </div>
-    </pc-card>
+        </pc-tab-panel>
 
-    <!-- Assigned target constituent lists section -->
-    <pc-card
-      title="Target Constituent Lists"
-      subtitle="Assign lists of people or households this team is responsible for contacting."
-    >
-      <div class="grid gap-4 sm:grid-cols-2">
-        <div class="space-y-2">
-          <label class="text-sm font-medium text-base-content/80" for="lists-select">Select Target Lists</label>
-          <select
-            id="lists-select"
-            class="select select-bordered h-40 w-full"
-            (change)="onListsChange($event)"
-            multiple
-          >
-            @for (list of availableLists(); track list.id) {
-            <option [value]="list.id" [selected]="isListSelected(list.id)">{{ list.name }} ({{ list.object }})</option>
-            }
-          </select>
-          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple lists.</p>
-        </div>
-        <div class="space-y-2">
-          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned Target Lists</h3>
-          <div class="max-h-40 overflow-auto rounded border border-base-200">
-            @if (assignedLists().length === 0) {
-            <p class="p-3 text-sm text-base-content/60">No lists assigned yet.</p>
+        <pc-tab-panel id="lists" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-3">
+            @if (!team().lists?.length) {
+            <p class="text-sm text-base-content/40 italic">No target constituent lists assigned.</p>
             } @else {
             <ul class="divide-y divide-base-200">
-              @for (list of assignedLists(); track list.id) {
-              <li class="flex items-center justify-between p-3 text-sm">
+              @for (list of team().lists; track list.id) {
+              <li class="flex items-center justify-between py-2.5 text-sm">
                 <div>
                   <p class="font-medium text-base-content">{{ list.name }}</p>
-                  <p class="text-xs text-base-content/60">
+                  <p class="text-xs text-base-content/50">
                     {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
                   </p>
                 </div>
+                <a [routerLink]="['/lists', list.id]" class="btn btn-xs btn-ghost text-primary">Open list</a>
               </li>
               }
             </ul>
             }
           </div>
-        </div>
-      </div>
-    </pc-card>
+        </pc-tab-panel>
 
-    <!-- Team Tasks Section -->
-    @if (!isNew()) {
-    <pc-card title="Team Tasks" subtitle="Track the tasks and campaign progress assigned to this team.">
-      <a
-        pc-card-actions
-        class="btn btn-xs btn-primary gap-1"
-        [routerLink]="['/tasks/add']"
-        [queryParams]="{ team_id: id }"
-      >
-        <pc-icon name="plus" [size]="3"></pc-icon> Add Task
-      </a>
-
-      <div class="overflow-x-auto rounded border border-base-200">
-        @if (teamTasks().length === 0) {
-        <p class="p-4 text-sm text-base-content/60 italic">No tasks currently assigned to this team.</p>
-        } @else {
-        <table class="table table-zebra w-full text-sm">
-          <thead>
-            <tr>
-              <th>Task</th>
-              <th>Priority</th>
-              <th>Status</th>
-              <th>Due Date</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (task of teamTasks(); track task.id) {
-            <tr>
-              <td class="font-medium">
-                <a [routerLink]="['/tasks', task.id]" class="hover:underline text-primary"> {{ task.name }} </a>
-              </td>
-              <td>
-                <span class="badge badge-sm uppercase font-semibold" [class]="getPriorityClass(task.priority)">
-                  {{ task.priority || 'medium' }}
-                </span>
-              </td>
-              <td>
-                <span class="badge badge-sm uppercase font-semibold" [class]="getStatusClass(task.status)">
-                  {{ task.status || 'todo' }}
-                </span>
-              </td>
-              <td>{{ task.due_at ? (task.due_at | date:'mediumDate') : '—' }}</td>
-              <td>
-                <a [routerLink]="['/tasks', task.id]" class="btn btn-xs btn-ghost text-primary"> View details </a>
-              </td>
-            </tr>
+        <pc-tab-panel id="tasks" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (teamTasks().length === 0) {
+            <p class="text-sm text-base-content/40 italic">No tasks currently assigned to this team.</p>
+            } @else {
+            <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
+              <table class="table table-sm table-zebra w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200 text-base-content/70">
+                    <th>Task</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                    <th>Due Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (task of teamTasks(); track task.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td class="font-semibold">
+                      <a [routerLink]="['/tasks', task.id]" class="link hover:no-underline text-primary">
+                        {{ task.name }}
+                      </a>
+                    </td>
+                    <td>
+                      <pc-status-badge [type]="getPriorityType(task.priority)">
+                        {{ task.priority || 'medium' }}
+                      </pc-status-badge>
+                    </td>
+                    <td>
+                      <pc-status-badge [type]="getStatusType(task.status)">
+                        {{ task.status || 'todo' }}
+                      </pc-status-badge>
+                    </td>
+                    <td>{{ task.due_at ? (task.due_at | date: 'mediumDate') : '—' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
             }
-          </tbody>
-        </table>
-        }
-      </div>
-    </pc-card>
-    }
-  </form>
-</section>
-}
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
@@ -31706,411 +31567,206 @@ export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuth
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/user-add.ts
-
-```typescript
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { email, form, required } from '@angular/forms/signals';
-import { ActivatedRoute, Router } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SettingsService } from '../../settings/services/settings-service';
-import { UserAdminService } from '../services/useradmin-service';
-
-@Component({
-  selector: 'pc-user-add',
-  imports: [PcInput, PcSelect, PcDetailHeader],
-  templateUrl: './user-add.html',
-})
-export class UserAddComponent implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly settings = inject(SettingsService);
-
-  protected readonly error = signal<string | null>(null);
-
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
-
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-    role: 'user',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-  });
-
-  protected readonly submitting = signal(false);
-
-  public ngOnInit() {
-    void this.initialize();
-  }
-
-  private async initialize() {
-    const state = window.history.state;
-    if (state && state.cloneData) {
-      const data = state.cloneData;
-      this.payload.set({
-        email: data.email || '',
-        first_name: data.first_name || '',
-        last_name: data.last_name || '',
-        role: data.role || '',
-      });
-      return;
-    }
-
-    // Prefill the role with the tenant's configured default invite role (best-effort).
-    try {
-      await this.settings.load();
-      const defaultRole = this.settings.getValue<string>('access.default_role');
-      if (defaultRole) {
-        this.payload.update((p) => ({ ...p, role: defaultRole }));
-      }
-    } catch {
-      // Ignore — fall back to the built-in default role.
-    }
-  }
-
-  protected cancel() {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  protected async submit(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      return;
-    }
-
-    this.submitting.set(true);
-    this.error.set(null);
-    try {
-      const payload = this.toPayload();
-      await this.users.add(payload);
-      this.users.triggerRefresh();
-      this.alerts.showSuccess('Invitation sent');
-      this.form().reset();
-      if (typeof done === 'function') {
-        done();
-      } else {
-        await this.router.navigate(['../'], { relativeTo: this.route });
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to invite user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.submitting.set(false);
-    }
-  }
-
-  private toPayload() {
-    const raw = this.payload();
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: raw.last_name?.trim() ? raw.last_name.trim() : null,
-      role: raw.role?.trim() ? raw.role.trim() : null,
-    };
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-edit.html
+## File: apps/frontend/src/app/experiences/users/ui/user-view.html
 
 ```html
-@if (error() && !detail()) {
-<div class="p-6 alert alert-error m-4">
-  <span>{{ error() }}</span>
-</div>
-} @else if (!detail()) {
-<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
-  <span class="loading loading-spinner loading-xs"></span>
-  Loading user…
-</div>
-} @else {
-<section class="max-w-4xl space-y-6 p-6">
-  <pc-detail-header
-    [title]="displayName()"
-    [eyebrow]="'Editing'"
-    [crumbs]="crumbs()"
-    [subtitle]="detail()?.email"
-    [form]="form"
-    [isLoading]="saving()"
-    buttonsToShow="two"
-    btn1Text="Save user"
-    [showDelete]="true"
-    deleteText="Delete user"
-    (save)="save($event)"
-    (delete)="deleteUser()"
-  >
-    <button
-      pc-actions-prefix
-      class="btn btn-outline btn-accent btn-sm gap-2"
-      type="button"
-      (click)="triggerPasswordReset()"
-      [disabled]="resettingPassword() || saving()"
-    >
-      <pc-icon name="lock-closed"></pc-icon>
-      {{ resettingPassword() ? 'Sending link…' : 'Trigger Password Reset' }}
-    </button>
-  </pc-detail-header>
+<pc-detail-layout
+  [title]="displayName() || 'User'"
+  [eyebrow]="'User'"
+  [crumbs]="crumbs()"
+  [isLoading]="loading()"
+  [error]="error()"
+  [hasRecord]="!initialized() || !!detail()"
+  [showDelete]="true"
+  [deleteText]="'Delete user'"
+  [btn1Text]="'Edit user'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editUser()"
+  (delete)="deleteUser()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (detail()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: User Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <pc-profile-card [avatarUrl]="avatarUrl()" [iconName]="avatarUrl() ? undefined : 'user-circle'">
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ displayName() }}</h2>
+        <p class="text-sm text-base-content/70 mb-4">{{ detail()?.email }}</p>
 
-  @if (error()) {
-  <div class="alert alert-error">
-    <span>{{ error() }}</span>
+        <pc-status-badge [type]="'neutral'" [size]="'lg'" class="mb-6 font-medium capitalize flex gap-2">
+          <pc-icon name="identification" [size]="4"></pc-icon>
+          {{ detail()?.role }}
+        </pc-status-badge>
+
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          <pc-detail-row icon="check-circle" [iconClass]="detail()?.verified ? 'text-success' : 'text-base-content/40'">
+            <span>Verified:</span>
+            <pc-status-badge pc-row-action [type]="detail()?.verified ? 'success' : 'neutral'">
+              {{ detail()?.verified ? 'Yes' : 'No' }}
+            </pc-status-badge>
+          </pc-detail-row>
+        </div>
+
+        <pc-system-metadata
+          [createdAt]="detail()?.created_at"
+          [updatedAt]="detail()?.updated_at"
+          layout="col"
+          dateFormat="medium"
+        ></pc-system-metadata>
+      </pc-profile-card>
+    </div>
+
+    <!-- Right Column: Stats & Metadata & Activity -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats Cards Grid -->
+      @if (stats()) {
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        @for (card of activityCards(); track card.key) {
+        <pc-stat-card [title]="card.title" [value]="card.value" [description]="card.subtitle">
+          @if (card.asOf) {
+          <span pc-stat-desc class="block">As of {{ formatAsOf(card.asOf) }}</span>
+          }
+        </pc-stat-card>
+        }
+      </div>
+      }
+
+      <!-- Account Metadata -->
+      <!-- Account Metadata -->
+      <pc-card title="Account Metadata">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
+          <pc-detail-item label="Role" [value]="detail()?.role"></pc-detail-item>
+          <pc-detail-item
+            label="Created"
+            [value]="detail()?.created_at ? (detail()?.created_at | date: 'medium') : null"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Last updated"
+            [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
+          ></pc-detail-item>
+        </div>
+      </pc-card>
+
+      <!-- Activity log track -->
+      <pc-card title="Activity Log">
+        <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+          <pc-record-activities [entity]="'authusers'" [entityId]="id()"></pc-record-activities>
+        </div>
+      </pc-card>
+    </div>
   </div>
   }
-
-  <pc-card title="Profile">
-    <form class="space-y-4" (submit)="save($event)" novalidate>
-      <div class="grid gap-4 sm:grid-cols-2">
-        <pc-input id="email" label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
-
-        <pc-select label="Role" [formField]="form.role">
-          @if (currentUserRole() !== 'admin') {
-          <option value="owner">Owner</option>
-          }
-          <option value="admin">Admin</option>
-          <option value="user">User</option>
-          <option value="viewer">Viewer</option>
-        </pc-select>
-
-        <pc-input id="first_name" label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
-
-        <pc-input id="last_name" label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
-      </div>
-
-      <pc-toggle label="Verified account" [formField]="form.verified"></pc-toggle>
-    </form>
-  </pc-card>
-</section>
-}
+</pc-detail-layout>
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/user-view.ts
+## File: apps/frontend/src/app/layout/favourite-toggle/favourite-toggle.ts
 
 ```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { IAuthUserDetail, IUserStatsSnapshot } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { UserAdminService } from '../services/useradmin-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { UserService } from '../../../services/user.service';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
 
+import { Icon } from '@icons/icon';
+import { ISidebarItem } from '../sidebar/sidebar-items';
+import { SidebarService } from '../sidebar/sidebar-service';
+
+/**
+ * Bookmark button for the navbar: favourites the sidebar item matching the
+ * current route. Extracted from the retired URL-segment breadcrumb bar; page
+ * orientation is now handled by pc-breadcrumbs inside each page header.
+ */
 @Component({
-  selector: 'pc-user-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    StatCard,
-    StatusBadge,
-    ProfileCard,
-    DetailRow,
-    DetailItem,
-    SystemMetadata,
-    PcCard,
-  ],
-  templateUrl: './user-view.html',
+  selector: 'pc-favourite-toggle',
+  imports: [Icon],
+  template: `
+    @if (canToggleFavourite()) {
+      <button
+        type="button"
+        class="btn btn-circle btn-ghost btn-sm tooltip tooltip-bottom"
+        [attr.aria-label]="tooltip()"
+        [attr.data-tip]="tooltip()"
+        (mouseenter)="hovered.set(true)"
+        (mouseleave)="hovered.set(false)"
+        (click)="toggleFavourite()"
+      >
+        <pc-icon
+          [name]="iconName()"
+          [size]="5"
+          class="text-base-400 hover:text-primary"
+          [class.text-primary]="favourite()"
+        ></pc-icon>
+      </button>
+    }
+  `,
 })
-export class UserViewComponent {
-  readonly id = input.required<string>();
-
-  private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
+export class FavouriteToggle {
   private readonly router = inject(Router);
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly userService = inject(UserService);
+  private readonly sidebarSvc = inject(SidebarService);
 
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
-
-  protected readonly avatarUrl = computed(() => {
-    const user = this.detail();
-    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
+  private readonly navigationUrl = computed(() => {
+    const navigation = this.router.currentNavigation();
+    if (navigation) {
+      const finalUrl = navigation.finalUrl ?? navigation.initialUrl;
+      return finalUrl.toString();
+    }
+    return this.router.url;
   });
 
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
-  protected readonly currentUserId = computed(() => this.auth.getUser()?.id);
-  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
+  private currentItem?: ISidebarItem;
+  protected readonly favourite = signal(false);
+  protected readonly hovered = signal(false);
+  protected readonly canToggleFavourite = signal(false);
+  protected readonly itemName = signal('');
 
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
+  protected readonly iconName = computed(() => {
+    if (this.favourite()) return this.hovered() ? 'bookmark-slash' : 'bookmark-filled';
+    return this.hovered() ? 'bookmark-plus' : 'bookmark';
   });
 
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Users', route: '/users' },
-    { label: this.displayName() || 'User' },
-  ]);
-
-  protected readonly activityCards = computed(() => {
-    const s = this.stats();
-    if (!s) return [];
-    return [
-      {
-        key: 'emails',
-        title: 'Emails Assigned',
-        value: s.emails_assigned.total,
-        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
-        asOf: null,
-      },
-      {
-        key: 'contacts',
-        title: 'Contacts Added',
-        value: s.contacts_added.total,
-        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
-        asOf: s.contacts_added.last_created_at,
-      },
-      {
-        key: 'imports',
-        title: 'Files Imported',
-        value: s.files_imported.count,
-        subtitle: `${s.files_imported.total_rows} people imported`,
-        asOf: s.files_imported.last_activity_at,
-      },
-      {
-        key: 'exports',
-        title: 'Files Exported',
-        value: s.files_exported.count,
-        subtitle: `${s.files_exported.total_rows} rows exported`,
-        asOf: s.files_exported.last_activity_at,
-      },
-    ];
-  });
+  protected readonly tooltip = computed(() =>
+    this.favourite()
+      ? `Remove '${this.itemName()}' from sidebar bookmarks`
+      : `Bookmark '${this.itemName()}' in the sidebar`,
+  );
 
   constructor() {
-    effect(() => {
-      const currentId = this.id();
-      untracked(() => {
-        if (!currentId) {
-          this.error.set('Missing user identifier.');
-          return;
-        }
-        void this.load();
-      });
-    });
+    effect(() => this.handleNavigationChange(this.navigationUrl()));
   }
 
-  protected editUser() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteUser() {
-    if (!this.id()) return;
-    if (String(this.id()) === String(this.currentUserId())) {
-      this.alerts.showError('You cannot delete yourself.');
+  protected toggleFavourite(): void {
+    if (!this.currentItem?.route) {
       return;
     }
-    if (this.currentUserRole() === 'admin' && this.isOwnerBeingEdited()) {
-      this.alerts.showError('Admins cannot delete owner accounts.');
-      return;
-    }
-
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete User',
-      message: 'Are you sure you want to delete this user? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      const success = await this.users.delete(this.id());
-      if (!success) {
-        throw new Error('User deletion is not supported');
-      }
-      this.alerts.showSuccess('User deleted');
-      await this.router.navigate(['/users']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
-    } finally {
-      end();
-    }
+    const next = this.sidebarSvc.toggleFavourite(this.currentItem.route);
+    this.favourite.set(next);
+    this.currentItem.favourite = next;
   }
 
-  protected formatAsOf(date: Date | null): string {
-    if (!date) return '—';
-    try {
-      const d = typeof date === 'string' ? new Date(date) : date;
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(d);
-    } catch {
-      return date.toString();
-    }
+  private handleNavigationChange(url: string): void {
+    const item = this.sidebarSvc.findItemForUrl(url);
+    // Sidebar bookmarks hold sections, not records. The service matches by
+    // prefix, so on a record page (/people/123) the star would read as
+    // "bookmark this person" while actually bookmarking People — only offer
+    // the toggle when the URL is the sidebar item's own page.
+    const exact = !!item?.route && this.normalizePath(url) === this.normalizePath(item.route);
+    this.currentItem = exact ? item : undefined;
+    this.favourite.set(exact && !!item?.favourite);
+    this.canToggleFavourite.set(exact);
+    this.itemName.set(exact ? (item?.name ?? '') : '');
   }
 
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      const user = await this.users.getById(this.id());
-      this.detail.set(user);
-      this.stats.set(user.stats);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
+  private normalizePath(route: string): string {
+    const path = (route.split('?')[0] ?? '').split('#')[0] ?? '';
+    const trimmed = path.endsWith('/') && path !== '/' ? path.slice(0, -1) : path;
+    return trimmed || '/';
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -32410,6 +32066,211 @@ export class Navbar implements OnDestroy {
     this.themeSvc.toggleTheme();
   }
 }
+```
+
+## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
+
+```typescript
+import type { PcIconNameType } from '@icons/icons.index';
+
+export interface ISidebarItem {
+  adminOnly?: boolean;
+  children?: ISidebarItem[];
+  collapsed?: boolean;
+  favourite?: boolean;
+  hidden?: boolean;
+  hiddenByFavourite?: boolean;
+  icon?: PcIconNameType;
+  indicator?: boolean;
+  name: string;
+  parent?: ISidebarItem;
+  pathMatchExact?: boolean;
+  route?: string;
+  short_name?: string;
+  type?: 'item' | 'subheading' | 'bookmark';
+}
+
+export const SidebarItems: ISidebarItem[] = [
+  {
+    name: 'App',
+    route: '/',
+    hidden: true,
+  },
+  {
+    name: `Dashboard`,
+    route: '/summary',
+    icon: 'presentation-chart-line',
+    pathMatchExact: true,
+  },
+  {
+    name: `BOOKMARKS`,
+    short_name: 'PINS',
+    type: 'bookmark',
+    hidden: true,
+  },
+  {
+    name: `ENGAGE`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Inbox',
+        route: '/inbox',
+        icon: 'envelope',
+      },
+      {
+        name: 'Newsletters',
+        route: '/newsletters',
+        icon: 'megaphone',
+      },
+
+      {
+        name: 'Lists',
+        route: '/lists',
+        icon: 'queue-list',
+      },
+      {
+        name: `Automations`,
+        route: '/workflows',
+        icon: 'cog',
+      },
+    ],
+  },
+  {
+    name: `CONTACTS`,
+    type: 'subheading',
+    children: [
+      {
+        name: `People`,
+        route: '/people',
+        icon: 'identification',
+      },
+      {
+        name: `Households`,
+        route: '/households',
+        icon: 'house-modern',
+      },
+      {
+        name: `Companies`,
+        route: '/companies',
+        icon: 'briefcase',
+      },
+      {
+        name: `Duplicates`,
+        route: '/duplicates',
+        icon: 'document-duplicate',
+      },
+    ],
+  },
+  {
+    name: `CAMPAIGN`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Teams',
+        route: '/teams',
+        icon: 'user-group',
+      },
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+      },
+    ],
+  },
+  {
+    name: 'FORMS',
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      {
+        name: 'Forms',
+        route: '/forms',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Shifts',
+        route: '/events/shifts',
+        icon: 'add-schedule',
+      },
+      {
+        name: 'Events',
+        route: '/events/pages',
+        icon: 'ticket',
+      },
+      {
+        name: 'Fundraising',
+        route: '/donation-pages',
+        icon: 'currency-dollar',
+      },
+    ],
+  },
+  {
+    name: 'TOOLS',
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      {
+        name: `Tasks`,
+        route: '/tasks',
+        icon: 'task',
+      },
+      {
+        name: `Task Board`,
+        route: '/board',
+        icon: 'view-kanban',
+      },
+      {
+        name: 'Files',
+        route: '/files',
+        icon: 'document',
+      },
+      {
+        name: 'Imports',
+        route: '/imports',
+        icon: 'arrow-up-tray',
+      },
+      {
+        name: 'Exports',
+        route: '/exports',
+        icon: 'arrow-down-tray',
+      },
+    ],
+  },
+
+  {
+    name: `SYSTEM`,
+    type: 'subheading',
+    adminOnly: true,
+    collapsed: true,
+    children: [
+      {
+        name: 'Activity Log',
+        route: '/activities',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Tags',
+        route: '/tags',
+        icon: 'label',
+      },
+      {
+        name: 'Issues',
+        route: '/issues',
+        icon: 'shield-exclamation',
+      },
+      {
+        name: 'Users',
+        route: '/users',
+        icon: 'users',
+      },
+      {
+        name: 'Configuration',
+        route: '/configuration',
+        icon: 'wrench-screwdriver',
+      },
+    ],
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/layout/sidebar/sidebar-service.ts
@@ -32934,143 +32795,12 @@ export class Sidebar {
 }
 ```
 
-## File: apps/frontend/src/app/routing/route-reuse-strategy.ts
-
-```typescript
-import { Injectable, inject, Injector } from '@angular/core';
-import {
-  ActivatedRouteSnapshot,
-  destroyDetachedRouteHandle,
-  DetachedRouteHandle,
-  NavigationEnd,
-  Router,
-  RouteReuseStrategy,
-} from '@angular/router';
-
-@Injectable()
-export class CustomRouteReuseStrategy implements RouteReuseStrategy {
-  private handlers = new Map<string, DetachedRouteHandle>();
-
-  private readonly maxCacheSize = 5;
-
-  private injector = inject(Injector);
-  private _router: Router | null = null;
-  private isSubscribedToRouterEvents = false;
-
-  private get router(): Router {
-    if (!this._router) {
-      this._router = this.injector.get(Router);
-    }
-    return this._router;
-  }
-
-  private ensureRouterSubscription(): void {
-    if (this.isSubscribedToRouterEvents) {
-      return;
-    }
-    this.isSubscribedToRouterEvents = true;
-    try {
-      this.router.events.subscribe((event) => {
-        if (event instanceof NavigationEnd) {
-          if (event.urlAfterRedirects.includes('/signin') || event.urlAfterRedirects.includes('/signup')) {
-            this.clearAllHandlers();
-          }
-        }
-      });
-    } catch (_e) {
-      // Reset flag if router couldn't be resolved yet
-      this.isSubscribedToRouterEvents = false;
-    }
-  }
-
-  private getKey(route: ActivatedRouteSnapshot): string {
-    return route.data['key'] || route.routeConfig?.path || 'unknown';
-  }
-
-  public retrieve(route: ActivatedRouteSnapshot): DetachedRouteHandle | null {
-    this.ensureRouterSubscription();
-    if (!route.data['shouldReuse']) {
-      return null;
-    }
-    const key = this.getKey(route);
-    const handle = this.handlers.get(key) || null;
-    if (handle) {
-      this.handlers.delete(key);
-    }
-    return handle;
-  }
-
-  public shouldAttach(route: ActivatedRouteSnapshot): boolean {
-    this.ensureRouterSubscription();
-    return !!route.data['shouldReuse'] && this.handlers.has(this.getKey(route));
-  }
-
-  public shouldDetach(route: ActivatedRouteSnapshot): boolean {
-    this.ensureRouterSubscription();
-    return !!route.data['shouldReuse'];
-  }
-
-  public shouldReuseRoute(future: ActivatedRouteSnapshot, curr: ActivatedRouteSnapshot): boolean {
-    this.ensureRouterSubscription();
-    return future.routeConfig === curr.routeConfig;
-  }
-
-  public store(route: ActivatedRouteSnapshot, handle: DetachedRouteHandle | null): void {
-    this.ensureRouterSubscription();
-    if (!route.data['shouldReuse']) {
-      return;
-    }
-    const key = this.getKey(route);
-
-    if (!handle) {
-      this.clearHandle(key);
-      return;
-    }
-
-    if (this.handlers.has(key)) {
-      const oldHandle = this.handlers.get(key);
-      if (oldHandle && oldHandle !== handle) {
-        destroyDetachedRouteHandle(oldHandle);
-      }
-      this.handlers.delete(key);
-    } else if (this.handlers.size >= this.maxCacheSize) {
-      // Evict oldest (Map maintains insertion order, so keys().next().value is the oldest)
-      const oldestKey = this.handlers.keys().next().value;
-      if (oldestKey !== undefined) {
-        const oldestHandle = this.handlers.get(oldestKey);
-        if (oldestHandle) {
-          destroyDetachedRouteHandle(oldestHandle);
-        }
-        this.handlers.delete(oldestKey);
-      }
-    }
-
-    this.handlers.set(key, handle);
-  }
-
-  private clearHandle(key: string): void {
-    const handle = this.handlers.get(key);
-    if (handle) {
-      destroyDetachedRouteHandle(handle);
-      this.handlers.delete(key);
-    }
-  }
-
-  public clearAllHandlers(): void {
-    this.handlers.forEach((handle) => {
-      destroyDetachedRouteHandle(handle);
-    });
-    this.handlers.clear();
-  }
-}
-```
-
 ## File: apps/frontend/src/app/services/api/trpc-service.ts
 
 ```typescript
 import { inject, Service } from '@angular/core';
 import { Router } from '@angular/router';
-import { getAllOptionsType } from '../../../../../../libs/common/src';
+import { GENERIC_SIGNIN_ERROR, getAllOptionsType } from '../../../../../../libs/common/src';
 import { ErrorService } from '../error.service';
 import {
   TRPCClient,
@@ -33155,7 +32885,6 @@ export class TRPCService<T> {
 }
 
 function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
-  const GENERIC_LOGIN_MSG = 'Please check your email and password and try again';
   const GENERIC_INPUT_MSG = 'Please check your input and try again';
 
   return () =>
@@ -33175,7 +32904,7 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
               let msg = err.message;
               if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
                 // Server formatter should already do this; this is just a client fallback
-                msg = GENERIC_LOGIN_MSG;
+                msg = GENERIC_SIGNIN_ERROR;
               } else if (code === 'BAD_REQUEST') {
                 const isValidationError = (err.data as { isZodError?: boolean })?.isZodError;
                 if (isValidationError) {
@@ -34543,202 +34272,6 @@ export class SingleselectFilterComponent {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/undo-redo-mgr.ts
-
-```typescript
-import { computed, signal } from '@angular/core';
-import type { GridHost, GridRow, GridSnapshot } from './types';
-
-export class UndoManager {
-  private readonly isOperating = signal(false);
-
-  private readonly undoStack = signal<GridSnapshot[]>([]);
-  private readonly redoStack = signal<GridSnapshot[]>([]);
-  private grid: GridHost | null = null;
-
-  public readonly canRedo = computed(() => this.redoStack().length > 0 && !this.isOperating());
-  public readonly canUndo = computed(() => this.undoStack().length > 0 && !this.isOperating());
-
-  public getRedoSize(): number {
-    return this.redoStack().length;
-  }
-
-  public getUndoSize(): number {
-    return this.undoStack().length;
-  }
-
-  public initialize(api: GridHost): void {
-    this.grid = api;
-    this.isOperating.set(false);
-  }
-
-  public pushUndo(snapshot: GridSnapshot): void {
-    this.undoStack.update((s) => {
-      const next = [...s, snapshot];
-      return next.length > 50 ? next.slice(1) : next;
-    });
-    this.redoStack.set([]);
-  }
-
-  public async redo() {
-    const redoStack = this.redoStack();
-    if (this.isOperating() || redoStack.length === 0 || !this.grid) return;
-
-    const target = redoStack[redoStack.length - 1];
-    if (!target) return;
-
-    this.isOperating.set(true);
-    try {
-      this.redoStack.update((s) => s.slice(0, -1));
-
-      const current = this.captureCurrentState();
-      if (current && target.editMeta) {
-        current.editMeta = target.editMeta;
-      }
-      if (current) {
-        this.undoStack.update((s) => {
-          const next = [...s, current];
-          return next.length > 50 ? next.slice(1) : next;
-        });
-      }
-
-      await this.applySnapshot(target, 'redo');
-    } finally {
-      this.isOperating.set(false);
-    }
-  }
-
-  public async undo() {
-    const undoStack = this.undoStack();
-    if (this.isOperating() || undoStack.length === 0 || !this.grid) return;
-
-    const target = undoStack[undoStack.length - 1];
-    if (!target) return;
-
-    this.isOperating.set(true);
-    try {
-      this.undoStack.update((s) => s.slice(0, -1));
-
-      const current = this.captureCurrentState();
-      if (current && target.editMeta) {
-        current.editMeta = target.editMeta;
-      }
-      if (current) {
-        this.redoStack.update((s) => {
-          const next = [...s, current];
-          return next.length > 50 ? next.slice(1) : next;
-        });
-      }
-
-      await this.applySnapshot(target, 'undo');
-    } finally {
-      this.isOperating.set(false);
-    }
-  }
-
-  private captureCurrentState(): GridSnapshot | null {
-    const store = this.grid?.store;
-    if (!store) return null;
-
-    let rowsCopy: GridRow[] = [];
-    try {
-      rowsCopy = JSON.parse(JSON.stringify(store.rows() || [])) as GridRow[];
-    } catch {
-      rowsCopy = (store.rows() || []).map((r) => {
-        const copy: GridRow = { ...r };
-        if (Array.isArray(r['tags'])) copy['tags'] = [...(r['tags'] as unknown[])];
-        if (Array.isArray(r['issues'])) copy['issues'] = [...(r['issues'] as unknown[])];
-        return copy;
-      });
-    }
-
-    return {
-      rows: rowsCopy,
-      selectedIdSet: new Set(store.selectedIdSet()),
-      filterValues: { ...store.filterValues() },
-      sorting: [...store.sorting()],
-      pageIndex: store.pageIndex(),
-      pageSize: store.pageSize(),
-    };
-  }
-
-  private async applySnapshot(target: GridSnapshot, actionType: 'undo' | 'redo') {
-    if (!this.grid || !this.grid.store) return;
-    const store = this.grid.store;
-    const flashedCells: { id: string; field: string }[] = [];
-
-    if (target.editMeta) {
-      try {
-        const { id, field, prevValue, newValue } = target.editMeta;
-        const valToSet = actionType === 'undo' ? prevValue : newValue;
-        const payload = { [field]: valToSet };
-        await this.grid.gridSvc.update(id, payload);
-        flashedCells.push({ id: String(id), field });
-      } catch (err) {
-        console.error(`Failed to update backend on ${actionType}:`, err);
-        if (this.grid.alertSvc) {
-          this.grid.alertSvc.showError('Reverting changes on the server failed');
-        }
-      }
-    } else {
-      try {
-        const currentRows = store.rows() || [];
-        const diffs = this.findRowsDiff(currentRows, target.rows);
-        for (const diff of diffs) {
-          const payload = { [diff.field]: diff.newValue };
-          await this.grid.gridSvc.update(diff.id, payload);
-          flashedCells.push({ id: String(diff.id), field: diff.field });
-        }
-      } catch (err) {
-        console.error(`Failed to update backend on ${actionType} fallback:`, err);
-      }
-    }
-
-    store.rows.set(target.rows);
-    store.selectedIdSet.set(target.selectedIdSet);
-    store.filterValues.set(target.filterValues);
-    store.sorting.set(target.sorting);
-    store.pageIndex.set(target.pageIndex);
-    store.pageSize.set(target.pageSize);
-
-    this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
-
-    for (const item of flashedCells) {
-      if (typeof this.grid.triggerCellFlash === 'function') {
-        this.grid.triggerCellFlash(item.id, item.field);
-      }
-    }
-  }
-
-  private findRowsDiff(
-    oldRows: GridRow[],
-    newRows: GridRow[],
-  ): { id: string; field: string; prevValue: unknown; newValue: unknown }[] {
-    const diffs: { id: string; field: string; prevValue: unknown; newValue: unknown }[] = [];
-    const oldMap = new Map<string, GridRow>();
-    for (const r of oldRows) {
-      if (r && r['id']) oldMap.set(String(r['id']), r);
-    }
-    for (const r of newRows) {
-      if (!r || !r['id']) continue;
-      const idStr = String(r['id']);
-      const oldRow = oldMap.get(idStr);
-      if (oldRow) {
-        for (const key of Object.keys(r)) {
-          if (key === 'id') continue;
-          const val1 = oldRow[key];
-          const val2 = r[key];
-          if (JSON.stringify(val1) !== JSON.stringify(val2)) {
-            diffs.push({ id: idStr, field: key, prevValue: val1, newValue: val2 });
-          }
-        }
-      }
-    }
-    return diffs;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/app.config.ts
 
 ```typescript
@@ -34796,6 +34329,472 @@ export const appConfig: ApplicationConfig = {
     { provide: ErrorHandler, useClass: GlobalErrorHandler },
   ],
 };
+```
+
+## File: apps/frontend/src/app/dashboard.routes.ts
+
+```typescript
+import type { Routes } from '@angular/router';
+import { roleGuard } from './auth/role-guard';
+import { unsavedChangesGuard } from './services/unsaved-changes-guard';
+
+export const dashboardRoutes: Routes = [
+  { path: '', redirectTo: 'summary', pathMatch: 'full' },
+
+  {
+    path: 'summary',
+    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
+  },
+
+  {
+    path: 'people',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
+        data: { shouldReuse: true, key: 'persongridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+
+  {
+    path: 'households',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
+        data: { shouldReuse: true, key: 'householdsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'duplicates',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
+      },
+      {
+        path: 'people',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
+      },
+      {
+        path: 'households',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
+      },
+      {
+        path: 'companies',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
+      },
+    ],
+  },
+  {
+    path: 'tags',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tags/ui/tags-grid').then((m) => m.TagsGridComponent),
+        data: { shouldReuse: true, key: 'tagsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
+      },
+    ],
+  },
+
+  {
+    path: 'issues',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tags/ui/issues-grid').then((m) => m.IssuesGridComponent),
+        data: { shouldReuse: true, key: 'issuesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
+      },
+    ],
+  },
+
+  {
+    path: 'lists',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
+        data: { shouldReuse: true, key: 'listsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'new' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'edit' },
+      },
+    ],
+  },
+
+  {
+    path: 'newsletters',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'newslettersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'workflows',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'workflowsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'events',
+    children: [
+      {
+        path: '',
+        redirectTo: 'pages',
+        pathMatch: 'full',
+      },
+      {
+        path: 'shifts',
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./experiences/shifts/ui/shifts-grid').then((m) => m.ShiftsGridComponent),
+            data: { shouldReuse: true, key: 'eventsgridroot' },
+          },
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+      {
+        path: 'pages',
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
+            data: { shouldReuse: true, key: 'eventpagesgridroot' },
+          },
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+    ],
+  },
+
+  {
+    path: 'donations',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
+        data: { shouldReuse: true, key: 'donationsgridroot' },
+      },
+      {
+        path: 'pledges',
+        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
+        data: { shouldReuse: true, key: 'pledgesgridroot' },
+      },
+    ],
+  },
+
+  {
+    path: 'inbox',
+    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
+  },
+  {
+    path: 'tasks',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-grid').then((m) => m.TasksGrid),
+        data: { shouldReuse: true, key: 'tasksgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
+      },
+    ],
+  },
+  {
+    path: 'board',
+    loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
+  },
+
+  {
+    path: 'teams',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
+        data: { shouldReuse: true, key: 'teamsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'new' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'edit' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'users',
+    canActivate: [roleGuard],
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
+        data: { shouldReuse: true, key: 'usersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'forms',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/forms/ui/forms-grid').then((m) => m.FormsGridComponent),
+        data: { shouldReuse: true, key: 'formsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'donation-pages',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-grid').then((m) => m.FundraisingGridComponent),
+        data: { shouldReuse: true, key: 'donationpagesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
+        data: { backRoute: '/donation-pages' },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'settings',
+    children: [
+      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'settings' },
+      },
+    ],
+  },
+  {
+    path: 'configuration',
+    canActivate: [roleGuard],
+    children: [
+      { path: '', redirectTo: 'organization', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'configuration' },
+      },
+    ],
+  },
+  {
+    path: 'billing',
+    redirectTo: '/configuration/billing',
+    pathMatch: 'full',
+  },
+  {
+    path: 'profile',
+    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
+  },
+  {
+    path: 'imports',
+    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
+  },
+  {
+    path: 'exports',
+    loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
+  },
+  {
+    path: 'companies',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
+        data: { shouldReuse: true, key: 'companiesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'files',
+    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
+  },
+  {
+    path: 'activities',
+    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
+  },
+];
 ```
 
 ## File: apps/frontend/eslint.config.cjs
@@ -35638,186 +35637,98 @@ export class ActivityFeed implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
+## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
 
-```typescript
-import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { PeopleInCompany } from './people-in-company';
-import { CompaniesService } from '../services/companies-service';
-import { UserService } from '../../../services/user.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+```html
+<div class="p-6 max-w-4xl">
+  <!-- Loading State -->
+  @if (isLoading()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Loading company details...</p>
+  </div>
+  } @else {
+  <div class="space-y-6">
+    <pc-detail-header
+      [title]="isNewMode() ? 'New company' : company()?.name || 'Company'"
+      [eyebrow]="isNewMode() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
+      [subtitle]="isNewMode() ? 'Create a new company record' : 'View and update company information'"
+      [form]="form"
+      [isLoading]="isLoading()"
+      buttonsToShow="two"
+      [btn1Text]="isNewMode() ? 'Create company' : 'Save company'"
+      [showDelete]="!isNewMode()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete company"
+      (save)="save($event)"
+      (delete)="deleteCompany()"
+    ></pc-detail-header>
 
-@Component({
-  selector: 'pc-company-view',
-  imports: [
-    RouterModule,
-    PeopleInCompany,
-    RecordActivities,
-    DetailLayout,
-    StatCard,
-    Tabs,
-    TabPanel,
-    ProfileCard,
-    DetailItem,
-    SystemMetadata,
-  ],
-  templateUrl: './company-view.html',
-})
-export class CompanyView {
-  readonly id = input.required<string>();
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Form Section -->
+      <pc-card class="lg:col-span-2">
+        <!-- Name -->
+        <pc-input label="Company Name" placeholder="e.g. Acme Corp" [formField]="form.name"></pc-input>
 
-  private readonly alertSvc = inject(AlertService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Website -->
+          <pc-input label="Website" type="url" placeholder="https://example.com" [formField]="form.website"></pc-input>
 
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
+          <!-- Industry -->
+          <pc-input label="Industry" placeholder="e.g. Technology" [formField]="form.industry"></pc-input>
+        </div>
 
-  protected readonly company = signal<any | null>(null);
-  protected readonly employeeCount = signal(0);
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Email -->
+          <pc-input label="Email" type="email" placeholder="info@example.com" [formField]="form.email"></pc-input>
 
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Companies', route: '/companies' },
-    { label: this.company()?.name || 'Company' },
-  ]);
+          <!-- Phone -->
+          <pc-input label="Phone" type="tel" placeholder="+1 555-0100" [formField]="form.phone"></pc-input>
+        </div>
 
-  private readonly usersResource = resource({
-    loader: () => this.userService.getUsers(),
-  });
-  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+        <!-- Description -->
+        <pc-textarea
+          label="Description"
+          placeholder="Company description..."
+          [formField]="form.description"
+          [rows]="3"
+        ></pc-textarea>
 
-  // Active tab state
-  protected activeTab = signal<string>('activity');
+        <!-- Notes -->
+        <pc-textarea
+          label="Internal Notes"
+          placeholder="Any additional notes..."
+          [formField]="form.notes"
+          [rows]="4"
+        ></pc-textarea>
+      </pc-card>
 
-  protected readonly companyTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'employees', label: `Employees (${this.employeeCount()})`, icon: 'user-group' },
-    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
-  ]);
+      <!-- Members & Info Panel -->
+      <div class="space-y-6">
+        <!-- Employee List (Only when edit mode) -->
+        @if (!isNewMode() && id()) {
+        <pc-card title="Associated Employees" icon="user-group">
+          @defer (on viewport) {
+          <pc-people-in-company [companyId]="id()!"></pc-people-in-company>
+          } @placeholder {
+          <div class="skeleton w-full h-32"></div>
+          }
+        </pc-card>
+        }
 
-  protected readonly initials = computed(() => {
-    const name = this.company()?.name || '';
-    if (!name) return '?';
-    return name
-      .split(' ')
-      .slice(0, 2)
-      .map((w: string) => w[0] ?? '')
-      .join('')
-      .toUpperCase();
-  });
-
-  protected readonly isEnriched = computed(() => {
-    const rawJson = this.company()?.json;
-    if (!rawJson) return false;
-
-    let json = null;
-
-    try {
-      json = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
-    } catch {
-      return false;
-    }
-    return !!json.google_enriched;
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
+        <!-- Metadata Card -->
+        @if (!isNewMode()) {
+        <pc-entity-overview
+          [createdAt]="company()?.created_at"
+          [updatedAt]="company()?.updated_at"
+        ></pc-entity-overview>
+        }
+      </div>
+    </div>
+  </div>
   }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load company details (triggers Google enrichment job on backend)
-      const data = await this.companiesSvc.getById(id);
-      this.company.set(data);
-
-      // 2. Load employee count via dedicated count endpoint (no row data fetched)
-      const count = await this.personsSvc.countByCompanyId(id);
-      this.employeeCount.set(count);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load company details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editCompany() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteCompany() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Company',
-      message: 'Are you sure you want to delete this company? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.companiesSvc.delete(this.id());
-      this.companiesSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Company deleted');
-      await this.router.navigate(['/companies']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete company';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById().get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/services/emails-service.ts
@@ -36014,610 +35925,6 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts
-
-```typescript
-import { DatePipe, UpperCasePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { TagItem } from '@uxcommon/components/tags/tagitem';
-import { Tags } from '@experiences/tags/ui/tags';
-import { PersonsService } from '@experiences/persons/services/persons-service';
-
-import { EmailsStore } from '../../services/store/emailstore';
-import { EmailAssign } from '../email-assign/email-assign';
-import { EmailCreateTaskDialog } from '../email-create-task-dialog/email-create-task-dialog';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Component({
-  selector: 'pc-email-header',
-  // include swap for expand/collapse control
-  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon, RouterLink, TagItem, Tags, EmailCreateTaskDialog],
-  host: {
-    '(document:keydown)': 'handleDocumentKeydown($event)',
-  },
-  templateUrl: 'email-header.html',
-})
-export class EmailHeader {
-  private alertSvc = inject(AlertService);
-  private store = inject(EmailsStore);
-  private personsSvc = inject(PersonsService);
-
-  private readonly createTaskDialog = viewChild<EmailCreateTaskDialog>('createTaskDialog');
-
-  protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
-  protected isClosed = signal(false);
-  protected isFavourite = signal(false);
-
-  protected personTags = computed(() => {
-    const person = this.headerData()?.person;
-    return person?.tags?.map((t: any) => t.name) ?? [];
-  });
-
-  protected personIssues = computed(() => {
-    const person = this.headerData()?.person;
-    return person?.issues?.map((t: any) => t.name) ?? [];
-  });
-
-  protected async onTagAdded(tagName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.attachTag(person.id, tagName, 'tag');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Tag "${tagName}" added`);
-    } catch (e) {
-      console.error('Failed to attach tag:', e);
-      this.alertSvc.showError('Failed to add tag');
-    }
-  }
-
-  protected async onTagRemoved(tagName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.detachTag(person.id, tagName, 'tag');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Tag "${tagName}" removed`);
-    } catch (e) {
-      console.error('Failed to detach tag:', e);
-      this.alertSvc.showError('Failed to remove tag');
-    }
-  }
-
-  protected async onIssueAdded(issueName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.attachTag(person.id, issueName, 'issue');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Issue "${issueName}" added`);
-    } catch (e) {
-      console.error('Failed to attach issue:', e);
-      this.alertSvc.showError('Failed to add issue');
-    }
-  }
-
-  protected async onIssueRemoved(issueName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.detachTag(person.id, issueName, 'issue');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Issue "${issueName}" removed`);
-    } catch (e) {
-      console.error('Failed to detach issue:', e);
-      this.alertSvc.showError('Failed to remove issue');
-    }
-  }
-
-  public readonly forward = output<void>();
-  public readonly reply = output<void>();
-  public readonly replyAll = output<void>();
-
-  public email = input.required<EmailType>();
-
-  public isExpanded = this.store.isBodyExpanded;
-
-  constructor() {
-    // isFavourite and isClosed are settable, so can't use computed
-    effect(() => {
-      const email = this.email();
-
-      this.isFavourite.set(email.is_favourite);
-      this.isClosed.set(email.status === 'closed');
-    });
-  }
-
-  public getFavouriteIcon() {
-    return this.isFavourite() ? 'star-filled' : 'star';
-  }
-
-  protected async deleteEmail() {
-    try {
-      await this.store.deleteEmail(this.email().id);
-    } catch (e) {
-      console.error('Failed to delete email', e);
-      this.alertSvc.showError('Failed to delete email');
-    }
-  }
-
-  protected getAllRecipients(): any[] {
-    return [...this.getToRecipients(), ...this.getCcRecipients(), ...this.getBccRecipients()];
-  }
-
-  protected getBccRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.bcc_list || [];
-  }
-
-  protected getCcRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.cc_list || [];
-  }
-
-  protected getDateSent(): Date | null {
-    const header = this.headerData();
-    return header?.email?.date_sent ? new Date(header.email.date_sent) : null;
-  }
-
-  protected getHeaderInfo() {
-    const header = this.headerData();
-    const email = this.email();
-
-    return {
-      subject: email.subject,
-      date: this.getDateSent() || email.updated_at,
-      from: email.from_email,
-      to: email.to_email,
-      messageId: header?.email?.headers_json?.['message-id'] || 'N/A',
-      mailedBy: header?.email?.headers_json?.['x-mailer'] || header?.email?.headers_json?.['user-agent'] || 'N/A',
-      signedBy: header?.email?.headers_json?.['dkim-signature'] ? 'DKIM Verified' : 'Not signed',
-      security: header?.email?.headers_json?.['received-spf'] || 'N/A',
-      returnPath: header?.email?.headers_json?.['return-path'] || 'N/A',
-      replyTo: header?.email?.headers_json?.['reply-to'] || email.from_email,
-    };
-  }
-
-  protected getToRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.to_list || [];
-  }
-
-  protected getTrashText() {
-    return this.isFolderTrash() ? 'Delete Permanently' : 'Move to Trash';
-  }
-
-  protected handleDocumentKeydown(ev: KeyboardEvent): void {
-    if (ev.key === 'Escape' && this.isExpanded()) {
-      this.store.toggleBodyExpanded();
-      ev.stopPropagation();
-      ev.preventDefault();
-    }
-  }
-
-  protected handleForward() {
-    this.forward.emit();
-  }
-
-  protected handleMarkAsUnread() {
-    void this.store.toggleEmailReadStatus(this.email().id, false);
-    this.store.selectEmail(null);
-  }
-
-  protected handleReply() {
-    this.reply.emit();
-  }
-
-  protected handleReplyAll() {
-    this.replyAll.emit();
-  }
-
-  protected isFolderTrash(): boolean {
-    const fid = this.store.currentSelectedFolderId();
-    return fid === ALL_FOLDERS.TRASH;
-  }
-
-  protected isFolderSpam(): boolean {
-    const fid = this.store.currentSelectedFolderId();
-    return fid === ALL_FOLDERS.SPAM;
-  }
-
-  protected async markAsSpam() {
-    try {
-      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.SPAM);
-      this.alertSvc.showSuccess('Email marked as spam');
-      this.store.selectEmail(null);
-    } catch (e) {
-      console.error('Failed to mark email as spam', e);
-      this.alertSvc.showError('Failed to mark email as spam');
-    }
-  }
-
-  protected async moveToInbox() {
-    try {
-      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.INBOX);
-      this.alertSvc.showSuccess('Email moved to Inbox');
-      this.store.selectEmail(null);
-    } catch (e) {
-      console.error('Failed to move email to Inbox', e);
-      this.alertSvc.showError('Failed to move email to Inbox');
-    }
-  }
-
-  protected markAsDoneText() {
-    return this.isClosed() ? 'Mark as Open' : 'Mark as Done';
-  }
-
-  protected restoreFromTrash() {
-    void this.store.restoreFromTrash(this.email().id);
-  }
-
-  protected async toggleClosed() {
-    const email = this.email();
-    const currentStatus = email.status || 'open';
-    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
-
-    // Optimistically update UI
-    this.isClosed.set(newStatus === 'closed');
-
-    try {
-      await this.store.updateEmailStatus(email.id, newStatus);
-    } catch (_error) {
-      // Revert UI state on error
-      this.isClosed.set(currentStatus === 'closed');
-      this.alertSvc.showError('Failed to update email status');
-    }
-  }
-
-  protected handleCreateTask(): void {
-    void this.createTaskDialog()?.open();
-  }
-
-  protected toggleExpand(): void {
-    this.store.toggleBodyExpanded();
-  }
-
-  protected async toggleFavourite() {
-    const e = this.email();
-    this.isFavourite.update((value) => !value);
-    return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/events/ui/event-form.html
-
-```html
-<div class="p-6 max-w-5xl space-y-6">
-  @if (error() && !detail() && !isNew()) {
-  <div class="alert alert-error m-4">
-    <span>{{ error() }}</span>
-  </div>
-  } @else if (!isNew() && !detail()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading event details...</p>
-  </div>
-  } @else {
-  <div class="space-y-6">
-    <pc-detail-header
-      [title]="isNew() ? 'New event' : detail()?.name || 'Event'"
-      [eyebrow]="isNew() ? 'New' : 'Editing'"
-      [crumbs]="crumbs()"
-      [subtitle]="isNew() ? 'Create a public event page for RSVPs and ticketing.' : 'Manage event settings and ticket types.'"
-      [form]="form"
-      [isLoading]="saving()"
-      [disabled]="slugChecking() || slugUnique() === false"
-      buttonsToShow="two"
-      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
-      [showDelete]="!isNew()"
-      deleteText="Delete event"
-      (save)="save($event)"
-      (delete)="deleteEvent()"
-    ></pc-detail-header>
-
-    @if (error()) {
-    <div class="alert alert-error shadow-sm py-3 text-sm">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
-      <!-- Left 2 cols: Main details -->
-      <div class="md:col-span-2 space-y-6">
-        <pc-card title="Event Details">
-          <pc-input
-            id="event-name"
-            label="Event Name *"
-            [formField]="form.name"
-            placeholder="E.g., Annual Fundraising Dinner"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="event-slug"
-              label="URL Slug *"
-              [formField]="form.slug"
-              placeholder="e.g. annual-fundraising-dinner"
-              [hasError]="slugUnique() === false"
-              (input)="onSlugInput()"
-            >
-              <span pc-prefix class="text-xs text-base-content/50 font-mono">/events/</span>
-            </pc-input>
-            @if (slugChecking()) {
-            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
-              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
-            </p>
-            } @else if (slugUnique() === true) {
-            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
-            } @else if (slugUnique() === false) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
-            }
-          </div>
-
-          <pc-textarea
-            id="event-desc"
-            label="Description"
-            [formField]="form.description"
-            placeholder="Describe the event, agenda, and what attendees can expect..."
-            [rows]="4"
-          ></pc-textarea>
-
-          <pc-input
-            id="event-location"
-            label="Location Address"
-            [formField]="form.location_address"
-            placeholder="E.g., 123 Main St, City Hall Ballroom"
-          ></pc-input>
-
-          <div class="divider mt-4"></div>
-          <div>
-            <h4 class="font-bold text-md">Collected Fields</h4>
-            <h5>Choose which fields appear on the public RSVP form.</h5>
-            <pc-fields-selector
-              [selectedFields]="selectedFields()"
-              (fieldsChange)="selectedFields.set($event)"
-            ></pc-fields-selector>
-          </div>
-
-          <div class="divider"></div>
-
-          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
-            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
-            Organizer Contact
-          </h4>
-          <p class="text-xs text-base-content/60">Contact info for attendees who have questions about this event.</p>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <pc-input
-              id="contact-email"
-              label="Contact Email"
-              type="email"
-              [formField]="form.contact_email"
-              placeholder="organizer@example.com"
-            ></pc-input>
-            <pc-input
-              id="contact-phone"
-              label="Contact Phone"
-              [formField]="form.contact_phone"
-              placeholder="E.g., 555-0199"
-            ></pc-input>
-          </div>
-        </pc-card>
-
-        <!-- Ticket Types (only for existing events) -->
-        @if (!isNew()) {
-        <pc-card
-          title="Ticket Types"
-          subtitle="Define ticket tiers for this event. Leave empty for a free, unticketed RSVP."
-          icon="tag"
-        >
-          <button
-            pc-card-actions
-            type="button"
-            class="btn btn-xs btn-primary gap-1"
-            (click)="startAddTicket()"
-            [disabled]="addingTicket()"
-          >
-            <pc-icon name="plus" [size]="3"></pc-icon> Add Ticket Type
-          </button>
-
-          @if (ticketTypes().length === 0 && !addingTicket()) {
-          <p class="text-sm text-base-content/40 italic">
-            No ticket types defined — this event uses a simple free RSVP.
-          </p>
-          } @else {
-          <div class="overflow-x-auto border border-base-300 rounded-lg">
-            <table class="table table-sm w-full text-xs">
-              <thead>
-                <tr class="bg-base-200 text-base-content/70">
-                  <th>Name</th>
-                  <th>Price</th>
-                  <th>Capacity</th>
-                  <th class="w-16 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-base-200">
-                @for (ticket of ticketTypes(); track ticket.id) {
-                <tr class="hover:bg-base-200/40">
-                  <td>
-                    <div class="font-semibold">{{ ticket.name }}</div>
-                    @if (ticket.description) {
-                    <div class="text-[10px] text-base-content/50 mt-0.5">{{ ticket.description }}</div>
-                    }
-                  </td>
-                  <td class="font-mono">{{ formatPrice(ticket.price_cents) }}</td>
-                  <td>{{ ticket.capacity ?? 'Unlimited' }}</td>
-                  <td>
-                    <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteTicketType(ticket.id)">
-                      <pc-icon name="trash" [size]="4"></pc-icon>
-                    </button>
-                  </td>
-                </tr>
-                } @if (addingTicket()) {
-                <tr class="bg-base-200/30">
-                  <td>
-                    <input
-                      type="text"
-                      class="input input-bordered input-xs w-full"
-                      placeholder="Ticket name *"
-                      [ngModel]="newTicket().name"
-                      (ngModelChange)="setNewTicketName($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      class="input input-bordered input-xs w-20 font-mono"
-                      placeholder="0"
-                      min="0"
-                      step="1"
-                      title="Price in cents (e.g. 2500 = $25.00)"
-                      [ngModel]="newTicket().price_cents"
-                      (ngModelChange)="setNewTicketPrice($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                    <span class="text-[10px] text-base-content/40 ml-1">cents</span>
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      class="input input-bordered input-xs w-20 font-mono"
-                      placeholder="∞"
-                      min="1"
-                      [ngModel]="newTicket().capacity"
-                      (ngModelChange)="setNewTicketCapacity($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                  </td>
-                  <td>
-                    <div class="flex items-center gap-1">
-                      <button type="button" class="btn btn-ghost btn-xs text-success" (click)="saveNewTicket()">
-                        <pc-icon name="check-circle" [size]="4"></pc-icon>
-                      </button>
-                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="cancelAddTicket()">
-                        <pc-icon name="x-mark" [size]="4"></pc-icon>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-          }
-        </pc-card>
-        }
-      </div>
-
-      <!-- Right col: Scheduling, toggles -->
-      <div class="space-y-6">
-        <pc-card title="Scheduling">
-          <pc-input
-            id="start-time"
-            label="Start Date & Time *"
-            type="datetime-local"
-            [formField]="form.start_time"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="end-time"
-              label="End Date & Time *"
-              type="datetime-local"
-              [formField]="form.end_time"
-              [hasError]="endBeforeStartError()"
-            ></pc-input>
-            @if (endBeforeStartError()) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
-            }
-          </div>
-
-          <pc-input
-            id="capacity"
-            label="Total Capacity"
-            type="number"
-            [formField]="form.capacity"
-            placeholder="Unlimited"
-          ></pc-input>
-        </pc-card>
-
-        <pc-card title="Publishing & Notifications">
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Published</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  When enabled, this event page is visible to the public.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_published" />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Registration Confirmation</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send a confirmation email when someone RSVPs for this event.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                class="toggle toggle-primary mt-1 shrink-0"
-                [formField]="form.send_registration_confirmation"
-              />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send 24h Reminder</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send automated reminder emails to registered attendees 24 hours before the event.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
-            </label>
-          </div>
-        </pc-card>
-
-        @if (!isNew()) {
-        <pc-entity-overview
-          title="Event Overview"
-          [createdAt]="detail()?.created_at"
-          createdBy="Representative"
-        ></pc-entity-overview>
-        }
-      </div>
-
-      <!-- Right col: Fields & Public Link -->
-
-      @if (!isNew() && publicUrl()) {
-      <pc-public-link-panel
-        [url]="publicUrl()"
-        label="Public RSVP Link"
-        subtitle="Share this link so people can RSVP for the event."
-      ></pc-public-link-panel>
-      }
-    </form>
-  </div>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
 
 ```typescript
@@ -36786,6 +36093,7 @@ import { Card as PcCard } from '@uxcommon/components/card/card';
 import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
 import { SettingsService } from '@experiences/settings/services/settings-service';
 import { environment } from '../../../../environments/environment';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-form-editor',
@@ -36892,6 +36200,8 @@ export class FormEditorComponent implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, AddWebFormObj);
   });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
 
   protected readonly isDonationForm = computed(() => this.payload().form_type === 'donation');
 
@@ -37188,6 +36498,10 @@ ${
     }
   }
 
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.payload().name || 'this form');
+  }
+
   protected async save(done?: (() => void) | Event) {
     if (done instanceof Event) {
       done.preventDefault();
@@ -37320,370 +36634,141 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.ts
+## File: apps/frontend/src/app/experiences/households/ui/household-form.html
 
-```typescript
-import { Component, OnInit, signal, computed, inject } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, FormField, validateStandardSchema, submit } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AddWebFormObj } from '../../../../../../../libs/common/src';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { FormsService } from '@experiences/forms/services/forms-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Tags } from '@experiences/tags/ui/tags';
-import { TagItem } from '@uxcommon/components/tags/tagitem';
-import { Icon } from '@icons/icon';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { SettingsService } from '@experiences/settings/services/settings-service';
-import { environment } from '../../../../environments/environment';
+```html
+<!-- Template for household edit form -->
+<div class="flex min-h-full flex-col bg-base-100 p-6">
+  <div class="w-full max-w-4xl">
+    @if (household()?.is_placeholder) {
+    <div class="alert alert-warning mb-6 shadow rounded-lg flex gap-3">
+      <pc-icon name="exclamation-triangle" class="shrink-0" [size]="5"></pc-icon>
+      <div class="flex flex-col">
+        <span class="font-bold">System Placeholder Household</span>
+        <span class="text-xs font-light"
+          >This household is a permanent placeholder for people with no address and cannot be edited.</span
+        >
+      </div>
+    </div>
+    } @else {
+    <pc-detail-header
+      [title]="id() ? 'Edit household' : 'New household'"
+      [eyebrow]="id() ? 'Editing' : 'New'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      [buttonsToShow]="household()?.id ? 'two' : 'three'"
+      [btn1Text]="household()?.id ? 'Save household' : 'Create household'"
+      [showDelete]="!isNewMode()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete household"
+      (save)="save($event)"
+      (delete)="deleteHousehold()"
+    ></pc-detail-header>
 
-@Component({
-  selector: 'pc-fundraising-form',
-  imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions, PcCard],
-  templateUrl: './fundraising-form.html',
-})
-export class FundraisingFormComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly settingsSvc = inject(SettingsService);
+    <progress class="progress w-full mb-6" [class.hidden]="!isLoading()"></progress>
 
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly isInitialized = signal(false);
-  protected readonly saving = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly isNew = signal(true);
-  protected readonly formId = signal<string | null>(null);
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Form Section -->
+      <div class="lg:col-span-2">
+        <form (submit)="$event.preventDefault()">
+          <fieldset [disabled]="isLoading() || (household()?.is_placeholder ?? false)">
+            <div class="flex flex-col gap-6">
+              <!-- Current Address Display -->
+              @if (!household()?.is_placeholder && addressString()) {
+              <div class="flex items-start gap-3 bg-base-200 p-4 rounded-xl border border-base-300 shadow-sm">
+                <pc-icon name="map-pin" class="text-primary shrink-0 mt-0.5" [size]="5"></pc-icon>
+                <div class="flex flex-col">
+                  <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50"
+                    >Current Address</span
+                  >
+                  <span class="text-sm font-medium text-base-content">{{ addressString() }}</span>
+                </div>
+              </div>
+              }
 
-  protected setType(type: 'donation' | 'recurring_donation') {
-    this.payload.update((p) => ({ ...p, form_type: type }));
-  }
+              <!-- Autocomplete Address Search -->
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-semibold text-base-content/75">Search address</label>
+                <pc-address-autocomplete
+                  (addressSelected)="handleAddressChange($event)"
+                  [disabled]="isLoading() || (household()?.is_placeholder ?? false)"
+                ></pc-address-autocomplete>
+              </div>
 
-  protected readonly hasStripeKey = computed(() => {
-    const key = this.settingsSvc.getValue<string>('donations.stripe_secret_key', '');
-    return !!key.trim();
-  });
+              <!-- Collapsible manual entry -->
+              <details class="group">
+                <summary
+                  class="cursor-pointer list-none flex items-center gap-2 text-sm font-medium text-base-content/60 hover:text-base-content select-none py-1"
+                >
+                  <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
+                  Enter address manually
+                </summary>
+                <div class="mt-4 pl-3 border-l-2 border-base-300">
+                  <pc-address-form-group [form]="form"></pc-address-form-group>
+                </div>
+              </details>
 
-  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
-  protected readonly selectedLists = signal<string[]>([]);
-  protected readonly selectedTags = signal<string[]>([]);
-  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+              <div class="divider mb-1 uppercase tracking-wider text-xs font-semibold text-base-content/40">
+                Segmentation
+              </div>
 
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    redirect_url: '',
-    status: 'active' as 'active' | 'archived',
-    send_confirmation: true,
-    send_alert: true,
-    form_type: 'donation' as 'donation' | 'recurring_donation',
-  });
+              <!-- Tags -->
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-semibold text-base-content/75">Tags</label>
+                <pc-tags
+                  [tags]="tags"
+                  type="tag"
+                  [enableAutoComplete]="true"
+                  [readonly]="household()?.is_placeholder ?? false"
+                  [canDelete]="!(household()?.is_placeholder ?? false)"
+                  (tagAdded)="tagAdded($event)"
+                  (tagRemoved)="tagRemoved($event)"
+                ></pc-tags>
+              </div>
 
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddWebFormObj);
-  });
+              <!-- Issues -->
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-semibold text-base-content/75">Issues of Interest</label>
+                <pc-tags
+                  [tags]="issues"
+                  type="issue"
+                  [enableAutoComplete]="true"
+                  placeholder="Enter issues, separated by comma"
+                  [readonly]="household()?.is_placeholder ?? false"
+                  [canDelete]="!(household()?.is_placeholder ?? false)"
+                  (tagAdded)="issueAdded($event)"
+                  (tagRemoved)="issueRemoved($event)"
+                ></pc-tags>
+              </div>
 
-  protected readonly isRecurring = computed(() => this.payload().form_type === 'recurring_donation');
+              <!-- Notes -->
+              <pc-textarea
+                label="Internal Notes"
+                placeholder="Internal notes regarding this household..."
+                [formField]="form.notes"
+                [rows]="3"
+              ></pc-textarea>
 
-  protected readonly embedSnippet = computed(() => {
-    const id = this.formId();
-    if (!id) return '';
-    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
-    const recurring = this.isRecurring();
+              <div class="h-2"></div>
+            </div>
+          </fieldset>
+        </form>
+      </div>
 
-    const amountField = recurring
-      ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
-    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
-  </div>`
-      : `
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($ CAD) *</label>
-    <input type="number" name="amount" min="1" step="any" placeholder="E.g. 50.00" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`;
-
-    const submitLabel = recurring ? 'Start Monthly Pledge' : 'Donate Now';
-
-    return `<!-- PeopleCRM Embeddable Donation Form -->
-<form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
-  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name *</label>
-    <input type="text" name="first_name" placeholder="John" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name *</label>
-    <input type="text" name="last_name" placeholder="Doe" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
-    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
-    <input type="text" name="street1" placeholder="E.g. 123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
-    <input type="text" name="city" placeholder="E.g. Toronto" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country of Residence *</label>
-    <select name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
-      <option value="CA">Canada</option>
-      <option value="US">United States</option>
-      <option value="GB">United Kingdom</option>
-      <option value="AU">Australia</option>
-    </select>
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
-    <input type="text" name="state" placeholder="E.g. ON or NY" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal Code *</label>
-    <input type="text" name="zip" placeholder="E.g. M5V 2T6" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>${amountField}
-
-  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
-</form>`;
-  });
-
-  protected readonly formUrl = computed(() => {
-    const id = this.formId();
-    if (!id) return '';
-    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${id}`;
-  });
-
-  public ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get('id');
-    if (id && id !== 'add') {
-      this.isNew.set(false);
-      this.formId.set(id);
-    }
-    void this.loadLists();
-    void this.settingsSvc.load();
-  }
-
-  protected listName(id: string): string {
-    const match = this.availableLists().find((list) => list.id === id);
-    return match?.name ?? 'List';
-  }
-
-  protected handleListSelect(event: Event): void {
-    const select = event.target as HTMLSelectElement | null;
-    if (!select) return;
-    const value = select.value;
-    if (!value) return;
-    const current = new Set(this.selectedLists());
-    if (!current.has(value)) {
-      current.add(value);
-      this.selectedLists.set(Array.from(current));
-    }
-    select.value = '';
-  }
-
-  protected removeList(listId: string): void {
-    this.selectedLists.set(this.selectedLists().filter((id) => id !== listId));
-  }
-
-  protected handleTagsChange(tags: string[]): void {
-    this.selectedTags.set(Array.isArray(tags) ? [...tags] : []);
-  }
-
-  protected copySnippet(): void {
-    const code = this.embedSnippet();
-    if (!code) return;
-    navigator.clipboard.writeText(code).then(
-      () => this.alertSvc.showSuccess('Donation page snippet copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
-
-  protected copyUrl(): void {
-    const url = this.formUrl();
-    if (!url) return;
-    navigator.clipboard.writeText(url).then(
-      () => this.alertSvc.showSuccess('Donation page URL copied!'),
-      () => this.alertSvc.showError('Failed to copy URL.'),
-    );
-  }
-
-  protected async deleteForm() {
-    const id = this.formId();
-    if (!id) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Donation Page',
-      message: 'Are you sure you want to delete this donation page? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    this.saving.set(true);
-    try {
-      await this.formsSvc.delete(id);
-      this.formsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Donation page deleted');
-      await this.router.navigate(['/donation-pages']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete donation page';
-      this.alertSvc.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      this.alertSvc.showError('Please check your inputs.');
-      return;
-    }
-
-    this.saving.set(true);
-    this.error.set(null);
-
-    await submit(this.form, {
-      action: async () => {
-        const values = this.payload();
-
-        try {
-          if (this.isNew()) {
-            const payload = {
-              name: values.name?.trim() ?? '',
-              description: values.description?.trim() || null,
-              redirect_url: values.redirect_url?.trim() || null,
-              target_tags: this.selectedTags().length ? this.selectedTags() : null,
-              target_lists: this.selectedLists().length ? this.selectedLists() : null,
-              status: values.status,
-              fields: this.selectedFields(),
-              send_confirmation: !!values.send_confirmation,
-              send_alert: !!values.send_alert,
-              form_type: values.form_type,
-            };
-            const result = (await this.formsSvc.add(payload)) as { id: string };
-            this.alertSvc.showSuccess('Donation page created successfully!');
-            void this.router.navigate(['/donation-pages', result.id]);
-          } else {
-            const id = this.formId()!;
-            const payload = {
-              name: values.name?.trim() ?? '',
-              description: values.description?.trim() || null,
-              redirect_url: values.redirect_url?.trim() || null,
-              target_tags: this.selectedTags().length ? this.selectedTags() : null,
-              target_lists: this.selectedLists().length ? this.selectedLists() : null,
-              status: values.status,
-              fields: this.selectedFields(),
-              send_confirmation: !!values.send_confirmation,
-              send_alert: !!values.send_alert,
-            };
-            await this.formsSvc.update(id, payload);
-            this.alertSvc.showSuccess('Donation page updated successfully!');
-            if (typeof done === 'function') {
-              done();
-            } else {
-              void this.router.navigate(['/donation-pages', id]);
-            }
-          }
-        } catch (err) {
-          const msg = err instanceof Error && err.message ? err.message : 'An error occurred while saving.';
-          this.error.set(msg);
-          this.alertSvc.showError(msg);
-        } finally {
-          this.saving.set(false);
+      <!-- Overview Sidebar -->
+      <div>
+        @if (!isNewMode()) {
+        <pc-entity-overview
+          [createdAt]="household()?.created_at"
+          [updatedAt]="household()?.updated_at"
+        ></pc-entity-overview>
         }
-        return null;
-      },
-    });
-  }
-
-  private async loadLists(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const result = await this.listsSvc.getAll({ limit: 100 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows.map((row: any) => ({
-          id: String(row.id),
-          name: String(row.name),
-        })),
-      );
-      if (!this.isNew()) {
-        await this.loadPageDetails();
-      }
-    } catch (err) {
-      console.error('Failed to load lists', err);
-    } finally {
-      this.isInitialized.set(true);
-      end();
+      </div>
+    </div>
     }
-  }
-
-  private async loadPageDetails(): Promise<void> {
-    const id = this.formId();
-    if (!id) return;
-    const end = this._loading.begin();
-    try {
-      const record = (await this.formsSvc.getById(id)) as any;
-      if (record) {
-        this.payload.set({
-          name: record.name ?? '',
-          description: record.description ?? '',
-          redirect_url: record.redirect_url ?? '',
-          status: (record.status as 'active' | 'archived') ?? 'active',
-          send_confirmation: record.send_confirmation !== false,
-          send_alert: record.send_alert !== false,
-          form_type: (record.form_type as 'donation' | 'recurring_donation') ?? 'donation',
-        });
-        this.form().reset();
-        this.selectedTags.set(Array.isArray(record.target_tags) ? record.target_tags : []);
-        this.selectedLists.set(Array.isArray(record.target_lists) ? record.target_lists : []);
-        if (record.fields) {
-          const fields = Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
-          this.selectedFields.set(fields);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load page details', err);
-      this.error.set('Failed to load page details.');
-    } finally {
-      end();
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+  </div>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
@@ -38436,6 +37521,279 @@ export class PersonConnections implements OnInit {
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
+
+```html
+<!-- Template for person edit/add view -->
+<div class="flex min-h-full flex-col bg-base-100 p-6">
+  <progress class="progress w-full" [class.hidden]="!isLoading()"></progress>
+
+  <div class="w-full max-w-4xl">
+    <!-- Back to profile or list -->
+    <pc-detail-header
+      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
+      [eyebrow]="person()?.id ? 'Editing' : 'New'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      [buttonsToShow]="buttonsToShow()"
+      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
+      [showDelete]="!!person()?.id"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete person"
+      (save)="save($event)"
+      (delete)="deletePerson()"
+    ></pc-detail-header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+      <div class="lg:col-span-2">
+        <form (submit)="save()" novalidate class="flex flex-col gap-5">
+          <fieldset [disabled]="isLoading()" class="flex flex-col gap-5">
+            @if (!person()?.id) {
+            <label class="label text-xs text-base-content/50 -mb-2"
+              >All fields are optional, but try to add as much as possible</label
+            >
+            }
+
+            <!-- Name Inputs -->
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/3"
+                placeholder="First Name"
+                aria-label="First Name"
+                [formField]="form.first_name"
+              ></pc-input>
+              <pc-input
+                class="basis-1/3"
+                placeholder="Middle Name(s)"
+                aria-label="Middle Name(s)"
+                [formField]="form.middle_names"
+              ></pc-input>
+              <pc-input
+                class="basis-1/3"
+                placeholder="Last Name"
+                aria-label="Last Name"
+                [formField]="form.last_name"
+              ></pc-input>
+            </div>
+
+            <!-- Emails -->
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                type="email"
+                placeholder="Email"
+                aria-label="Email Address"
+                [formField]="form.email"
+                [hasError]="!!emailError()"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                type="email"
+                placeholder="Email 2"
+                aria-label="Secondary Email Address"
+                [formField]="form.email2"
+              ></pc-input>
+            </div>
+            @if (emailError()) {
+            <div class="text-error text-sm pl-1 -mt-2 flex items-center gap-1">
+              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+              {{ emailError() }}
+            </div>
+            }
+
+            <!-- Phones -->
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                type="tel"
+                placeholder="Mobile Phone"
+                aria-label="Mobile Phone"
+                [formField]="form.mobile"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                type="tel"
+                placeholder="Home Phone"
+                aria-label="Home Phone"
+                [formField]="form.home_phone"
+              ></pc-input>
+            </div>
+
+            <!-- Company Select -->
+            <pc-select placeholder="-- Select Company --" aria-label="Company" [formField]="form.company_id">
+              @for (c of companies(); track c.id) {
+              <option [value]="c.id">{{ c.name }}</option>
+              }
+            </pc-select>
+
+            <!-- Assigned To / Owner Select -->
+            <pc-select placeholder="-- Select Contact Owner --" aria-label="Assigned To" [formField]="form.assigned_to">
+              @for (u of users(); track u.id) {
+              <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+              }
+            </pc-select>
+
+            <!-- Address & Household Assignment -->
+            @if (householdId() && !isPlaceholderHousehold()) {
+            <div class="text-sm pl-1 flex items-center gap-2 bg-base-200/50 p-2.5 rounded-lg border border-base-300/50">
+              <span class="text-base-content/60">Address:</span>
+              <span class="font-medium text-base-content flex-grow">{{ addressString() }}</span>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
+                data-tip="Change Household"
+                (click)="openAssignDrawer()"
+              >
+                <pc-icon name="chevron-down" [size]="4"></pc-icon>
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
+                data-tip="Go to Household"
+                (click)="navigateToHousehold()"
+              >
+                <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-error tooltip"
+                data-tip="Remove Address"
+                (click)="removeAddress()"
+              >
+                <pc-icon name="trash" [size]="4"></pc-icon>
+              </button>
+            </div>
+            } @else {
+            <div
+              class="flex items-center justify-between text-sm pl-1 bg-base-200/30 p-2.5 rounded-lg border border-base-200 border-dashed"
+            >
+              <div class="flex items-center gap-2">
+                <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
+                <span class="text-base-content/50 italic">No address assigned</span>
+              </div>
+              <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                Assign Household
+              </button>
+            </div>
+            }
+
+            <!-- Social Media Profile Links -->
+            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
+              Social Media Profiles
+            </div>
+
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                placeholder="LinkedIn URL"
+                aria-label="LinkedIn URL"
+                [formField]="form.linkedin"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                placeholder="Twitter/X URL"
+                aria-label="Twitter/X URL"
+                [formField]="form.twitter"
+              ></pc-input>
+            </div>
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                placeholder="Facebook URL"
+                aria-label="Facebook URL"
+                [formField]="form.facebook"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                placeholder="Instagram URL"
+                aria-label="Instagram URL"
+                [formField]="form.instagram"
+              ></pc-input>
+            </div>
+
+            <!-- Tags & Segmentation -->
+            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
+              Tags & Issues
+            </div>
+
+            <pc-tags
+              [tags]="tags()"
+              type="tag"
+              [enableAutoComplete]="true"
+              (tagAdded)="tagAdded($event)"
+              (tagRemoved)="tagRemoved($event)"
+            ></pc-tags>
+
+            <pc-tags
+              [tags]="issues()"
+              type="issue"
+              [enableAutoComplete]="true"
+              placeholder="Enter issues, separated by comma"
+              (tagAdded)="issueAdded($event)"
+              (tagRemoved)="issueRemoved($event)"
+            ></pc-tags>
+
+            <!-- Internal Notes -->
+            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">Notes</div>
+
+            <pc-textarea
+              placeholder="Internal Notes..."
+              aria-label="Notes"
+              [formField]="form.notes"
+              [rows]="3"
+            ></pc-textarea>
+          </fieldset>
+        </form>
+      </div>
+
+      <!-- Overview Sidebar -->
+      <div>
+        @if (!isNewMode()) {
+        <pc-entity-overview [createdAt]="person()?.created_at" [updatedAt]="person()?.updated_at"></pc-entity-overview>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Right-side drawer: Assign to a different household -->
+  <pc-side-drawer
+    [isOpen]="assignDrawerOpen()"
+    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
+    (close)="closeAssignDrawer()"
+  >
+    <div class="flex flex-col gap-3">
+      <input
+        type="text"
+        class="input w-full"
+        placeholder="Search address, city, zip, tag..."
+        aria-label="Search address, city, zip, or tag to assign a household"
+        [value]="householdSearch()"
+        (input)="onHouseholdSearch($event)"
+      />
+      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
+      <div
+        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
+        [class.hidden]="householdsLoading() && householdResults().length === 0"
+      >
+        @for (h of householdResults(); track h.id) {
+        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
+          <div class="text-sm">
+            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
+            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
+          </div>
+          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
+        </div>
+        } @if (!householdsLoading() && householdResults().length === 0) {
+        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
+        }
+      </div>
+    </div>
+  </pc-side-drawer>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
@@ -39473,594 +38831,1122 @@ export class DonationsSettingsComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/google-sync/google-sync-settings.ts
+## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.html
 
-```typescript
-import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { TRPCService } from '../../../services/api/trpc-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+```html
+<div class="p-6 max-w-5xl space-y-6">
+  <!-- Loading State -->
+  @if (error() && !detail() && !isNew()) {
+  <div class="alert alert-error m-4">
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!isNew() && !detail()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Loading event details...</p>
+  </div>
+  } @else {
+  <div class="space-y-6">
+    <!-- Header -->
+    <pc-detail-header
+      [title]="isNew() ? 'New volunteer event' : detail()?.name || 'Volunteer event'"
+      [eyebrow]="isNew() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
+      [subtitle]="isNew() ? 'Schedule a new volunteer opportunity.' : 'Manage volunteer settings and log attendance roster.'"
+      [form]="form"
+      [isLoading]="saving()"
+      [disabled]="slugChecking() || slugUnique() === false"
+      buttonsToShow="two"
+      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
+      [showDelete]="!isNew()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete event"
+      (save)="save($event)"
+      (delete)="deleteEvent()"
+    ></pc-detail-header>
 
-@Component({
-  selector: 'pc-google-sync-settings',
-  imports: [Icon],
-  templateUrl: './google-sync-settings.html',
-})
-export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly destroyRef = inject(DestroyRef);
-
-  protected readonly status = signal<{
-    connected: boolean;
-    googleEmail: string | null;
-    syncedAt: Date | string | null;
-    syncing?: boolean;
-    lastSyncError?: string | null;
-    lastSyncErrorAt?: Date | string | null;
-  } | null>(null);
-  protected readonly isLoading = signal(true);
-  protected readonly isConnecting = signal(false);
-  protected readonly isSyncing = signal(false);
-  protected readonly connectError = signal<string | null>(null);
-  protected readonly lastSyncResult = signal<{ inserted: number } | null>(null);
-  private pollingTimer: ReturnType<typeof setInterval> | null = null;
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    // Handle OAuth redirect result (google_connected or google_error query params)
-    const params = this.route.snapshot.queryParamMap;
-    if (params.has('google_connected')) {
-      this.alertSvc.showSuccess('Google Suite account connected successfully!');
-    } else if (params.has('google_error')) {
-      this.connectError.set(params.get('google_error'));
-    }
-
-    await this.loadStatus();
-  }
-
-  protected async connect() {
-    this.isConnecting.set(true);
-    this.connectError.set(null);
-    try {
-      const returnTo = window.location.pathname + window.location.search;
-      const result = await this.api.googleSync.getAuthUrl.query({ returnTo });
-      window.location.href = result.url;
-    } catch {
-      this.connectError.set('Failed to initiate Google sign-in. Please try again.');
-      this.isConnecting.set(false);
-    }
-  }
-
-  protected async syncNow() {
-    this.isSyncing.set(true);
-    this.lastSyncResult.set(null);
-    try {
-      await this.api.googleSync.syncNow.mutate();
-      await this.loadStatus();
-    } catch {
-      this.alertSvc.showError('Sync failed. Please try reconnecting your account.');
-      this.isSyncing.set(false);
-    }
-  }
-
-  protected async forceFullResync() {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Force Full Re-sync',
-      message: 'This will reset the sync position and re-download all emails from scratch. Continue?',
-      variant: 'warning',
-      confirmText: 'Re-sync',
-    });
-    if (!confirmed) return;
-
-    this.isSyncing.set(true);
-    this.lastSyncResult.set(null);
-    try {
-      await this.api.googleSync.resetSync.mutate();
-      await this.api.googleSync.syncNow.mutate();
-      await this.loadStatus();
-    } catch {
-      this.alertSvc.showError('Failed to start re-sync. Please try again.');
-      this.isSyncing.set(false);
-    }
-  }
-
-  protected async disconnect() {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Disconnect Google Suite',
-      message: 'Are you sure you want to disconnect your Google Suite account?',
-      variant: 'warning',
-      confirmText: 'Disconnect',
-    });
-    if (!confirmed) return;
-
-    const removeLocal = await this.dialogs.confirm({
-      title: 'Delete Synced Emails',
-      message: 'Would you also like to delete all locally stored emails that were synced from this account?',
-      variant: 'danger',
-      confirmText: 'Delete Emails',
-      cancelText: 'Keep Emails',
-    });
-    try {
-      await this.api.googleSync.disconnect.mutate({ removeLocalEmails: removeLocal });
-      this.status.set({ connected: false, googleEmail: null, syncedAt: null });
-      this.lastSyncResult.set(null);
-      this.alertSvc.showSuccess('Google Suite account disconnected.');
-    } catch {
-      this.alertSvc.showError('Failed to disconnect. Please try again.');
-    }
-  }
-
-  protected formatDate(date: Date | string | null) {
-    if (!date) return 'Never';
-    return new Date(date).toLocaleString();
-  }
-
-  private async loadStatus() {
-    try {
-      const s = await this.api.googleSync.getConnectionStatus.query();
-      this.status.set(s);
-      if (s?.syncing) {
-        this.isSyncing.set(true);
-        this.startPollingStatus();
-      } else {
-        this.isSyncing.set(false);
-        this.stopPollingStatus();
-      }
-    } catch (err) {
-      console.error('Failed to load connection status:', err);
-      this.isSyncing.set(false);
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
-
-  private startPollingStatus() {
-    if (this.pollingTimer) return;
-    this.pollingTimer = setInterval(() => void this.pollStep(), 4000);
-    this.destroyRef.onDestroy(() => this.stopPollingStatus());
-  }
-
-  private async pollStep(): Promise<void> {
-    try {
-      const s = await this.api.googleSync.getConnectionStatus.query();
-      this.status.set(s);
-      if (!s?.syncing) {
-        this.isSyncing.set(false);
-        this.stopPollingStatus();
-        this.alertSvc.showSuccess('Google Suite mailbox sync completed.');
-      }
-    } catch (err) {
-      console.error('Error polling sync status:', err);
-      this.stopPollingStatus();
-    }
-  }
-
-  private stopPollingStatus() {
-    if (this.pollingTimer) {
-      clearInterval(this.pollingTimer);
-      this.pollingTimer = null;
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/settings/ms-sync/ms-sync-settings.ts
-
-```typescript
-import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { TRPCService } from '../../../services/api/trpc-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-
-@Component({
-  selector: 'pc-ms-sync-settings',
-  imports: [Icon],
-  templateUrl: './ms-sync-settings.html',
-})
-export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly destroyRef = inject(DestroyRef);
-
-  protected readonly status = signal<{
-    connected: boolean;
-    msEmail: string | null;
-    syncedAt: Date | string | null;
-    syncing?: boolean;
-    lastSyncError?: string | null;
-    lastSyncErrorAt?: Date | string | null;
-  } | null>(null);
-  protected readonly isLoading = signal(true);
-  protected readonly isConnecting = signal(false);
-  protected readonly isSyncing = signal(false);
-  protected readonly connectError = signal<string | null>(null);
-  protected readonly lastSyncResult = signal<{ inserted: number } | null>(null);
-  private pollingTimer: ReturnType<typeof setInterval> | null = null;
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    // Handle OAuth redirect result (ms_connected or ms_error query params)
-    const params = this.route.snapshot.queryParamMap;
-    if (params.has('ms_connected')) {
-      this.alertSvc.showSuccess('Office 365 account connected successfully!');
-    } else if (params.has('ms_error')) {
-      this.connectError.set(params.get('ms_error'));
-    }
-
-    await this.loadStatus();
-  }
-
-  protected async connect() {
-    this.isConnecting.set(true);
-    this.connectError.set(null);
-    try {
-      const returnTo = window.location.pathname + window.location.search;
-      const result = await this.api.msSync.getAuthUrl.query({ returnTo });
-      window.location.href = result.url;
-    } catch {
-      this.connectError.set('Failed to initiate Microsoft sign-in. Please try again.');
-      this.isConnecting.set(false);
-    }
-  }
-
-  protected async syncNow() {
-    this.isSyncing.set(true);
-    this.lastSyncResult.set(null);
-    try {
-      await this.api.msSync.syncNow.mutate();
-      await this.loadStatus();
-    } catch {
-      this.alertSvc.showError('Sync failed. Please try reconnecting your account.');
-      this.isSyncing.set(false);
-    }
-  }
-
-  protected async forceFullResync() {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Force Full Re-sync',
-      message: 'This will reset the sync position and re-download all emails from scratch. Continue?',
-      variant: 'warning',
-      confirmText: 'Re-sync',
-    });
-    if (!confirmed) return;
-
-    this.isSyncing.set(true);
-    this.lastSyncResult.set(null);
-    try {
-      await this.api.msSync.resetSync.mutate();
-      await this.api.msSync.syncNow.mutate();
-      await this.loadStatus();
-    } catch {
-      this.alertSvc.showError('Failed to start re-sync. Please try again.');
-      this.isSyncing.set(false);
-    }
-  }
-
-  protected async disconnect() {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Disconnect Office 365',
-      message: 'Are you sure you want to disconnect your Office 365 account?',
-      variant: 'warning',
-      confirmText: 'Disconnect',
-    });
-    if (!confirmed) return;
-
-    const removeLocal = await this.dialogs.confirm({
-      title: 'Delete Synced Emails',
-      message: 'Would you also like to delete all locally stored emails that were synced from this account?',
-      variant: 'danger',
-      confirmText: 'Delete Emails',
-      cancelText: 'Keep Emails',
-    });
-    try {
-      await this.api.msSync.disconnect.mutate({ removeLocalEmails: removeLocal });
-      this.status.set({ connected: false, msEmail: null, syncedAt: null });
-      this.lastSyncResult.set(null);
-      this.alertSvc.showSuccess('Office 365 account disconnected.');
-    } catch {
-      this.alertSvc.showError('Failed to disconnect. Please try again.');
-    }
-  }
-
-  protected formatDate(date: Date | string | null) {
-    if (!date) return 'Never';
-    return new Date(date).toLocaleString();
-  }
-
-  private async loadStatus() {
-    try {
-      const s = await this.api.msSync.getConnectionStatus.query();
-      this.status.set(s);
-      if (s?.syncing) {
-        this.isSyncing.set(true);
-        this.startPollingStatus();
-      } else {
-        this.isSyncing.set(false);
-        this.stopPollingStatus();
-      }
-    } catch (err) {
-      console.error('Failed to load connection status:', err);
-      this.isSyncing.set(false);
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
-
-  private startPollingStatus() {
-    if (this.pollingTimer) return;
-    this.pollingTimer = setInterval(() => void this.pollStep(), 4000);
-    this.destroyRef.onDestroy(() => this.stopPollingStatus());
-  }
-
-  private async pollStep(): Promise<void> {
-    try {
-      const s = await this.api.msSync.getConnectionStatus.query();
-      this.status.set(s);
-      if (!s?.syncing) {
-        this.isSyncing.set(false);
-        this.stopPollingStatus();
-        this.alertSvc.showSuccess('Office 365 mailbox sync completed.');
-      }
-    } catch (err) {
-      console.error('Error polling sync status:', err);
-      this.stopPollingStatus();
-    }
-  }
-
-  private stopPollingStatus() {
-    if (this.pollingTimer) {
-      clearInterval(this.pollingTimer);
-      this.pollingTimer = null;
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/shifts/ui/shifts-grid.ts
-
-```typescript
-import { Component } from '@angular/core';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ShiftsService } from '../services/shifts-service';
-
-@Component({
-  selector: 'pc-shifts-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Shifts"
-        i18n-title
-        description="Manage volunteer shifts, schedule events, and track attendance records."
-        i18n-description
-        [showDescription]="true"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="true"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="add-schedule"
-        i18n-plusIcon
-        [showArchiveIcon]="true"
-        archiveIcon="archive-box-arrow-down"
-        i18n-archiveIcon
-        archiveTip="See archived events"
-        i18n-archiveTip
-      ></pc-datagrid>
+    <!-- Error alert -->
+    @if (error()) {
+    <div class="alert alert-error shadow-sm py-3 text-sm">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
     </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: ShiftsService },
-    provideDataGridConfig({ messages: { exportEntity: 'volunteer', exportFileName: 'volunteer-export.csv' } }),
-  ],
+    }
+
+    <!-- Event has passed alert -->
+    @if (eventPassed()) {
+    <div class="alert alert-warning shadow-sm py-3 text-sm flex items-center gap-2">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>This event has passed. Roster and details are now archived.</span>
+    </div>
+    }
+
+    <!-- Event details form -->
+    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
+      <!-- Left 2 cols: Main details -->
+      <div class="md:col-span-2 space-y-6">
+        <pc-card title="Event Details">
+          <pc-input
+            id="event-name"
+            label="Event Name *"
+            [formField]="form.name"
+            placeholder="E.g., Weekend Door Knocking Campaign"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="event-slug"
+              label="URL Slug *"
+              [formField]="form.slug"
+              placeholder="e.g. weekend-knocking"
+              [hasError]="slugUnique() === false"
+              (input)="onSlugInput()"
+            >
+              <span pc-prefix class="text-xs text-base-content/50 font-mono">/api/events/view/</span>
+            </pc-input>
+            @if (slugChecking()) {
+            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
+              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
+            </p>
+            } @else if (slugUnique() === true) {
+            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
+            } @else if (slugUnique() === false) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
+            }
+          </div>
+
+          <pc-textarea
+            id="event-desc"
+            label="Description"
+            [formField]="form.description"
+            placeholder="Describe the purpose, tasks, and instructions for volunteers..."
+            [rows]="4"
+          ></pc-textarea>
+
+          <pc-input
+            id="event-location"
+            label="Location Address"
+            [formField]="form.location_address"
+            placeholder="E.g., Central Park Pavilion, or street coordinates"
+          ></pc-input>
+
+          <div class="divider mt-4"></div>
+          <div>
+            <h4 class="font-bold text-md">Collected Fields</h4>
+            <h5>Choose which fields appear on the public signup form.</h5>
+            <pc-fields-selector
+              [selectedFields]="selectedFields()"
+              (fieldsChange)="selectedFields.set($event)"
+            ></pc-fields-selector>
+          </div>
+          <div class="divider"></div>
+
+          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
+            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
+            Organizer Contact Point
+          </h4>
+          <p class="text-xs text-base-content/60">
+            Provide contact info for constituents who have questions about this shift.
+          </p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <pc-input
+              id="contact-email"
+              label="Contact Email"
+              type="email"
+              [formField]="form.contact_email"
+              placeholder="organizer@example.com"
+            ></pc-input>
+            <pc-input
+              id="contact-phone"
+              label="Contact Phone"
+              [formField]="form.contact_phone"
+              placeholder="E.g., 555-0199"
+            ></pc-input>
+          </div>
+        </pc-card>
+
+        <!-- Roster Management (Only for existing events) -->
+        @if (!isNew()) {
+        <pc-card
+          title="Shift Roster"
+          subtitle="Sign up volunteers and record their attendance and hours."
+          icon="user-group"
+        >
+          <div pc-card-actions class="badge badge-primary gap-1">
+            {{ roster().length }} Signed Up @if (detail()?.capacity) {
+            <span>/ {{ detail()?.capacity }} Max</span>
+            }
+          </div>
+
+          <!-- Search to Add Volunteers -->
+          <div class="relative space-y-1">
+            <label class="label text-xs font-semibold text-base-content/65 uppercase">Add Volunteer to Roster</label>
+            <div class="relative">
+              <input
+                type="text"
+                class="input input-bordered w-full pl-10"
+                placeholder="Search volunteers by name or email..."
+                [ngModel]="volunteerSearch()"
+                (ngModelChange)="volunteerSearch.set($event)"
+                [ngModelOptions]="{standalone: true}"
+              />
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-base-content/40">
+                <pc-icon name="magnifying-glass" [size]="5"></pc-icon>
+              </div>
+            </div>
+
+            <!-- Search suggestions -->
+            @if (volunteerSearchResults().length > 0) {
+            <div
+              class="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
+            >
+              @for (p of volunteerSearchResults(); track p.id) {
+              <div
+                (click)="addVolunteer(p)"
+                class="p-3 hover:bg-base-200 cursor-pointer flex items-center justify-between"
+              >
+                <div>
+                  <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
+                  <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
+                </div>
+                <button type="button" class="btn btn-primary btn-xs gap-1">
+                  <pc-icon name="plus" [size]="3"></pc-icon>
+                  Add
+                </button>
+              </div>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Roster Table -->
+          <div class="overflow-x-auto border border-base-300 rounded-lg">
+            <table class="table w-full text-sm">
+              <thead>
+                <tr class="bg-base-200 text-xs">
+                  <th>Volunteer</th>
+                  <th class="w-40">Status</th>
+                  <th class="w-24">Hours</th>
+                  <th>Notes</th>
+                  <th class="w-20 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-base-200">
+                @if (roster().length === 0) {
+                <tr>
+                  <td colspan="5" class="text-center py-8 text-base-content/60 font-light italic">
+                    No volunteers signed up for this event yet.
+                  </td>
+                </tr>
+                } @for (shift of roster(); track shift.id) {
+                <tr class="hover:bg-base-200/40">
+                  <!-- Contact details -->
+                  <td>
+                    <div>
+                      <a
+                        [routerLink]="['/people', shift.person_id]"
+                        class="font-bold text-primary hover:underline hover:cursor-pointer"
+                      >
+                        {{ shift.first_name }} {{ shift.last_name }}
+                      </a>
+                    </div>
+                    <div class="text-xs text-base-content/60">{{ shift.email || 'No email' }}</div>
+                  </td>
+                  <!-- Shift status dropdown -->
+                  <td>
+                    <select
+                      class="select select-bordered select-sm w-full font-medium"
+                      [ngModel]="shift.status"
+                      (ngModelChange)="updateShiftStatus(shift, $event)"
+                      [ngModelOptions]="{standalone: true}"
+                      [class.select-success]="shift.status === 'attended'"
+                      [class.select-warning]="shift.status === 'signed_up'"
+                      [class.select-error]="shift.status === 'no_show'"
+                    >
+                      <option value="signed_up">Signed Up</option>
+                      <option value="attended">Attended</option>
+                      <option value="no_show">No Show</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </td>
+                  <!-- Hours worked input -->
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-sm w-full text-center font-mono"
+                      placeholder="--"
+                      min="0"
+                      max="24"
+                      step="0.5"
+                      [ngModel]="shift.hours_worked"
+                      (ngModelChange)="updateShiftHours(shift, $event)"
+                      [ngModelOptions]="{standalone: true}"
+                      [disabled]="shift.status !== 'attended'"
+                    />
+                  </td>
+                  <!-- Notes -->
+                  <td>
+                    <input
+                      type="text"
+                      class="input input-bordered input-sm w-full"
+                      placeholder="Optional details..."
+                      [ngModel]="shift.notes"
+                      (ngModelChange)="updateShiftNotes(shift, $event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <!-- Actions -->
+                  <td>
+                    <div class="flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs text-primary"
+                        title="Save shift edits"
+                        (click)="saveShiftDetails(shift)"
+                      >
+                        <pc-icon name="check-circle" [size]="6"></pc-icon>
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs text-error"
+                        title="Remove volunteer"
+                        (click)="removeVolunteer(shift)"
+                      >
+                        <pc-icon name="trash" [size]="5"></pc-icon>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </pc-card>
+        }
+      </div>
+
+      <!-- Right 1 col: Timing, Capacity, Actions -->
+      <div class="space-y-6">
+        @if (!isNew() && detail()?.public_url) {
+        <pc-card
+          title="Public Signup Link"
+          subtitle="Constituents can use this URL to view the event and sign up for this shift."
+          icon="globe-americas"
+        >
+          <div class="flex gap-2 items-center">
+            <input
+              #publicUrlInput
+              readonly
+              type="text"
+              class="input input-bordered input-sm flex-1 font-mono text-xs"
+              [value]="environment.apiUrl + detail()?.public_url"
+            />
+            <button
+              type="button"
+              class="btn btn-primary btn-sm btn-square"
+              title="Copy Link"
+              (click)="copyToClipboard(environment.apiUrl + detail()?.public_url)"
+            >
+              <pc-icon name="document-duplicate" [size]="5"></pc-icon>
+            </button>
+          </div>
+
+          @if (detail()?.is_private) {
+          <div class="alert alert-warning py-2 text-xs flex gap-2 mt-2">
+            <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+            <span>This event is <strong>Private</strong>. Only constituents with this direct link can view it.</span>
+          </div>
+          } @else {
+          <div class="text-xs text-base-content/50 mt-1 flex flex-col gap-1">
+            <span>Public Dashboard Link:</span>
+            <a
+              [href]="environment.apiUrl + detail()?.tenant_public_url"
+              target="_blank"
+              class="link link-primary font-mono text-[10px] break-all"
+            >
+              {{ environment.apiUrl + detail()?.tenant_public_url }}
+            </a>
+          </div>
+          }
+        </pc-card>
+        }
+        <pc-card title="Scheduling">
+          <pc-input
+            id="start-time"
+            label="Start Date & Time *"
+            type="datetime-local"
+            [formField]="form.start_time"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="end-time"
+              label="End Date & Time *"
+              type="datetime-local"
+              [formField]="form.end_time"
+              [hasError]="endBeforeStartError()"
+            ></pc-input>
+            @if (endBeforeStartError()) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
+            }
+          </div>
+
+          <pc-input
+            id="capacity"
+            label="Volunteer Capacity"
+            type="number"
+            [formField]="form.capacity"
+            placeholder="Unlimited"
+          ></pc-input>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Shift Reminder</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send automated reminder emails to signed up volunteers 24 hours before the shift start time.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Signup Confirmation</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send a confirmation email with shift and coordinator details to constituents when they sign up.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_signup_confirmation"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Volunteer Alert</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send email alert notifications to the event coordinator or organization admins upon new volunteer
+                  signups.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_volunteer_alert"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Private Event</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  If enabled, this event will not be shown on the public upcoming list. Only constituents with the
+                  direct link can sign up.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_private" />
+            </label>
+          </div>
+        </pc-card>
+
+        <!-- Event Summary Panel -->
+        @if (!isNew()) {
+        <pc-entity-overview title="Event Overview" [createdAt]="detail()?.created_at" createdBy="Representative">
+          <div pc-overview-prefix class="space-y-2 mb-2">
+            <div class="flex justify-between">
+              <span>Start:</span>
+              <span class="font-semibold">{{ detail()?.start_time | date:'medium' }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span>End:</span>
+              <span class="font-semibold">{{ detail()?.end_time | date:'medium' }}</span>
+            </div>
+          </div>
+        </pc-entity-overview>
+        }
+      </div>
+    </form>
+
+    @if (!isNew() && publicUrl()) {
+    <pc-public-link-panel
+      [url]="publicUrl()"
+      label="Public Signup Link"
+      subtitle="Share this link so volunteers can sign up for the shift."
+    ></pc-public-link-panel>
+    }
+  </div>
+
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/teams/ui/team-form.html
+
+```html
+@if (error() && !detail() && !isNew()) {
+<div class="p-6 alert alert-error m-4">
+  <span>{{ error() }}</span>
+</div>
+} @else if (!isNew() && !detail()) {
+<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
+  <span class="loading loading-spinner loading-xs"></span>
+  Loading team…
+</div>
+} @else {
+<section class="max-w-4xl space-y-6 p-6">
+  <pc-detail-header
+    [title]="isNew() ? 'New team' : (detail()?.name || 'Team')"
+    [eyebrow]="isNew() ? 'New' : 'Editing'"
+    [crumbs]="crumbs()"
+    subtitle="Teams group volunteers for easier coordination."
+    [form]="form"
+    [isLoading]="saving()"
+    buttonsToShow="two"
+    [btn1Text]="isNew() ? 'Create team' : 'Save team'"
+    [showDelete]="!isNew()"
+    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+    deleteText="Delete team"
+    (save)="save($event)"
+    (delete)="deleteTeam()"
+  ></pc-detail-header>
+
+  @if (error()) {
+  <div class="alert alert-error">
+    <span>{{ error() }}</span>
+  </div>
+  }
+
+  <form class="grid gap-6" (submit)="save($event)" novalidate>
+    <pc-card>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <pc-input id="team-name" label="Team Name" [formField]="form.name" placeholder="Community Outreach"></pc-input>
+
+        <pc-select id="team-captain" label="Team Captain (Volunteer)" [formField]="form.team_captain_id">
+          <option value="">No captain</option>
+          @for (person of people(); track person.id) {
+          <option [value]="person.id">{{ person.label }}</option>
+          }
+        </pc-select>
+
+        <pc-select id="team-lead" label="Team Lead (Organizer)" [formField]="form.team_lead_user_id">
+          <option value="">No lead</option>
+          @for (user of users(); track user.id) {
+          <option [value]="user.id">{{ user.first_name }} {{ user.last_name || '' }}</option>
+          }
+        </pc-select>
+      </div>
+
+      <pc-textarea
+        id="team-description"
+        label="Description"
+        [rows]="3"
+        [formField]="form.description"
+        placeholder="Describe this team's focus"
+      ></pc-textarea>
+    </pc-card>
+
+    <!-- Volunteers Section -->
+    <pc-card title="Volunteers" subtitle="Select volunteers who belong to this team.">
+      <div pc-card-actions class="text-sm text-base-content/60">
+        Captain: {{ captainLabel(form.team_captain_id().value() || null) }}
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-base-content/80" for="volunteer-select">Select Volunteers</label>
+          <select
+            id="volunteer-select"
+            class="select select-bordered h-40 w-full"
+            (change)="onVolunteersChange($event)"
+            multiple
+          >
+            @for (person of people(); track person.id) {
+            <option [value]="person.id" [selected]="isVolunteerSelected(person.id)">{{ person.label }}</option>
+            }
+          </select>
+          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple volunteers.</p>
+        </div>
+        <div class="space-y-2">
+          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned</h3>
+          <div class="max-h-40 overflow-auto rounded border border-base-200">
+            @if (volunteers().length === 0) {
+            <p class="p-3 text-sm text-base-content/60">No volunteers assigned yet.</p>
+            } @else {
+            <ul class="divide-y divide-base-200">
+              @for (volunteer of volunteers(); track volunteer.id) {
+              <li class="flex items-center justify-between p-3 text-sm">
+                <div>
+                  <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
+                  @if (volunteer.email) {
+                  <p class="text-xs text-base-content/60">{{ volunteer.email }}</p>
+                  }
+                </div>
+              </li>
+              }
+            </ul>
+            }
+          </div>
+        </div>
+      </div>
+    </pc-card>
+
+    <!-- Assigned target constituent lists section -->
+    <pc-card
+      title="Target Constituent Lists"
+      subtitle="Assign lists of people or households this team is responsible for contacting."
+    >
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-base-content/80" for="lists-select">Select Target Lists</label>
+          <select
+            id="lists-select"
+            class="select select-bordered h-40 w-full"
+            (change)="onListsChange($event)"
+            multiple
+          >
+            @for (list of availableLists(); track list.id) {
+            <option [value]="list.id" [selected]="isListSelected(list.id)">{{ list.name }} ({{ list.object }})</option>
+            }
+          </select>
+          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple lists.</p>
+        </div>
+        <div class="space-y-2">
+          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned Target Lists</h3>
+          <div class="max-h-40 overflow-auto rounded border border-base-200">
+            @if (assignedLists().length === 0) {
+            <p class="p-3 text-sm text-base-content/60">No lists assigned yet.</p>
+            } @else {
+            <ul class="divide-y divide-base-200">
+              @for (list of assignedLists(); track list.id) {
+              <li class="flex items-center justify-between p-3 text-sm">
+                <div>
+                  <p class="font-medium text-base-content">{{ list.name }}</p>
+                  <p class="text-xs text-base-content/60">
+                    {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
+                  </p>
+                </div>
+              </li>
+              }
+            </ul>
+            }
+          </div>
+        </div>
+      </div>
+    </pc-card>
+
+    <!-- Team Tasks Section -->
+    @if (!isNew()) {
+    <pc-card title="Team Tasks" subtitle="Track the tasks and campaign progress assigned to this team.">
+      <a
+        pc-card-actions
+        class="btn btn-xs btn-primary gap-1"
+        [routerLink]="['/tasks/add']"
+        [queryParams]="{ team_id: id }"
+      >
+        <pc-icon name="plus" [size]="3"></pc-icon> Add Task
+      </a>
+
+      <div class="overflow-x-auto rounded border border-base-200">
+        @if (teamTasks().length === 0) {
+        <p class="p-4 text-sm text-base-content/60 italic">No tasks currently assigned to this team.</p>
+        } @else {
+        <table class="table table-zebra w-full text-sm">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Priority</th>
+              <th>Status</th>
+              <th>Due Date</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (task of teamTasks(); track task.id) {
+            <tr>
+              <td class="font-medium">
+                <a [routerLink]="['/tasks', task.id]" class="hover:underline text-primary"> {{ task.name }} </a>
+              </td>
+              <td>
+                <span class="badge badge-sm uppercase font-semibold" [class]="getPriorityClass(task.priority)">
+                  {{ task.priority || 'medium' }}
+                </span>
+              </td>
+              <td>
+                <span class="badge badge-sm uppercase font-semibold" [class]="getStatusClass(task.status)">
+                  {{ task.status || 'todo' }}
+                </span>
+              </td>
+              <td>{{ task.due_at ? (task.due_at | date:'mediumDate') : '—' }}</td>
+              <td>
+                <a [routerLink]="['/tasks', task.id]" class="btn btn-xs btn-ghost text-primary"> View details </a>
+              </td>
+            </tr>
+            }
+          </tbody>
+        </table>
+        }
+      </div>
+    </pc-card>
+    }
+  </form>
+</section>
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-add.html
+
+```html
+<section class="w-full max-w-3xl p-6">
+  <pc-detail-header
+    title="Invite user"
+    [eyebrow]="'New'"
+    [crumbs]="[{ label: 'Users', route: '/users' }, { label: 'Invite user' }]"
+    subtitle="Send an invitation to add a new teammate to this tenant."
+    [form]="form"
+    [isLoading]="submitting()"
+    buttonsToShow="two"
+    btn1Text="Send invite"
+    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+    (save)="submit($event)"
+  ></pc-detail-header>
+
+  <form class="space-y-4" (submit)="submit($event)" novalidate>
+    <pc-input label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <pc-input label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
+
+      <pc-input label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
+    </div>
+
+    <pc-select label="Role" [formField]="form.role">
+      @if (currentUserRole() !== 'admin') {
+      <option value="owner">Owner</option>
+      }
+      <option value="admin">Admin</option>
+      <option value="user">User</option>
+    </pc-select>
+
+    @if (error()) {
+    <p class="text-sm text-danger">{{ error() }}</p>
+    }
+  </form>
+</section>
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-add.ts
+
+```typescript
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { email, form, required } from '@angular/forms/signals';
+import { ActivatedRoute, Router } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SettingsService } from '../../settings/services/settings-service';
+import { UserAdminService } from '../services/useradmin-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+
+@Component({
+  selector: 'pc-user-add',
+  imports: [PcInput, PcSelect, PcDetailHeader],
+  templateUrl: './user-add.html',
 })
-export class ShiftsGridComponent {
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+export class UserAddComponent implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly settings = inject(SettingsService);
+
+  protected readonly error = signal<string | null>(null);
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
+
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: 'user',
   });
 
-  protected col = [
-    { field: 'name', headerName: 'Event Name', editable: true },
-    { field: 'description', headerName: 'Description', editable: true },
-    { field: 'location_address', headerName: 'Location', editable: true },
-    {
-      field: 'start_time',
-      headerName: 'Start Time',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.start_time),
-      editable: false,
-    },
-    {
-      field: 'end_time',
-      headerName: 'End Time',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.end_time),
-      editable: false,
-    },
-    {
-      field: 'volunteers_count',
-      headerName: 'Signed Up',
-      editable: false,
-    },
-    {
-      field: 'capacity',
-      headerName: 'Capacity',
-      editable: true,
-    },
-  ];
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+  });
 
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
+  protected readonly submitting = signal(false);
+
+  public ngOnInit() {
+    void this.initialize();
+  }
+
+  private async initialize() {
+    const state = window.history.state;
+    if (state && state.cloneData) {
+      const data = state.cloneData;
+      this.payload.set({
+        email: data.email || '',
+        first_name: data.first_name || '',
+        last_name: data.last_name || '',
+        role: data.role || '',
+      });
+      return;
+    }
+
+    // Prefill the role with the tenant's configured default invite role (best-effort).
+    try {
+      await this.settings.load();
+      const defaultRole = this.settings.getValue<string>('access.default_role');
+      if (defaultRole) {
+        this.payload.update((p) => ({ ...p, role: defaultRole }));
+      }
+    } catch {
+      // Ignore — fall back to the built-in default role.
+    }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty('this invite');
+  }
+
+  protected cancel() {
+    void this.router.navigate(['../'], { relativeTo: this.route });
+  }
+
+  protected async submit(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      return;
+    }
+
+    this.submitting.set(true);
+    this.error.set(null);
+    try {
+      const payload = this.toPayload();
+      await this.users.add(payload);
+      this.users.triggerRefresh();
+      this.alerts.showSuccess('Invitation sent');
+      this.form().reset();
+      if (typeof done === 'function') {
+        done();
+      } else {
+        await this.router.navigate(['../'], { relativeTo: this.route });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to invite user';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.submitting.set(false);
+    }
+  }
+
+  private toPayload() {
+    const raw = this.payload();
+    return {
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: raw.last_name?.trim() ? raw.last_name.trim() : null,
+      role: raw.role?.trim() ? raw.role.trim() : null,
+    };
   }
 }
 ```
 
-## File: apps/frontend/src/app/experiences/teams/ui/team-view.ts
+## File: apps/frontend/src/app/experiences/users/ui/user-edit.html
+
+```html
+@if (error() && !detail()) {
+<div class="p-6 alert alert-error m-4">
+  <span>{{ error() }}</span>
+</div>
+} @else if (!detail()) {
+<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
+  <span class="loading loading-spinner loading-xs"></span>
+  Loading user…
+</div>
+} @else {
+<section class="max-w-4xl space-y-6 p-6">
+  <pc-detail-header
+    [title]="displayName()"
+    [eyebrow]="'Editing'"
+    [crumbs]="crumbs()"
+    [subtitle]="detail()?.email"
+    [form]="form"
+    [isLoading]="saving()"
+    buttonsToShow="two"
+    btn1Text="Save user"
+    [showDelete]="true"
+    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+    deleteText="Delete user"
+    (save)="save($event)"
+    (delete)="deleteUser()"
+  >
+    <button
+      pc-actions-prefix
+      class="btn btn-outline btn-accent btn-sm gap-2"
+      type="button"
+      (click)="triggerPasswordReset()"
+      [disabled]="resettingPassword() || saving()"
+    >
+      <pc-icon name="lock-closed"></pc-icon>
+      {{ resettingPassword() ? 'Sending link…' : 'Trigger Password Reset' }}
+    </button>
+  </pc-detail-header>
+
+  @if (error()) {
+  <div class="alert alert-error">
+    <span>{{ error() }}</span>
+  </div>
+  }
+
+  <pc-card title="Profile">
+    <form class="space-y-4" (submit)="save($event)" novalidate>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <pc-input id="email" label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
+
+        <pc-select label="Role" [formField]="form.role">
+          @if (currentUserRole() !== 'admin') {
+          <option value="owner">Owner</option>
+          }
+          <option value="admin">Admin</option>
+          <option value="user">User</option>
+          <option value="viewer">Viewer</option>
+        </pc-select>
+
+        <pc-input id="first_name" label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
+
+        <pc-input id="last_name" label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
+      </div>
+
+      <pc-toggle label="Verified account" [formField]="form.verified"></pc-toggle>
+    </form>
+  </pc-card>
+</section>
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-view.ts
 
 ```typescript
-import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { IAuthUserDetail, IUserStatsSnapshot } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { UserAdminService } from '../services/useradmin-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { PcTabOption, TabPanel, Tabs } from '@uxcommon/components/tabs/tabs';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import type { IAuthUser } from '../../../../../../../libs/common/src';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { UserService } from '../../../services/user.service';
-import { TasksService } from '../../tasks/services/tasks-service';
-import { TeamsService } from '../services/teams-service';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 
 @Component({
-  selector: 'pc-team-view',
+  selector: 'pc-user-view',
   imports: [
     DatePipe,
     RouterModule,
+    Icon,
     RecordActivities,
     DetailLayout,
     StatCard,
-    Tabs,
-    TabPanel,
     StatusBadge,
     ProfileCard,
     DetailRow,
+    DetailItem,
+    SystemMetadata,
+    PcCard,
   ],
-  templateUrl: './team-view.html',
+  templateUrl: './user-view.html',
 })
-export class TeamViewComponent {
+export class UserViewComponent {
   readonly id = input.required<string>();
 
-  private readonly alertSvc = inject(AlertService);
-  private readonly teamsSvc = inject(TeamsService);
-  private readonly tasksSvc = inject(TasksService);
+  protected readonly recordNav = injectRecordNavigation('user', this.id);
+
+  private readonly alerts = inject(AlertService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
   private readonly dialogs = inject(ConfirmDialogService);
+  private readonly userService = inject(UserService);
 
   private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
+  protected readonly loading = this._loading.visible;
   protected readonly initialized = signal(false);
-  protected readonly team = signal<any>(null);
-  protected readonly teamTasks = signal<any[]>([]);
-  protected readonly volunteers = computed(() => this.team()?.volunteers ?? []);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private usersById = new Map<string, IAuthUser>();
+  protected readonly error = signal<string | null>(null);
+  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
+
+  protected readonly avatarUrl = computed(() => {
+    const user = this.detail();
+    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
+  });
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
+  protected readonly currentUserId = computed(() => this.auth.getUser()?.id);
+  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
+
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Teams', route: '/teams' },
-    { label: this.team()?.name || 'Team' },
+    { label: 'Users', route: '/users' },
+    { label: this.displayName() || 'User' },
   ]);
 
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly teamTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'volunteers', label: `Volunteers (${this.volunteers().length})`, icon: 'user-group' },
-    { id: 'lists', label: `Target Lists (${this.team()?.lists?.length || 0})`, icon: 'queue-list' },
-    { id: 'tasks', label: `Team Tasks (${this.teamTasks().length})`, icon: 'document-check' },
-  ]);
-
-  protected readonly captainName = computed(() => {
-    const captainId = this.team()?.team_captain_id;
-    if (!captainId) return '—';
-    const match = this.volunteers().find((v: any) => v.id === captainId);
-    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
-  });
-
-  protected readonly leadName = computed(() => {
-    const leadId = this.team()?.team_lead_user_id;
-    if (!leadId) return '—';
-    const match = this.users().find((u) => String(u.id) === String(leadId));
-    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
-  });
-
-  protected readonly activeTasksCount = computed(() => {
-    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'canceled').length;
+  protected readonly activityCards = computed(() => {
+    const s = this.stats();
+    if (!s) return [];
+    return [
+      {
+        key: 'emails',
+        title: 'Emails Assigned',
+        value: s.emails_assigned.total,
+        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
+        asOf: null,
+      },
+      {
+        key: 'contacts',
+        title: 'Contacts Added',
+        value: s.contacts_added.total,
+        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
+        asOf: s.contacts_added.last_created_at,
+      },
+      {
+        key: 'imports',
+        title: 'Files Imported',
+        value: s.files_imported.count,
+        subtitle: `${s.files_imported.total_rows} people imported`,
+        asOf: s.files_imported.last_activity_at,
+      },
+      {
+        key: 'exports',
+        title: 'Files Exported',
+        value: s.files_exported.count,
+        subtitle: `${s.files_exported.total_rows} rows exported`,
+        asOf: s.files_exported.last_activity_at,
+      },
+    ];
   });
 
   constructor() {
     effect(() => {
       const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
+      untracked(() => {
+        if (!currentId) {
+          this.error.set('Missing user identifier.');
+          return;
+        }
+        void this.load();
+      });
     });
-
-    // Load users
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
   }
 
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load team detail
-      const data = await this.teamsSvc.getById(id);
-      this.team.set(data);
-
-      // 2. Load associated tasks
-      const res = await this.tasksSvc.getAll({
-        filterModel: { team_id: { value: id } },
-      } as any);
-      this.teamTasks.set(res?.rows ?? []);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load team details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editTeam() {
+  protected editUser() {
     void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
-  protected async deleteTeam() {
+  protected async deleteUser() {
     if (!this.id()) return;
+    if (String(this.id()) === String(this.currentUserId())) {
+      this.alerts.showError('You cannot delete yourself.');
+      return;
+    }
+    if (this.currentUserRole() === 'admin' && this.isOwnerBeingEdited()) {
+      this.alerts.showError('Admins cannot delete owner accounts.');
+      return;
+    }
+
     const confirmed = await this.dialogs.confirm({
-      title: 'Delete Team',
-      message: 'Are you sure you want to delete this team? This action cannot be undone.',
+      title: 'Delete User',
+      message: 'Are you sure you want to delete this user? This action cannot be undone.',
       variant: 'danger',
       confirmText: 'Delete',
     });
     if (!confirmed) return;
     const end = this._loading.begin();
     try {
-      await this.teamsSvc.delete(this.id());
-      this.teamsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Team deleted');
-      await this.router.navigate(['/teams']);
+      const success = await this.users.delete(this.id());
+      if (!success) {
+        throw new Error('User deletion is not supported');
+      }
+      this.alerts.showSuccess('User deleted');
+      await this.router.navigate(['/users']);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
+    } finally {
+      end();
+    }
+  }
+
+  protected formatAsOf(date: Date | null): string {
+    if (!date) return '—';
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date;
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(d);
+    } catch {
+      return date.toString();
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      const user = await this.users.getById(this.id());
+      this.detail.set(user);
+      this.stats.set(user.stats);
     } catch (err) {
       const message =
         err instanceof Error && err.message
@@ -40070,55 +39956,12 @@ export class TeamViewComponent {
               typeof err['data']['message'] === 'string' &&
               err['data']['message']
             ? err['data']['message']
-            : 'Unable to delete team';
-      this.alertSvc.showError(message);
+            : 'Failed to load user';
+      this.error.set(message);
+      this.alerts.showError(message);
     } finally {
       end();
-    }
-  }
-
-  protected getCreatedAt(): Date | null {
-    const date = this.team()?.created_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUpdatedAt(): Date | null {
-    const date = this.team()?.updated_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-
-  protected getPriorityType(priority: string | null | undefined): any {
-    const p = String(priority || '').toLowerCase();
-    switch (p) {
-      case 'urgent':
-        return 'error';
-      case 'high':
-        return 'warning';
-      case 'medium':
-        return 'info';
-      default:
-        return 'ghost';
-    }
-  }
-
-  protected getStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
-      case 'done':
-        return 'success';
-      case 'in_progress':
-        return 'info';
-      case 'blocked':
-        return 'error';
-      case 'canceled':
-        return 'neutral';
-      default:
-        return 'ghost';
+      this.initialized.set(true);
     }
   }
 }
@@ -40705,7 +40548,7 @@ export class WorkflowFormComponent implements OnInit {
     }
 
     this.form().markAsTouched();
-    if (!this.form().valid) {
+    if (!this.form().valid()) {
       this.alertSvc.showError('Please enter a valid workflow name.');
       return;
     }
@@ -40936,211 +40779,6 @@ export class WorkflowFormComponent implements OnInit {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-export interface ISidebarItem {
-  adminOnly?: boolean;
-  children?: ISidebarItem[];
-  collapsed?: boolean;
-  favourite?: boolean;
-  hidden?: boolean;
-  hiddenByFavourite?: boolean;
-  icon?: PcIconNameType;
-  indicator?: boolean;
-  name: string;
-  parent?: ISidebarItem;
-  pathMatchExact?: boolean;
-  route?: string;
-  short_name?: string;
-  type?: 'item' | 'subheading' | 'bookmark';
-}
-
-export const SidebarItems: ISidebarItem[] = [
-  {
-    name: 'App',
-    route: '/',
-    hidden: true,
-  },
-  {
-    name: `Dashboard`,
-    route: '/summary',
-    icon: 'presentation-chart-line',
-    pathMatchExact: true,
-  },
-  {
-    name: `BOOKMARKS`,
-    short_name: 'PINS',
-    type: 'bookmark',
-    hidden: true,
-  },
-  {
-    name: `ENGAGE`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Inbox',
-        route: '/inbox',
-        icon: 'envelope',
-      },
-      {
-        name: 'Newsletters',
-        route: '/newsletters',
-        icon: 'megaphone',
-      },
-
-      {
-        name: 'Lists',
-        route: '/lists',
-        icon: 'queue-list',
-      },
-      {
-        name: `Automations`,
-        route: '/workflows',
-        icon: 'cog',
-      },
-    ],
-  },
-  {
-    name: `CONTACTS`,
-    type: 'subheading',
-    children: [
-      {
-        name: `People`,
-        route: '/people',
-        icon: 'identification',
-      },
-      {
-        name: `Households`,
-        route: '/households',
-        icon: 'house-modern',
-      },
-      {
-        name: `Companies`,
-        route: '/companies',
-        icon: 'briefcase',
-      },
-      {
-        name: `Duplicates`,
-        route: '/duplicates',
-        icon: 'document-duplicate',
-      },
-    ],
-  },
-  {
-    name: `CAMPAIGN`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Teams',
-        route: '/teams',
-        icon: 'user-group',
-      },
-      {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
-      },
-    ],
-  },
-  {
-    name: 'FORMS',
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        name: 'Forms',
-        route: '/forms',
-        icon: 'clipboard-document-list',
-      },
-      {
-        name: 'Shifts',
-        route: '/events/shifts',
-        icon: 'add-schedule',
-      },
-      {
-        name: 'Events',
-        route: '/events/pages',
-        icon: 'ticket',
-      },
-      {
-        name: 'Fundraising',
-        route: '/donation-pages',
-        icon: 'currency-dollar',
-      },
-    ],
-  },
-  {
-    name: 'TOOLS',
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        name: `Tasks`,
-        route: '/tasks',
-        icon: 'task',
-      },
-      {
-        name: `Task Board`,
-        route: '/board',
-        icon: 'view-kanban',
-      },
-      {
-        name: 'Files',
-        route: '/files',
-        icon: 'document',
-      },
-      {
-        name: 'Imports',
-        route: '/imports',
-        icon: 'arrow-up-tray',
-      },
-      {
-        name: 'Exports',
-        route: '/exports',
-        icon: 'arrow-down-tray',
-      },
-    ],
-  },
-
-  {
-    name: `SYSTEM`,
-    type: 'subheading',
-    adminOnly: true,
-    collapsed: true,
-    children: [
-      {
-        name: 'Activity Log',
-        route: '/activities',
-        icon: 'clipboard-document-list',
-      },
-      {
-        name: 'Tags',
-        route: '/tags',
-        icon: 'label',
-      },
-      {
-        name: 'Issues',
-        route: '/issues',
-        icon: 'shield-exclamation',
-      },
-      {
-        name: 'Users',
-        route: '/users',
-        icon: 'users',
-      },
-      {
-        name: 'Configuration',
-        route: '/configuration',
-        icon: 'wrench-screwdriver',
-      },
-    ],
-  },
-];
 ```
 
 ## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
@@ -41375,6 +41013,192 @@ export interface GridHost {
   startIndex(): number;
   endIndex(): number;
   triggerCellFlash(rowId: string, field: string): void;
+}
+```
+
+## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
+
+```typescript
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { PeopleInCompany } from './people-in-company';
+import { CompaniesService } from '../services/companies-service';
+import { UserService } from '../../../services/user.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+@Component({
+  selector: 'pc-company-view',
+  imports: [
+    RouterModule,
+    PeopleInCompany,
+    RecordActivities,
+    DetailLayout,
+    StatCard,
+    Tabs,
+    TabPanel,
+    ProfileCard,
+    DetailItem,
+    SystemMetadata,
+  ],
+  templateUrl: './company-view.html',
+})
+export class CompanyView {
+  readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('company', this.id);
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly companiesSvc = inject(CompaniesService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+
+  protected readonly company = signal<any | null>(null);
+  protected readonly employeeCount = signal(0);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Companies', route: '/companies' },
+    { label: this.company()?.name || 'Company' },
+  ]);
+
+  private readonly usersResource = resource({
+    loader: () => this.userService.getUsers(),
+  });
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly companyTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'employees', label: `Employees (${this.employeeCount()})`, icon: 'user-group' },
+    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
+  ]);
+
+  protected readonly initials = computed(() => {
+    const name = this.company()?.name || '';
+    if (!name) return '?';
+    return name
+      .split(' ')
+      .slice(0, 2)
+      .map((w: string) => w[0] ?? '')
+      .join('')
+      .toUpperCase();
+  });
+
+  protected readonly isEnriched = computed(() => {
+    const rawJson = this.company()?.json;
+    if (!rawJson) return false;
+
+    let json = null;
+
+    try {
+      json = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
+    } catch {
+      return false;
+    }
+    return !!json.google_enriched;
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load company details (triggers Google enrichment job on backend)
+      const data = await this.companiesSvc.getById(id);
+      this.company.set(data);
+
+      // 2. Load employee count via dedicated count endpoint (no row data fetched)
+      const count = await this.personsSvc.countByCompanyId(id);
+      this.employeeCount.set(count);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the company. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editCompany() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteCompany() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Company',
+      message: 'Are you sure you want to delete this company? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.companiesSvc.delete(this.id());
+      this.companiesSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Company deleted');
+      await this.router.navigate(['/companies']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete company';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -41809,618 +41633,482 @@ export class EmailFolderList implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/events/ui/event-view.ts
+## File: apps/frontend/src/app/experiences/events/ui/event-form.html
+
+```html
+<div class="p-6 max-w-5xl space-y-6">
+  @if (error() && !detail() && !isNew()) {
+  <div class="alert alert-error m-4">
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!isNew() && !detail()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Loading event details...</p>
+  </div>
+  } @else {
+  <div class="space-y-6">
+    <pc-detail-header
+      [title]="isNew() ? 'New event' : detail()?.name || 'Event'"
+      [eyebrow]="isNew() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
+      [subtitle]="isNew() ? 'Create a public event page for RSVPs and ticketing.' : 'Manage event settings and ticket types.'"
+      [form]="form"
+      [isLoading]="saving()"
+      [disabled]="slugChecking() || slugUnique() === false"
+      buttonsToShow="two"
+      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
+      [showDelete]="!isNew()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete event"
+      (save)="save($event)"
+      (delete)="deleteEvent()"
+    ></pc-detail-header>
+
+    @if (error()) {
+    <div class="alert alert-error shadow-sm py-3 text-sm">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
+      <!-- Left 2 cols: Main details -->
+      <div class="md:col-span-2 space-y-6">
+        <pc-card title="Event Details">
+          <pc-input
+            id="event-name"
+            label="Event Name *"
+            [formField]="form.name"
+            placeholder="E.g., Annual Fundraising Dinner"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="event-slug"
+              label="URL Slug *"
+              [formField]="form.slug"
+              placeholder="e.g. annual-fundraising-dinner"
+              [hasError]="slugUnique() === false"
+              (input)="onSlugInput()"
+            >
+              <span pc-prefix class="text-xs text-base-content/50 font-mono">/events/</span>
+            </pc-input>
+            @if (slugChecking()) {
+            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
+              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
+            </p>
+            } @else if (slugUnique() === true) {
+            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
+            } @else if (slugUnique() === false) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
+            }
+          </div>
+
+          <pc-textarea
+            id="event-desc"
+            label="Description"
+            [formField]="form.description"
+            placeholder="Describe the event, agenda, and what attendees can expect..."
+            [rows]="4"
+          ></pc-textarea>
+
+          <pc-input
+            id="event-location"
+            label="Location Address"
+            [formField]="form.location_address"
+            placeholder="E.g., 123 Main St, City Hall Ballroom"
+          ></pc-input>
+
+          <div class="divider mt-4"></div>
+          <div>
+            <h4 class="font-bold text-md">Collected Fields</h4>
+            <h5>Choose which fields appear on the public RSVP form.</h5>
+            <pc-fields-selector
+              [selectedFields]="selectedFields()"
+              (fieldsChange)="selectedFields.set($event)"
+            ></pc-fields-selector>
+          </div>
+
+          <div class="divider"></div>
+
+          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
+            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
+            Organizer Contact
+          </h4>
+          <p class="text-xs text-base-content/60">Contact info for attendees who have questions about this event.</p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <pc-input
+              id="contact-email"
+              label="Contact Email"
+              type="email"
+              [formField]="form.contact_email"
+              placeholder="organizer@example.com"
+            ></pc-input>
+            <pc-input
+              id="contact-phone"
+              label="Contact Phone"
+              [formField]="form.contact_phone"
+              placeholder="E.g., 555-0199"
+            ></pc-input>
+          </div>
+        </pc-card>
+
+        <!-- Ticket Types (only for existing events) -->
+        @if (!isNew()) {
+        <pc-card
+          title="Ticket Types"
+          subtitle="Define ticket tiers for this event. Leave empty for a free, unticketed RSVP."
+          icon="tag"
+        >
+          <button
+            pc-card-actions
+            type="button"
+            class="btn btn-xs btn-primary gap-1"
+            (click)="startAddTicket()"
+            [disabled]="addingTicket()"
+          >
+            <pc-icon name="plus" [size]="3"></pc-icon> Add Ticket Type
+          </button>
+
+          @if (ticketTypes().length === 0 && !addingTicket()) {
+          <p class="text-sm text-base-content/40 italic">
+            No ticket types defined — this event uses a simple free RSVP.
+          </p>
+          } @else {
+          <div class="overflow-x-auto border border-base-300 rounded-lg">
+            <table class="table table-sm w-full text-xs">
+              <thead>
+                <tr class="bg-base-200 text-base-content/70">
+                  <th>Name</th>
+                  <th>Price</th>
+                  <th>Capacity</th>
+                  <th class="w-16 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-base-200">
+                @for (ticket of ticketTypes(); track ticket.id) {
+                <tr class="hover:bg-base-200/40">
+                  <td>
+                    <div class="font-semibold">{{ ticket.name }}</div>
+                    @if (ticket.description) {
+                    <div class="text-[10px] text-base-content/50 mt-0.5">{{ ticket.description }}</div>
+                    }
+                  </td>
+                  <td class="font-mono">{{ formatPrice(ticket.price_cents) }}</td>
+                  <td>{{ ticket.capacity ?? 'Unlimited' }}</td>
+                  <td>
+                    <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteTicketType(ticket.id)">
+                      <pc-icon name="trash" [size]="4"></pc-icon>
+                    </button>
+                  </td>
+                </tr>
+                } @if (addingTicket()) {
+                <tr class="bg-base-200/30">
+                  <td>
+                    <input
+                      type="text"
+                      class="input input-bordered input-xs w-full"
+                      placeholder="Ticket name *"
+                      [ngModel]="newTicket().name"
+                      (ngModelChange)="setNewTicketName($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-20 font-mono"
+                      placeholder="0"
+                      min="0"
+                      step="1"
+                      title="Price in cents (e.g. 2500 = $25.00)"
+                      [ngModel]="newTicket().price_cents"
+                      (ngModelChange)="setNewTicketPrice($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                    <span class="text-[10px] text-base-content/40 ml-1">cents</span>
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-20 font-mono"
+                      placeholder="∞"
+                      min="1"
+                      [ngModel]="newTicket().capacity"
+                      (ngModelChange)="setNewTicketCapacity($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <td>
+                    <div class="flex items-center gap-1">
+                      <button type="button" class="btn btn-ghost btn-xs text-success" (click)="saveNewTicket()">
+                        <pc-icon name="check-circle" [size]="4"></pc-icon>
+                      </button>
+                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="cancelAddTicket()">
+                        <pc-icon name="x-mark" [size]="4"></pc-icon>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          }
+        </pc-card>
+        }
+      </div>
+
+      <!-- Right col: Scheduling, toggles -->
+      <div class="space-y-6">
+        <pc-card title="Scheduling">
+          <pc-input
+            id="start-time"
+            label="Start Date & Time *"
+            type="datetime-local"
+            [formField]="form.start_time"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="end-time"
+              label="End Date & Time *"
+              type="datetime-local"
+              [formField]="form.end_time"
+              [hasError]="endBeforeStartError()"
+            ></pc-input>
+            @if (endBeforeStartError()) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
+            }
+          </div>
+
+          <pc-input
+            id="capacity"
+            label="Total Capacity"
+            type="number"
+            [formField]="form.capacity"
+            placeholder="Unlimited"
+          ></pc-input>
+        </pc-card>
+
+        <pc-card title="Publishing & Notifications">
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Published</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  When enabled, this event page is visible to the public.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_published" />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Registration Confirmation</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send a confirmation email when someone RSVPs for this event.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_registration_confirmation"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send 24h Reminder</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send automated reminder emails to registered attendees 24 hours before the event.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
+            </label>
+          </div>
+        </pc-card>
+
+        @if (!isNew()) {
+        <pc-entity-overview
+          title="Event Overview"
+          [createdAt]="detail()?.created_at"
+          createdBy="Representative"
+        ></pc-entity-overview>
+        }
+      </div>
+
+      <!-- Right col: Fields & Public Link -->
+
+      @if (!isNew() && publicUrl()) {
+      <pc-public-link-panel
+        [url]="publicUrl()"
+        label="Public RSVP Link"
+        subtitle="Share this link so people can RSVP for the event."
+      ></pc-public-link-panel>
+      }
+    </form>
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/events/ui/events-grid.ts
 
 ```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { FormsModule } from '@angular/forms';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { environment } from '../../../../environments/environment';
+import { Component } from '@angular/core';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { EventsFrontendService } from '../services/events-frontend-service';
-import { EventsService } from '../../../services/api/events-service';
-import { PersonsService } from '../../persons/services/persons-service';
 
 @Component({
-  selector: 'pc-event-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    FormsModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    Tabs,
-    TabPanel,
-    StatCard,
-    ProfileCard,
-    DetailRow,
-    PcCard,
+  selector: 'pc-events-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Event Pages"
+        i18n-title
+        description="Manage public event pages with RSVP and ticketing for fundraisers, town halls, and meet-and-greets."
+        i18n-description
+        [showDescription]="true"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="true"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        plusIcon="plus"
+        i18n-plusIcon
+        [showArchiveIcon]="true"
+        archiveIcon="archive-box-arrow-down"
+        i18n-archiveIcon
+        archiveTip="See past events"
+        i18n-archiveTip
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: EventsFrontendService },
+    provideDataGridConfig({ messages: { exportFileName: 'events-export.csv' } }),
   ],
-  templateUrl: './event-view.html',
-  providers: [EventsService],
 })
-export class EventViewComponent {
-  readonly id = input.required<string>();
+export class EventsGridComponent {
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
 
-  private readonly alertSvc = inject(AlertService);
-  private readonly eventsFrontendSvc = inject(EventsFrontendService);
-  private readonly eventsSvc = inject(EventsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-
-  protected readonly event = signal<any | null>(null);
-  protected readonly ticketTypes = signal<any[]>([]);
-  protected readonly registrations = signal<any[]>([]);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Events', route: '/events/pages' },
-    { label: this.event()?.name || 'Event' },
-  ]);
-
-  // Person search for adding registrations
-  protected readonly personSearch = signal('');
-  protected readonly personSearchResults = signal<any[]>([]);
-  protected readonly selectedPersonId = signal<string | null>(null);
-  protected readonly selectedTicketTypeId = signal<string | null>(null);
-  protected readonly addingRegistration = signal(false);
-  protected readonly searchTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  protected activeTab = signal<string>('attendees');
-
-  protected readonly eventTabs = computed<PcTabOption[]>(() => [
+  protected col = [
+    { field: 'name', headerName: 'Event Name', editable: true },
+    { field: 'location_address', headerName: 'Location', editable: true },
     {
-      id: 'attendees',
-      label: `Attendees (${this.registrations().filter((r) => r.status !== 'cancelled').length})`,
-      icon: 'user-group',
+      field: 'start_time',
+      headerName: 'Start Time',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.start_time),
+      editable: false,
     },
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-  ]);
+    {
+      field: 'end_time',
+      headerName: 'End Time',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.end_time),
+      editable: false,
+    },
+    {
+      field: 'is_published',
+      headerName: 'Published',
+      valueFormatter: (p: any) => (p.value ? 'Yes' : 'Draft'),
+      editable: false,
+    },
+    {
+      field: 'registrations_count',
+      headerName: 'Registrations',
+      editable: false,
+    },
+    {
+      field: 'capacity',
+      headerName: 'Capacity',
+      editable: false,
+      valueFormatter: (p: any) => p.value ?? 'Unlimited',
+    },
+  ];
 
-  protected readonly eventPassed = computed(() => {
-    const end = this.event()?.end_time;
-    if (!end) return false;
-    return new Date(end) < new Date();
-  });
-
-  protected readonly activeCount = computed(() => this.registrations().filter((r) => r.status !== 'cancelled').length);
-
-  protected readonly attendedCount = computed(() => this.registrations().filter((r) => r.status === 'attended').length);
-
-  protected readonly publicUrl = computed(() => {
-    const slug = this.event()?.slug;
-    if (!slug) return '';
-    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
-  });
-
-  protected readonly remainingCapacity = computed(() => {
-    const ev = this.event();
-    if (!ev || ev.capacity === null || ev.capacity === undefined) return 'Unlimited';
-    return Math.max(0, ev.capacity - this.activeCount());
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      const [eventData, ticketData, regData] = await Promise.all([
-        this.eventsFrontendSvc.getById(id),
-        this.eventsSvc.getTicketTypes(id),
-        this.eventsSvc.getRegistrations(id),
-      ]);
-      this.event.set(eventData);
-      this.ticketTypes.set(ticketData || []);
-      this.registrations.set(regData || []);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load event details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected copyPublicUrl() {
-    const url = this.publicUrl();
-    if (!url) return;
-    navigator.clipboard.writeText(url).then(
-      () => this.alertSvc.showSuccess('Public RSVP link copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
-
-  protected editEvent() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteEvent() {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Event Page',
-      message: 'Are you sure you want to delete this event? All registrations will also be deleted.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-
-    const end = this._loading.begin();
-    try {
-      await this.eventsFrontendSvc.delete(this.id());
-      this.eventsFrontendSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Event deleted');
-      await this.router.navigate(['/events/pages']);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Unable to delete event');
-    } finally {
-      end();
-    }
-  }
-
-  // Person search
-  protected async onPersonSearch(query: string) {
-    this.personSearch.set(query);
-    this.selectedPersonId.set(null);
-    if (!query.trim()) {
-      this.personSearchResults.set([]);
-      return;
-    }
-    try {
-      const res = await this.personsSvc.getAll({ searchStr: query.toLowerCase().trim(), startRow: 0, endRow: 10 });
-      this.personSearchResults.set(res?.rows || []);
-    } catch {
-      this.personSearchResults.set([]);
-    }
-  }
-
-  protected selectPerson(person: any) {
-    this.selectedPersonId.set(String(person.id));
-    this.personSearch.set(`${person.first_name} ${person.last_name}`.trim());
-    this.personSearchResults.set([]);
-  }
-
-  protected async addRegistration() {
-    const personId = this.selectedPersonId();
-    if (!personId) {
-      this.alertSvc.showError('Please select a person to register.');
-      return;
-    }
-    this.addingRegistration.set(true);
-    try {
-      await this.eventsSvc.addRegistration({
-        event_id: this.id(),
-        person_id: personId,
-        ticket_type_id: this.selectedTicketTypeId() || null,
-      });
-      this.alertSvc.showSuccess('Registration added');
-      this.personSearch.set('');
-      this.selectedPersonId.set(null);
-      this.selectedTicketTypeId.set(null);
-      this.personSearchResults.set([]);
-      const regs = await this.eventsSvc.getRegistrations(this.id());
-      this.registrations.set(regs || []);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to add registration');
-    } finally {
-      this.addingRegistration.set(false);
-    }
-  }
-
-  protected async checkIn(reg: any) {
-    try {
-      await this.eventsSvc.checkIn(String(reg.id));
-      this.alertSvc.showSuccess(`${reg.first_name} checked in`);
-      const regs = await this.eventsSvc.getRegistrations(this.id());
-      this.registrations.set(regs || []);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to check in');
-    }
-  }
-
-  protected async updateStatus(reg: any, status: string) {
-    try {
-      await this.eventsSvc.updateRegistration(String(reg.id), { status: status as any });
-      const regs = await this.eventsSvc.getRegistrations(this.id());
-      this.registrations.set(regs || []);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to update status');
-    }
-  }
-
-  protected async deleteRegistration(reg: any) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Remove Registration',
-      message: `Remove ${reg.first_name} ${reg.last_name} from this event?`,
-      variant: 'danger',
-      confirmText: 'Remove',
-    });
-    if (!confirmed) return;
-    try {
-      await this.eventsSvc.deleteRegistration(String(reg.id));
-      this.alertSvc.showSuccess('Registration removed');
-      const regs = await this.eventsSvc.getRegistrations(this.id());
-      this.registrations.set(regs || []);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to remove registration');
-    }
-  }
-
-  protected exportCsv() {
-    const regs = this.registrations().filter((r) => r.status !== 'cancelled');
-    const headers = ['First Name', 'Last Name', 'Email', 'Mobile', 'Ticket Type', 'Price', 'Status', 'Checked In At'];
-    const rows = regs.map((r) => [
-      r.first_name ?? '',
-      r.last_name ?? '',
-      r.email ?? '',
-      r.mobile ?? '',
-      r.ticket_type_name ?? '',
-      r.ticket_price_cents != null ? `$${(r.ticket_price_cents / 100).toFixed(2)}` : 'Free',
-      r.status ?? '',
-      r.checked_in_at ? new Date(r.checked_in_at).toLocaleString() : '',
-    ]);
-
-    const csv = [headers, ...rows]
-      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${this.event()?.slug || 'event'}-attendees.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  protected getStatusType(status: string | null | undefined): any {
-    switch (String(status || '').toLowerCase()) {
-      case 'attended':
-        return 'success';
-      case 'registered':
-        return 'warning';
-      case 'no_show':
-        return 'error';
-      case 'cancelled':
-        return 'neutral';
-      default:
-        return 'ghost';
-    }
-  }
-
-  protected ticketTypeLabel(id: string | null): string {
-    if (!id) return '';
-    const t = this.ticketTypes().find((tt) => tt.id === id);
-    return t ? t.name : '';
+  private formatDate(value: unknown): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '';
+    return this.dateFormatter.format(date);
   }
 }
 ```
 
-## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
+## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-grid.ts
 
 ```typescript
-import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { FormsService } from '../services/forms-service';
-import { ListsService } from '../../lists/services/lists-service';
-import { UserService } from '../../../services/user.service';
-import type { IAuthUser } from '@common';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { environment } from '../../../../environments/environment';
+import { Component } from '@angular/core';
+import { DonationPagesService } from '@experiences/forms/services/donation-pages-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
 @Component({
-  selector: 'pc-form-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    PcCard,
-    Tabs,
-    TabPanel,
-    StatCard,
-    ProfileCard,
-    DetailRow,
+  selector: 'pc-fundraising-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Donation Pages"
+        i18n-title
+        description="Manage embeddable donation and recurring pledge pages that connect to Stripe."
+        i18n-description
+        [showDescription]="true"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [allowFilter]="false"
+        [disableView]="false"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="plus"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: DonationPagesService },
+    provideDataGridConfig({ messages: { exportEntity: 'forms', exportFileName: 'donation-pages-export.csv' } }),
   ],
-  templateUrl: './form-view.html',
 })
-export class FormViewComponent {
-  private readonly alertSvc = inject(AlertService);
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  readonly id = input.required<string>();
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly formRecord = signal<any | null>(null);
-  protected readonly submissionsCount = signal(0);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Forms', route: '/forms' },
-    { label: this.formRecord()?.name || 'Form' },
-  ]);
-  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private readonly router = inject(Router);
-  private usersById = new Map<string, IAuthUser>();
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly formTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'targetActions', label: 'Target Lists & Actions', icon: 'queue-list' },
-    { id: 'fieldsPreview', label: 'Fields & Layout', icon: 'information-circle' },
-  ]);
-
-  protected readonly selectedFields = computed(() => {
-    const record = this.formRecord();
-    if (!record) return [];
-    if (record.fields) {
-      return Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
-    }
-    return ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-  });
-
-  protected readonly fieldsCount = computed(() => {
-    const fields = this.selectedFields();
-    // Email is always required and present
-    const standardFieldsCount = fields.filter((f: string) => f !== 'email').length;
-    return standardFieldsCount + 1;
-  });
-
-  protected readonly targetListsNames = computed(() => {
-    const record = this.formRecord();
-    if (!record || !record.target_lists) return [];
-    const listIds: string[] = Array.isArray(record.target_lists)
-      ? record.target_lists
-      : JSON.parse(record.target_lists || '[]');
-
-    return listIds.map((id) => this.availableLists().find((l) => l.id === id)?.name).filter(Boolean) as string[];
-  });
-
-  protected readonly embedSnippet = computed(() => {
-    const record = this.formRecord();
-    if (!record || !this.id()) return '';
-    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
-    const fields = this.selectedFields();
-    const isDonation = record.form_type === 'donation';
-    const isRecurring = record.form_type === 'recurring_donation';
-    const isAnyDonation = isDonation || isRecurring;
-
-    const addressFields = isAnyDonation
-      ? `
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
-    <input type="text" name="street1" placeholder="123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
-      <input type="text" name="city" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal *</label>
-      <input type="text" name="zip" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-  </div>
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
-      <input type="text" name="state" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country *</label>
-      <input type="text" name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-  </div>`
-      : '';
-
-    const amountField = isDonation
-      ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($) *</label>
-    <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : isRecurring
-        ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
-    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
-  </div>`
-        : '';
-
-    const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
-
-    return `<!-- PeopleCRM Embeddable Form -->
-<form action="${apiOrigin}/api/forms/submit/${this.id()}" method="POST" style="max-width: 400px; font-family: sans-serif;">
-  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
-${
-  fields.includes('first_name') || isAnyDonation
-    ? `  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isAnyDonation ? ' *' : ''}</label>
-    <input type="text" name="first_name" placeholder="First Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-    : ''
-}${
-      fields.includes('last_name') || isAnyDonation
-        ? `\n  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isAnyDonation ? ' *' : ''}</label>
-    <input type="text" name="last_name" placeholder="Last Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-        : ''
-    }
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
-    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>${
-    !isAnyDonation && fields.includes('mobile')
-      ? `\n  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
-    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : ''
-  }${
-    !isAnyDonation && fields.includes('notes')
-      ? `\n  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
-    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
-  </div>`
-      : ''
-  }${addressFields}${amountField}
-  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
-</form>`;
-  });
-
-  protected readonly formUrl = computed(() => {
-    if (!this.id()) return '';
-    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${this.id()}`;
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-
-    // Load users
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load Form details
-      const record = await this.formsSvc.getById(id);
-      this.formRecord.set(record);
-
-      // 2. Load available Lists to resolve list names
-      const result = await this.listsSvc.getAll({ limit: 100 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows.map((row: any) => ({
-          id: String(row.id),
-          name: String(row.name),
-        })),
-      );
-
-      // 3. Load submissions count
-      const subCount = await this.formsSvc.getSubmissionsCount(id);
-      this.submissionsCount.set(subCount);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load form details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editForm() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteForm() {
-    if (!this.id()) return;
-    const backRoute: string = this.route.snapshot.data['backRoute'] ?? '/forms';
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Web Form',
-      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.formsSvc.delete(this.id());
-      this.formsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Web form deleted');
-      await this.router.navigate([backRoute]);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete web form';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copySnippet(): void {
-    const code = this.embedSnippet();
-    if (!code) return;
-    navigator.clipboard.writeText(code).then(
-      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
-
-  protected getCreatedAt(): Date | null {
-    const date = this.formRecord()?.created_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUpdatedAt(): Date | null {
-    const date = this.formRecord()?.updated_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+export class FundraisingGridComponent {
+  protected col = [
+    { field: 'name', headerName: 'Page Name', editable: false },
+    { field: 'description', headerName: 'Description', editable: false },
+    {
+      field: 'form_type',
+      headerName: 'Type',
+      editable: false,
+      valueFormatter: (p: any) => (p.value === 'recurring_donation' ? 'Recurring' : 'One-Time'),
+    },
+    { field: 'status', headerName: 'Status', editable: true },
+    {
+      field: 'created_at',
+      headerName: 'Created At',
+      valueFormatter: (p: any) => (p.value ? new Date(p.value).toLocaleDateString() : ''),
+    },
+  ];
 }
 ```
 
@@ -42435,6 +42123,7 @@ import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PersonsGrid } from '@experiences/persons/ui/persons-grid';
@@ -42511,7 +42200,7 @@ export class ListView implements OnDestroy {
       this.alerts.showSuccess('Refresh job scheduled in background');
       this.pollRefreshStatus();
     } catch (e) {
-      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
+      this.alerts.showError(getUserErrorMessage(e, 'Could not refresh the list. Please try again.'));
       this.refreshing.set(false);
     }
   }
@@ -42603,497 +42292,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-view.ts
-
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { FormsModule } from '@angular/forms';
-import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { PeopleInHousehold } from './people-in-household';
-import { UserService } from '../../../services/user.service';
-import { HouseholdsService } from '../../households/services/households-service';
-import { PersonsService } from '../services/persons-service';
-import { VolunteerService } from '../../../services/api/volunteer-service';
-import { DonationsService } from '../../../services/api/donations-service';
-import { EventsService } from '../../../services/api/events-service';
-import { ConnectionsService } from '../../../services/api/connections-service';
-import { PersonConnections } from './person-connections';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Tags } from '@experiences/tags/ui/tags';
-import { PcIconNameType } from '@icons/icons.index';
-
-interface SocialLinkDef {
-  name: string;
-  url: string | null | undefined;
-  icon: PcIconNameType;
-  color: string;
-}
-
-@Component({
-  selector: 'pc-person-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    FormsModule,
-    PeopleInHousehold,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    PcCard,
-    Tabs,
-    TabPanel,
-    StatusBadge,
-    StatCard,
-    ProfileCard,
-    DetailItem,
-    SystemMetadata,
-    Tags,
-    PersonConnections,
-  ],
-  templateUrl: './person-view.html',
-})
-export class PersonView {
-  readonly id = input.required<string>();
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly userService = inject(UserService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly personsSvc = inject(PersonsService);
-  protected readonly donationsSvc = inject(DonationsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly volunteerSvc = inject(VolunteerService);
-  private readonly eventsSvc = inject(EventsService);
-  private readonly connectionsSvc = inject(ConnectionsService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-
-  protected readonly person = signal<any | null>(null);
-
-  private readonly usersResource = resource({
-    loader: () => this.userService.getUsers(),
-  });
-  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
-
-  // Analytics & Lists
-  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
-  protected readonly volunteerHistory = signal<any[]>([]);
-  protected readonly donationStats = signal<{
-    cumulativeAmount: number;
-    limitAmount: number;
-    remainingAmount: number;
-  } | null>(null);
-  protected readonly donationHistory = signal<any[]>([]);
-  protected readonly eventHistory = signal<any[]>([]);
-  protected readonly eventStats = signal<{ events_count: number } | null>(null);
-  protected readonly connectionCount = signal(0);
-  protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
-  protected readonly openedNewslettersCount = computed(() => {
-    return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
-      .length;
-  });
-  protected readonly tags = signal<string[]>([]);
-  protected readonly issues = signal<string[]>([]);
-
-  // Donation Dialog State
-  protected readonly isCheckingEligibility = signal(false);
-  protected readonly donationAmount = signal<number | null>(null);
-  protected readonly showDonationModal = signal(false);
-  protected readonly eligibilityError = signal<string | null>(null);
-
-  // Address
-  protected readonly householdId = computed(() => this.person()?.household_id ?? null);
-  protected readonly householdResource = resource({
-    params: () => this.householdId(),
-    loader: async ({ params: householdId }) => {
-      if (!householdId) return null;
-      try {
-        return await this.householdsSvc.getById(householdId);
-      } catch {
-        return null;
-      }
-    },
-  });
-
-  protected readonly addressString = computed(() => {
-    const hh = this.householdResource.value() as Households | null | undefined;
-    if (!hh || hh.is_placeholder) return 'No Address Assigned';
-    return this.getFormattedAddress(hh);
-  });
-  protected readonly isPlaceholderHousehold = computed(() => {
-    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
-  });
-
-  // Contact initials and full name computation
-  protected readonly initials = computed(() => {
-    const first = this.person()?.first_name || '';
-    const last = this.person()?.last_name || '';
-    if (!first && !last) return '?';
-    return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
-  });
-
-  protected readonly fullName = computed(() => {
-    const p = this.person();
-    if (!p) return '';
-    return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
-  });
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'People', route: '/people' },
-    { label: this.fullName() || 'Person' },
-  ]);
-
-  // Social icons
-  public socialLinks = computed<SocialLinkDef[]>(() => {
-    const p = this.person();
-    return [
-      {
-        name: 'LinkedIn',
-        url: p.linkedin,
-        icon: 'linkedin',
-        color: 'bg-[#0a66c2]', // LinkedIn Blue
-      },
-      {
-        name: 'X',
-        url: p.twitter,
-        icon: 'x',
-        color: 'bg-black', // X Black
-      },
-      {
-        name: 'Facebook',
-        url: p.facebook,
-        icon: 'facebook',
-        color: 'bg-[#1877f2]', // Facebook Blue
-      },
-      {
-        name: 'Instagram',
-        url: p.instagram,
-        icon: 'instagram',
-        color: 'bg-[#e1306c]', // Instagram Pink/Red
-      },
-    ];
-  });
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly personTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'emails', label: 'Conversations', icon: 'envelope', badge: this.activityData()?.emails?.length },
-    { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
-    { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
-    { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
-    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length },
-    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
-    { id: 'household', label: 'Household', icon: 'home' },
-  ]);
-
-  protected getMailStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'sent' || s === 'delivered') return 'success';
-    if (s === 'opened') return 'info';
-    if (s === 'read') return 'neutral';
-    return 'ghost';
-  }
-
-  protected getEmailEventType(eventType: string | null | undefined): any {
-    const et = String(eventType || '').toLowerCase();
-    if (et === 'open') return 'success';
-    if (et === 'click') return 'warning';
-    if (et === 'delivered' || et === 'processed') return 'info';
-    if (['bounce', 'dropped', 'spamreport', 'unsubscribe'].includes(et)) return 'error';
-    return 'ghost';
-  }
-
-  protected getShiftStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'attended') return 'success';
-    if (s === 'signed_up') return 'warning';
-    if (s === 'no_show') return 'error';
-    return 'ghost';
-  }
-
-  protected getEventStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'attended') return 'success';
-    if (s === 'registered') return 'warning';
-    if (s === 'no_show') return 'error';
-    if (s === 'cancelled') return 'neutral';
-    return 'ghost';
-  }
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load person details
-      const personData = await this.personsSvc.getById(id);
-      this.person.set(personData);
-
-      // 2. Load tags and issues
-      const tagList = await this.personsSvc.getTags(id, 'tag');
-      this.tags.set(tagList);
-      const issueList = await this.personsSvc.getTags(id, 'issue');
-      this.issues.set(issueList);
-
-      // 3. Load volunteer stats and history
-      try {
-        const stats = await this.volunteerSvc.getVolunteerStats(id);
-        this.volunteerStats.set(stats);
-        const history = await this.volunteerSvc.getHistoryForPerson(id);
-        this.volunteerHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load volunteer details', err);
-      }
-
-      // 4. Load donations stats and history
-      try {
-        const stats = await this.donationsSvc.getStats(id);
-        this.donationStats.set(stats);
-        const history = await this.donationsSvc.getHistory(id);
-        this.donationHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load donations history', err);
-      }
-
-      // 5. Load event history
-      try {
-        const stats = await this.eventsSvc.getStatsForPerson(id);
-        this.eventStats.set(stats);
-        const history = await this.eventsSvc.getHistoryForPerson(id);
-        this.eventHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load event history', err);
-      }
-
-      // 6. Load connection count (tab badge — full list loads lazily inside the tab)
-      try {
-        const count = await this.connectionsSvc.countForPerson(id);
-        this.connectionCount.set(count);
-      } catch (err) {
-        console.error('Failed to load connection count', err);
-      }
-
-      // Check query params for Stripe Checkout success redirects
-      const params = this.route.snapshot.queryParams;
-      if (params['checkout_success'] === 'true' && params['session_id']) {
-        try {
-          await this.donationsSvc.confirmDonation(params['session_id']);
-          this.alertSvc.showSuccess('Donation processed successfully! Thank you for your support.');
-          // Reload donation stats/history after confirmation
-          const stats = await this.donationsSvc.getStats(id);
-          this.donationStats.set(stats);
-          const history = await this.donationsSvc.getHistory(id);
-          this.donationHistory.set(history || []);
-          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
-        } catch (err) {
-          console.error('Failed to confirm stripe checkout session:', err);
-          this.alertSvc.showError('Finalizing payment verification...');
-        }
-      } else if (params['mock_donation_success'] === 'true' && params['session_id']) {
-        try {
-          const amt = Number(params['amount'] || 0);
-          await this.donationsSvc.confirmMockDonation({
-            personId: id,
-            amountCents: amt * 100,
-            sessionId: params['session_id'],
-            province: params['province'] || '',
-            country: params['country'] || '',
-          });
-          this.alertSvc.showSuccess('[MOCK] Donation recorded successfully!');
-          const stats = await this.donationsSvc.getStats(id);
-          this.donationStats.set(stats);
-          const history = await this.donationsSvc.getHistory(id);
-          this.donationHistory.set(history || []);
-          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
-        } catch (err) {
-          console.error('Failed to record mock donation:', err);
-        }
-      }
-
-      // 5. Load interactions (emails + newsletters)
-      try {
-        const activity = await this.personsSvc.getActivity(id);
-        this.activityData.set(activity || { emails: [], newsletters: [] });
-      } catch (err) {
-        console.error('Failed to load activity log', err);
-      }
-    } catch (err) {
-      this.alertSvc.showError('Failed to load person details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected openCollectDonation() {
-    this.donationAmount.set(null);
-    this.eligibilityError.set(null);
-    this.showDonationModal.set(true);
-  }
-
-  protected closeDonationModal() {
-    this.showDonationModal.set(false);
-  }
-
-  protected async submitDonation() {
-    const amt = this.donationAmount();
-    if (amt === null || amt <= 0) {
-      this.alertSvc.showError('Please specify a valid donation amount.');
-      return;
-    }
-
-    this.isCheckingEligibility.set(true);
-    this.eligibilityError.set(null);
-
-    const hh = this.householdResource.value() as Households | null | undefined;
-    const address = {
-      country: hh?.country || 'CA',
-      state: hh?.state || 'ON',
-    };
-
-    try {
-      const eligibility = await this.donationsSvc.checkEligibility({
-        personId: this.id(),
-        amountCents: amt * 100,
-        address,
-      });
-
-      if (!eligibility.eligible) {
-        this.eligibilityError.set(eligibility.reason || 'Donor is ineligible to donate.');
-        this.isCheckingEligibility.set(false);
-        return;
-      }
-
-      this.closeDonationModal();
-      this.alertSvc.showSuccess('Redirecting to Stripe Checkout...');
-
-      // Redirect
-      const session = await this.donationsSvc.createCheckout({
-        personId: this.id(),
-        amountCents: amt * 100,
-        address,
-      });
-
-      if (session && session.url) {
-        window.location.href = session.url;
-      } else {
-        this.alertSvc.showError('Failed to initialize payment gateway.');
-      }
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Verification check failed.');
-    } finally {
-      this.isCheckingEligibility.set(false);
-    }
-  }
-
-  protected editPerson() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deletePerson() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Person',
-      message: 'Are you sure you want to delete this person? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.personsSvc.delete(this.id());
-      this.personsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Person deleted');
-      await this.router.navigate(['/people']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete person';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById().get(String(id))?.first_name ?? '?';
-  }
-
-  protected navigateToHousehold() {
-    const household_id = this.householdId();
-    if (household_id) {
-      void this.router.navigate(['households', household_id]);
-    }
-  }
-
-  private getFormattedAddress(address: AddressType): string {
-    const parts: string[] = [];
-    const streetParts = [
-      address.apt ? `Apt ${address.apt}` : null,
-      address.street_num,
-      address.street1,
-      address.street2,
-    ].filter(Boolean);
-
-    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
-
-    if (streetParts.length) parts.push(streetParts.join(' ').trim());
-    if (locationParts.length) parts.push(locationParts.join(', ').trim());
-
-    const formatted = parts.join(', ').trim();
-    return formatted || 'No Address Assigned';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.ts
 
 ```typescript
@@ -43124,6 +42322,7 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { ShiftsService } from '../services/shifts-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-shift-form',
@@ -43208,6 +42407,7 @@ export class ShiftFormComponent implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, AddVolunteerEventObj);
   });
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
   protected readonly isNew = computed(() => !this.id());
   protected readonly loading = this._loading.visible;
 
@@ -43432,6 +42632,10 @@ export class ShiftFormComponent implements OnInit {
     } catch (err) {
       this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove volunteer');
     }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this volunteer event');
   }
 
   protected async save(done?: (() => void) | Event) {
@@ -43682,6 +42886,223 @@ const STATUS_LABEL: Record<string, string> = {
 };
 ```
 
+## File: apps/frontend/src/app/experiences/teams/ui/team-view.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { PcTabOption, TabPanel, Tabs } from '@uxcommon/components/tabs/tabs';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import type { IAuthUser } from '../../../../../../../libs/common/src';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { UserService } from '../../../services/user.service';
+import { TasksService } from '../../tasks/services/tasks-service';
+import { TeamsService } from '../services/teams-service';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+@Component({
+  selector: 'pc-team-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    RecordActivities,
+    DetailLayout,
+    StatCard,
+    Tabs,
+    TabPanel,
+    StatusBadge,
+    ProfileCard,
+    DetailRow,
+  ],
+  templateUrl: './team-view.html',
+})
+export class TeamViewComponent {
+  readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('team', this.id);
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly teamsSvc = inject(TeamsService);
+  private readonly tasksSvc = inject(TasksService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly team = signal<any>(null);
+  protected readonly teamTasks = signal<any[]>([]);
+  protected readonly volunteers = computed(() => this.team()?.volunteers ?? []);
+  protected readonly users = signal<IAuthUser[]>([]);
+  private usersById = new Map<string, IAuthUser>();
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Teams', route: '/teams' },
+    { label: this.team()?.name || 'Team' },
+  ]);
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly teamTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'volunteers', label: `Volunteers (${this.volunteers().length})`, icon: 'user-group' },
+    { id: 'lists', label: `Target Lists (${this.team()?.lists?.length || 0})`, icon: 'queue-list' },
+    { id: 'tasks', label: `Team Tasks (${this.teamTasks().length})`, icon: 'document-check' },
+  ]);
+
+  protected readonly captainName = computed(() => {
+    const captainId = this.team()?.team_captain_id;
+    if (!captainId) return '—';
+    const match = this.volunteers().find((v: any) => v.id === captainId);
+    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
+  });
+
+  protected readonly leadName = computed(() => {
+    const leadId = this.team()?.team_lead_user_id;
+    if (!leadId) return '—';
+    const match = this.users().find((u) => String(u.id) === String(leadId));
+    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
+  });
+
+  protected readonly activeTasksCount = computed(() => {
+    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'canceled').length;
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+
+    // Load users
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load team detail
+      const data = await this.teamsSvc.getById(id);
+      this.team.set(data);
+
+      // 2. Load associated tasks
+      const res = await this.tasksSvc.getAll({
+        filterModel: { team_id: { value: id } },
+      } as any);
+      this.teamTasks.set(res?.rows ?? []);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the team. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editTeam() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteTeam() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Team',
+      message: 'Are you sure you want to delete this team? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.teamsSvc.delete(this.id());
+      this.teamsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Team deleted');
+      await this.router.navigate(['/teams']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete team';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected getCreatedAt(): Date | null {
+    const date = this.team()?.created_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUpdatedAt(): Date | null {
+    const date = this.team()?.updated_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+
+  protected getPriorityType(priority: string | null | undefined): any {
+    const p = String(priority || '').toLowerCase();
+    switch (p) {
+      case 'urgent':
+        return 'error';
+      case 'high':
+        return 'warning';
+      case 'medium':
+        return 'info';
+      default:
+        return 'ghost';
+    }
+  }
+
+  protected getStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    switch (s) {
+      case 'done':
+        return 'success';
+      case 'in_progress':
+        return 'info';
+      case 'blocked':
+        return 'error';
+      case 'canceled':
+        return 'neutral';
+      default:
+        return 'ghost';
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/users/ui/user-edit.ts
 
 ```typescript
@@ -43702,6 +43123,7 @@ import { Card as PcCard } from '@uxcommon/components/card/card';
 
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-user-edit',
@@ -43742,6 +43164,8 @@ export class UserEditComponent {
     disabled(p.verified, () => true);
   });
 
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
   protected readonly displayName = computed(() => {
     const user = this.detail();
     if (!user) return '';
@@ -43767,6 +43191,10 @@ export class UserEditComponent {
         void this.load();
       });
     });
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.displayName() || 'this user');
   }
 
   protected async save(done?: (() => void) | Event) {
@@ -44449,6 +43877,348 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
 }
 ```
 
+## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.ts
+
+```typescript
+import { Component, effect, inject, output, signal, computed, viewChild, ElementRef } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { EmailsStore } from '../../services/store/emailstore';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { PcIconNameType } from '@icons/icons.index';
+
+interface ContextMenuItem {
+  label: string;
+  icon: PcIconNameType;
+  action: () => void;
+  iconClass?: string; // The '?' makes it optional
+  extraClass?: string; // The '?' makes it optional
+}
+
+interface ContextMenuSection {
+  show: boolean;
+  items: ContextMenuItem[];
+}
+
+@Component({
+  selector: 'pc-email-list',
+  imports: [Icon, TimeAgoPipe],
+  templateUrl: 'email-list.html',
+  host: {
+    '(document:click)': 'closeContextMenu()',
+    '(document:keydown.escape)': 'closeContextMenu()',
+  },
+})
+export class EmailList {
+  private readonly store = inject(EmailsStore);
+  private readonly alertSvc = inject(AlertService);
+
+  public readonly scrollContainer = viewChild<ElementRef<HTMLUListElement>>('scrollContainer');
+
+  public readonly emailSelected = output<EmailType>();
+
+  public readonly reply = output<EmailType>();
+  public readonly replyAll = output<EmailType>();
+  public readonly forward = output<EmailType>();
+
+  public readonly showContextMenu = signal<boolean>(false);
+  public readonly contextMenuPosition = signal<{ x: number; y: number }>({ x: 0, y: 0 });
+  public readonly contextMenuEmail = signal<EmailType | null>(null);
+
+  public readonly emails = this.store.emailsInSelectedFolder;
+
+  public readonly currentFolderId = computed(() => this.store.currentSelectedFolderId());
+
+  protected readonly isLoadingMore = this.store.isLoadingMore;
+  protected readonly ALL_FOLDERS = ALL_FOLDERS;
+
+  protected onScroll(event: Event): void {
+    this.closeContextMenu();
+    const el = event.target as HTMLElement;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+      void this.store.loadNextPage();
+    }
+  }
+
+  public readonly sortOrder = signal<'newest' | 'oldest'>('newest');
+
+  public readonly sortedEmails = computed(() => {
+    const list = [...this.emails()];
+    const order = this.sortOrder();
+    return list.sort((a, b) => {
+      const timeA = new Date(a.date_sent || a.updated_at).getTime();
+      const timeB = new Date(b.date_sent || b.updated_at).getTime();
+      return order === 'newest' ? timeB - timeA : timeA - timeB;
+    });
+  });
+
+  constructor() {
+    let lastFolderId: string | null = null;
+
+    // Auto-select the first email when the folder changes or the current selection is removed.
+    effect(() => {
+      const folderId = this.store.currentSelectedFolderId();
+      const emails = this.sortedEmails();
+      const selectedId = this.store.currentSelectedEmailId();
+
+      const folderChanged = folderId !== lastFolderId;
+      lastFolderId = folderId;
+
+      const container = this.scrollContainer();
+      if (folderChanged && container) {
+        container.nativeElement.scrollTop = 0;
+      }
+
+      // If the list is empty, clear any existing selection and bail out.
+      if (emails.length === 0) {
+        if (selectedId) {
+          // The selected email was removed; clear selection so parent can react.
+          this.store.selectEmail(null);
+        }
+        return;
+      }
+
+      if (folderId) {
+        // Auto-select the first email only if:
+        // 1. The folder has changed, OR
+        // 2. The previously selected email is no longer in the list (e.g., deleted or moved).
+        const currentSelectionStillExists = selectedId ? emails.some((e) => e.id === selectedId) : false;
+
+        if (folderChanged || (selectedId && !currentSelectionStillExists)) {
+          // Update the store directly — do NOT emit through emailSelected output, which would
+          // trigger the parent's onEmail() and reset mobileView to 'detail' on every init.
+          this.store.selectEmail(emails[0]!);
+        }
+      }
+    });
+  }
+
+  public isSelected(id: string): boolean {
+    return this.store.currentSelectedEmailId() === id;
+  }
+
+  public selectEmail(email: EmailType): void {
+    this.emailSelected.emit(email);
+  }
+
+  public onContextMenu(event: MouseEvent, email: EmailType): void {
+    event.preventDefault();
+    this.selectEmail(email);
+    this.contextMenuEmail.set(email);
+
+    // Dynamic viewport boundary collision checking
+    const menuWidth = 192; // equivalent to w-48
+    const menuHeight = 280; // approximate maximum height
+
+    let x = event.clientX;
+    let y = event.clientY;
+
+    if (x + menuWidth > window.innerWidth) {
+      x = window.innerWidth - menuWidth - 8;
+    }
+    if (y + menuHeight > window.innerHeight) {
+      y = window.innerHeight - menuHeight - 8;
+    }
+
+    this.contextMenuPosition.set({ x, y });
+    this.showContextMenu.set(true);
+  }
+
+  get menuSections(): ContextMenuSection[] {
+    const email = this.contextMenuEmail();
+    if (!email) return [];
+
+    return [
+      // Section 1: Actions
+      {
+        show: this.currentFolderId() !== this.ALL_FOLDERS.DRAFTS,
+        items: [
+          { label: 'Reply', icon: 'reply', action: () => this.handleReply() },
+          { label: 'Reply All', icon: 'reply-all', action: () => this.handleReplyAll() },
+          { label: 'Forward', icon: 'forward', iconClass: 'scale-x-[-1]', action: () => this.handleForward() },
+        ] as ContextMenuItem[],
+      },
+      // Section 2: Spam & Read
+      {
+        show: true,
+        items: [
+          ...(!this.isFolderTrash()
+            ? [
+                {
+                  label: this.isFolderSpam() ? 'Not spam' : 'Mark as spam',
+                  icon: (this.isFolderSpam() ? 'inbox' : 'exclamation-triangle') as PcIconNameType,
+                  action: () => (this.isFolderSpam() ? this.moveToInbox() : this.markAsSpam()),
+                },
+              ]
+            : []),
+          {
+            label: `Mark as ${email.is_read ? 'unread' : 'read'}`,
+            icon: 'envelope',
+            action: () => void this.toggleReadStatus(),
+          },
+        ] as ContextMenuItem[],
+      },
+      // Section 3: Status & Delete
+      {
+        show: true,
+        items: [
+          {
+            label: email.is_favourite ? 'Unstar' : 'Star',
+            icon: (email.is_favourite ? 'star-filled' : 'star') as PcIconNameType,
+            iconClass: email.is_favourite ? 'text-amber-500' : 'text-base-content/60',
+            action: () => void this.toggleFavourite(),
+          },
+          {
+            label: email.status === 'closed' ? 'Mark as Open' : 'Mark as Done',
+            icon: 'check-circle',
+            iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
+            action: () => void this.toggleClosed(),
+          },
+          ...(this.isFolderTrash()
+            ? [
+                {
+                  label: 'Restore to Inbox',
+                  icon: 'restore-from-trash',
+                  action: () => void this.restoreFromTrash(),
+                },
+              ]
+            : []),
+          {
+            label: this.isFolderTrash() ? 'Delete Permanently' : 'Delete',
+            icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
+            iconClass: 'text-error',
+            action: () => void this.deleteEmail(),
+          },
+        ] as ContextMenuItem[],
+      },
+      // Section 4: Print
+      {
+        show: true,
+        items: [
+          {
+            label: 'Print',
+            icon: 'print',
+            extraClass: '!py-1',
+            action: () => {
+              window.print();
+            },
+          },
+        ] as ContextMenuItem[],
+      },
+    ].filter((section) => section.show && section.items.length > 0);
+  }
+  public closeContextMenu(): void {
+    this.showContextMenu.set(false);
+  }
+
+  protected handleReply(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.reply.emit(email);
+  }
+
+  protected handleReplyAll(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.replyAll.emit(email);
+  }
+
+  protected handleForward(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.forward.emit(email);
+  }
+
+  protected isFolderTrash(): boolean {
+    return this.currentFolderId() === ALL_FOLDERS.TRASH;
+  }
+
+  protected isFolderSpam(): boolean {
+    return this.currentFolderId() === ALL_FOLDERS.SPAM;
+  }
+
+  protected async toggleReadStatus() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.toggleEmailReadStatus(email.id, !email.is_read);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to update read status');
+    }
+  }
+
+  protected async toggleFavourite() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to update favorite status');
+    }
+  }
+
+  protected async toggleClosed() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    const currentStatus = email.status || 'open';
+    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
+    try {
+      await this.store.updateEmailStatus(email.id, newStatus);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to update email status');
+    }
+  }
+
+  protected async deleteEmail() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.deleteEmail(email.id);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to delete email');
+    }
+  }
+
+  protected restoreFromTrash() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    void this.store.restoreFromTrash(email.id);
+  }
+
+  protected async moveToInbox() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.moveToFolder(email.id, ALL_FOLDERS.INBOX);
+      this.alertSvc.showSuccess('Email moved to Inbox');
+    } catch (_e) {
+      this.alertSvc.showError('Failed to move email to Inbox');
+    }
+  }
+
+  protected async markAsSpam() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.moveToFolder(email.id, ALL_FOLDERS.SPAM);
+      this.alertSvc.showSuccess('Email marked as spam');
+    } catch (_e) {
+      this.alertSvc.showError('Failed to mark email as spam');
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/events/ui/event-form.ts
 
 ```typescript
@@ -44473,6 +44243,7 @@ import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../..
 import { EventsService } from '../../../services/api/events-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { EventsFrontendService } from '../services/events-frontend-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-event-form',
@@ -44543,6 +44314,7 @@ export class EventFormComponent implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, AddEventObj);
   });
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
   protected readonly isNew = computed(() => !this.id());
   protected readonly loading = this._loading.visible;
   protected readonly newTicket = signal({ name: '', description: '', price_cents: 0, capacity: null as number | null });
@@ -44709,6 +44481,10 @@ export class EventFormComponent implements OnInit {
     this.slugManuallyEdited = true;
   }
 
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this event');
+  }
+
   protected async save(done?: (() => void) | Event) {
     if (done instanceof Event) done.preventDefault();
     this.form().markAsTouched();
@@ -44814,152 +44590,625 @@ export class EventFormComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/events/ui/events-grid.ts
+## File: apps/frontend/src/app/experiences/events/ui/event-view.ts
 
 ```typescript
-import { Component } from '@angular/core';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { environment } from '../../../../environments/environment';
 import { EventsFrontendService } from '../services/events-frontend-service';
+import { EventsService } from '../../../services/api/events-service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
-  selector: 'pc-events-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Event Pages"
-        i18n-title
-        description="Manage public event pages with RSVP and ticketing for fundraisers, town halls, and meet-and-greets."
-        i18n-description
-        [showDescription]="true"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="true"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="plus"
-        i18n-plusIcon
-        [showArchiveIcon]="true"
-        archiveIcon="archive-box-arrow-down"
-        i18n-archiveIcon
-        archiveTip="See past events"
-        i18n-archiveTip
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: EventsFrontendService },
-    provideDataGridConfig({ messages: { exportFileName: 'events-export.csv' } }),
+  selector: 'pc-event-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    FormsModule,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    Tabs,
+    TabPanel,
+    StatCard,
+    ProfileCard,
+    DetailRow,
+    PcCard,
   ],
+  templateUrl: './event-view.html',
+  providers: [EventsService],
 })
-export class EventsGridComponent {
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+export class EventViewComponent {
+  readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('event', this.id);
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly eventsFrontendSvc = inject(EventsFrontendService);
+  private readonly eventsSvc = inject(EventsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+
+  protected readonly event = signal<any | null>(null);
+  protected readonly ticketTypes = signal<any[]>([]);
+  protected readonly registrations = signal<any[]>([]);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Events', route: '/events/pages' },
+    { label: this.event()?.name || 'Event' },
+  ]);
+
+  // Person search for adding registrations
+  protected readonly personSearch = signal('');
+  protected readonly personSearchResults = signal<any[]>([]);
+  protected readonly selectedPersonId = signal<string | null>(null);
+  protected readonly selectedTicketTypeId = signal<string | null>(null);
+  protected readonly addingRegistration = signal(false);
+  protected readonly searchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  protected activeTab = signal<string>('attendees');
+
+  protected readonly eventTabs = computed<PcTabOption[]>(() => [
+    {
+      id: 'attendees',
+      label: `Attendees (${this.registrations().filter((r) => r.status !== 'cancelled').length})`,
+      icon: 'user-group',
+    },
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+  ]);
+
+  protected readonly eventPassed = computed(() => {
+    const end = this.event()?.end_time;
+    if (!end) return false;
+    return new Date(end) < new Date();
   });
 
-  protected col = [
-    { field: 'name', headerName: 'Event Name', editable: true },
-    { field: 'location_address', headerName: 'Location', editable: true },
-    {
-      field: 'start_time',
-      headerName: 'Start Time',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.start_time),
-      editable: false,
-    },
-    {
-      field: 'end_time',
-      headerName: 'End Time',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.end_time),
-      editable: false,
-    },
-    {
-      field: 'is_published',
-      headerName: 'Published',
-      valueFormatter: (p: any) => (p.value ? 'Yes' : 'Draft'),
-      editable: false,
-    },
-    {
-      field: 'registrations_count',
-      headerName: 'Registrations',
-      editable: false,
-    },
-    {
-      field: 'capacity',
-      headerName: 'Capacity',
-      editable: false,
-      valueFormatter: (p: any) => p.value ?? 'Unlimited',
-    },
-  ];
+  protected readonly activeCount = computed(() => this.registrations().filter((r) => r.status !== 'cancelled').length);
 
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
+  protected readonly attendedCount = computed(() => this.registrations().filter((r) => r.status === 'attended').length);
+
+  protected readonly publicUrl = computed(() => {
+    const slug = this.event()?.slug;
+    if (!slug) return '';
+    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
+  });
+
+  protected readonly remainingCapacity = computed(() => {
+    const ev = this.event();
+    if (!ev || ev.capacity === null || ev.capacity === undefined) return 'Unlimited';
+    return Math.max(0, ev.capacity - this.activeCount());
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      const [eventData, ticketData, regData] = await Promise.all([
+        this.eventsFrontendSvc.getById(id),
+        this.eventsSvc.getTicketTypes(id),
+        this.eventsSvc.getRegistrations(id),
+      ]);
+      this.event.set(eventData);
+      this.ticketTypes.set(ticketData || []);
+      this.registrations.set(regData || []);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the event. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected copyPublicUrl() {
+    const url = this.publicUrl();
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(
+      () => this.alertSvc.showSuccess('Public RSVP link copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected editEvent() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteEvent() {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Event Page',
+      message: 'Are you sure you want to delete this event? All registrations will also be deleted.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      await this.eventsFrontendSvc.delete(this.id());
+      this.eventsFrontendSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Event deleted');
+      await this.router.navigate(['/events/pages']);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Unable to delete event');
+    } finally {
+      end();
+    }
+  }
+
+  // Person search
+  protected async onPersonSearch(query: string) {
+    this.personSearch.set(query);
+    this.selectedPersonId.set(null);
+    if (!query.trim()) {
+      this.personSearchResults.set([]);
+      return;
+    }
+    try {
+      const res = await this.personsSvc.getAll({ searchStr: query.toLowerCase().trim(), startRow: 0, endRow: 10 });
+      this.personSearchResults.set(res?.rows || []);
+    } catch {
+      this.personSearchResults.set([]);
+    }
+  }
+
+  protected selectPerson(person: any) {
+    this.selectedPersonId.set(String(person.id));
+    this.personSearch.set(`${person.first_name} ${person.last_name}`.trim());
+    this.personSearchResults.set([]);
+  }
+
+  protected async addRegistration() {
+    const personId = this.selectedPersonId();
+    if (!personId) {
+      this.alertSvc.showError('Please select a person to register.');
+      return;
+    }
+    this.addingRegistration.set(true);
+    try {
+      await this.eventsSvc.addRegistration({
+        event_id: this.id(),
+        person_id: personId,
+        ticket_type_id: this.selectedTicketTypeId() || null,
+      });
+      this.alertSvc.showSuccess('Registration added');
+      this.personSearch.set('');
+      this.selectedPersonId.set(null);
+      this.selectedTicketTypeId.set(null);
+      this.personSearchResults.set([]);
+      const regs = await this.eventsSvc.getRegistrations(this.id());
+      this.registrations.set(regs || []);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to add registration');
+    } finally {
+      this.addingRegistration.set(false);
+    }
+  }
+
+  protected async checkIn(reg: any) {
+    try {
+      await this.eventsSvc.checkIn(String(reg.id));
+      this.alertSvc.showSuccess(`${reg.first_name} checked in`);
+      const regs = await this.eventsSvc.getRegistrations(this.id());
+      this.registrations.set(regs || []);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to check in');
+    }
+  }
+
+  protected async updateStatus(reg: any, status: string) {
+    try {
+      await this.eventsSvc.updateRegistration(String(reg.id), { status: status as any });
+      const regs = await this.eventsSvc.getRegistrations(this.id());
+      this.registrations.set(regs || []);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to update status');
+    }
+  }
+
+  protected async deleteRegistration(reg: any) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Registration',
+      message: `Remove ${reg.first_name} ${reg.last_name} from this event?`,
+      variant: 'danger',
+      confirmText: 'Remove',
+    });
+    if (!confirmed) return;
+    try {
+      await this.eventsSvc.deleteRegistration(String(reg.id));
+      this.alertSvc.showSuccess('Registration removed');
+      const regs = await this.eventsSvc.getRegistrations(this.id());
+      this.registrations.set(regs || []);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to remove registration');
+    }
+  }
+
+  protected exportCsv() {
+    const regs = this.registrations().filter((r) => r.status !== 'cancelled');
+    const headers = ['First Name', 'Last Name', 'Email', 'Mobile', 'Ticket Type', 'Price', 'Status', 'Checked In At'];
+    const rows = regs.map((r) => [
+      r.first_name ?? '',
+      r.last_name ?? '',
+      r.email ?? '',
+      r.mobile ?? '',
+      r.ticket_type_name ?? '',
+      r.ticket_price_cents != null ? `$${(r.ticket_price_cents / 100).toFixed(2)}` : 'Free',
+      r.status ?? '',
+      r.checked_in_at ? new Date(r.checked_in_at).toLocaleString() : '',
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${this.event()?.slug || 'event'}-attendees.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  protected getStatusType(status: string | null | undefined): any {
+    switch (String(status || '').toLowerCase()) {
+      case 'attended':
+        return 'success';
+      case 'registered':
+        return 'warning';
+      case 'no_show':
+        return 'error';
+      case 'cancelled':
+        return 'neutral';
+      default:
+        return 'ghost';
+    }
+  }
+
+  protected ticketTypeLabel(id: string | null): string {
+    if (!id) return '';
+    const t = this.ticketTypes().find((tt) => tt.id === id);
+    return t ? t.name : '';
   }
 }
 ```
 
-## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-grid.ts
+## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
 
 ```typescript
-import { Component } from '@angular/core';
-import { DonationPagesService } from '@experiences/forms/services/donation-pages-service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { FormsService } from '../services/forms-service';
+import { ListsService } from '../../lists/services/lists-service';
+import { UserService } from '../../../services/user.service';
+import type { IAuthUser } from '@common';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { environment } from '../../../../environments/environment';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
-  selector: 'pc-fundraising-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Donation Pages"
-        i18n-title
-        description="Manage embeddable donation and recurring pledge pages that connect to Stripe."
-        i18n-description
-        [showDescription]="true"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [allowFilter]="false"
-        [disableView]="false"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="plus"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: DonationPagesService },
-    provideDataGridConfig({ messages: { exportEntity: 'forms', exportFileName: 'donation-pages-export.csv' } }),
+  selector: 'pc-form-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    PcCard,
+    Tabs,
+    TabPanel,
+    StatCard,
+    ProfileCard,
+    DetailRow,
   ],
+  templateUrl: './form-view.html',
 })
-export class FundraisingGridComponent {
-  protected col = [
-    { field: 'name', headerName: 'Page Name', editable: false },
-    { field: 'description', headerName: 'Description', editable: false },
-    {
-      field: 'form_type',
-      headerName: 'Type',
-      editable: false,
-      valueFormatter: (p: any) => (p.value === 'recurring_donation' ? 'Recurring' : 'One-Time'),
-    },
-    { field: 'status', headerName: 'Status', editable: true },
-    {
-      field: 'created_at',
-      headerName: 'Created At',
-      valueFormatter: (p: any) => (p.value ? new Date(p.value).toLocaleDateString() : ''),
-    },
-  ];
+export class FormViewComponent {
+  private readonly alertSvc = inject(AlertService);
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  readonly id = input.required<string>();
+  protected readonly recordNav = injectRecordNavigation('form', this.id);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly formRecord = signal<any | null>(null);
+  protected readonly submissionsCount = signal(0);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Forms', route: '/forms' },
+    { label: this.formRecord()?.name || 'Form' },
+  ]);
+  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
+  protected readonly users = signal<IAuthUser[]>([]);
+  private readonly router = inject(Router);
+  private usersById = new Map<string, IAuthUser>();
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly formTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'targetActions', label: 'Target Lists & Actions', icon: 'queue-list' },
+    { id: 'fieldsPreview', label: 'Fields & Layout', icon: 'information-circle' },
+  ]);
+
+  protected readonly selectedFields = computed(() => {
+    const record = this.formRecord();
+    if (!record) return [];
+    if (record.fields) {
+      return Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
+    }
+    return ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+  });
+
+  protected readonly fieldsCount = computed(() => {
+    const fields = this.selectedFields();
+    // Email is always required and present
+    const standardFieldsCount = fields.filter((f: string) => f !== 'email').length;
+    return standardFieldsCount + 1;
+  });
+
+  protected readonly targetListsNames = computed(() => {
+    const record = this.formRecord();
+    if (!record || !record.target_lists) return [];
+    const listIds: string[] = Array.isArray(record.target_lists)
+      ? record.target_lists
+      : JSON.parse(record.target_lists || '[]');
+
+    return listIds.map((id) => this.availableLists().find((l) => l.id === id)?.name).filter(Boolean) as string[];
+  });
+
+  protected readonly embedSnippet = computed(() => {
+    const record = this.formRecord();
+    if (!record || !this.id()) return '';
+    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
+    const fields = this.selectedFields();
+    const isDonation = record.form_type === 'donation';
+    const isRecurring = record.form_type === 'recurring_donation';
+    const isAnyDonation = isDonation || isRecurring;
+
+    const addressFields = isAnyDonation
+      ? `
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
+    <input type="text" name="street1" placeholder="123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
+      <input type="text" name="city" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal *</label>
+      <input type="text" name="zip" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+  </div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
+      <input type="text" name="state" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country *</label>
+      <input type="text" name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+  </div>`
+      : '';
+
+    const amountField = isDonation
+      ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($) *</label>
+    <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : isRecurring
+        ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
+    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
+  </div>`
+        : '';
+
+    const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
+
+    return `<!-- PeopleCRM Embeddable Form -->
+<form action="${apiOrigin}/api/forms/submit/${this.id()}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
+${
+  fields.includes('first_name') || isAnyDonation
+    ? `  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isAnyDonation ? ' *' : ''}</label>
+    <input type="text" name="first_name" placeholder="First Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+    : ''
+}${
+      fields.includes('last_name') || isAnyDonation
+        ? `\n  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isAnyDonation ? ' *' : ''}</label>
+    <input type="text" name="last_name" placeholder="Last Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+        : ''
+    }
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
+    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>${
+    !isAnyDonation && fields.includes('mobile')
+      ? `\n  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
+    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    !isAnyDonation && fields.includes('notes')
+      ? `\n  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
+    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
+  </div>`
+      : ''
+  }${addressFields}${amountField}
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
+</form>`;
+  });
+
+  protected readonly formUrl = computed(() => {
+    if (!this.id()) return '';
+    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${this.id()}`;
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+
+    // Load users
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load Form details
+      const record = await this.formsSvc.getById(id);
+      this.formRecord.set(record);
+
+      // 2. Load available Lists to resolve list names
+      const result = await this.listsSvc.getAll({ limit: 100 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows.map((row: any) => ({
+          id: String(row.id),
+          name: String(row.name),
+        })),
+      );
+
+      // 3. Load submissions count
+      const subCount = await this.formsSvc.getSubmissionsCount(id);
+      this.submissionsCount.set(subCount);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the form. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editForm() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteForm() {
+    if (!this.id()) return;
+    const backRoute: string = this.route.snapshot.data['backRoute'] ?? '/forms';
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Web Form',
+      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.formsSvc.delete(this.id());
+      this.formsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Web form deleted');
+      await this.router.navigate([backRoute]);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete web form';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copySnippet(): void {
+    const code = this.embedSnippet();
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(
+      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected getCreatedAt(): Date | null {
+    const date = this.formRecord()?.created_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUpdatedAt(): Date | null {
+    const date = this.formRecord()?.updated_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -44989,6 +45238,8 @@ import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs'
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { Tags } from '@experiences/tags/ui/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-household-view',
@@ -45011,6 +45262,8 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 })
 export class HouseholdView {
   readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('household', this.id);
 
   private readonly alertSvc = inject(AlertService);
   private readonly userService = inject(UserService);
@@ -45114,7 +45367,7 @@ export class HouseholdView {
       const count = await this.householdsSvc.getPeopleCount(id);
       this.peopleCount.set(count);
     } catch (err) {
-      this.alertSvc.showError('Failed to load household details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the household. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);
@@ -45250,6 +45503,7 @@ import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/component
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -45406,7 +45660,7 @@ export class ListsGridComponent implements OnDestroy {
     } catch (e) {
       this.refreshingIds.delete(id);
       this.refreshCellIfPossible(cellParams);
-      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
+      this.alerts.showError(getUserErrorMessage(e, 'Could not refresh the list. Please try again.'));
     }
   }
 
@@ -45457,6 +45711,501 @@ export class ListsGridComponent implements OnDestroy {
       clearInterval(interval);
     }
   }
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-view.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { PeopleInHousehold } from './people-in-household';
+import { UserService } from '../../../services/user.service';
+import { HouseholdsService } from '../../households/services/households-service';
+import { PersonsService } from '../services/persons-service';
+import { VolunteerService } from '../../../services/api/volunteer-service';
+import { DonationsService } from '../../../services/api/donations-service';
+import { EventsService } from '../../../services/api/events-service';
+import { ConnectionsService } from '../../../services/api/connections-service';
+import { PersonConnections } from './person-connections';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Tags } from '@experiences/tags/ui/tags';
+import { PcIconNameType } from '@icons/icons.index';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+interface SocialLinkDef {
+  name: string;
+  url: string | null | undefined;
+  icon: PcIconNameType;
+  color: string;
+}
+
+@Component({
+  selector: 'pc-person-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    FormsModule,
+    PeopleInHousehold,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    PcCard,
+    Tabs,
+    TabPanel,
+    StatusBadge,
+    StatCard,
+    ProfileCard,
+    DetailItem,
+    SystemMetadata,
+    Tags,
+    PersonConnections,
+  ],
+  templateUrl: './person-view.html',
+})
+export class PersonView {
+  readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('person', this.id);
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly userService = inject(UserService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  protected readonly donationsSvc = inject(DonationsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly volunteerSvc = inject(VolunteerService);
+  private readonly eventsSvc = inject(EventsService);
+  private readonly connectionsSvc = inject(ConnectionsService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+
+  protected readonly person = signal<any | null>(null);
+
+  private readonly usersResource = resource({
+    loader: () => this.userService.getUsers(),
+  });
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+
+  // Analytics & Lists
+  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
+  protected readonly volunteerHistory = signal<any[]>([]);
+  protected readonly donationStats = signal<{
+    cumulativeAmount: number;
+    limitAmount: number;
+    remainingAmount: number;
+  } | null>(null);
+  protected readonly donationHistory = signal<any[]>([]);
+  protected readonly eventHistory = signal<any[]>([]);
+  protected readonly eventStats = signal<{ events_count: number } | null>(null);
+  protected readonly connectionCount = signal(0);
+  protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
+  protected readonly openedNewslettersCount = computed(() => {
+    return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
+      .length;
+  });
+  protected readonly tags = signal<string[]>([]);
+  protected readonly issues = signal<string[]>([]);
+
+  // Donation Dialog State
+  protected readonly isCheckingEligibility = signal(false);
+  protected readonly donationAmount = signal<number | null>(null);
+  protected readonly showDonationModal = signal(false);
+  protected readonly eligibilityError = signal<string | null>(null);
+
+  // Address
+  protected readonly householdId = computed(() => this.person()?.household_id ?? null);
+  protected readonly householdResource = resource({
+    params: () => this.householdId(),
+    loader: async ({ params: householdId }) => {
+      if (!householdId) return null;
+      try {
+        return await this.householdsSvc.getById(householdId);
+      } catch {
+        return null;
+      }
+    },
+  });
+
+  protected readonly addressString = computed(() => {
+    const hh = this.householdResource.value() as Households | null | undefined;
+    if (!hh || hh.is_placeholder) return 'No Address Assigned';
+    return this.getFormattedAddress(hh);
+  });
+  protected readonly isPlaceholderHousehold = computed(() => {
+    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
+  });
+
+  // Contact initials and full name computation
+  protected readonly initials = computed(() => {
+    const first = this.person()?.first_name || '';
+    const last = this.person()?.last_name || '';
+    if (!first && !last) return '?';
+    return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
+  });
+
+  protected readonly fullName = computed(() => {
+    const p = this.person();
+    if (!p) return '';
+    return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'People', route: '/people' },
+    { label: this.fullName() || 'Person' },
+  ]);
+
+  // Social icons
+  public socialLinks = computed<SocialLinkDef[]>(() => {
+    const p = this.person();
+    return [
+      {
+        name: 'LinkedIn',
+        url: p.linkedin,
+        icon: 'linkedin',
+        color: 'bg-[#0a66c2]', // LinkedIn Blue
+      },
+      {
+        name: 'X',
+        url: p.twitter,
+        icon: 'x',
+        color: 'bg-black', // X Black
+      },
+      {
+        name: 'Facebook',
+        url: p.facebook,
+        icon: 'facebook',
+        color: 'bg-[#1877f2]', // Facebook Blue
+      },
+      {
+        name: 'Instagram',
+        url: p.instagram,
+        icon: 'instagram',
+        color: 'bg-[#e1306c]', // Instagram Pink/Red
+      },
+    ];
+  });
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly personTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'emails', label: 'Conversations', icon: 'envelope', badge: this.activityData()?.emails?.length },
+    { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
+    { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
+    { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
+    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length },
+    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
+    { id: 'household', label: 'Household', icon: 'home' },
+  ]);
+
+  protected getMailStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'sent' || s === 'delivered') return 'success';
+    if (s === 'opened') return 'info';
+    if (s === 'read') return 'neutral';
+    return 'ghost';
+  }
+
+  protected getEmailEventType(eventType: string | null | undefined): any {
+    const et = String(eventType || '').toLowerCase();
+    if (et === 'open') return 'success';
+    if (et === 'click') return 'warning';
+    if (et === 'delivered' || et === 'processed') return 'info';
+    if (['bounce', 'dropped', 'spamreport', 'unsubscribe'].includes(et)) return 'error';
+    return 'ghost';
+  }
+
+  protected getShiftStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'attended') return 'success';
+    if (s === 'signed_up') return 'warning';
+    if (s === 'no_show') return 'error';
+    return 'ghost';
+  }
+
+  protected getEventStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'attended') return 'success';
+    if (s === 'registered') return 'warning';
+    if (s === 'no_show') return 'error';
+    if (s === 'cancelled') return 'neutral';
+    return 'ghost';
+  }
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load person details
+      const personData = await this.personsSvc.getById(id);
+      this.person.set(personData);
+
+      // 2. Load tags and issues
+      const tagList = await this.personsSvc.getTags(id, 'tag');
+      this.tags.set(tagList);
+      const issueList = await this.personsSvc.getTags(id, 'issue');
+      this.issues.set(issueList);
+
+      // 3. Load volunteer stats and history
+      try {
+        const stats = await this.volunteerSvc.getVolunteerStats(id);
+        this.volunteerStats.set(stats);
+        const history = await this.volunteerSvc.getHistoryForPerson(id);
+        this.volunteerHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load volunteer details', err);
+      }
+
+      // 4. Load donations stats and history
+      try {
+        const stats = await this.donationsSvc.getStats(id);
+        this.donationStats.set(stats);
+        const history = await this.donationsSvc.getHistory(id);
+        this.donationHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load donations history', err);
+      }
+
+      // 5. Load event history
+      try {
+        const stats = await this.eventsSvc.getStatsForPerson(id);
+        this.eventStats.set(stats);
+        const history = await this.eventsSvc.getHistoryForPerson(id);
+        this.eventHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load event history', err);
+      }
+
+      // 6. Load connection count (tab badge — full list loads lazily inside the tab)
+      try {
+        const count = await this.connectionsSvc.countForPerson(id);
+        this.connectionCount.set(count);
+      } catch (err) {
+        console.error('Failed to load connection count', err);
+      }
+
+      // Check query params for Stripe Checkout success redirects
+      const params = this.route.snapshot.queryParams;
+      if (params['checkout_success'] === 'true' && params['session_id']) {
+        try {
+          await this.donationsSvc.confirmDonation(params['session_id']);
+          this.alertSvc.showSuccess('Donation processed successfully! Thank you for your support.');
+          // Reload donation stats/history after confirmation
+          const stats = await this.donationsSvc.getStats(id);
+          this.donationStats.set(stats);
+          const history = await this.donationsSvc.getHistory(id);
+          this.donationHistory.set(history || []);
+          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        } catch (err) {
+          console.error('Failed to confirm stripe checkout session:', err);
+          this.alertSvc.showError('Finalizing payment verification...');
+        }
+      } else if (params['mock_donation_success'] === 'true' && params['session_id']) {
+        try {
+          const amt = Number(params['amount'] || 0);
+          await this.donationsSvc.confirmMockDonation({
+            personId: id,
+            amountCents: amt * 100,
+            sessionId: params['session_id'],
+            province: params['province'] || '',
+            country: params['country'] || '',
+          });
+          this.alertSvc.showSuccess('[MOCK] Donation recorded successfully!');
+          const stats = await this.donationsSvc.getStats(id);
+          this.donationStats.set(stats);
+          const history = await this.donationsSvc.getHistory(id);
+          this.donationHistory.set(history || []);
+          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        } catch (err) {
+          console.error('Failed to record mock donation:', err);
+        }
+      }
+
+      // 5. Load interactions (emails + newsletters)
+      try {
+        const activity = await this.personsSvc.getActivity(id);
+        this.activityData.set(activity || { emails: [], newsletters: [] });
+      } catch (err) {
+        console.error('Failed to load activity log', err);
+      }
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the person. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected openCollectDonation() {
+    this.donationAmount.set(null);
+    this.eligibilityError.set(null);
+    this.showDonationModal.set(true);
+  }
+
+  protected closeDonationModal() {
+    this.showDonationModal.set(false);
+  }
+
+  protected async submitDonation() {
+    const amt = this.donationAmount();
+    if (amt === null || amt <= 0) {
+      this.alertSvc.showError('Please specify a valid donation amount.');
+      return;
+    }
+
+    this.isCheckingEligibility.set(true);
+    this.eligibilityError.set(null);
+
+    const hh = this.householdResource.value() as Households | null | undefined;
+    const address = {
+      country: hh?.country || 'CA',
+      state: hh?.state || 'ON',
+    };
+
+    try {
+      const eligibility = await this.donationsSvc.checkEligibility({
+        personId: this.id(),
+        amountCents: amt * 100,
+        address,
+      });
+
+      if (!eligibility.eligible) {
+        this.eligibilityError.set(eligibility.reason || 'Donor is ineligible to donate.');
+        this.isCheckingEligibility.set(false);
+        return;
+      }
+
+      this.closeDonationModal();
+      this.alertSvc.showSuccess('Redirecting to Stripe Checkout...');
+
+      // Redirect
+      const session = await this.donationsSvc.createCheckout({
+        personId: this.id(),
+        amountCents: amt * 100,
+        address,
+      });
+
+      if (session && session.url) {
+        window.location.href = session.url;
+      } else {
+        this.alertSvc.showError('Failed to initialize payment gateway.');
+      }
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Verification check failed.');
+    } finally {
+      this.isCheckingEligibility.set(false);
+    }
+  }
+
+  protected editPerson() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deletePerson() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Person',
+      message: 'Are you sure you want to delete this person? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.personsSvc.delete(this.id());
+      this.personsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Person deleted');
+      await this.router.navigate(['/people']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete person';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
+  }
+
+  protected navigateToHousehold() {
+    const household_id = this.householdId();
+    if (household_id) {
+      void this.router.navigate(['households', household_id]);
+    }
+  }
+
+  private getFormattedAddress(address: AddressType): string {
+    const parts: string[] = [];
+    const streetParts = [
+      address.apt ? `Apt ${address.apt}` : null,
+      address.street_num,
+      address.street1,
+      address.street2,
+    ].filter(Boolean);
+
+    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
+
+    if (streetParts.length) parts.push(streetParts.join(' ').trim());
+    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+
+    const formatted = parts.join(', ').trim();
+    return formatted || 'No Address Assigned';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -46091,6 +46840,8 @@ import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs'
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-shift-view',
@@ -46113,6 +46864,8 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 })
 export class ShiftViewComponent {
   readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('shift', this.id);
 
   private readonly alertSvc = inject(AlertService);
   private readonly volunteerEventsSvc = inject(ShiftsService);
@@ -46178,7 +46931,7 @@ export class ShiftViewComponent {
       const rosterData = await this.volunteerSvc.getShiftsForEvent(id);
       this.roster.set(rosterData || []);
     } catch (err) {
-      this.alertSvc.showError('Failed to load event details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the shift. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);
@@ -46268,6 +47021,7 @@ import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AddTeamObj, AddTeamType, IAuthUser, UpdateTeamType } from '../../../../../../../libs/common/src';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 import { UserService } from '../../../services/user.service';
 import { ListsService } from '../../lists/services/lists-service';
@@ -46326,6 +47080,8 @@ export class TeamFormComponent implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, AddTeamObj);
   });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -46481,6 +47237,10 @@ export class TeamFormComponent implements OnInit {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this team');
   }
 
   protected async save(done?: (() => void) | Event) {
@@ -47096,6 +47856,7 @@ import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-head
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 import { Card as PcCard } from '@uxcommon/components/card/card';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-company-form',
@@ -47137,6 +47898,7 @@ export class CompanyForm implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, CompanyInputObj);
   });
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
   protected id = input<string>();
   protected isLoading = this._loading.visible;
 
@@ -47222,6 +47984,10 @@ export class CompanyForm implements OnInit {
     }
   }
 
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.company()?.name || 'this company');
+  }
+
   protected save(done?: (() => void) | Event) {
     if (done instanceof Event) {
       done.preventDefault();
@@ -47288,345 +48054,626 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.ts
+## File: apps/frontend/src/app/experiences/lists/ui/list-form.ts
 
 ```typescript
-import { Component, effect, inject, output, signal, computed, viewChild, ElementRef } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
+import { Component, OnInit, computed, inject, input, resource, signal, viewChild } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
+
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { map } from 'rxjs';
+import { AddListType, UpdateListType } from '../../../../../../../libs/common/src';
+import { HouseholdsService } from '@experiences/households/services/households-service';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { Icon } from '@icons/icon';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
-import { EmailsStore } from '../../services/store/emailstore';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { PcIconNameType } from '@icons/icons.index';
+import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
-interface ContextMenuItem {
-  label: string;
-  icon: PcIconNameType;
-  action: () => void;
-  iconClass?: string; // The '?' makes it optional
-  extraClass?: string; // The '?' makes it optional
-}
+import { QueryBuilderField, QueryBuilderComponent } from '@frontend/shared/components/query-builder/query-builder';
+import { QueryBuilderNode, QueryBuilderGroupNode, cloneQueryBuilderNode } from '../../../../../../../libs/common/src';
 
-interface ContextMenuSection {
-  show: boolean;
-  items: ContextMenuItem[];
+@Component({
+  selector: 'pc-household-filter-grid',
+  imports: [DataGrid],
+  template: `<pc-datagrid
+    #grid
+    [colDefs]="col"
+    [disableDelete]="true"
+    [disableExport]="true"
+    [disableImport]="true"
+    [disableRefresh]="true"
+    [disableView]="disableView()"
+    [limitToTags]="tags()"
+    [allowFilter]="allowFilter()"
+    [showToolbar]="showToolbar()"
+    [enableSelection]="enableSelection()"
+    [externalAdvancedFilterModel]="externalAdvancedFilterModel()"
+  ></pc-datagrid>`,
+  providers: [{ provide: AbstractAPIService, useExisting: HouseholdsService }],
+})
+export class HouseholdFilterGrid {
+  private readonly grid = viewChild(DataGrid);
+
+  protected col: ColDef[] = [
+    {
+      field: 'address',
+      headerName: 'Address',
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (locationParts.length) parts.push(locationParts.join(', ').trim());
+        return parts.join(', ').trim() || 'No household assigned';
+      },
+    },
+    { field: 'people_count', headerName: 'People' },
+    { field: 'tags', headerName: 'Tags' },
+  ];
+
+  public allowFilter = input<boolean>(true);
+  public showToolbar = input<boolean>(true);
+  public enableSelection = input<boolean>(true);
+  public disableView = input<boolean>(true);
+  public externalAdvancedFilterModel = input<any | null>(null);
+  public readonly tags = input<string[]>([]);
+
+  public getCountRowSelected() {
+    return this.grid()?.getCountRowSelected() ?? 0;
+  }
+  public getDefinition() {
+    return this.grid()?.getDefinition();
+  }
+  public triggerFilterChanged() {
+    this.grid()?.triggerFilterChanged();
+  }
 }
 
 @Component({
-  selector: 'pc-email-list',
-  imports: [Icon, TimeAgoPipe],
-  templateUrl: 'email-list.html',
-  host: {
-    '(document:click)': 'closeContextMenu()',
-    '(document:keydown.escape)': 'closeContextMenu()',
-  },
+  selector: 'pc-people-filter-grid',
+  imports: [DataGrid],
+  template: `<pc-datagrid
+    #grid
+    [colDefs]="col"
+    [disableDelete]="true"
+    [disableExport]="true"
+    [disableImport]="true"
+    [disableRefresh]="true"
+    [disableView]="disableView()"
+    [limitToTags]="tags()"
+    [allowFilter]="allowFilter()"
+    [showToolbar]="showToolbar()"
+    [enableSelection]="enableSelection()"
+    [externalAdvancedFilterModel]="externalAdvancedFilterModel()"
+  ></pc-datagrid>`,
+  providers: [{ provide: AbstractAPIService, useExisting: PersonsService }],
 })
-export class EmailList {
-  private readonly store = inject(EmailsStore);
-  private readonly alertSvc = inject(AlertService);
+export class PeopleFilterGrid {
+  private readonly grid = viewChild(DataGrid);
 
-  public readonly scrollContainer = viewChild<ElementRef<HTMLUListElement>>('scrollContainer');
+  protected col: ColDef[] = [
+    { field: 'first_name', headerName: 'First Name' },
+    { field: 'last_name', headerName: 'Last Name' },
+    { field: 'email', headerName: 'Email' },
+    { field: 'mobile', headerName: 'Mobile' },
+    { field: 'tags', headerName: 'Tags' },
+    {
+      field: 'address',
+      headerName: 'Address',
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (locationParts.length) parts.push(locationParts.join(', ').trim());
+        return parts.join(', ').trim() || 'No household assigned';
+      },
+    },
+  ];
 
-  public readonly emailSelected = output<EmailType>();
+  public allowFilter = input<boolean>(true);
+  public showToolbar = input<boolean>(true);
+  public enableSelection = input<boolean>(true);
+  public disableView = input<boolean>(true);
+  public externalAdvancedFilterModel = input<any | null>(null);
+  public readonly tags = input<string[]>([]);
 
-  public readonly reply = output<EmailType>();
-  public readonly replyAll = output<EmailType>();
-  public readonly forward = output<EmailType>();
-
-  public readonly showContextMenu = signal<boolean>(false);
-  public readonly contextMenuPosition = signal<{ x: number; y: number }>({ x: 0, y: 0 });
-  public readonly contextMenuEmail = signal<EmailType | null>(null);
-
-  public readonly emails = this.store.emailsInSelectedFolder;
-
-  public readonly currentFolderId = computed(() => this.store.currentSelectedFolderId());
-
-  protected readonly isLoadingMore = this.store.isLoadingMore;
-  protected readonly ALL_FOLDERS = ALL_FOLDERS;
-
-  protected onScroll(event: Event): void {
-    this.closeContextMenu();
-    const el = event.target as HTMLElement;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
-      void this.store.loadNextPage();
-    }
+  public getCountRowSelected() {
+    return this.grid()?.getCountRowSelected() ?? 0;
   }
+  public getDefinition() {
+    return this.grid()?.getDefinition();
+  }
+  public triggerFilterChanged() {
+    this.grid()?.triggerFilterChanged();
+  }
+}
 
-  public readonly sortOrder = signal<'newest' | 'oldest'>('newest');
+@Component({
+  selector: 'pc-list-form',
+  imports: [ReactiveFormsModule, FormActions, PeopleFilterGrid, HouseholdFilterGrid, Icon, QueryBuilderComponent],
+  templateUrl: './list-form.html',
+})
+export class ListForm implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly fb = inject(FormBuilder);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly listsRefresh = inject(ListsRefreshService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
 
-  public readonly sortedEmails = computed(() => {
-    const list = [...this.emails()];
-    const order = this.sortOrder();
-    return list.sort((a, b) => {
-      const timeA = new Date(a.date_sent || a.updated_at).getTime();
-      const timeB = new Date(b.date_sent || b.updated_at).getTime();
-      return order === 'newest' ? timeB - timeA : timeA - timeB;
-    });
+  private _loading = createLoadingGate();
+  private readonly householdGrid = viewChild(HouseholdFilterGrid);
+  private readonly peopleGrid = viewChild(PeopleFilterGrid);
+
+  protected readonly tagSvc = inject(TagsService);
+
+  protected readonly id = signal<string | null>(null);
+  protected readonly isNew = signal<boolean>(true);
+
+  protected readonly form = this.fb.group({
+    name: ['', [Validators.required]],
+    description: [''],
+    object: ['people'],
+    is_dynamic: [false],
   });
 
-  constructor() {
-    let lastFolderId: string | null = null;
+  protected readonly listType = toSignal(this.form.controls.object.valueChanges.pipe(map((v) => v || 'people')), {
+    initialValue: (this.form.controls.object.value ?? 'people') as string,
+  });
 
-    // Auto-select the first email when the folder changes or the current selection is removed.
-    effect(() => {
-      const folderId = this.store.currentSelectedFolderId();
-      const emails = this.sortedEmails();
-      const selectedId = this.store.currentSelectedEmailId();
+  protected readonly isDynamic = toSignal(this.form.controls.is_dynamic.valueChanges.pipe(map((v) => v === true)), {
+    initialValue: this.form.controls.is_dynamic.value === true,
+  });
 
-      const folderChanged = folderId !== lastFolderId;
-      lastFolderId = folderId;
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
 
-      const container = this.scrollContainer();
-      if (folderChanged && container) {
-        container.nativeElement.scrollTop = 0;
-      }
+  private async loadOnInit(): Promise<void> {
+    const id = this.route.snapshot.paramMap.get('id');
+    const mode = this.route.snapshot.data['mode'] as 'new' | 'edit' | undefined;
+    this.isNew.set(mode !== 'edit');
+    if (id && mode === 'edit') {
+      this.id.set(id);
+      await this.loadList();
+    }
+  }
 
-      // If the list is empty, clear any existing selection and bail out.
-      if (emails.length === 0) {
-        if (selectedId) {
-          // The selected email was removed; clear selection so parent can react.
-          this.store.selectEmail(null);
+  private async loadList() {
+    const id = this.id();
+    if (!id) return;
+    const end = this._loading.begin();
+    try {
+      const list = (await this.listsSvc.getById(id)) as any;
+      if (list) {
+        this.form.patchValue({
+          name: list.name ?? '',
+          description: list.description ?? '',
+          object: list.object ?? 'people',
+          is_dynamic: list.is_dynamic ?? false,
+        });
+
+        const definition = list.definition as any;
+        if (definition) {
+          if (definition.advancedFilterModel) {
+            this.rulesRoot.set(definition.advancedFilterModel);
+          } else if (definition.filterModel?.tags_expression) {
+            this.rulesRoot.set(definition.filterModel.tags_expression);
+          }
         }
-        return;
+      }
+    } catch (_err) {
+      this.alertSvc.showError('Failed to load list details');
+    } finally {
+      end();
+    }
+  }
+
+  protected readonly countRowSelected = computed(() => {
+    const type = this.listType();
+    if (type === 'people') {
+      return this.peopleGrid()?.getCountRowSelected() ?? 0;
+    } else {
+      return this.householdGrid()?.getCountRowSelected() ?? 0;
+    }
+  });
+
+  protected readonly btnLabel = computed(() => {
+    const isDynamic = this.isDynamic();
+    const count = this.countRowSelected();
+    return !isDynamic && count > 0 ? `SAVE (${count} selected)` : 'SAVE';
+  });
+
+  protected readonly rulesRoot = signal<QueryBuilderGroupNode>({
+    kind: 'group',
+    id: 'root',
+    conjunction: 'AND',
+    rules: [],
+  });
+
+  protected readonly listFields = computed<QueryBuilderField[]>(() => {
+    const isPeople = this.listType() === 'people';
+    const tagOperators = [
+      { value: 'eq', label: 'is' },
+      { value: 'neq', label: 'is not' },
+      { value: 'contains', label: 'contains' },
+      { value: 'notContains', label: 'does not contain' },
+      { value: 'equals', label: 'equals' },
+      { value: 'notEquals', label: 'does not equal' },
+      { value: 'startsWith', label: 'starts with' },
+      { value: 'endsWith', label: 'ends with' },
+      { value: 'isEmpty', label: 'is empty' },
+      { value: 'isNotEmpty', label: 'is not empty' },
+    ];
+    const textOperators = [
+      { value: 'contains', label: 'contains' },
+      { value: 'notContains', label: 'does not contain' },
+      { value: 'equals', label: 'equals' },
+      { value: 'notEquals', label: 'does not equal' },
+      { value: 'startsWith', label: 'starts with' },
+      { value: 'endsWith', label: 'ends with' },
+      { value: 'isEmpty', label: 'is empty' },
+      { value: 'isNotEmpty', label: 'is not empty' },
+    ];
+
+    if (isPeople) {
+      return [
+        { name: 'tags', label: 'Tags', operators: tagOperators, inputType: 'autocomplete' as const },
+        { name: 'issues', label: 'Issues', operators: tagOperators, inputType: 'autocomplete' as const },
+        { name: 'first_name', label: 'First Name', operators: textOperators, inputType: 'text' as const },
+        { name: 'last_name', label: 'Last Name', operators: textOperators, inputType: 'text' as const },
+        { name: 'email', label: 'Email', operators: textOperators, inputType: 'text' as const },
+        { name: 'mobile', label: 'Mobile', operators: textOperators, inputType: 'text' as const },
+        { name: 'company_name', label: 'Company', operators: textOperators, inputType: 'text' as const },
+        { name: 'city', label: 'City', operators: textOperators, inputType: 'text' as const },
+        { name: 'state', label: 'State/Province', operators: textOperators, inputType: 'text' as const },
+        { name: 'street1', label: 'Street 1', operators: textOperators, inputType: 'text' as const },
+        { name: 'street_num', label: 'Street Number', operators: textOperators, inputType: 'text' as const },
+        { name: 'zip', label: 'Zip Code', operators: textOperators, inputType: 'text' as const },
+      ];
+    } else {
+      return [
+        { name: 'tags', label: 'Tags', operators: tagOperators, inputType: 'autocomplete' as const },
+        { name: 'issues', label: 'Issues', operators: tagOperators, inputType: 'autocomplete' as const },
+        { name: 'city', label: 'City', operators: textOperators, inputType: 'text' as const },
+        { name: 'state', label: 'State/Province', operators: textOperators, inputType: 'text' as const },
+        { name: 'street1', label: 'Street 1', operators: textOperators, inputType: 'text' as const },
+        { name: 'street2', label: 'Street 2', operators: textOperators, inputType: 'text' as const },
+        { name: 'street_num', label: 'Street Number', operators: textOperators, inputType: 'text' as const },
+        { name: 'zip', label: 'Zip Code', operators: textOperators, inputType: 'text' as const },
+        { name: 'home_phone', label: 'Home Phone', operators: textOperators, inputType: 'text' as const },
+      ];
+    }
+  });
+
+  protected externalRowFilter = (row: any) => {
+    const tags: string[] = Array.isArray(row?.tags) ? row.tags.filter(Boolean) : [];
+    return this.evalGroupWithRow(this.rulesRoot(), new Set(tags), row);
+  };
+  protected isLoading = this._loading.visible;
+
+  protected readonly rulesError = computed(() => {
+    return this.validateRules();
+  });
+
+  protected readonly matchCountResource = resource({
+    params: () => ({
+      rules: this.rulesRoot(),
+      object: this.listType(),
+      hasRules: this.hasAnyRule(this.rulesRoot()),
+      hasError: !!this.rulesError(),
+    }),
+    loader: async ({ params }) => {
+      if (params.hasError) {
+        return 0;
       }
 
-      if (folderId) {
-        // Auto-select the first email only if:
-        // 1. The folder has changed, OR
-        // 2. The previously selected email is no longer in the list (e.g., deleted or moved).
-        const currentSelectionStillExists = selectedId ? emails.some((e) => e.id === selectedId) : false;
+      const svc = params.object === 'people' ? this.personsSvc : this.householdsSvc;
+      if (!params.hasRules) {
+        return await svc.count();
+      } else {
+        const res = (await svc.getAll({
+          advancedFilterModel: params.rules,
+          limit: 1,
+        })) as { count: number };
+        return res?.count ?? 0;
+      }
+    },
+  });
 
-        if (folderChanged || (selectedId && !currentSelectionStillExists)) {
-          // Update the store directly — do NOT emit through emailSelected output, which would
-          // trigger the parent's onEmail() and reset mobileView to 'detail' on every init.
-          this.store.selectEmail(emails[0]!);
+  protected readonly matchCount = computed(() => {
+    const val = this.matchCountResource.value();
+    return val !== undefined ? val : null;
+  });
+
+  protected readonly counting = this.matchCountResource.isLoading;
+
+  protected readonly previewTags = computed(() => this.flattenPositiveTags(this.rulesRoot()));
+
+  // Wizard state
+  protected step = signal<1 | 2 | 3 | 4>(1);
+
+  protected back() {
+    const s = this.step();
+    if (s > 1) this.step.set((s - 1) as unknown as 1 | 2 | 3 | 4);
+  }
+
+  protected flattenPositiveTags(group: QueryBuilderGroupNode): string[] {
+    const out: string[] = [];
+    const walk = (rules: QueryBuilderNode[]) => {
+      for (const it of rules) {
+        if (it.kind === 'rule') {
+          const r = it as { kind: 'rule'; op: 'eq' | 'neq'; value: string };
+          if (r.op === 'eq' && r.value) out.push(r.value);
+        } else if (it.kind === 'group') {
+          walk(it.rules as QueryBuilderNode[]);
         }
       }
+    };
+    walk(group.rules);
+    return Array.from(new Set(out));
+  }
+
+  protected goto(step: 1 | 2 | 3 | 4) {
+    this.step.set(step);
+  }
+
+  protected next() {
+    const s = this.step();
+    if (s < 4) this.step.set((s + 1) as unknown as 1 | 2 | 3 | 4);
+  }
+
+  protected onRulesChanged() {
+    this.rulesRoot.update((g) => cloneQueryBuilderNode(g) as QueryBuilderGroupNode);
+    this.peopleGrid()?.triggerFilterChanged();
+    this.householdGrid()?.triggerFilterChanged();
+  }
+
+  protected save(done: (() => void) | Event) {
+    let doneFn: () => void = () => {
+      /* no-op default */
+    };
+    if (done instanceof Event) {
+      done.preventDefault();
+    } else if (typeof done === 'function') {
+      doneFn = done;
+    }
+
+    const formValue = this.form.getRawValue();
+    const listId = this.id();
+    if (!this.isNew() && !listId) return;
+
+    const end = this._loading.begin();
+    let savePromise;
+
+    if (this.isNew()) {
+      const payload: AddListType = {
+        name: formValue.name ?? '',
+        description: formValue.description ?? null,
+        object: formValue.object as 'people' | 'households',
+        is_dynamic: formValue.is_dynamic ?? false,
+      };
+
+      if (payload.is_dynamic) {
+        // Dynamic lists: use current filters/search as definition
+        const def =
+          payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
+        const tags_expression = this.rulesRoot();
+        payload.definition = {
+          ...(def ?? {}),
+          filterModel: { ...(def?.filterModel ?? {}), tags_expression },
+          advancedFilterModel: tags_expression,
+          // provide a simplified positive-tags list for compatibility
+          tags: this.flattenPositiveTags(tags_expression),
+        };
+      } else {
+        // Static lists: persist a snapshot based on the full filter definition
+        const def =
+          payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
+        const tags_expression = this.rulesRoot();
+        payload.definition = {
+          ...(def ?? {}),
+          filterModel: { ...(def?.filterModel ?? {}), tags_expression },
+          advancedFilterModel: tags_expression,
+          tags: this.flattenPositiveTags(tags_expression),
+        };
+        // Do not send member_ids limited to the current page; backend will expand definition to all matches
+        delete (payload as Record<string, unknown>)['member_ids'];
+      }
+      savePromise = this.listsSvc.add(payload);
+    } else {
+      const payload: UpdateListType = {
+        name: formValue.name ?? '',
+        description: formValue.description ?? null,
+      };
+      savePromise = this.listsSvc.update(listId ?? '', payload);
+    }
+
+    savePromise
+      .then(async () => {
+        this.alertSvc.showSuccess(this.isNew() ? 'List added' : 'List updated');
+        this.listsRefresh.trigger();
+        doneFn();
+        if (this.isNew()) {
+          await this.router.navigate(['/lists']);
+        } else {
+          await this.router.navigate(['/lists', listId ?? '']);
+        }
+      })
+      .catch((err: any) => {
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : isRecord(err) &&
+                isRecord(err['data']) &&
+                typeof err['data']['message'] === 'string' &&
+                err['data']['message']
+              ? err['data']['message']
+              : this.isNew()
+                ? 'Failed to add list'
+                : 'Failed to update list';
+        this.alertSvc.showError(message);
+        doneFn();
+      })
+      .finally(() => end());
+  }
+
+  protected async deleteList() {
+    const id = this.id();
+    if (this.isNew() || !id) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete List',
+      message: 'Are you sure you want to delete this list? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
     });
-  }
+    if (!confirmed) return;
 
-  public isSelected(id: string): boolean {
-    return this.store.currentSelectedEmailId() === id;
-  }
-
-  public selectEmail(email: EmailType): void {
-    this.emailSelected.emit(email);
-  }
-
-  public onContextMenu(event: MouseEvent, email: EmailType): void {
-    event.preventDefault();
-    this.selectEmail(email);
-    this.contextMenuEmail.set(email);
-
-    // Dynamic viewport boundary collision checking
-    const menuWidth = 192; // equivalent to w-48
-    const menuHeight = 280; // approximate maximum height
-
-    let x = event.clientX;
-    let y = event.clientY;
-
-    if (x + menuWidth > window.innerWidth) {
-      x = window.innerWidth - menuWidth - 8;
-    }
-    if (y + menuHeight > window.innerHeight) {
-      y = window.innerHeight - menuHeight - 8;
-    }
-
-    this.contextMenuPosition.set({ x, y });
-    this.showContextMenu.set(true);
-  }
-
-  get menuSections(): ContextMenuSection[] {
-    const email = this.contextMenuEmail();
-    if (!email) return [];
-
-    return [
-      // Section 1: Actions
-      {
-        show: this.currentFolderId() !== this.ALL_FOLDERS.DRAFTS,
-        items: [
-          { label: 'Reply', icon: 'reply', action: () => this.handleReply() },
-          { label: 'Reply All', icon: 'reply-all', action: () => this.handleReplyAll() },
-          { label: 'Forward', icon: 'forward', iconClass: 'scale-x-[-1]', action: () => this.handleForward() },
-        ] as ContextMenuItem[],
-      },
-      // Section 2: Spam & Read
-      {
-        show: true,
-        items: [
-          ...(!this.isFolderTrash()
-            ? [
-                {
-                  label: this.isFolderSpam() ? 'Not spam' : 'Mark as spam',
-                  icon: (this.isFolderSpam() ? 'inbox' : 'exclamation-triangle') as PcIconNameType,
-                  action: () => (this.isFolderSpam() ? this.moveToInbox() : this.markAsSpam()),
-                },
-              ]
-            : []),
-          {
-            label: `Mark as ${email.is_read ? 'unread' : 'read'}`,
-            icon: 'envelope',
-            action: () => void this.toggleReadStatus(),
-          },
-        ] as ContextMenuItem[],
-      },
-      // Section 3: Status & Delete
-      {
-        show: true,
-        items: [
-          {
-            label: email.is_favourite ? 'Unstar' : 'Star',
-            icon: (email.is_favourite ? 'star-filled' : 'star') as PcIconNameType,
-            iconClass: email.is_favourite ? 'text-amber-500' : 'text-base-content/60',
-            action: () => void this.toggleFavourite(),
-          },
-          {
-            label: email.status === 'closed' ? 'Mark as Open' : 'Mark as Done',
-            icon: 'check-circle',
-            iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
-            action: () => void this.toggleClosed(),
-          },
-          ...(this.isFolderTrash()
-            ? [
-                {
-                  label: 'Restore to Inbox',
-                  icon: 'restore-from-trash',
-                  action: () => void this.restoreFromTrash(),
-                },
-              ]
-            : []),
-          {
-            label: this.isFolderTrash() ? 'Delete Permanently' : 'Delete',
-            icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
-            iconClass: 'text-error',
-            action: () => void this.deleteEmail(),
-          },
-        ] as ContextMenuItem[],
-      },
-      // Section 4: Print
-      {
-        show: true,
-        items: [
-          {
-            label: 'Print',
-            icon: 'print',
-            extraClass: '!py-1',
-            action: () => {
-              window.print();
-            },
-          },
-        ] as ContextMenuItem[],
-      },
-    ].filter((section) => section.show && section.items.length > 0);
-  }
-  public closeContextMenu(): void {
-    this.showContextMenu.set(false);
-  }
-
-  protected handleReply(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.reply.emit(email);
-  }
-
-  protected handleReplyAll(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.replyAll.emit(email);
-  }
-
-  protected handleForward(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.forward.emit(email);
-  }
-
-  protected isFolderTrash(): boolean {
-    return this.currentFolderId() === ALL_FOLDERS.TRASH;
-  }
-
-  protected isFolderSpam(): boolean {
-    return this.currentFolderId() === ALL_FOLDERS.SPAM;
-  }
-
-  protected async toggleReadStatus() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
+    const end = this._loading.begin();
     try {
-      await this.store.toggleEmailReadStatus(email.id, !email.is_read);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to update read status');
+      await this.listsSvc.delete(id);
+      this.listsRefresh.trigger();
+      this.alertSvc.showSuccess('List deleted');
+      await this.router.navigate(['/lists']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete list';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
     }
   }
 
-  protected async toggleFavourite() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to update favorite status');
+  private evalGroupWithRow(group: QueryBuilderGroupNode, tagSet: Set<string>, row: any): boolean {
+    const results = group.rules.map((it) =>
+      this.isRule(it)
+        ? this.evalRule(it, tagSet, row)
+        : this.evalGroupWithRow(it as QueryBuilderGroupNode, tagSet, row),
+    );
+    if (group.conjunction === 'AND') return results.every(Boolean);
+    return results.some(Boolean);
+  }
+
+  private evalRule(rule: { field: string; op: string; value?: any }, tagSet: Set<string>, row: any): boolean {
+    const field = rule.field;
+    const op = rule.op;
+    const val = rule.value;
+
+    if (field === 'tag' || field === 'tags' || field === 'issues') {
+      if (!val) return false;
+      const has = tagSet.has(val);
+      return op === 'eq' || op === 'equals' || op === 'contains' ? has : !has;
+    }
+
+    // For other fields, retrieve the row value
+    const rowVal = String(row?.[field] ?? '')
+      .trim()
+      .toLowerCase();
+    const searchVal = String(val ?? '')
+      .trim()
+      .toLowerCase();
+
+    const isEmpty = rowVal.length === 0;
+
+    switch (op) {
+      case 'empty':
+      case 'isEmpty':
+        return isEmpty;
+      case 'notempty':
+      case 'isNotEmpty':
+        return !isEmpty;
+      case 'equals':
+      case 'eq':
+        return rowVal === searchVal;
+      case 'notEquals':
+      case 'neq':
+        return rowVal !== searchVal;
+      case 'contains':
+        return rowVal.includes(searchVal);
+      case 'notContains':
+        return !rowVal.includes(searchVal);
+      case 'startsWith':
+        return rowVal.startsWith(searchVal);
+      case 'endsWith':
+        return rowVal.endsWith(searchVal);
+      default:
+        return true;
     }
   }
 
-  protected async toggleClosed() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    const currentStatus = email.status || 'open';
-    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
-    try {
-      await this.store.updateEmailStatus(email.id, newStatus);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to update email status');
-    }
+  private isRule(item: QueryBuilderNode): item is {
+    kind: 'rule';
+    id: string;
+    field: string;
+    op: string;
+    value?: any;
+  } {
+    return item.kind === 'rule';
   }
 
-  protected async deleteEmail() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.deleteEmail(email.id);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to delete email');
-    }
+  private validateRules(): string | null {
+    let invalid = false;
+    const walk = (rules: QueryBuilderNode[]) => {
+      for (const it of rules) {
+        if (it.kind === 'rule') {
+          const r = it as { field: string; op: string; value?: string };
+          const valueless = ['isEmpty', 'isNotEmpty', 'empty', 'notempty'].includes(r.op);
+          if (!valueless && (!r.value || !String(r.value).trim())) {
+            invalid = true;
+          }
+        } else if (it.kind === 'group') {
+          walk(it.rules as QueryBuilderNode[]);
+        }
+      }
+    };
+    walk(this.rulesRoot().rules);
+    if (invalid) return 'Complete all rules (enter a search term or value)';
+    return null;
   }
 
-  protected restoreFromTrash() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    void this.store.restoreFromTrash(email.id);
-  }
-
-  protected async moveToInbox() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.moveToFolder(email.id, ALL_FOLDERS.INBOX);
-      this.alertSvc.showSuccess('Email moved to Inbox');
-    } catch (_e) {
-      this.alertSvc.showError('Failed to move email to Inbox');
+  private hasAnyRule(group: QueryBuilderGroupNode): boolean {
+    const stack: QueryBuilderNode[] = [...group.rules];
+    while (stack.length) {
+      const item = stack.pop();
+      if (!item) break;
+      if (item.kind === 'rule') return true;
+      if (item.kind === 'group') stack.push(...item.rules);
     }
+    return false;
   }
+}
 
-  protected async markAsSpam() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.moveToFolder(email.id, ALL_FOLDERS.SPAM);
-      this.alertSvc.showSuccess('Email marked as spam');
-    } catch (_e) {
-      this.alertSvc.showError('Failed to mark email as spam');
-    }
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -48765,6 +49812,7 @@ import { Households, AddressType } from '../../../../../../../libs/common/src/li
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-household-form',
@@ -48827,6 +49875,8 @@ export class HouseholdForm implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, UpdateHouseholdsObj);
   });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
 
   protected readonly addressString = computed(() => {
     const raw = this.payload();
@@ -48986,6 +50036,10 @@ export class HouseholdForm implements OnInit {
     }
   }
 
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.addressString() || 'this household');
+  }
+
   protected save(done?: () => void) {
     const raw = this.payload();
     const data: UpdateHouseholdsType = {
@@ -49132,629 +50186,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/lists/ui/list-form.ts
-
-```typescript
-import { Component, OnInit, computed, inject, input, resource, signal, viewChild } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
-
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { map } from 'rxjs';
-import { AddListType, UpdateListType } from '../../../../../../../libs/common/src';
-import { HouseholdsService } from '@experiences/households/services/households-service';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
-import { PersonsService } from '@experiences/persons/services/persons-service';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { Icon } from '@icons/icon';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import type { ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-
-import { QueryBuilderField, QueryBuilderComponent } from '@frontend/shared/components/query-builder/query-builder';
-import { QueryBuilderNode, QueryBuilderGroupNode, cloneQueryBuilderNode } from '../../../../../../../libs/common/src';
-
-@Component({
-  selector: 'pc-household-filter-grid',
-  imports: [DataGrid],
-  template: `<pc-datagrid
-    #grid
-    [colDefs]="col"
-    [disableDelete]="true"
-    [disableExport]="true"
-    [disableImport]="true"
-    [disableRefresh]="true"
-    [disableView]="disableView()"
-    [limitToTags]="tags()"
-    [allowFilter]="allowFilter()"
-    [showToolbar]="showToolbar()"
-    [enableSelection]="enableSelection()"
-    [externalAdvancedFilterModel]="externalAdvancedFilterModel()"
-  ></pc-datagrid>`,
-  providers: [{ provide: AbstractAPIService, useExisting: HouseholdsService }],
-})
-export class HouseholdFilterGrid {
-  private readonly grid = viewChild(DataGrid);
-
-  protected col: ColDef[] = [
-    {
-      field: 'address',
-      headerName: 'Address',
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        return parts.join(', ').trim() || 'No household assigned';
-      },
-    },
-    { field: 'people_count', headerName: 'People' },
-    { field: 'tags', headerName: 'Tags' },
-  ];
-
-  public allowFilter = input<boolean>(true);
-  public showToolbar = input<boolean>(true);
-  public enableSelection = input<boolean>(true);
-  public disableView = input<boolean>(true);
-  public externalAdvancedFilterModel = input<any | null>(null);
-  public readonly tags = input<string[]>([]);
-
-  public getCountRowSelected() {
-    return this.grid()?.getCountRowSelected() ?? 0;
-  }
-  public getDefinition() {
-    return this.grid()?.getDefinition();
-  }
-  public triggerFilterChanged() {
-    this.grid()?.triggerFilterChanged();
-  }
-}
-
-@Component({
-  selector: 'pc-people-filter-grid',
-  imports: [DataGrid],
-  template: `<pc-datagrid
-    #grid
-    [colDefs]="col"
-    [disableDelete]="true"
-    [disableExport]="true"
-    [disableImport]="true"
-    [disableRefresh]="true"
-    [disableView]="disableView()"
-    [limitToTags]="tags()"
-    [allowFilter]="allowFilter()"
-    [showToolbar]="showToolbar()"
-    [enableSelection]="enableSelection()"
-    [externalAdvancedFilterModel]="externalAdvancedFilterModel()"
-  ></pc-datagrid>`,
-  providers: [{ provide: AbstractAPIService, useExisting: PersonsService }],
-})
-export class PeopleFilterGrid {
-  private readonly grid = viewChild(DataGrid);
-
-  protected col: ColDef[] = [
-    { field: 'first_name', headerName: 'First Name' },
-    { field: 'last_name', headerName: 'Last Name' },
-    { field: 'email', headerName: 'Email' },
-    { field: 'mobile', headerName: 'Mobile' },
-    { field: 'tags', headerName: 'Tags' },
-    {
-      field: 'address',
-      headerName: 'Address',
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        return parts.join(', ').trim() || 'No household assigned';
-      },
-    },
-  ];
-
-  public allowFilter = input<boolean>(true);
-  public showToolbar = input<boolean>(true);
-  public enableSelection = input<boolean>(true);
-  public disableView = input<boolean>(true);
-  public externalAdvancedFilterModel = input<any | null>(null);
-  public readonly tags = input<string[]>([]);
-
-  public getCountRowSelected() {
-    return this.grid()?.getCountRowSelected() ?? 0;
-  }
-  public getDefinition() {
-    return this.grid()?.getDefinition();
-  }
-  public triggerFilterChanged() {
-    this.grid()?.triggerFilterChanged();
-  }
-}
-
-@Component({
-  selector: 'pc-list-form',
-  imports: [ReactiveFormsModule, FormActions, PeopleFilterGrid, HouseholdFilterGrid, Icon, QueryBuilderComponent],
-  templateUrl: './list-form.html',
-})
-export class ListForm implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly fb = inject(FormBuilder);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly listsRefresh = inject(ListsRefreshService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private _loading = createLoadingGate();
-  private readonly householdGrid = viewChild(HouseholdFilterGrid);
-  private readonly peopleGrid = viewChild(PeopleFilterGrid);
-
-  protected readonly tagSvc = inject(TagsService);
-
-  protected readonly id = signal<string | null>(null);
-  protected readonly isNew = signal<boolean>(true);
-
-  protected readonly form = this.fb.group({
-    name: ['', [Validators.required]],
-    description: [''],
-    object: ['people'],
-    is_dynamic: [false],
-  });
-
-  protected readonly listType = toSignal(this.form.controls.object.valueChanges.pipe(map((v) => v || 'people')), {
-    initialValue: (this.form.controls.object.value ?? 'people') as string,
-  });
-
-  protected readonly isDynamic = toSignal(this.form.controls.is_dynamic.valueChanges.pipe(map((v) => v === true)), {
-    initialValue: this.form.controls.is_dynamic.value === true,
-  });
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    const id = this.route.snapshot.paramMap.get('id');
-    const mode = this.route.snapshot.data['mode'] as 'new' | 'edit' | undefined;
-    this.isNew.set(mode !== 'edit');
-    if (id && mode === 'edit') {
-      this.id.set(id);
-      await this.loadList();
-    }
-  }
-
-  private async loadList() {
-    const id = this.id();
-    if (!id) return;
-    const end = this._loading.begin();
-    try {
-      const list = (await this.listsSvc.getById(id)) as any;
-      if (list) {
-        this.form.patchValue({
-          name: list.name ?? '',
-          description: list.description ?? '',
-          object: list.object ?? 'people',
-          is_dynamic: list.is_dynamic ?? false,
-        });
-
-        const definition = list.definition as any;
-        if (definition) {
-          if (definition.advancedFilterModel) {
-            this.rulesRoot.set(definition.advancedFilterModel);
-          } else if (definition.filterModel?.tags_expression) {
-            this.rulesRoot.set(definition.filterModel.tags_expression);
-          }
-        }
-      }
-    } catch (_err) {
-      this.alertSvc.showError('Failed to load list details');
-    } finally {
-      end();
-    }
-  }
-
-  protected readonly countRowSelected = computed(() => {
-    const type = this.listType();
-    if (type === 'people') {
-      return this.peopleGrid()?.getCountRowSelected() ?? 0;
-    } else {
-      return this.householdGrid()?.getCountRowSelected() ?? 0;
-    }
-  });
-
-  protected readonly btnLabel = computed(() => {
-    const isDynamic = this.isDynamic();
-    const count = this.countRowSelected();
-    return !isDynamic && count > 0 ? `SAVE (${count} selected)` : 'SAVE';
-  });
-
-  protected readonly rulesRoot = signal<QueryBuilderGroupNode>({
-    kind: 'group',
-    id: 'root',
-    conjunction: 'AND',
-    rules: [],
-  });
-
-  protected readonly listFields = computed<QueryBuilderField[]>(() => {
-    const isPeople = this.listType() === 'people';
-    const tagOperators = [
-      { value: 'eq', label: 'is' },
-      { value: 'neq', label: 'is not' },
-      { value: 'contains', label: 'contains' },
-      { value: 'notContains', label: 'does not contain' },
-      { value: 'equals', label: 'equals' },
-      { value: 'notEquals', label: 'does not equal' },
-      { value: 'startsWith', label: 'starts with' },
-      { value: 'endsWith', label: 'ends with' },
-      { value: 'isEmpty', label: 'is empty' },
-      { value: 'isNotEmpty', label: 'is not empty' },
-    ];
-    const textOperators = [
-      { value: 'contains', label: 'contains' },
-      { value: 'notContains', label: 'does not contain' },
-      { value: 'equals', label: 'equals' },
-      { value: 'notEquals', label: 'does not equal' },
-      { value: 'startsWith', label: 'starts with' },
-      { value: 'endsWith', label: 'ends with' },
-      { value: 'isEmpty', label: 'is empty' },
-      { value: 'isNotEmpty', label: 'is not empty' },
-    ];
-
-    if (isPeople) {
-      return [
-        { name: 'tags', label: 'Tags', operators: tagOperators, inputType: 'autocomplete' as const },
-        { name: 'issues', label: 'Issues', operators: tagOperators, inputType: 'autocomplete' as const },
-        { name: 'first_name', label: 'First Name', operators: textOperators, inputType: 'text' as const },
-        { name: 'last_name', label: 'Last Name', operators: textOperators, inputType: 'text' as const },
-        { name: 'email', label: 'Email', operators: textOperators, inputType: 'text' as const },
-        { name: 'mobile', label: 'Mobile', operators: textOperators, inputType: 'text' as const },
-        { name: 'company_name', label: 'Company', operators: textOperators, inputType: 'text' as const },
-        { name: 'city', label: 'City', operators: textOperators, inputType: 'text' as const },
-        { name: 'state', label: 'State/Province', operators: textOperators, inputType: 'text' as const },
-        { name: 'street1', label: 'Street 1', operators: textOperators, inputType: 'text' as const },
-        { name: 'street_num', label: 'Street Number', operators: textOperators, inputType: 'text' as const },
-        { name: 'zip', label: 'Zip Code', operators: textOperators, inputType: 'text' as const },
-      ];
-    } else {
-      return [
-        { name: 'tags', label: 'Tags', operators: tagOperators, inputType: 'autocomplete' as const },
-        { name: 'issues', label: 'Issues', operators: tagOperators, inputType: 'autocomplete' as const },
-        { name: 'city', label: 'City', operators: textOperators, inputType: 'text' as const },
-        { name: 'state', label: 'State/Province', operators: textOperators, inputType: 'text' as const },
-        { name: 'street1', label: 'Street 1', operators: textOperators, inputType: 'text' as const },
-        { name: 'street2', label: 'Street 2', operators: textOperators, inputType: 'text' as const },
-        { name: 'street_num', label: 'Street Number', operators: textOperators, inputType: 'text' as const },
-        { name: 'zip', label: 'Zip Code', operators: textOperators, inputType: 'text' as const },
-        { name: 'home_phone', label: 'Home Phone', operators: textOperators, inputType: 'text' as const },
-      ];
-    }
-  });
-
-  protected externalRowFilter = (row: any) => {
-    const tags: string[] = Array.isArray(row?.tags) ? row.tags.filter(Boolean) : [];
-    return this.evalGroupWithRow(this.rulesRoot(), new Set(tags), row);
-  };
-  protected isLoading = this._loading.visible;
-
-  protected readonly rulesError = computed(() => {
-    return this.validateRules();
-  });
-
-  protected readonly matchCountResource = resource({
-    params: () => ({
-      rules: this.rulesRoot(),
-      object: this.listType(),
-      hasRules: this.hasAnyRule(this.rulesRoot()),
-      hasError: !!this.rulesError(),
-    }),
-    loader: async ({ params }) => {
-      if (params.hasError) {
-        return 0;
-      }
-
-      const svc = params.object === 'people' ? this.personsSvc : this.householdsSvc;
-      if (!params.hasRules) {
-        return await svc.count();
-      } else {
-        const res = (await svc.getAll({
-          advancedFilterModel: params.rules,
-          limit: 1,
-        })) as { count: number };
-        return res?.count ?? 0;
-      }
-    },
-  });
-
-  protected readonly matchCount = computed(() => {
-    const val = this.matchCountResource.value();
-    return val !== undefined ? val : null;
-  });
-
-  protected readonly counting = this.matchCountResource.isLoading;
-
-  protected readonly previewTags = computed(() => this.flattenPositiveTags(this.rulesRoot()));
-
-  // Wizard state
-  protected step = signal<1 | 2 | 3 | 4>(1);
-
-  protected back() {
-    const s = this.step();
-    if (s > 1) this.step.set((s - 1) as unknown as 1 | 2 | 3 | 4);
-  }
-
-  protected flattenPositiveTags(group: QueryBuilderGroupNode): string[] {
-    const out: string[] = [];
-    const walk = (rules: QueryBuilderNode[]) => {
-      for (const it of rules) {
-        if (it.kind === 'rule') {
-          const r = it as { kind: 'rule'; op: 'eq' | 'neq'; value: string };
-          if (r.op === 'eq' && r.value) out.push(r.value);
-        } else if (it.kind === 'group') {
-          walk(it.rules as QueryBuilderNode[]);
-        }
-      }
-    };
-    walk(group.rules);
-    return Array.from(new Set(out));
-  }
-
-  protected goto(step: 1 | 2 | 3 | 4) {
-    this.step.set(step);
-  }
-
-  protected next() {
-    const s = this.step();
-    if (s < 4) this.step.set((s + 1) as unknown as 1 | 2 | 3 | 4);
-  }
-
-  protected onRulesChanged() {
-    this.rulesRoot.update((g) => cloneQueryBuilderNode(g) as QueryBuilderGroupNode);
-    this.peopleGrid()?.triggerFilterChanged();
-    this.householdGrid()?.triggerFilterChanged();
-  }
-
-  protected save(done: (() => void) | Event) {
-    let doneFn: () => void = () => {
-      /* no-op default */
-    };
-    if (done instanceof Event) {
-      done.preventDefault();
-    } else if (typeof done === 'function') {
-      doneFn = done;
-    }
-
-    const formValue = this.form.getRawValue();
-    const listId = this.id();
-    if (!this.isNew() && !listId) return;
-
-    const end = this._loading.begin();
-    let savePromise;
-
-    if (this.isNew()) {
-      const payload: AddListType = {
-        name: formValue.name ?? '',
-        description: formValue.description ?? null,
-        object: formValue.object as 'people' | 'households',
-        is_dynamic: formValue.is_dynamic ?? false,
-      };
-
-      if (payload.is_dynamic) {
-        // Dynamic lists: use current filters/search as definition
-        const def =
-          payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
-        const tags_expression = this.rulesRoot();
-        payload.definition = {
-          ...(def ?? {}),
-          filterModel: { ...(def?.filterModel ?? {}), tags_expression },
-          advancedFilterModel: tags_expression,
-          // provide a simplified positive-tags list for compatibility
-          tags: this.flattenPositiveTags(tags_expression),
-        };
-      } else {
-        // Static lists: persist a snapshot based on the full filter definition
-        const def =
-          payload.object === 'people' ? this.peopleGrid()?.getDefinition() : this.householdGrid()?.getDefinition();
-        const tags_expression = this.rulesRoot();
-        payload.definition = {
-          ...(def ?? {}),
-          filterModel: { ...(def?.filterModel ?? {}), tags_expression },
-          advancedFilterModel: tags_expression,
-          tags: this.flattenPositiveTags(tags_expression),
-        };
-        // Do not send member_ids limited to the current page; backend will expand definition to all matches
-        delete (payload as Record<string, unknown>)['member_ids'];
-      }
-      savePromise = this.listsSvc.add(payload);
-    } else {
-      const payload: UpdateListType = {
-        name: formValue.name ?? '',
-        description: formValue.description ?? null,
-      };
-      savePromise = this.listsSvc.update(listId ?? '', payload);
-    }
-
-    savePromise
-      .then(async () => {
-        this.alertSvc.showSuccess(this.isNew() ? 'List added' : 'List updated');
-        this.listsRefresh.trigger();
-        doneFn();
-        if (this.isNew()) {
-          await this.router.navigate(['/lists']);
-        } else {
-          await this.router.navigate(['/lists', listId ?? '']);
-        }
-      })
-      .catch((err: any) => {
-        const message =
-          err instanceof Error && err.message
-            ? err.message
-            : isRecord(err) &&
-                isRecord(err['data']) &&
-                typeof err['data']['message'] === 'string' &&
-                err['data']['message']
-              ? err['data']['message']
-              : this.isNew()
-                ? 'Failed to add list'
-                : 'Failed to update list';
-        this.alertSvc.showError(message);
-        doneFn();
-      })
-      .finally(() => end());
-  }
-
-  protected async deleteList() {
-    const id = this.id();
-    if (this.isNew() || !id) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete List',
-      message: 'Are you sure you want to delete this list? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-
-    const end = this._loading.begin();
-    try {
-      await this.listsSvc.delete(id);
-      this.listsRefresh.trigger();
-      this.alertSvc.showSuccess('List deleted');
-      await this.router.navigate(['/lists']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete list';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  private evalGroupWithRow(group: QueryBuilderGroupNode, tagSet: Set<string>, row: any): boolean {
-    const results = group.rules.map((it) =>
-      this.isRule(it)
-        ? this.evalRule(it, tagSet, row)
-        : this.evalGroupWithRow(it as QueryBuilderGroupNode, tagSet, row),
-    );
-    if (group.conjunction === 'AND') return results.every(Boolean);
-    return results.some(Boolean);
-  }
-
-  private evalRule(rule: { field: string; op: string; value?: any }, tagSet: Set<string>, row: any): boolean {
-    const field = rule.field;
-    const op = rule.op;
-    const val = rule.value;
-
-    if (field === 'tag' || field === 'tags' || field === 'issues') {
-      if (!val) return false;
-      const has = tagSet.has(val);
-      return op === 'eq' || op === 'equals' || op === 'contains' ? has : !has;
-    }
-
-    // For other fields, retrieve the row value
-    const rowVal = String(row?.[field] ?? '')
-      .trim()
-      .toLowerCase();
-    const searchVal = String(val ?? '')
-      .trim()
-      .toLowerCase();
-
-    const isEmpty = rowVal.length === 0;
-
-    switch (op) {
-      case 'empty':
-      case 'isEmpty':
-        return isEmpty;
-      case 'notempty':
-      case 'isNotEmpty':
-        return !isEmpty;
-      case 'equals':
-      case 'eq':
-        return rowVal === searchVal;
-      case 'notEquals':
-      case 'neq':
-        return rowVal !== searchVal;
-      case 'contains':
-        return rowVal.includes(searchVal);
-      case 'notContains':
-        return !rowVal.includes(searchVal);
-      case 'startsWith':
-        return rowVal.startsWith(searchVal);
-      case 'endsWith':
-        return rowVal.endsWith(searchVal);
-      default:
-        return true;
-    }
-  }
-
-  private isRule(item: QueryBuilderNode): item is {
-    kind: 'rule';
-    id: string;
-    field: string;
-    op: string;
-    value?: any;
-  } {
-    return item.kind === 'rule';
-  }
-
-  private validateRules(): string | null {
-    let invalid = false;
-    const walk = (rules: QueryBuilderNode[]) => {
-      for (const it of rules) {
-        if (it.kind === 'rule') {
-          const r = it as { field: string; op: string; value?: string };
-          const valueless = ['isEmpty', 'isNotEmpty', 'empty', 'notempty'].includes(r.op);
-          if (!valueless && (!r.value || !String(r.value).trim())) {
-            invalid = true;
-          }
-        } else if (it.kind === 'group') {
-          walk(it.rules as QueryBuilderNode[]);
-        }
-      }
-    };
-    walk(this.rulesRoot().rules);
-    if (invalid) return 'Complete all rules (enter a search term or value)';
-    return null;
-  }
-
-  private hasAnyRule(group: QueryBuilderGroupNode): boolean {
-    const stack: QueryBuilderNode[] = [...group.rules];
-    while (stack.length) {
-      const item = stack.pop();
-      if (!item) break;
-      if (item.kind === 'rule') return true;
-      if (item.kind === 'group') stack.push(...item.rules);
-    }
-    return false;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
 
 ```typescript
@@ -49762,11 +50193,13 @@ import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '
 import { AbstractControl, ValidatorFn } from '@angular/forms';
 import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { GENERIC_SIGNIN_ERROR } from '../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { TokenService } from '../../services/api/token-service';
+import { getUserErrorMessage } from '../../services/api/user-message';
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
@@ -50034,7 +50467,7 @@ export class SignInPage implements OnInit, OnDestroy {
       }
     } catch (err) {
       if (!(err instanceof Error && err.name === 'NotAllowedError')) {
-        this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to set up passkey.');
+        this.alertSvc.showError(getUserErrorMessage(err, 'Failed to set up the passkey. Please try again.'));
       }
     } finally {
       this.settingUpPasskey.set(false);
@@ -50074,9 +50507,7 @@ export class SignInPage implements OnInit, OnDestroy {
       if (retryAfterSec) {
         this.startResendCooldown(retryAfterSec);
       } else {
-        this.alertSvc.showError(
-          err instanceof Error && err.message ? err.message : 'Failed to resend verification email.',
-        );
+        this.alertSvc.showError(getUserErrorMessage(err, 'Could not send the verification email. Please try again.'));
       }
     } finally {
       this.resending.set(false);
@@ -50113,7 +50544,7 @@ export class SignInPage implements OnInit, OnDestroy {
 
   private handleError(err: unknown, emailVal?: string) {
     const tRPCData = getTRPCData(err);
-    const message = err instanceof Error && err.message ? err.message : String(err);
+    const message = getUserErrorMessage(err, 'Something went wrong, please try again');
     const retryAfterSec =
       (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
       this.parseRetryAfterSec(message);
@@ -50127,7 +50558,7 @@ export class SignInPage implements OnInit, OnDestroy {
       this.pendingEmail.set(emailVal);
       this.alertSvc.showError(message);
     } else if (emailVal && (code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
-      this.alertSvc.showError('Please check your email address and password and try again.');
+      this.alertSvc.showError(GENERIC_SIGNIN_ERROR);
     } else {
       this.alertSvc.showError(message);
     }
@@ -50256,11 +50687,17 @@ export class AuthService extends TRPCService<'authusers'> {
   }
 
   public resetPassword(input: { code: string; password: string }) {
-    return this.api.auth.resetPassword.mutate(input);
+    // The new-password page owns the error UX for this call.
+    return (this.api.auth.resetPassword.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
   }
 
   public sendPasswordResetEmail(input: { email: string }) {
-    return this.api.auth.sendPasswordResetEmail.mutate(input);
+    // The reset-password page owns the error UX for this call.
+    return (this.api.auth.sendPasswordResetEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
   }
 
   public async signIn(
@@ -50321,11 +50758,20 @@ export class AuthService extends TRPCService<'authusers'> {
   }
 
   public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
-    return this.api.auth.resendVerificationEmail.mutate({ email }) as Promise<{ success: boolean }>;
+    // Callers toast their own success/failure (and handle rate-limit countdowns).
+    return (this.api.auth.resendVerificationEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ success: boolean }>;
   }
 
   public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
-    return this.api.auth.checkEmail.query({ email }) as Promise<{ hasPasskeys: boolean }>;
+    // The sign-in page silently falls back to the password step if this fails —
+    // a global error toast here would be noise.
+    return (this.api.auth.checkEmail.query as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ hasPasskeys: boolean }>;
   }
 
   public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
@@ -50411,6 +50857,8 @@ import { AddressType, Persons, Households } from '../../../../../../../libs/comm
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-person-form',
@@ -50493,6 +50941,8 @@ export class PersonForm implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, UpdatePersonsObj);
   });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
 
   protected id = input<string>();
   protected tags = signal<string[]>([]);
@@ -50615,6 +51065,10 @@ export class PersonForm implements OnInit {
     }
   }
 
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.formName() || 'this person');
+  }
+
   public save(done?: () => void) {
     this.form().markAsTouched();
     if (this.form().invalid()) return;
@@ -50671,7 +51125,7 @@ export class PersonForm implements OnInit {
       this.alertSvc.showSuccess('Assigned to selected household');
       this.closeAssignDrawer();
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not assign the household. Please try again.'));
     } finally {
       end();
     }
@@ -50752,7 +51206,9 @@ export class PersonForm implements OnInit {
       this.person.update((p) => (p ? { ...p, household_id: null } : p));
       this.alertSvc.showInfo('The person has been removed from the household. You may select a different household');
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      this.alertSvc.showError(
+        getUserErrorMessage(err, 'Could not remove the person from the household. Please try again.'),
+      );
     } finally {
       end();
     }
@@ -50877,7 +51333,7 @@ export class PersonForm implements OnInit {
         if (this.isDuplicateEmailError(err)) {
           this.emailError.set('This email address is already used by another person.');
         } else {
-          this.alertSvc.showError(String(err));
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
         }
       })
       .finally(() => end());
@@ -50906,7 +51362,7 @@ export class PersonForm implements OnInit {
       const res = await this.householdsSvc.getAll(opts);
       this.householdResults.set(res.rows || []);
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load households. Please try again.'));
       this.householdResults.set([]);
     } finally {
       this.householdsLoading.set(false);
@@ -50991,7 +51447,7 @@ export class PersonForm implements OnInit {
         if (this.isDuplicateEmailError(err)) {
           this.emailError.set('This email address is already used by another person.');
         } else {
-          this.alertSvc.showError(String(err));
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
         }
       })
       .finally(() => end());
@@ -51126,6 +51582,7 @@ import { EditableCellDirective } from './directives/editable-cell.directive';
 import { HeaderResizeDirective } from './directives/header-resize.directive';
 import { GridStoreService } from './services/grid-store.service';
 import { UndoManager } from './undo-redo-mgr';
+import { RecordNavigationService } from '@frontend/services/record-navigation.service';
 
 @Component({
   selector: 'pc-datagrid',
@@ -51216,6 +51673,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly editingCtrl = inject(EditingController);
   private readonly fetchCtrl = inject(FetchController);
   private readonly reorder = inject(ReorderController);
+  private readonly recordNav = inject(RecordNavigationService);
   public readonly searchTerm = this.searchSvc.searchSignal;
   private readonly hasEditableColumns = signal(false);
   private readonly headerMinWidths = signal<Record<string, number>>({});
@@ -53525,12 +53983,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
     const vr = this.viewRoute();
     if (vr) {
+      this.captureRecordNavContext(vr);
       if (vr.startsWith('/')) {
         void this.router.navigate([vr, targetId]);
       } else {
         void this.router.navigate([vr, targetId], { relativeTo: this.route });
       }
     } else {
+      this.captureRecordNavContext(this.currentListPath());
       void this.navSvc.viewIfAllowed({
         id: targetId,
         lastRowHovered: this.lastRowHovered,
@@ -53538,6 +53998,21 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         navigate: (path) => this.navSvc.navigateIfValid(this.router, this.route, path),
       });
     }
+  }
+
+  /** The grid's own list route, stripped of query/fragment (e.g. "/teams") - used as the record-nav entity key when no explicit viewRoute is set. */
+  private currentListPath(): string {
+    const [pathAndQuery] = this.router.url.split('#');
+    const [path] = (pathAndQuery ?? this.router.url).split('?');
+    return path ?? this.router.url;
+  }
+
+  /** Hands the currently filtered id set to the detail page so it can walk "N of M filtered" with J/K. */
+  private captureRecordNavContext(entityKey: string): void {
+    this.fetchCtrl
+      .selectAllMatching()
+      .then(({ ids, count }) => this.recordNav.setContext(entityKey, ids, count))
+      .catch(() => void 0);
   }
 }
 
