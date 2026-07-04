@@ -85,6 +85,8 @@ apps/
             sanitize-util.ts
             sendgrid-whitelabel.service.ts
             transactional-mail.service.ts
+          test-utils/
+            db-test-isolation.ts
           address-normalize.ts
           auth-util.ts
           base.controller.ts
@@ -1945,68 +1947,6 @@ run();
 interface BigInt {
   toJSON(): string;
 }
-```
-
-## File: apps/backend/eslint.config.cjs
-
-```javascript
-/* ---------------------- apps/backend/eslint.config.cjs ---------------------- */
-/* Node.js, Fastify, tRPC backend-specific rules only.                         */
-
-const { FlatCompat } = require('@eslint/eslintrc');
-const js = require('@eslint/js');
-const localRules = require('../../tools/eslint-rules/index.cjs');
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-});
-
-module.exports = [
-  /* Extend the base config */
-  ...compat.config({ extends: ['plugin:@nx/javascript'] }).map((cfg) => ({
-    ...cfg,
-    files: ['**/*.{ts,tsx,js,jsx}'],
-    rules: {
-      /* Fastify/tRPC specific style preferences */
-      'prefer-arrow-callback': 'warn',
-      'arrow-body-style': ['warn', 'as-needed'],
-    },
-  })),
-
-  /* ── Tenant-isolation lint rule ────────────────────────────────────────────
-   *
-   * Flags any Kysely query chain (selectFrom / updateTable / deleteFrom) that
-   * reaches an execute terminal without a .where('tenant_id', …) filter.
-   *
-   * Scoped to modules/** only — excludes:
-   *   - base.repo.ts          (tenant filtering is callers' responsibility)
-   *   - job-handlers.ts       (per-tenant loops; tenant_id used inside trx)
-   *   - _migrations/**        (DDL; no runtime tenant scoping)
-   *   - *.spec.ts             (integration tests do their own scoped cleanup)
-   *   - kyselyinit*.ts        (migration runner)
-   * ─────────────────────────────────────────────────────────────────────── */
-  {
-    files: ['**/src/app/modules/**/*.ts'],
-    ignores: ['**/*.spec.ts'],
-    plugins: { local: localRules },
-    rules: {
-      'local/no-unscoped-db-query': [
-        'error',
-        {
-          // Tables where cross-tenant queries are intentional:
-          //   authusers         - login by email, password reset by code
-          //   sessions          - sign-out by session_id hash (no tenant in token)
-          //   tenants           - tenant lookup by id
-          //   tags              - system-level tag reads (scoped at query join level)
-          //   ms_oauth_tokens   - keyed by user_id (globally unique bigint); single-user scope is sufficient
-          //   google_oauth_tokens - same reasoning as ms_oauth_tokens
-          ignoreTables: ['authusers', 'sessions', 'tenants', 'tags', 'ms_oauth_tokens', 'google_oauth_tokens'],
-        },
-      ],
-    },
-  },
-];
 ```
 
 ## File: apps/backend/jest.config.ts
@@ -4427,6 +4367,85 @@ export async function scheduleNextRun(db: Kysely<Models>, type: JobType, delayMs
 }
 ```
 
+## File: apps/backend/src/app/lib/test-utils/db-test-isolation.ts
+
+````typescript
+import type { ControlledTransaction, Transaction } from 'kysely';
+import { afterEach, beforeEach } from 'vitest';
+
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { BaseRepository } from '../base.repo';
+
+/**
+ * Test isolation context handed back by {@link useTestTransaction}.
+ *
+ * `trx` resolves to the *current* test's transaction (reopened by an internal
+ * `beforeEach` before every test), so it's safe to read `ctx.trx` from inside
+ * `it(...)` bodies and nested `beforeEach` hooks registered after the call to
+ * `useTestTransaction()`.
+ */
+export interface TestTransactionContext {
+  readonly trx: Transaction<Models>;
+}
+
+/**
+ * Backend specs in this repo run against a real, shared local Postgres
+ * instance (see `apps/backend/vite.config.ts`) -- there is no mocking layer.
+ * Historically specs seeded rows with random ids in `beforeEach` and manually
+ * deleted them in `afterEach`/`finally`, which leaks rows into the shared DB
+ * whenever a test fails or the process is killed mid-run.
+ *
+ * This helper opens a real Postgres transaction before each test and always
+ * rolls it back after, so anything written during a test -- via
+ * `repo.add(..., trx)`, raw `trx.insertInto(...)`, etc. -- disappears
+ * unconditionally, even if the test throws.
+ *
+ * Kysely's usual `db.transaction().execute(callback)` API scopes the
+ * transaction to a single callback, which doesn't fit the
+ * `beforeEach`/`it`/`afterEach` lifecycle -- the transaction needs to stay
+ * open *across* those hook boundaries. Kysely 0.28 (the version pinned in
+ * this repo) added `db.startTransaction().execute()`, which returns a
+ * `ControlledTransaction` (a `Transaction` subtype) that can be committed or
+ * rolled back manually instead of being tied to a callback -- exactly what's
+ * needed here.
+ *
+ * Usage:
+ * ```ts
+ * describe('MyRepo', () => {
+ *   const ctx = useTestTransaction();
+ *
+ *   it('adds a row', async () => {
+ *     const row = await repo.add({ row: { ... } }, ctx.trx);
+ *     expect(row).toBeDefined();
+ *   });
+ * });
+ * ```
+ */
+export function useTestTransaction(): TestTransactionContext {
+  let currentTrx: ControlledTransaction<Models> | undefined;
+
+  beforeEach(async () => {
+    currentTrx = await BaseRepository.dbInstance.startTransaction().execute();
+  });
+
+  afterEach(async () => {
+    if (currentTrx && !currentTrx.isCommitted && !currentTrx.isRolledBack) {
+      await currentTrx.rollback().execute();
+    }
+    currentTrx = undefined;
+  });
+
+  return {
+    get trx(): Transaction<Models> {
+      if (!currentTrx) {
+        throw new Error('useTestTransaction(): trx accessed outside of a running test (before beforeEach ran).');
+      }
+      return currentTrx;
+    },
+  };
+}
+````
+
 ## File: apps/backend/src/app/lib/common-passwords.ts
 
 ```typescript
@@ -6388,42 +6407,79 @@ export function onShutdown(handler: any, { timeout = 500 } = {}) {
 }
 ```
 
-## File: apps/backend/vite.config.ts
+## File: apps/backend/eslint.config.cjs
 
-```typescript
-/// <reference types='vitest' />
-import { defineConfig } from 'vite';
-export default defineConfig(() => ({
-  root: __dirname,
-  cacheDir: '../../node_modules/.vite/apps/backend',
-  resolve: {
-    tsconfigPaths: true,
-  },
-  plugins: [],
-  test: {
-    name: 'backend',
-    watch: false,
-    globals: true,
-    passWithNoTests: true,
-    environment: 'node',
-    env: {
-      DB_USER: 'zeehamid',
-      DB_NAME: 'pplcrm',
-      DB_PASSWORD: 'Eternity#1',
-      JWT_SECRET: 'dev-secret',
-      SHARED_SECRET: 'dev-secret',
-      DB_PORT: '5432',
-      DB_HOST: 'localhost',
-      DB_SSL: 'false',
+```javascript
+/* ---------------------- apps/backend/eslint.config.cjs ---------------------- */
+/* Node.js, Fastify, tRPC backend-specific rules only.                         */
+
+const { FlatCompat } = require('@eslint/eslintrc');
+const js = require('@eslint/js');
+
+const compat = new FlatCompat({
+  baseDirectory: __dirname,
+  recommendedConfig: js.configs.recommended,
+});
+
+module.exports = [
+  /* Compose the root config so `nx lint backend` enforces the same
+   * workspace-wide rules (no-floating-promises, no-misused-promises, etc.)
+   * as the pre-commit `eslint` invocation. Previously this file stood alone,
+   * which meant nx lint never saw those rules and plain `eslint` never saw
+   * `local/no-unscoped-db-query` below — two disjoint, non-overlapping
+   * checks. Confirmed zero new violations from this composition. */
+  ...require('../../eslint.config.cjs'),
+
+  /* Extend the base config */
+  ...compat.config({ extends: ['plugin:@nx/javascript'] }).map((cfg) => ({
+    ...cfg,
+    files: ['**/*.{ts,tsx,js,jsx}'],
+    rules: {
+      /* Fastify/tRPC specific style preferences */
+      'prefer-arrow-callback': 'warn',
+      'arrow-body-style': ['warn', 'as-needed'],
     },
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    reporters: ['default'],
-    coverage: {
-      reportsDirectory: '../../coverage/apps/backend',
-      provider: 'v8' as const,
+  })),
+
+  /* ── Tenant-isolation lint rule ────────────────────────────────────────────
+   *
+   * Flags any Kysely query chain (selectFrom / updateTable / deleteFrom) that
+   * reaches an execute terminal without a .where('tenant_id', …) filter.
+   *
+   * Scoped to modules/** only — excludes:
+   *   - base.repo.ts          (tenant filtering is callers' responsibility)
+   *   - job-handlers.ts       (per-tenant loops; tenant_id used inside trx)
+   *   - _migrations/**        (DDL; no runtime tenant scoping)
+   *   - *.spec.ts             (integration tests do their own scoped cleanup)
+   *   - kyselyinit*.ts        (migration runner)
+   * ─────────────────────────────────────────────────────────────────────── */
+  {
+    files: ['**/src/app/modules/**/*.ts'],
+    ignores: ['**/*.spec.ts'],
+    // `local` is already registered by the root config spread in above —
+    // redeclaring it here for the same file set throws
+    // "Cannot redefine plugin 'local'" under ESLint's flat config.
+    rules: {
+      'local/no-unscoped-db-query': [
+        'error',
+        {
+          // Tables where cross-tenant queries are intentional:
+          //   authusers - login by email, password reset by code (pre-auth, no tenant known yet)
+          //   sessions  - sign-out by session_id hash (no tenant in token)
+          //   tenants   - tenant lookup by id
+          //
+          // Removed 2026-07-04: `tags` (all module queries already scope tenant_id — the old
+          // "join-level scoping" note was wrong) and `ms_oauth_tokens`/`google_oauth_tokens`
+          // (migration 2026-06-26-email-sync-per-tenant re-keyed both on UNIQUE(tenant_id) and
+          // made user_id nullable, so "keyed by user_id" no longer held — these hold OAuth
+          // secrets and must be tenant-scoped). Adding a table here is a security decision:
+          // prove every current and future query on it is safe cross-tenant, not just quiet.
+          ignoreTables: ['authusers', 'sessions', 'tenants'],
+        },
+      ],
     },
   },
-}));
+];
 ```
 
 ## File: apps/backend/src/app/\_migrations/schema.sql
@@ -12628,540 +12684,6 @@ GRANT ALL ON SCHEMA public TO PUBLIC;
 \unrestrict oPFHGUe6wVNuN0eNnQazqyJQjnNPomJSMJiQZMlpJpzgVIBdJCJVrckJoNfysZW
 ```
 
-## File: apps/backend/src/app/lib/jobs/webhook-worker.ts
-
-```typescript
-import { Client } from 'pg';
-import { env } from '../../../env';
-import { BillingController } from '../../modules/billing/controller';
-import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
-import { DonationsController } from '../../modules/donations/controller';
-import { logger } from '../../logger';
-
-export class WebhookEventWorker {
-  private isRunning = false;
-  private timer: NodeJS.Timeout | null = null;
-  private activeJobsCount = 0;
-  private shutdownResolver: (() => void) | null = null;
-  private pgClient: Client | null = null;
-  private reconnectTimer: NodeJS.Timeout | null = null;
-
-  private readonly webhookEventsRepo = new WebhookEventsRepo();
-  private readonly db = this.webhookEventsRepo.db; // Kysely DB instance
-
-  public start() {
-    if (this.isRunning) return;
-    this.isRunning = true;
-    logger.info('Webhook Event Worker started.');
-    void this.setupListener();
-    this.poll();
-  }
-
-  public async stop(): Promise<void> {
-    this.isRunning = false;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.pgClient) {
-      try {
-        await this.pgClient.end();
-      } catch (err) {
-        logger.error({ err }, 'Error closing Postgres listener client on shutdown');
-      }
-      this.pgClient = null;
-    }
-
-    if (this.activeJobsCount > 0) {
-      logger.info(
-        `Webhook Event Worker: Waiting for ${this.activeJobsCount} active events to process before shutting down...`,
-      );
-      await new Promise<void>((resolve) => {
-        this.shutdownResolver = resolve;
-      });
-    }
-    logger.info('Webhook Event Worker stopped.');
-  }
-
-  private async setupListener() {
-    if (!this.isRunning) return;
-    try {
-      this.pgClient = new Client(env.db);
-      await this.pgClient.connect();
-
-      this.pgClient.on('notification', (msg) => {
-        if (msg.channel === 'webhook_events_channel') {
-          logger.debug('Webhook Event Worker received notify, waking up...');
-          this.wakeUp();
-        }
-      });
-
-      this.pgClient.on('error', (err) => {
-        logger.error({ err }, 'Postgres listener client error');
-        this.reconnectListener();
-      });
-
-      this.pgClient.on('end', () => {
-        logger.warn('Postgres listener connection closed');
-        this.reconnectListener();
-      });
-
-      await this.pgClient.query('LISTEN webhook_events_channel');
-      logger.info('Listening for webhook_events notifications');
-    } catch (err) {
-      logger.error({ err }, 'Failed to setup Postgres listener');
-      this.reconnectListener();
-    }
-  }
-
-  private reconnectListener() {
-    if (this.pgClient) {
-      this.pgClient.end().catch(() => {
-        /* noop */
-      });
-      this.pgClient = null;
-    }
-    if (!this.isRunning) return;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = setTimeout(() => {
-      void this.setupListener();
-    }, 5000);
-  }
-
-  private wakeUp() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    this.poll();
-  }
-
-  private poll() {
-    if (!this.isRunning) return;
-    this.timer = setTimeout(() => {
-      void this.runPollCycle();
-    }, 0);
-  }
-
-  private async runPollCycle(): Promise<void> {
-    let processedAnEvent = false;
-    try {
-      this.activeJobsCount++;
-      processedAnEvent = await this.processNextEvent();
-    } catch (err) {
-      logger.error({ err }, 'Error in webhook event worker poll cycle');
-    } finally {
-      this.activeJobsCount--;
-
-      // If shutdown was requested and no active jobs remain, resolve the stop() promise
-      if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
-        this.shutdownResolver();
-      } else {
-        // Poll again immediately (10ms) if an event was processed to drain the queue quickly,
-        // or back off to 30 seconds if no events were found.
-        const delay = processedAnEvent ? 10 : 30000;
-        this.pollWithDelay(delay);
-      }
-    }
-  }
-
-  private pollWithDelay(ms: number) {
-    if (!this.isRunning) return;
-    this.timer = setTimeout(() => this.poll(), ms);
-  }
-
-  private async processNextEvent(): Promise<boolean> {
-    const workerId = `webhook-worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
-
-    // Try to find and lock a webhook event using SKIP LOCKED
-    const eventRecord = await this.db.transaction().execute(async (trx: any) => {
-      const pendingEvent = (await trx
-        .selectFrom('webhook_events')
-        .selectAll()
-        .where('status', '=', 'pending')
-        .where('run_at', '<=', new Date())
-        .orderBy('id', 'asc')
-        .limit(1)
-        .forUpdate()
-        .skipLocked()
-        .executeTakeFirst()) as any;
-
-      if (!pendingEvent) return null;
-
-      const updatedEvent = await trx
-        .updateTable('webhook_events')
-        .set({
-          status: 'processing',
-          locked_at: new Date(),
-          locked_by: workerId,
-          attempts: Number(pendingEvent.attempts || 0) + 1,
-          updated_at: new Date(),
-        })
-        .where('id', '=', pendingEvent.id)
-        .returningAll()
-        .executeTakeFirst();
-
-      return updatedEvent;
-    });
-
-    if (!eventRecord) return false;
-
-    logger.info(
-      { webhookEventId: eventRecord.id, stripeEventId: eventRecord.stripe_event_id, type: eventRecord.type },
-      'Processing webhook event',
-    );
-
-    const payload = typeof eventRecord.payload === 'string' ? JSON.parse(eventRecord.payload) : eventRecord.payload;
-
-    try {
-      const stripeObj = payload.data?.object;
-      const eventType: string = payload.type;
-
-      // Helper to resolve an admin userId for the tenant
-      const resolveUserId = async (tenantId: string, metaUserId: string | null): Promise<string> => {
-        if (metaUserId) return metaUserId;
-        const tenantRow = await this.db
-          .selectFrom('tenants')
-          .select('admin_id')
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-        if (!tenantRow?.admin_id) throw new Error(`Tenant ${tenantId} has no admin_id.`);
-        return String(tenantRow.admin_id);
-      };
-
-      const isOneTimeDonation =
-        eventType === 'checkout.session.completed' &&
-        stripeObj?.metadata?.personId &&
-        stripeObj?.metadata?.isRecurring !== 'true';
-      const isRecurringCheckoutComplete =
-        eventType === 'checkout.session.completed' &&
-        stripeObj?.metadata?.personId &&
-        stripeObj?.metadata?.isRecurring === 'true';
-      const isInvoicePaid = eventType === 'invoice.payment_succeeded' && stripeObj?.subscription;
-      const isSubscriptionUpdated = eventType === 'customer.subscription.updated';
-      const isSubscriptionDeleted = eventType === 'customer.subscription.deleted';
-      const isInvoiceFailed = eventType === 'invoice.payment_failed' && stripeObj?.subscription;
-
-      if (isOneTimeDonation) {
-        // Standard one-time donation via checkout.session.completed
-        const donationsController = new DonationsController();
-        const tenantId = String(stripeObj.metadata.tenantId);
-        const personId = String(stripeObj.metadata.personId);
-        const amountCents = Number(stripeObj.metadata.amount);
-        const province = String(stripeObj.metadata.residencyProvince || '');
-        const country = String(stripeObj.metadata.residencyCountry || '');
-        const sessionId = String(stripeObj.id);
-        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
-
-        await donationsController.recordSuccessfulDonation(
-          tenantId,
-          personId,
-          amountCents,
-          sessionId,
-          province,
-          country,
-          createdBy,
-        );
-      } else if (isRecurringCheckoutComplete) {
-        // Subscription checkout completed — create the pledge record.
-        // The first invoice payment is handled separately by invoice.payment_succeeded.
-        const donationsController = new DonationsController();
-        const tenantId = String(stripeObj.metadata.tenantId);
-        const personId = String(stripeObj.metadata.personId);
-        const monthlyAmountCents = Number(stripeObj.metadata.monthlyAmount);
-        const province = String(stripeObj.metadata.residencyProvince || '');
-        const country = String(stripeObj.metadata.residencyCountry || '');
-        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
-        const subscriptionId = String(stripeObj.subscription || '');
-        const customerId = stripeObj.customer ? String(stripeObj.customer) : null;
-
-        if (subscriptionId) {
-          await donationsController.recordNewPledge(
-            tenantId,
-            personId,
-            monthlyAmountCents,
-            subscriptionId,
-            customerId,
-            province,
-            country,
-            createdBy,
-          );
-        }
-      } else if (isInvoicePaid) {
-        // A subscription invoice was paid — record it as a donation installment.
-        const donationsController = new DonationsController();
-        const subscriptionId = String(stripeObj.subscription);
-        const invoiceId = String(stripeObj.id);
-        const amountPaidCents = Number(stripeObj.amount_paid || 0);
-
-        const pledge = (await this.db
-          .selectFrom('donation_pledges')
-          .selectAll()
-          .where('stripe_subscription_id', '=', subscriptionId)
-          .executeTakeFirst()) as any;
-
-        if (pledge && amountPaidCents > 0) {
-          // Avoid duplicate recording (invoice id as session id key)
-          const alreadyRecorded = await this.db
-            .selectFrom('donations')
-            .select('id')
-            .where('stripe_session_id', '=', invoiceId)
-            .executeTakeFirst();
-
-          if (!alreadyRecorded) {
-            const createdBy = await resolveUserId(String(pledge.tenant_id), null);
-            await donationsController.recordSuccessfulDonation(
-              String(pledge.tenant_id),
-              String(pledge.person_id),
-              amountPaidCents,
-              invoiceId,
-              pledge.state || '',
-              pledge.country || '',
-              createdBy,
-              String(pledge.id),
-            );
-          }
-        }
-      } else if (isSubscriptionUpdated) {
-        // Sync pledge status from Stripe subscription status
-        const subscriptionId = String(stripeObj.id);
-        const stripeStatus: string = stripeObj.status;
-        const statusMap: Record<string, string> = {
-          active: 'active',
-          past_due: 'past_due',
-          canceled: 'cancelled',
-          unpaid: 'unpaid',
-        };
-        const mappedStatus = statusMap[stripeStatus];
-        const nextBillingDate = stripeObj.current_period_end
-          ? new Date(stripeObj.current_period_end * 1000).toISOString().slice(0, 10)
-          : null;
-
-        if (mappedStatus) {
-          await this.db
-            .updateTable('donation_pledges')
-            .set({
-              status: mappedStatus,
-              next_billing_date: nextBillingDate,
-              cancelled_at: mappedStatus === 'cancelled' ? new Date() : null,
-              updated_at: new Date(),
-            })
-            .where('stripe_subscription_id', '=', subscriptionId)
-            .execute();
-        }
-      } else if (isSubscriptionDeleted) {
-        const subscriptionId = String(stripeObj.id);
-        await this.db
-          .updateTable('donation_pledges')
-          .set({ status: 'cancelled', cancelled_at: new Date(), updated_at: new Date() })
-          .where('stripe_subscription_id', '=', subscriptionId)
-          .execute();
-      } else if (isInvoiceFailed) {
-        const subscriptionId = String(stripeObj.subscription);
-        await this.db
-          .updateTable('donation_pledges')
-          .set({ status: 'past_due', updated_at: new Date() })
-          .where('stripe_subscription_id', '=', subscriptionId)
-          .execute();
-      } else {
-        const billingController = new BillingController();
-        await billingController.processWebhookEvent(payload);
-      }
-
-      // Mark event as processed/completed
-      await this.db
-        .updateTable('webhook_events')
-        .set({
-          status: 'processed',
-          locked_at: null,
-          locked_by: null,
-          processed_at: new Date(),
-          updated_at: new Date(),
-        })
-        .where('id', '=', eventRecord.id)
-        .execute();
-
-      logger.info({ webhookEventId: eventRecord.id }, 'Webhook event completed successfully');
-    } catch (err) {
-      const errorMsg = err instanceof Error && err.message ? err.message : String(err);
-      logger.error({ err, webhookEventId: eventRecord.id }, 'Failed to process webhook event');
-
-      const attempts = Number(eventRecord.attempts || 0);
-      const maxAttempts = Number(eventRecord.max_attempts || 3);
-
-      if (attempts < maxAttempts) {
-        // Retry with backoff (attempts * 30s delay)
-        const delaySeconds = attempts * 30;
-        const runAt = new Date(Date.now() + delaySeconds * 1000);
-        logger.info(
-          { webhookEventId: eventRecord.id, runAt: runAt.toISOString(), attempt: attempts, maxAttempts },
-          'Rescheduling webhook event',
-        );
-
-        await this.db
-          .updateTable('webhook_events')
-          .set({
-            status: 'pending',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            run_at: runAt,
-            updated_at: new Date(),
-          })
-          .where('id', '=', eventRecord.id)
-          .execute();
-      } else {
-        logger.error(
-          { webhookEventId: eventRecord.id, maxAttempts },
-          'Webhook event exceeded maximum attempts, marking as failed',
-        );
-        await this.db
-          .updateTable('webhook_events')
-          .set({
-            status: 'failed',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            updated_at: new Date(),
-          })
-          .where('id', '=', eventRecord.id)
-          .execute();
-      }
-    }
-
-    return true;
-  }
-}
-```
-
-## File: apps/backend/src/app/lib/mail/newsletter-mail.service.ts
-
-```typescript
-import { env } from '../../../env';
-import { InternalError } from '../../errors/app-errors';
-import { logger } from '../../logger';
-
-export interface SendNewsletterOptions {
-  fromName: string;
-  fromEmail: string;
-  replyTo?: string;
-  recipients: string[];
-  subject: string;
-  html: string;
-  text?: string;
-  sendgridApiKey?: string;
-  subuserUsername?: string;
-  newsletterId?: string;
-  tenantId?: string;
-}
-
-export class NewsletterEmailService {
-  public async sendNewsletter(options: SendNewsletterOptions): Promise<number> {
-    const apiKey = options.sendgridApiKey || env.sendgridApiKey;
-
-    if (!apiKey) {
-      logger.info(
-        {
-          from: `"${options.fromName}" <${options.fromEmail}>`,
-          replyTo: options.replyTo || null,
-          recipientCount: options.recipients.length,
-          subject: options.subject,
-        },
-        '[SENDGRID DEV MOCK] Newsletter Outbound',
-      );
-      return options.recipients.length;
-    }
-
-    const uniqueRecipients = [...new Set(options.recipients)];
-    if (uniqueRecipients.length === 0) return 0;
-
-    // SendGrid allows up to 1000 personalizations per API request
-    const CHUNK_SIZE = 1000;
-    let deliveredCount = 0;
-
-    for (let i = 0; i < uniqueRecipients.length; i += CHUNK_SIZE) {
-      const chunk = uniqueRecipients.slice(i, i + CHUNK_SIZE);
-      const personalizations = chunk.map((email) => ({
-        to: [{ email }],
-      }));
-
-      const headers: Record<string, string> = {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      };
-
-      if (options.subuserUsername) {
-        headers['on-behalf-of'] = options.subuserUsername;
-      }
-
-      const body = {
-        personalizations,
-        from: {
-          email: options.fromEmail,
-          name: options.fromName,
-        },
-        ...(options.replyTo ? { reply_to: { email: options.replyTo } } : {}),
-        subject: options.subject,
-        content: [
-          {
-            type: 'text/html',
-            value: options.html,
-          },
-          ...(options.text
-            ? [
-                {
-                  type: 'text/plain',
-                  value: options.text,
-                },
-              ]
-            : []),
-        ],
-        ...(options.newsletterId && options.tenantId
-          ? {
-              custom_args: {
-                newsletter_id: options.newsletterId,
-                tenant_id: options.tenantId,
-              },
-            }
-          : {}),
-        // Enable subscription tracking so SendGrid replaces the `<% unsubscribe %>` substitution tag in
-        // the server-appended footer with a working, per-recipient unsubscribe URL.
-        tracking_settings: {
-          subscription_tracking: {
-            enable: true,
-            substitution_tag: '<% unsubscribe %>',
-          },
-        },
-      };
-
-      try {
-        const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`SendGrid API responded with status ${response.status}: ${errorText}`);
-        }
-
-        deliveredCount += chunk.length;
-      } catch (error) {
-        throw new InternalError('Failed to send newsletter via SendGrid', undefined, { cause: error });
-      }
-    }
-
-    return deliveredCount;
-  }
-}
-```
-
 ## File: apps/backend/src/app/lib/mail/sanitize-util.ts
 
 ```typescript
@@ -14035,36 +13557,6 @@ export async function createTokens(
 }
 ```
 
-## File: apps/backend/src/app/modules/billing/routes/billing-webhook.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { BillingController } from '../controller';
-import { logger } from '../../../logger';
-
-const controller = new BillingController();
-
-const billingWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.post('/webhook', async (req, reply) => {
-    const signature = (req.headers['stripe-signature'] as string) || '';
-    const payload = req.body as string; // Raw string thanks to custom ContentTypeParser
-
-    try {
-      await controller.handleWebhook(payload, signature);
-      return reply.code(200).send({ received: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error(`Webhook error: ${message}`);
-      return reply.code(400).send({ error: message });
-    }
-  });
-
-  done();
-};
-
-export default billingWebhookRoute;
-```
-
 ## File: apps/backend/src/app/modules/donations/repositories/donations.repo.ts
 
 ```typescript
@@ -14706,525 +14198,260 @@ export class EmailRepo extends BaseRepository<'emails'> {
 }
 ```
 
-## File: apps/backend/src/app/modules/events/routes/events-public.route.ts
+## File: apps/backend/src/app/modules/google-sync/google-oauth.service.ts
 
 ```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import formBody from '@fastify/formbody';
-import { TRPCError } from '@trpc/server';
-import { EventsController } from '../controller';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 
-const ctrl = new EventsController();
+export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
 
-const STYLES = `
-  :root {
-    --bg: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-    --accent: #0ea5e9;
-    --accent-hover: #0284c7;
-    --accent-glow: rgba(14,165,233,0.15);
-    --card-bg: rgba(255,255,255,0.85);
-    --card-border: #cbd5e1;
-    --card-shadow: 0 10px 30px -10px rgba(0,0,0,0.08), 0 20px 40px -15px rgba(0,0,0,0.05);
-    --text: #1f2937;
-    --text-muted: #6b7280;
-    --input-bg: #ffffff;
-    --input-border: #cbd5e1;
-    --input-focus-border: #0ea5e9;
-    --input-focus-ring: rgba(14,165,233,0.15);
-    --label-color: #374151;
-    --success: #10b981;
-    --warning: #f59e0b;
-    --error: #ef4444;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: linear-gradient(135deg,#0b1220 0%,#0e1726 50%,#060a12 100%);
-      --card-bg: rgba(19,30,49,0.85);
-      --card-border: #1a2b45;
-      --card-shadow: 0 20px 40px -15px rgba(0,0,0,0.5);
-      --text: #f8fafc;
-      --text-muted: #c7d1e5;
-      --input-bg: #0b1220;
-      --input-border: #1a2b45;
-      --input-focus-border: #3ea6ff;
-      --input-focus-ring: rgba(62,166,255,0.25);
-      --label-color: #cbd5e1;
-      --accent: #3ea6ff;
-    }
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-weight: 300;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    padding: 40px 24px;
-  }
-  body::before, body::after {
-    content: "";
-    position: fixed;
-    width: 400px; height: 400px;
-    border-radius: 50%;
-    background: var(--accent);
-    filter: blur(150px);
-    opacity: 0.06;
-    z-index: 0;
-    pointer-events: none;
-  }
-  body::before { top: 15%; left: 10%; }
-  body::after { bottom: 15%; right: 10%; }
-  .container { max-width: 860px; margin: 0 auto; position: relative; z-index: 1; }
-  .card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 20px;
-    padding: 32px;
-    box-shadow: var(--card-shadow);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    animation: slideUp 0.5s cubic-bezier(0.16,1,0.3,1) forwards;
-  }
-  .card::before {
-    content: "";
-    display: block;
-    height: 3px;
-    margin: -32px -32px 32px;
-    border-radius: 20px 20px 0 0;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  }
-  @keyframes slideUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
-  h1 { font-size: 26px; font-weight: 700; line-height: 1.2; margin-bottom: 6px; }
-  h3 { font-size: 17px; font-weight: 600; margin-bottom: 16px; }
-  .subtitle { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin-top: 4px; }
-  .layout { display: grid; grid-template-columns: 1fr; gap: 24px; margin-top: 24px; }
-  @media (min-width: 680px) { .layout { grid-template-columns: 1.2fr 1fr; } }
-  .meta-list { display: flex; flex-direction: column; gap: 14px; }
-  .meta-row { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; }
-  .meta-row svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; stroke: var(--accent); fill: none; stroke-width: 2; }
-  .meta-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: 2px; }
-  .badge { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing:.05em; margin-bottom: 16px; }
-  .badge-upcoming { background: rgba(14,165,233,.12); color: var(--accent); }
-  .badge-past { background: rgba(107,114,128,.12); color: var(--text-muted); }
-  .divider { border: none; border-top: 1px solid var(--card-border); margin: 20px 0; }
-  .tickets { display: flex; flex-direction: column; gap: 10px; }
-  .ticket-row { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border:1px solid var(--card-border); border-radius:12px; }
-  .ticket-name { font-weight:600; font-size:14px; }
-  .ticket-price { font-size:14px; font-weight:700; color:var(--accent); }
-  .spots-alert { padding:10px 14px; border-radius:10px; font-size:13px; font-weight:500; margin-bottom:18px; display:flex; align-items:center; gap:8px; }
-  .spots-warn { background:rgba(239,68,68,.1); color:var(--error); border:1px solid rgba(239,68,68,.2); }
-  .spots-info { background:var(--accent-glow); color:var(--accent); border:1px solid rgba(14,165,233,.2); }
-  .spots-ok { background:rgba(16,185,129,.1); color:var(--success); border:1px solid rgba(16,185,129,.2); }
-  label { display:block; font-size:13px; font-weight:500; margin-bottom:7px; color:var(--label-color); }
-  input, textarea, select {
-    width:100%; padding:11px 14px;
-    background:var(--input-bg); border:1px solid var(--input-border);
-    border-radius:10px; color:var(--text); font-size:14px; font-family:inherit;
-    transition: border-color .2s, box-shadow .2s;
-  }
-  input:focus, textarea:focus, select:focus { outline:none; border-color:var(--input-focus-border); box-shadow:0 0 0 4px var(--input-focus-ring); }
-  textarea { resize:vertical; min-height:80px; }
-  .hp-field { display:none !important; }
-  .form-group { margin-bottom:18px; }
-  .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:18px; }
-  button[type=submit] {
-    width:100%; padding:13px 24px;
-    background:var(--accent); color:#fff;
-    font-size:15px; font-weight:600;
-    border:none; border-radius:12px; cursor:pointer;
-    transition: background .2s, transform .2s, box-shadow .2s;
-    box-shadow:0 4px 12px var(--accent-glow); margin-top:6px;
-  }
-  button[type=submit]:hover:not(:disabled) { background:var(--accent-hover); transform:translateY(-1px); box-shadow:0 6px 18px var(--accent-glow); }
-  button[type=submit]:disabled { background:var(--card-border); color:var(--text-muted); cursor:not-allowed; box-shadow:none; }
-  .not-found { text-align:center; padding:60px 20px; }
-`;
+const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/userinfo.email',
+];
 
-function esc(str: string): string {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+export class GoogleOAuthService {
+  private readonly db: Kysely<Models>;
+  private readonly clientId: string;
+  private readonly clientSecret: string;
+  private readonly redirectUri: string;
 
-function page(title: string, body: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>${esc(title)}</title>
-  <style>${STYLES}</style>
-</head>
-<body>
-  <div class="container">${body}</div>
-</body>
-</html>`;
-}
-
-function getStatusFromError(err: any): number {
-  if (err instanceof TRPCError) {
-    switch (err.code) {
-      case 'BAD_REQUEST':
-        return 400;
-      case 'NOT_FOUND':
-        return 404;
-      case 'CONFLICT':
-        return 409;
-      case 'TOO_MANY_REQUESTS':
-        return 429;
-      default:
-        return 500;
-    }
-  }
-  return err.statusCode || 500;
-}
-
-function buildRsvpFormFields(fields: string[], disabled: boolean): string {
-  const fieldSet = new Set(fields);
-  const isEnabled = (f: string) => fieldSet.has(f) || fieldSet.has(`${f}:required`);
-  const isRequired = (f: string) => fieldSet.has(`${f}:required`);
-
-  const html: string[] = [];
-
-  html.push(`<input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />`);
-
-  if (isEnabled('first_name') && isEnabled('last_name')) {
-    html.push(`<div class="form-row">
-      <div>
-        <label for="first_name">First Name${isRequired('first_name') ? ' *' : ''}</label>
-        <input type="text" id="first_name" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>
-      <div>
-        <label for="last_name">Last Name${isRequired('last_name') ? ' *' : ''}</label>
-        <input type="text" id="last_name" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>
-    </div>`);
-  } else {
-    if (isEnabled('first_name')) {
-      html.push(`<div class="form-group">
-        <label for="first_name">First Name${isRequired('first_name') ? ' *' : ''}</label>
-        <input type="text" id="first_name" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>`);
-    }
-    if (isEnabled('last_name')) {
-      html.push(`<div class="form-group">
-        <label for="last_name">Last Name${isRequired('last_name') ? ' *' : ''}</label>
-        <input type="text" id="last_name" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>`);
-    }
+  constructor(db: Kysely<Models>, config: { clientId: string; clientSecret: string; redirectUri: string }) {
+    this.db = db;
+    this.clientId = config.clientId;
+    this.clientSecret = config.clientSecret;
+    this.redirectUri = config.redirectUri;
   }
 
-  // Email is always required
-  html.push(`<div class="form-group">
-    <label for="email">Email Address *</label>
-    <input type="email" id="email" name="email" placeholder="you@example.com" required ${disabled ? 'disabled' : ''} />
-  </div>`);
-
-  if (isEnabled('mobile')) {
-    html.push(`<div class="form-group">
-      <label for="mobile">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label>
-      <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isRequired('mobile') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-    </div>`);
-  }
-
-  if (isEnabled('street1')) {
-    html.push(`<div class="form-group">
-      <label for="street1">Street Address${isRequired('street1') ? ' *' : ''}</label>
-      <input type="text" id="street1" name="street1" placeholder="E.g. 123 Main St" ${isRequired('street1') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-    </div>`);
-  }
-
-  if (isEnabled('city') && isEnabled('zip')) {
-    html.push(`<div class="form-row">
-      <div>
-        <label for="city">City${isRequired('city') ? ' *' : ''}</label>
-        <input type="text" id="city" name="city" placeholder="City" ${isRequired('city') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>
-      <div>
-        <label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label>
-        <input type="text" id="zip" name="zip" placeholder="E.g. M5V 2T6" ${isRequired('zip') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>
-    </div>`);
-  } else {
-    if (isEnabled('city')) {
-      html.push(
-        `<div class="form-group"><label for="city">City${isRequired('city') ? ' *' : ''}</label><input type="text" id="city" name="city" ${isRequired('city') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
-      );
-    }
-    if (isEnabled('zip')) {
-      html.push(
-        `<div class="form-group"><label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label><input type="text" id="zip" name="zip" ${isRequired('zip') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
-      );
-    }
-  }
-
-  if (isEnabled('state') && isEnabled('country')) {
-    html.push(`<div class="form-row">
-      <div>
-        <label for="state">State / Province${isRequired('state') ? ' *' : ''}</label>
-        <input type="text" id="state" name="state" placeholder="E.g. ON" ${isRequired('state') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
-      </div>
-      <div>
-        <label for="country">Country${isRequired('country') ? ' *' : ''}</label>
-        <select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${disabled ? 'disabled' : ''}>
-          <option value="">Select…</option>
-          <option value="CA">Canada</option>
-          <option value="US">United States</option>
-          <option value="GB">United Kingdom</option>
-          <option value="AU">Australia</option>
-        </select>
-      </div>
-    </div>`);
-  } else {
-    if (isEnabled('state')) {
-      html.push(
-        `<div class="form-group"><label for="state">State / Province${isRequired('state') ? ' *' : ''}</label><input type="text" id="state" name="state" ${isRequired('state') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
-      );
-    }
-    if (isEnabled('country')) {
-      html.push(
-        `<div class="form-group"><label for="country">Country${isRequired('country') ? ' *' : ''}</label><select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${disabled ? 'disabled' : ''}><option value="">Select…</option><option value="CA">Canada</option><option value="US">United States</option><option value="GB">United Kingdom</option><option value="AU">Australia</option></select></div>`,
-      );
-    }
-  }
-
-  if (isEnabled('notes')) {
-    html.push(`<div class="form-group">
-      <label for="notes">Notes / Message${isRequired('notes') ? ' *' : ''}</label>
-      <textarea id="notes" name="notes" placeholder="Any notes or questions…" ${isRequired('notes') ? 'required' : ''} ${disabled ? 'disabled' : ''}></textarea>
-    </div>`);
-  }
-
-  return html.join('\n');
-}
-
-const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
-  fastify.register(formBody);
-
-  // Success page
-  fastify.get('/rsvp-success', async (_req: any, reply) => {
-    reply.type('text/html');
-    return reply.send(
-      page(
-        'RSVP Confirmed',
-        `
-      <div class="card" style="max-width:440px;margin:40px auto;text-align:center;">
-        <div style="width:72px;height:72px;background:rgba(16,185,129,.1);border:2px solid #10b981;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;">
-          <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-        </div>
-        <h1>You're Registered!</h1>
-        <p class="subtitle" style="margin-top:10px;">Thank you! A confirmation email with event details has been sent to you.</p>
-      </div>`,
-      ),
-    );
-  });
-
-  // Event detail + RSVP form
-  fastify.get('/view/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-
-    let event: any;
-    try {
-      event = await ctrl.getEventBySlug(slug);
-    } catch (err) {
-      fastify.log.error(err);
-      reply.status(500).type('text/html');
-      return reply.send(page('Error', `<div class="not-found"><h1>Something went wrong.</h1></div>`));
-    }
-
-    if (!event) {
-      reply.status(404).type('text/html');
-      return reply.send(
-        page(
-          'Event Not Found',
-          `<div class="not-found"><h1>Event not found</h1><p class="subtitle">This event page doesn't exist or hasn't been published yet.</p></div>`,
-        ),
-      );
-    }
-
-    let ticketTypes: any[] = [];
-    try {
-      ticketTypes = await ctrl.getTicketTypesByEventId(String(event.id), String(event.tenant_id));
-    } catch {
-      /* ignore */
-    }
-
-    // Count current registrations for capacity display
-    let regCount = 0;
-    try {
-      regCount = await ctrl.getRegistrationCountForEvent(String(event.id), String(event.tenant_id));
-    } catch {
-      /* ignore */
-    }
-
-    const now = new Date();
-    const start = new Date(event.start_time);
-    const end = new Date(event.end_time);
-    const isPast = end < now;
-    const isFull = event.capacity !== null && regCount >= event.capacity;
-    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
-
-    const fields: string[] = Array.isArray(event.fields)
-      ? event.fields
-      : typeof event.fields === 'string'
-        ? JSON.parse(event.fields)
-        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-    const dateStr = start.toLocaleDateString(undefined, {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
+  public getAuthUrl(state: string): string {
+    const params = new URLSearchParams({
+      client_id: this.clientId,
+      redirect_uri: this.redirectUri,
+      response_type: 'code',
+      scope: GOOGLE_SCOPES.join(' '),
+      access_type: 'offline',
+      prompt: 'consent', // force consent to ensure refresh token is returned
+      state,
     });
-    const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  }
 
-    const badge = isPast
-      ? `<span class="badge badge-past">Past Event</span>`
-      : `<span class="badge badge-upcoming">Upcoming</span>`;
+  public async handleCallback(code: string, connectedBy: string, tenantId: string): Promise<void> {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        redirect_uri: this.redirectUri,
+        grant_type: 'authorization_code',
+      }),
+    });
 
-    const ticketsHtml =
-      ticketTypes.length === 0
-        ? ''
-        : `
-      <hr class="divider" />
-      <h3>Tickets</h3>
-      <div class="tickets">
-        ${ticketTypes
-          .map(
-            (t) => `
-          <div class="ticket-row">
-            <div>
-              <div class="ticket-name">${esc(t.name)}</div>
-              ${t.description ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${esc(t.description)}</div>` : ''}
-            </div>
-            <div class="ticket-price">${t.price_cents ? `$${(t.price_cents / 100).toFixed(2)}` : 'Free'}${t.capacity ? ` <span style="font-size:11px;font-weight:400;color:var(--text-muted);">· ${t.capacity} spots</span>` : ''}</div>
-          </div>`,
-          )
-          .join('')}
-      </div>`;
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Failed to acquire token from Google: ${errorText}`);
+    }
 
-    const contactHtml =
-      event.contact_email || event.contact_phone
-        ? `
-      <hr class="divider" />
-      <div style="font-size:13px;color:var(--text-muted);">
-        <strong style="color:var(--text);">Questions?</strong>
-        ${event.contact_email ? ` <a href="mailto:${esc(event.contact_email)}" style="color:var(--accent);">${esc(event.contact_email)}</a>` : ''}
-        ${event.contact_email && event.contact_phone ? ' · ' : ''}
-        ${event.contact_phone ? esc(event.contact_phone) : ''}
-      </div>`
-        : '';
+    const data: any = await res.json();
+    const accessToken = data.access_token;
+    const refreshToken = data.refresh_token; // Google only returns this on initial consent
+    const expiresIn = data.expires_in ?? 3600;
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
-    // Capacity alert for RSVP form panel
-    let spotsAlert = '';
-    if (isPast) {
-      spotsAlert = `<div class="spots-alert spots-warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>This event has passed.</div>`;
-    } else if (isFull) {
-      spotsAlert = `<div class="spots-alert spots-warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>This event is fully booked.</div>`;
-    } else if (remaining !== null && remaining <= 5) {
-      spotsAlert = `<div class="spots-alert spots-info"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>Hurry! Only ${remaining} spot(s) remaining.</div>`;
+    // Fetch user profile to get Google email
+    const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    let googleEmail: string | null = null;
+    if (profileRes.ok) {
+      const profile: any = await profileRes.json();
+      googleEmail = profile.email ?? null;
+    }
+
+    const insertObj: any = {
+      tenant_id: tenantId,
+      user_id: connectedBy,
+      access_token: accessToken,
+      expires_at: expiresAt,
+      google_email: googleEmail,
+      delta_link: NEEDS_FULL_SYNC,
+      synced_at: null,
+    };
+
+    if (!refreshToken) {
+      // If we don't have refresh token in this callback, try keeping the existing one
+      const existing = await this.db
+        .selectFrom('google_oauth_tokens')
+        .select('refresh_token')
+        .where('tenant_id', '=', tenantId)
+        .executeTakeFirst();
+      insertObj.refresh_token = existing?.refresh_token ?? '';
     } else {
-      spotsAlert = `<div class="spots-alert spots-ok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>${remaining === null ? 'Unlimited spots available. Register below!' : `${remaining} spot(s) available. Register below!`}</div>`;
+      insertObj.refresh_token = refreshToken;
     }
 
-    const disabled = isPast || isFull;
-    const formFieldsHtml = buildRsvpFormFields(fields, disabled);
-
-    const body = `
-      <div class="card">
-        ${badge}
-        <h1>${esc(event.name)}</h1>
-        ${event.description ? `<p class="subtitle">${esc(event.description)}</p>` : ''}
-
-        <hr class="divider" />
-
-        <div class="layout">
-          <!-- Left: Event info -->
-          <div>
-            <div class="meta-list">
-              <div class="meta-row">
-                <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                <div><div class="meta-label">Date & Time</div>${dateStr}<br/><span style="font-size:13px;opacity:.7;">${timeStr}</span></div>
-              </div>
-              ${
-                event.location_address
-                  ? `
-              <div class="meta-row">
-                <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                <div><div class="meta-label">Location</div>${esc(event.location_address)}</div>
-              </div>`
-                  : ''
-              }
-              ${
-                event.capacity
-                  ? `
-              <div class="meta-row">
-                <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
-                <div><div class="meta-label">Capacity</div>${remaining !== null ? `${remaining} of ${event.capacity} spots left` : `${event.capacity} total`}</div>
-              </div>`
-                  : ''
-              }
-            </div>
-            ${ticketsHtml}
-            ${contactHtml}
-          </div>
-
-          <!-- Right: RSVP form -->
-          <div>
-            <h3>RSVP for this Event</h3>
-            ${spotsAlert}
-            <form action="/api/event-pages/rsvp/${esc(event.slug)}" method="POST">
-              ${formFieldsHtml}
-              <button type="submit" ${disabled ? 'disabled' : ''}>${isPast ? 'Registration Closed' : isFull ? 'Fully Booked' : 'Confirm RSVP'}</button>
-            </form>
-          </div>
-        </div>
-      </div>`;
-
-    reply.type('text/html');
-    return reply.send(page(event.name, body));
-  });
-
-  // Handle RSVP form POST
-  fastify.post('/rsvp/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-    const isJson =
-      req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
-
-    try {
-      await ctrl.rsvpPublic(slug, req.body || {}, clientIp);
-
-      if (isJson) return reply.status(200).send({ success: true });
-      return reply.redirect('/api/event-pages/rsvp-success');
-    } catch (err) {
-      fastify.log.error(err);
-      const status = getStatusFromError(err);
-      const message = err instanceof Error && err.message ? err.message : 'An unexpected error occurred.';
-
-      if (isJson) return reply.status(status).send({ error: message });
-
-      reply.status(status).type('text/html');
-      return reply.send(
-        page(
-          'Error',
-          `
-        <div class="card" style="max-width:440px;margin:40px auto;text-align:center;">
-          <h1 style="color:var(--error);">Error</h1>
-          <p class="subtitle" style="margin-top:10px;">${esc(message)}</p>
-          <div style="margin-top:20px;"><a href="javascript:history.back()" style="color:var(--accent);font-size:14px;">← Go back</a></div>
-        </div>`,
-        ),
-      );
+    if (!insertObj.refresh_token) {
+      throw new Error('Consent required to obtain refresh token. Please disconnect and reconnect.');
     }
-  });
 
-  done();
-};
+    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto('google_oauth_tokens')
+        .values(insertObj)
+        .onConflict((oc) =>
+          oc.column('tenant_id').doUpdateSet({
+            user_id: connectedBy,
+            access_token: insertObj.access_token,
+            refresh_token: insertObj.refresh_token,
+            expires_at: insertObj.expires_at,
+            google_email: insertObj.google_email,
+            delta_link: NEEDS_FULL_SYNC,
+            synced_at: null,
+            last_sync_error: null,
+            last_sync_error_at: null,
+            updated_at: new Date(),
+          }),
+        )
+        .execute();
 
-export default eventsPublicRoute;
+      await trx
+        .insertInto('background_jobs')
+        .values({
+          tenant_id: tenantId,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({ type: 'google_sync', tenantId, requestedBy: connectedBy }),
+          run_at: new Date(),
+          max_attempts: 3,
+        })
+        .execute();
+    });
+  }
+
+  public async getValidToken(tenantId: string): Promise<string> {
+    const row = await this.db
+      .selectFrom('google_oauth_tokens')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    if (!row) {
+      throw new Error('No Google account connected for this tenant');
+    }
+
+    const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
+    if (!isExpired) {
+      return row.access_token;
+    }
+
+    // Refresh token
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        refresh_token: row.refresh_token,
+        grant_type: 'refresh_token',
+      }),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Token refresh failed: ${errorText} — tenant must reconnect their Google account`);
+    }
+
+    const data: any = await res.json();
+    const newAccessToken = data.access_token;
+    const newExpiresIn = data.expires_in ?? 3600;
+    const newExpiry = new Date(Date.now() + newExpiresIn * 1000);
+    const newRefreshToken = data.refresh_token ?? row.refresh_token;
+
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({
+        access_token: newAccessToken,
+        refresh_token: newRefreshToken,
+        expires_at: newExpiry,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+
+    return newAccessToken;
+  }
+
+  public async getConnectionStatus(tenantId: string): Promise<{
+    connected: boolean;
+    googleEmail: string | null;
+    syncedAt: Date | null;
+    lastSyncError: string | null;
+    lastSyncErrorAt: Date | null;
+  }> {
+    const row = await this.db
+      .selectFrom('google_oauth_tokens')
+      .select(['google_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    return {
+      connected: !!row,
+      googleEmail: row?.google_email ?? null,
+      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
+      lastSyncError: row?.last_sync_error ?? null,
+      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
+    };
+  }
+
+  public async disconnect(tenantId: string): Promise<void> {
+    await this.db.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tenantId).execute();
+  }
+
+  public async saveDeltaLink(tenantId: string, deltaLink: string): Promise<void> {
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({
+        delta_link: deltaLink,
+        synced_at: new Date(),
+        last_sync_error: null,
+        last_sync_error_at: null,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async recordSyncError(tenantId: string, error: string): Promise<void> {
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async getDeltaLink(tenantId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom('google_oauth_tokens')
+      .select('delta_link')
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+    return row?.delta_link ?? null;
+  }
+
+  public async resetDeltaLink(tenantId: string): Promise<void> {
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+}
 ```
 
 ## File: apps/backend/src/app/modules/households/repositories/map-households-tags.repo.ts
@@ -15474,6 +14701,231 @@ export class MapListsPersonsRepo extends BaseRepository<'map_lists_persons'> {
 }
 ```
 
+## File: apps/backend/src/app/modules/ms-sync/ms-oauth.service.ts
+
+```typescript
+import type { AuthorizationCodeRequest } from '@azure/msal-node';
+import { ConfidentialClientApplication } from '@azure/msal-node';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+
+export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
+
+const MS_SCOPES = [
+  'https://graph.microsoft.com/Mail.Read',
+  'https://graph.microsoft.com/Mail.ReadWrite',
+  'https://graph.microsoft.com/Mail.Send',
+  'offline_access',
+];
+
+export class MsOAuthService {
+  private readonly msalApp: ConfidentialClientApplication;
+  private readonly db: Kysely<Models>;
+  private readonly redirectUri: string;
+
+  constructor(
+    db: Kysely<Models>,
+    config: { clientId: string; clientSecret: string; tenantId: string; redirectUri: string },
+  ) {
+    this.db = db;
+    this.redirectUri = config.redirectUri;
+    this.msalApp = new ConfidentialClientApplication({
+      auth: {
+        clientId: config.clientId,
+        clientSecret: config.clientSecret,
+        authority: `https://login.microsoftonline.com/${config.tenantId}`,
+      },
+    });
+  }
+
+  public async getAuthUrl(state: string): Promise<string> {
+    return this.msalApp.getAuthCodeUrl({
+      scopes: MS_SCOPES,
+      redirectUri: this.redirectUri,
+      state,
+      prompt: 'select_account',
+    });
+  }
+
+  public async handleCallback(code: string, connectedBy: string, tenantId: string): Promise<void> {
+    const request: AuthorizationCodeRequest = {
+      code,
+      scopes: MS_SCOPES,
+      redirectUri: this.redirectUri,
+    };
+
+    const response = await this.msalApp.acquireTokenByCode(request);
+    if (!response?.accessToken || !response.account) {
+      throw new Error('Failed to acquire token from Microsoft');
+    }
+
+    const expiresAt = response.expiresOn ?? new Date(Date.now() + 3600 * 1000);
+
+    // Retrieve the refresh token from the MSAL cache
+    const cache = this.msalApp.getTokenCache().serialize();
+    const parsedCache = JSON.parse(cache);
+    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
+    const refreshToken = refreshTokenEntry[0]?.secret ?? '';
+
+    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto('ms_oauth_tokens')
+        .values({
+          tenant_id: tenantId,
+          user_id: connectedBy,
+          access_token: response.accessToken,
+          refresh_token: refreshToken,
+          expires_at: expiresAt,
+          ms_email: response.account?.username ?? null,
+          delta_link: NEEDS_FULL_SYNC,
+          synced_at: null,
+        })
+        .onConflict((oc) =>
+          oc.column('tenant_id').doUpdateSet({
+            user_id: connectedBy,
+            access_token: response.accessToken,
+            refresh_token: refreshToken,
+            expires_at: expiresAt,
+            ms_email: response.account?.username ?? null,
+            delta_link: NEEDS_FULL_SYNC,
+            synced_at: null,
+            last_sync_error: null,
+            last_sync_error_at: null,
+            updated_at: new Date(),
+          }),
+        )
+        .execute();
+
+      await trx
+        .insertInto('background_jobs')
+        .values({
+          tenant_id: tenantId,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({ type: 'ms_sync', tenantId, requestedBy: connectedBy }),
+          run_at: new Date(),
+          max_attempts: 3,
+        })
+        .execute();
+    });
+  }
+
+  public async getValidToken(tenantId: string): Promise<string> {
+    const row = await this.db
+      .selectFrom('ms_oauth_tokens')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    if (!row) {
+      throw new Error('No Microsoft account connected for this tenant');
+    }
+
+    const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
+    if (!isExpired) {
+      return row.access_token;
+    }
+
+    // Refresh via MSAL silent flow
+    const response = await this.msalApp.acquireTokenByRefreshToken({
+      refreshToken: row.refresh_token,
+      scopes: MS_SCOPES,
+    });
+
+    if (!response?.accessToken) {
+      throw new Error('Token refresh failed — tenant must reconnect their Microsoft account');
+    }
+
+    const newExpiry = response.expiresOn ?? new Date(Date.now() + 3600 * 1000);
+
+    // Retrieve fresh refresh token from cache
+    const cache = this.msalApp.getTokenCache().serialize();
+    const parsedCache = JSON.parse(cache);
+    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
+    const newRefreshToken = refreshTokenEntry[0]?.secret ?? row.refresh_token;
+
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({
+        access_token: response.accessToken,
+        refresh_token: newRefreshToken,
+        expires_at: newExpiry,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+
+    return response.accessToken;
+  }
+
+  public async getConnectionStatus(tenantId: string): Promise<{
+    connected: boolean;
+    msEmail: string | null;
+    syncedAt: Date | null;
+    lastSyncError: string | null;
+    lastSyncErrorAt: Date | null;
+  }> {
+    const row = await this.db
+      .selectFrom('ms_oauth_tokens')
+      .select(['ms_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    return {
+      connected: !!row,
+      msEmail: row?.ms_email ?? null,
+      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
+      lastSyncError: row?.last_sync_error ?? null,
+      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
+    };
+  }
+
+  public async disconnect(tenantId: string): Promise<void> {
+    await this.db.deleteFrom('ms_oauth_tokens').where('tenant_id', '=', tenantId).execute();
+  }
+
+  public async saveDeltaLink(tenantId: string, deltaLink: string): Promise<void> {
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({
+        delta_link: deltaLink,
+        synced_at: new Date(),
+        last_sync_error: null,
+        last_sync_error_at: null,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async recordSyncError(tenantId: string, error: string): Promise<void> {
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async getDeltaLink(tenantId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom('ms_oauth_tokens')
+      .select('delta_link')
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+    return row?.delta_link ?? null;
+  }
+
+  public async resetDeltaLink(tenantId: string): Promise<void> {
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/newsletters/repositories/newsletters.repo.ts
 
 ```typescript
@@ -15615,199 +15067,6 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
     return { rows, count };
   }
 }
-```
-
-## File: apps/backend/src/app/modules/newsletters/routes/newsletters-webhook.route.ts
-
-```typescript
-import { createPublicKey, createVerify } from 'crypto';
-import type { FastifyPluginCallback } from 'fastify';
-import { BaseRepository } from '../../../lib/base.repo';
-import { env } from '../../../../env';
-import { sql } from 'kysely';
-
-const db = new BaseRepository('newsletters').db;
-
-const SIGNATURE_HEADER = 'x-twilio-email-event-webhook-signature';
-const TIMESTAMP_HEADER = 'x-twilio-email-event-webhook-timestamp';
-
-/**
- * Verifies a SendGrid Signed Event Webhook request.
- * SendGrid signs `timestamp + rawBody` with an ECDSA (P-256) key; we verify it
- * against the base64-DER public verification key configured in the dashboard.
- */
-function verifySendGridSignature(rawBody: string, signature?: string, timestamp?: string): boolean {
-  const verificationKey = env.sendgridWebhookVerificationKey;
-  if (!verificationKey || !signature || !timestamp) {
-    return false;
-  }
-
-  try {
-    const publicKey = createPublicKey({
-      key: Buffer.from(verificationKey, 'base64'),
-      format: 'der',
-      type: 'spki',
-    });
-    const verifier = createVerify('sha256');
-    verifier.update(timestamp + rawBody);
-    verifier.end();
-    return verifier.verify(publicKey, Buffer.from(signature, 'base64'));
-  } catch {
-    return false;
-  }
-}
-
-const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.post('/webhook', async (req: any, reply) => {
-    // req.body is the raw string (see content-type parser in fastify.server.ts)
-    const rawBody = typeof req.body === 'string' ? req.body : '';
-    const signature = req.headers[SIGNATURE_HEADER] as string | undefined;
-    const timestamp = req.headers[TIMESTAMP_HEADER] as string | undefined;
-
-    if (!verifySendGridSignature(rawBody, signature, timestamp)) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
-
-    let parsedBody: any;
-    try {
-      parsedBody = JSON.parse(rawBody);
-    } catch {
-      return reply.code(400).send({ error: 'Invalid payload' });
-    }
-
-    const events = Array.isArray(parsedBody) ? parsedBody : [parsedBody];
-
-    try {
-      const processedNewsletters = new Set<string>();
-
-      // Insert all events that have newsletter_id and tenant_id
-      for (const ev of events) {
-        if (!ev || !ev.newsletter_id || !ev.tenant_id || !ev.sg_event_id) {
-          continue;
-        }
-
-        const newsletterId = ev.newsletter_id;
-        const tenantId = ev.tenant_id;
-        const eventType = ev.event || '';
-        const email = ev.email || '';
-        const sgEventId = ev.sg_event_id;
-        const sgMessageId = ev.sg_message_id || null;
-        const url = ev.url || null;
-        const ip = ev.ip || null;
-        const userAgent = ev.useragent || null;
-        const timestamp = ev.timestamp ? new Date(ev.timestamp * 1000) : new Date();
-
-        try {
-          await db
-            .insertInto('newsletter_events')
-            .values({
-              tenant_id: tenantId,
-              newsletter_id: newsletterId,
-              email,
-              event_type: eventType,
-              sg_event_id: sgEventId,
-              sg_message_id: sgMessageId,
-              url,
-              ip,
-              user_agent: userAgent,
-              timestamp,
-              created_at: new Date() as any,
-            })
-            .onConflict((oc) => oc.column('sg_event_id').doNothing())
-            .execute();
-
-          processedNewsletters.add(`${tenantId}:${newsletterId}`);
-        } catch (insertErr) {
-          req.log.error(insertErr, `Failed to insert webhook event ${sgEventId}`);
-        }
-      }
-
-      // Recompute aggregates for each processed newsletter
-      for (const key of processedNewsletters) {
-        const [tenantId, newsletterId] = key.split(':') as [string, string];
-
-        await db.transaction().execute(async (trx) => {
-          // 1. Fetch aggregates
-          const stats = await trx
-            .selectFrom('newsletter_events')
-            .select([
-              sql<number>`COUNT(id) FILTER (WHERE event_type = 'delivered')`.as('delivered'),
-              sql<number>`COUNT(id) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounced'),
-              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'open')`.as('unique_opens'),
-              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'click')`.as('unique_clicks'),
-              sql<number>`COUNT(id) FILTER (WHERE event_type = 'unsubscribe')`.as('unsubscribes'),
-              sql<number>`COUNT(id) FILTER (WHERE event_type = 'spamreport')`.as('spamreports'),
-              sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('open', 'click'))`.as('last_engagement'),
-            ])
-            .where('newsletter_id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .executeTakeFirst();
-
-          // 2. Fetch top links clicked
-          const topLinksResult = await trx
-            .selectFrom('newsletter_events')
-            .select(['url'])
-            .select(({ fn }) => fn.count<number>('id').as('clicks'))
-            .where('newsletter_id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .where('event_type', '=', 'click')
-            .where('url', 'is not', null)
-            .groupBy('url')
-            .orderBy('clicks', 'desc')
-            .execute();
-
-          const topLinks = topLinksResult.map((l) => ({
-            url: l.url,
-            clicks: Number(l.clicks),
-          }));
-
-          // 3. Update the newsletters table row
-          const newsletter = await trx
-            .selectFrom('newsletters')
-            .select(['total_recipients'])
-            .where('id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .executeTakeFirst();
-
-          const totalRecipients = Number(newsletter?.total_recipients ?? 0);
-          const uniqueOpens = Number(stats?.unique_opens ?? 0);
-          const uniqueClicks = Number(stats?.unique_clicks ?? 0);
-
-          const openRate = totalRecipients > 0 ? (uniqueOpens / totalRecipients) * 100 : 0;
-          const clickRate = totalRecipients > 0 ? (uniqueClicks / totalRecipients) * 100 : 0;
-
-          await trx
-            .updateTable('newsletters')
-            .set({
-              delivered_count: Number(stats?.delivered ?? 0),
-              bounce_count: Number(stats?.bounced ?? 0),
-              unique_opens: uniqueOpens,
-              unique_clicks: uniqueClicks,
-              unsubscribe_count: Number(stats?.unsubscribes ?? 0),
-              spam_complaint_count: Number(stats?.spamreports ?? 0),
-              last_engagement_at: stats?.last_engagement || null,
-              open_rate: openRate,
-              click_rate: clickRate,
-              top_links: JSON.stringify(topLinks) as any,
-              updated_at: new Date(),
-            })
-            .where('id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .execute();
-        });
-      }
-
-      return reply.code(200).send({ success: true, processedCount: processedNewsletters.size });
-    } catch (err) {
-      req.log.error(err, 'SendGrid webhook processing error');
-      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
-    }
-  });
-
-  done();
-};
-
-export default newslettersWebhookRoute;
 ```
 
 ## File: apps/backend/src/app/modules/notifications/repositories/notifications.repo.ts
@@ -16985,6 +16244,56 @@ export const env = {
 }
 ```
 
+## File: apps/backend/vite.config.ts
+
+```typescript
+/// <reference types='vitest' />
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { defineConfig } from 'vite';
+
+// Local/dev DB credentials come from a gitignored `.env.test` file at the repo root
+// (DB_USER, DB_NAME, DB_PASSWORD, DB_PORT, DB_HOST, DB_SSL, JWT_SECRET, SHARED_SECRET —
+// see apps/backend/src/env.ts for the full schema). CI/production set these as real
+// env vars instead, so loading the file is best-effort only.
+const envTestPath = resolve(__dirname, '../../.env.test');
+if (existsSync(envTestPath)) {
+  process.loadEnvFile(envTestPath);
+}
+
+export default defineConfig(() => ({
+  root: __dirname,
+  cacheDir: '../../node_modules/.vite/apps/backend',
+  resolve: {
+    tsconfigPaths: true,
+  },
+  plugins: [],
+  test: {
+    name: 'backend',
+    watch: false,
+    globals: true,
+    passWithNoTests: true,
+    environment: 'node',
+    env: {
+      DB_USER: process.env['DB_USER'] ?? '',
+      DB_NAME: process.env['DB_NAME'] ?? '',
+      DB_PASSWORD: process.env['DB_PASSWORD'] ?? '',
+      JWT_SECRET: process.env['JWT_SECRET'] ?? '',
+      SHARED_SECRET: process.env['SHARED_SECRET'] ?? '',
+      DB_PORT: process.env['DB_PORT'] ?? '5432',
+      DB_HOST: process.env['DB_HOST'] ?? 'localhost',
+      DB_SSL: process.env['DB_SSL'] ?? 'false',
+    },
+    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    reporters: ['default'],
+    coverage: {
+      reportsDirectory: '../../coverage/apps/backend',
+      provider: 'v8' as const,
+    },
+  },
+}));
+```
+
 ## File: apps/backend/src/app/\_migrations/0001_baseline.ts
 
 ```typescript
@@ -17368,6 +16677,1175 @@ export async function down(db: Kysely<any>): Promise<void> {
 }
 ```
 
+## File: apps/backend/src/app/lib/jobs/webhook-worker.ts
+
+```typescript
+import { Client } from 'pg';
+import { env } from '../../../env';
+import { BillingController } from '../../modules/billing/controller';
+import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
+import { DonationsController } from '../../modules/donations/controller';
+import { logger } from '../../logger';
+
+export class WebhookEventWorker {
+  private isRunning = false;
+  private timer: NodeJS.Timeout | null = null;
+  private activeJobsCount = 0;
+  private shutdownResolver: (() => void) | null = null;
+  private pgClient: Client | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+
+  private readonly webhookEventsRepo = new WebhookEventsRepo();
+  private readonly db = this.webhookEventsRepo.db; // Kysely DB instance
+
+  public start() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    logger.info('Webhook Event Worker started.');
+    void this.setupListener();
+    this.poll();
+  }
+
+  public async stop(): Promise<void> {
+    this.isRunning = false;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.pgClient) {
+      try {
+        await this.pgClient.end();
+      } catch (err) {
+        logger.error({ err }, 'Error closing Postgres listener client on shutdown');
+      }
+      this.pgClient = null;
+    }
+
+    if (this.activeJobsCount > 0) {
+      logger.info(
+        `Webhook Event Worker: Waiting for ${this.activeJobsCount} active events to process before shutting down...`,
+      );
+      await new Promise<void>((resolve) => {
+        this.shutdownResolver = resolve;
+      });
+    }
+    logger.info('Webhook Event Worker stopped.');
+  }
+
+  private async setupListener() {
+    if (!this.isRunning) return;
+    try {
+      this.pgClient = new Client(env.db);
+      await this.pgClient.connect();
+
+      this.pgClient.on('notification', (msg) => {
+        if (msg.channel === 'webhook_events_channel') {
+          logger.debug('Webhook Event Worker received notify, waking up...');
+          this.wakeUp();
+        }
+      });
+
+      this.pgClient.on('error', (err) => {
+        logger.error({ err }, 'Postgres listener client error');
+        this.reconnectListener();
+      });
+
+      this.pgClient.on('end', () => {
+        logger.warn('Postgres listener connection closed');
+        this.reconnectListener();
+      });
+
+      await this.pgClient.query('LISTEN webhook_events_channel');
+      logger.info('Listening for webhook_events notifications');
+    } catch (err) {
+      logger.error({ err }, 'Failed to setup Postgres listener');
+      this.reconnectListener();
+    }
+  }
+
+  private reconnectListener() {
+    if (this.pgClient) {
+      this.pgClient.end().catch(() => {
+        /* noop */
+      });
+      this.pgClient = null;
+    }
+    if (!this.isRunning) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      void this.setupListener();
+    }, 5000);
+  }
+
+  private wakeUp() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.poll();
+  }
+
+  private poll() {
+    if (!this.isRunning) return;
+    this.timer = setTimeout(() => {
+      void this.runPollCycle();
+    }, 0);
+  }
+
+  private async runPollCycle(): Promise<void> {
+    let processedAnEvent = false;
+    try {
+      this.activeJobsCount++;
+      processedAnEvent = await this.processNextEvent();
+    } catch (err) {
+      logger.error({ err }, 'Error in webhook event worker poll cycle');
+    } finally {
+      this.activeJobsCount--;
+
+      // If shutdown was requested and no active jobs remain, resolve the stop() promise
+      if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
+        this.shutdownResolver();
+      } else {
+        // Poll again immediately (10ms) if an event was processed to drain the queue quickly,
+        // or back off to 30 seconds if no events were found.
+        const delay = processedAnEvent ? 10 : 30000;
+        this.pollWithDelay(delay);
+      }
+    }
+  }
+
+  private pollWithDelay(ms: number) {
+    if (!this.isRunning) return;
+    this.timer = setTimeout(() => this.poll(), ms);
+  }
+
+  private async processNextEvent(): Promise<boolean> {
+    const workerId = `webhook-worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
+
+    // Try to find and lock a webhook event using SKIP LOCKED
+    const eventRecord = await this.db.transaction().execute(async (trx: any) => {
+      const pendingEvent = (await trx
+        .selectFrom('webhook_events')
+        .selectAll()
+        .where('status', '=', 'pending')
+        .where('run_at', '<=', new Date())
+        .orderBy('id', 'asc')
+        .limit(1)
+        .forUpdate()
+        .skipLocked()
+        .executeTakeFirst()) as any;
+
+      if (!pendingEvent) return null;
+
+      const updatedEvent = await trx
+        .updateTable('webhook_events')
+        .set({
+          status: 'processing',
+          locked_at: new Date(),
+          locked_by: workerId,
+          attempts: Number(pendingEvent.attempts || 0) + 1,
+          updated_at: new Date(),
+        })
+        .where('id', '=', pendingEvent.id)
+        .returningAll()
+        .executeTakeFirst();
+
+      return updatedEvent;
+    });
+
+    if (!eventRecord) return false;
+
+    logger.info(
+      { webhookEventId: eventRecord.id, stripeEventId: eventRecord.stripe_event_id, type: eventRecord.type },
+      'Processing webhook event',
+    );
+
+    const payload = typeof eventRecord.payload === 'string' ? JSON.parse(eventRecord.payload) : eventRecord.payload;
+
+    try {
+      const stripeObj = payload.data?.object;
+      const eventType: string = payload.type;
+
+      // Helper to resolve an admin userId for the tenant
+      const resolveUserId = async (tenantId: string, metaUserId: string | null): Promise<string> => {
+        if (metaUserId) return metaUserId;
+        const tenantRow = await this.db
+          .selectFrom('tenants')
+          .select('admin_id')
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+        if (!tenantRow?.admin_id) throw new Error(`Tenant ${tenantId} has no admin_id.`);
+        return String(tenantRow.admin_id);
+      };
+
+      const isOneTimeDonation =
+        eventType === 'checkout.session.completed' &&
+        stripeObj?.metadata?.personId &&
+        stripeObj?.metadata?.isRecurring !== 'true';
+      const isRecurringCheckoutComplete =
+        eventType === 'checkout.session.completed' &&
+        stripeObj?.metadata?.personId &&
+        stripeObj?.metadata?.isRecurring === 'true';
+      const isInvoicePaid = eventType === 'invoice.payment_succeeded' && stripeObj?.subscription;
+      const isSubscriptionUpdated = eventType === 'customer.subscription.updated';
+      const isSubscriptionDeleted = eventType === 'customer.subscription.deleted';
+      const isInvoiceFailed = eventType === 'invoice.payment_failed' && stripeObj?.subscription;
+
+      if (isOneTimeDonation) {
+        // Standard one-time donation via checkout.session.completed
+        const donationsController = new DonationsController();
+        const tenantId = String(stripeObj.metadata.tenantId);
+        const personId = String(stripeObj.metadata.personId);
+        const amountCents = Number(stripeObj.metadata.amount);
+        const province = String(stripeObj.metadata.residencyProvince || '');
+        const country = String(stripeObj.metadata.residencyCountry || '');
+        const sessionId = String(stripeObj.id);
+        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
+
+        await donationsController.recordSuccessfulDonation(
+          tenantId,
+          personId,
+          amountCents,
+          sessionId,
+          province,
+          country,
+          createdBy,
+        );
+      } else if (isRecurringCheckoutComplete) {
+        // Subscription checkout completed — create the pledge record.
+        // The first invoice payment is handled separately by invoice.payment_succeeded.
+        const donationsController = new DonationsController();
+        const tenantId = String(stripeObj.metadata.tenantId);
+        const personId = String(stripeObj.metadata.personId);
+        const monthlyAmountCents = Number(stripeObj.metadata.monthlyAmount);
+        const province = String(stripeObj.metadata.residencyProvince || '');
+        const country = String(stripeObj.metadata.residencyCountry || '');
+        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
+        const subscriptionId = String(stripeObj.subscription || '');
+        const customerId = stripeObj.customer ? String(stripeObj.customer) : null;
+
+        if (subscriptionId) {
+          await donationsController.recordNewPledge(
+            tenantId,
+            personId,
+            monthlyAmountCents,
+            subscriptionId,
+            customerId,
+            province,
+            country,
+            createdBy,
+          );
+        }
+      } else if (isInvoicePaid) {
+        // A subscription invoice was paid — record it as a donation installment.
+        const donationsController = new DonationsController();
+        const subscriptionId = String(stripeObj.subscription);
+        const invoiceId = String(stripeObj.id);
+        const amountPaidCents = Number(stripeObj.amount_paid || 0);
+
+        const pledge = (await this.db
+          .selectFrom('donation_pledges')
+          .selectAll()
+          .where('stripe_subscription_id', '=', subscriptionId)
+          .executeTakeFirst()) as any;
+
+        if (pledge && amountPaidCents > 0) {
+          // Avoid duplicate recording (invoice id as session id key)
+          const alreadyRecorded = await this.db
+            .selectFrom('donations')
+            .select('id')
+            .where('stripe_session_id', '=', invoiceId)
+            .executeTakeFirst();
+
+          if (!alreadyRecorded) {
+            const createdBy = await resolveUserId(String(pledge.tenant_id), null);
+            await donationsController.recordSuccessfulDonation(
+              String(pledge.tenant_id),
+              String(pledge.person_id),
+              amountPaidCents,
+              invoiceId,
+              pledge.state || '',
+              pledge.country || '',
+              createdBy,
+              String(pledge.id),
+            );
+          }
+        }
+      } else if (isSubscriptionUpdated) {
+        // Sync pledge status from Stripe subscription status
+        const subscriptionId = String(stripeObj.id);
+        const stripeStatus: string = stripeObj.status;
+        const statusMap: Record<string, string> = {
+          active: 'active',
+          past_due: 'past_due',
+          canceled: 'cancelled',
+          unpaid: 'unpaid',
+        };
+        const mappedStatus = statusMap[stripeStatus];
+        const nextBillingDate = stripeObj.current_period_end
+          ? new Date(stripeObj.current_period_end * 1000).toISOString().slice(0, 10)
+          : null;
+
+        if (mappedStatus) {
+          await this.db
+            .updateTable('donation_pledges')
+            .set({
+              status: mappedStatus,
+              next_billing_date: nextBillingDate,
+              cancelled_at: mappedStatus === 'cancelled' ? new Date() : null,
+              updated_at: new Date(),
+            })
+            .where('stripe_subscription_id', '=', subscriptionId)
+            .execute();
+        }
+      } else if (isSubscriptionDeleted) {
+        const subscriptionId = String(stripeObj.id);
+        await this.db
+          .updateTable('donation_pledges')
+          .set({ status: 'cancelled', cancelled_at: new Date(), updated_at: new Date() })
+          .where('stripe_subscription_id', '=', subscriptionId)
+          .execute();
+      } else if (isInvoiceFailed) {
+        const subscriptionId = String(stripeObj.subscription);
+        await this.db
+          .updateTable('donation_pledges')
+          .set({ status: 'past_due', updated_at: new Date() })
+          .where('stripe_subscription_id', '=', subscriptionId)
+          .execute();
+      } else {
+        const billingController = new BillingController();
+        await billingController.processWebhookEvent(payload);
+      }
+
+      // Mark event as processed/completed
+      await this.db
+        .updateTable('webhook_events')
+        .set({
+          status: 'processed',
+          locked_at: null,
+          locked_by: null,
+          processed_at: new Date(),
+          updated_at: new Date(),
+        })
+        .where('id', '=', eventRecord.id)
+        .execute();
+
+      logger.info({ webhookEventId: eventRecord.id }, 'Webhook event completed successfully');
+    } catch (err) {
+      const errorMsg = err instanceof Error && err.message ? err.message : String(err);
+      logger.error({ err, webhookEventId: eventRecord.id }, 'Failed to process webhook event');
+
+      const attempts = Number(eventRecord.attempts || 0);
+      const maxAttempts = Number(eventRecord.max_attempts || 3);
+
+      if (attempts < maxAttempts) {
+        // Retry with backoff (attempts * 30s delay)
+        const delaySeconds = attempts * 30;
+        const runAt = new Date(Date.now() + delaySeconds * 1000);
+        logger.info(
+          { webhookEventId: eventRecord.id, runAt: runAt.toISOString(), attempt: attempts, maxAttempts },
+          'Rescheduling webhook event',
+        );
+
+        await this.db
+          .updateTable('webhook_events')
+          .set({
+            status: 'pending',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            run_at: runAt,
+            updated_at: new Date(),
+          })
+          .where('id', '=', eventRecord.id)
+          .execute();
+      } else {
+        logger.error(
+          { webhookEventId: eventRecord.id, maxAttempts },
+          'Webhook event exceeded maximum attempts, marking as failed',
+        );
+        await this.db
+          .updateTable('webhook_events')
+          .set({
+            status: 'failed',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            updated_at: new Date(),
+          })
+          .where('id', '=', eventRecord.id)
+          .execute();
+      }
+    }
+
+    return true;
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/worker.ts
+
+```typescript
+import { sql } from 'kysely';
+import { Client } from 'pg';
+
+import { env } from '../../../env';
+import { logger } from '../../logger';
+import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
+import { executeJob } from './job-handlers';
+
+export class BackgroundJobWorker {
+  private readonly importsRepo = new ImportsRepo();
+  private readonly db = this.importsRepo.db; // Kysely DB instance
+
+  private activeJobsCount = 0;
+  private isRunning = false;
+  private pgClient: Client | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private recoveryInterval: NodeJS.Timeout | null = null;
+  private shutdownResolver: (() => void) | null = null;
+  private timer: NodeJS.Timeout | null = null;
+
+  public start() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    logger.info('Background Job Worker started.');
+
+    this.ensureCleanupJobScheduled().catch((err) => logger.error({ err }, 'Failed to ensure cleanup job scheduled'));
+    this.ensureSyncSchedulerJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure sync scheduler job scheduled'),
+    );
+    this.ensureDuplicatesRecomputeJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure duplicates recompute job scheduled'),
+    );
+    this.ensureAddressFingerprintsJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure address fingerprints job scheduled'),
+    );
+    this.ensureWorkflowsJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure workflows job scheduled'),
+    );
+    this.ensurePerformScheduledDeletionsJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure perform scheduled deletions job scheduled'),
+    );
+    this.ensureUsageLimitChecksScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure usage limit checks scheduled'),
+    );
+    this.ensureDueTasksCheckScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure due tasks check scheduled'),
+    );
+    this.ensureCompaniesGoogleRefreshJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure companies google refresh job scheduled'),
+    );
+    this.ensurePruneNewsletterEventsJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure prune newsletter events job scheduled'),
+    );
+
+    // Run stale job recovery on startup and then every 5 minutes
+    this.recoverStaleJobs().catch((err) => logger.error({ err }, 'Failed to recover stale jobs on startup'));
+    this.recoveryInterval = setInterval(
+      () => {
+        this.recoverStaleJobs().catch((err) => logger.error({ err }, 'Failed to recover stale jobs'));
+      },
+      5 * 60 * 1000,
+    );
+
+    void this.setupListener();
+    this.poll();
+  }
+
+  public async stop(): Promise<void> {
+    this.isRunning = false;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.recoveryInterval) {
+      clearInterval(this.recoveryInterval);
+      this.recoveryInterval = null;
+    }
+    if (this.pgClient) {
+      try {
+        await this.pgClient.end();
+      } catch (err) {
+        logger.error({ err }, 'Error closing Postgres listener client on shutdown');
+      }
+      this.pgClient = null;
+    }
+
+    if (this.activeJobsCount > 0) {
+      logger.info(
+        `Background Job Worker: Waiting for ${this.activeJobsCount} active jobs to complete before shutting down...`,
+      );
+      await new Promise<void>((resolve) => {
+        this.shutdownResolver = resolve;
+      });
+    }
+    logger.info('Background Job Worker stopped.');
+  }
+
+  private async ensureAddressFingerprintsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling nightly address fingerprints recomputation background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'recompute_address_fingerprints' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure address fingerprints job scheduled');
+    }
+  }
+
+  private async ensureCleanupJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'cleanup_activities')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling daily activity feed cleanup background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'cleanup_activities' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure cleanup job scheduled');
+    }
+  }
+
+  private async ensureCompaniesGoogleRefreshJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'refresh_companies_google')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling daily company google enrichment background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'refresh_companies_google' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure companies google refresh job scheduled');
+    }
+  }
+
+  private async ensureDueTasksCheckScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'check_due_tasks')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling daily due tasks check background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'check_due_tasks' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure due tasks check scheduled');
+    }
+  }
+
+  private async ensureDuplicatesRecomputeJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling nightly duplicates recomputation background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'recompute_all_duplicates' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure duplicates recompute job scheduled');
+    }
+  }
+
+  private async ensurePerformScheduledDeletionsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'perform_scheduled_deletions')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling daily scheduled deletions background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'perform_scheduled_deletions' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure perform scheduled deletions job scheduled');
+    }
+  }
+
+  private async ensurePruneNewsletterEventsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'prune_newsletter_events')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling daily newsletter events pruning background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'prune_newsletter_events' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure prune newsletter events job scheduled');
+    }
+  }
+
+  private async ensureSyncSchedulerJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'schedule_sync_jobs')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling sync scheduler background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'schedule_sync_jobs' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure sync scheduler job scheduled');
+    }
+  }
+
+  private async ensureUsageLimitChecksScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'check_all_usage_limits')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling daily usage limits check background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'check_all_usage_limits' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure usage limit checks scheduled');
+    }
+  }
+
+  private async ensureWorkflowsJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'process_drip_workflows')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling periodic drip workflows processing background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'process_drip_workflows' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure workflows job scheduled');
+    }
+  }
+
+  private poll() {
+    if (!this.isRunning) return;
+    this.timer = setTimeout(() => {
+      void this.runPollCycle();
+    }, 0);
+  }
+
+  private async runPollCycle(): Promise<void> {
+    let processedAJob = false;
+    try {
+      this.activeJobsCount++;
+      processedAJob = await this.processNextJob();
+    } catch (err) {
+      logger.error({ err }, 'Error in background job worker poll cycle');
+    } finally {
+      this.activeJobsCount--;
+
+      // If shutdown was requested and no active jobs remain, resolve the stop() promise
+      if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
+        this.shutdownResolver();
+      } else {
+        // Poll again immediately (10ms) if we processed a job (to drain the queue),
+        // or back off to 30 seconds if no jobs were found.
+        const delay = processedAJob ? 10 : 30000;
+        this.pollWithDelay(delay);
+      }
+    }
+  }
+
+  private pollWithDelay(ms: number) {
+    if (!this.isRunning) return;
+    this.timer = setTimeout(() => this.poll(), ms);
+  }
+
+  private async processNextJob(): Promise<boolean> {
+    const workerId = `worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
+
+    // Try to find and lock a job using SKIP LOCKED
+    const job = await this.db.transaction().execute(async (trx) => {
+      const pendingJob = await trx
+        .selectFrom('background_jobs')
+        .selectAll()
+        .where('status', '=', 'pending')
+        .where('run_at', '<=', new Date())
+        .orderBy('id', 'asc')
+        .limit(1)
+        .forUpdate()
+        .skipLocked()
+        .executeTakeFirst();
+
+      if (!pendingJob) return null;
+
+      const updatedJob = await trx
+        .updateTable('background_jobs')
+        .set({
+          status: 'processing',
+          locked_at: new Date(),
+          locked_by: workerId,
+          attempts: Number(pendingJob.attempts || 0) + 1,
+          updated_at: new Date(),
+        })
+        .where('id', '=', pendingJob.id)
+        .returningAll()
+        .executeTakeFirst();
+
+      return updatedJob;
+    });
+
+    if (!job) return false;
+
+    logger.info({ jobId: job.id, queue: job.queue }, 'Processing job');
+
+    const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
+
+    try {
+      await executeJob(payload, this.db, job.id);
+
+      // Mark job as completed
+      await this.db
+        .updateTable('background_jobs')
+        .set({
+          status: 'completed',
+          locked_at: null,
+          locked_by: null,
+          updated_at: new Date(),
+        })
+        .where('id', '=', job.id)
+        .execute();
+
+      logger.info({ jobId: job.id }, 'Job completed successfully');
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      logger.error({ err, jobId: job.id }, 'Failed to process background job');
+
+      try {
+        // If it was an import job, mark the import as failed and store the error message
+        if (payload.import_id) {
+          await this.importsRepo.update({
+            tenant_id: payload.tenant_id,
+            id: payload.import_id,
+            row: {
+              status: 'failed',
+              error_message: errorMsg.substring(0, 1000), // Truncate just in case
+              processed_at: new Date(),
+              updated_at: new Date(),
+            },
+          });
+        }
+      } catch (dbErr) {
+        logger.error({ err: dbErr }, 'Failed to mark data_imports as failed');
+      }
+
+      const attempts = Number(job.attempts || 0);
+      const maxAttempts = Number(job.max_attempts || 3);
+
+      if (attempts < maxAttempts) {
+        // Retry with backoff (exponential backoff for mail, linear for others)
+        const isMail =
+          payload.type === 'send-transactional-email' ||
+          payload.type === 'send-form-notifications' ||
+          payload.type === 'send-webform-notifications' ||
+          payload.type === 'send-shift-reminder' ||
+          payload.type === 'send-newsletter';
+        const delaySeconds = isMail ? Math.pow(2, attempts) * 30 : attempts * 30;
+        const runAt = new Date(Date.now() + delaySeconds * 1000);
+        logger.info({ jobId: job.id, runAt: runAt.toISOString(), attempt: attempts, maxAttempts }, 'Rescheduling job');
+
+        await this.db
+          .updateTable('background_jobs')
+          .set({
+            status: 'pending',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            run_at: runAt,
+            updated_at: new Date(),
+          })
+          .where('id', '=', job.id)
+          .execute();
+      } else {
+        logger.error({ jobId: job.id, maxAttempts }, 'Job exceeded maximum attempts, marking as failed');
+        await this.db
+          .updateTable('background_jobs')
+          .set({
+            status: 'failed',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            updated_at: new Date(),
+          })
+          .where('id', '=', job.id)
+          .execute();
+
+        if (payload.export_id) {
+          try {
+            const { ExportsRepo } = await import('../../modules/exports/repositories/exports.repo');
+            const exportsRepo = new ExportsRepo();
+            await exportsRepo.updateStatus(String(payload.export_id), String(payload.tenant_id), 'failed', {
+              error: `Export failed after all retries. Last error: ${errorMsg.substring(0, 400)}`,
+            });
+          } catch (exportErr) {
+            logger.error({ err: exportErr }, 'Failed to update export status on job permanent failure');
+          }
+        }
+
+        if (payload.type === 'ms_sync' && payload.userId) {
+          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
+          logger.error({ err, correlationId, userId: payload.userId }, 'MS sync permanently failed');
+          try {
+            const { MsOAuthService } = await import('../../modules/ms-sync/ms-oauth.service');
+            const { env } = await import('../../../env');
+            const oauthSvc = new MsOAuthService(this.db, {
+              clientId: env.msClientId ?? '',
+              clientSecret: env.msClientSecret ?? '',
+              tenantId: env.msTenantId ?? 'common',
+              redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+            });
+            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
+          } catch (recordErr) {
+            logger.error({ err: recordErr }, 'Failed to record MS sync error on token');
+          }
+        }
+
+        if (payload.type === 'google_sync' && payload.userId) {
+          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
+          logger.error({ err, correlationId, userId: payload.userId }, 'Google sync permanently failed');
+          try {
+            const { GoogleOAuthService } = await import('../../modules/google-sync/google-oauth.service');
+            const { env } = await import('../../../env');
+            const oauthSvc = new GoogleOAuthService(this.db, {
+              clientId: env.googleClientId ?? '',
+              clientSecret: env.googleClientSecret ?? '',
+              redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+            });
+            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
+          } catch (recordErr) {
+            logger.error({ err: recordErr }, 'Failed to record Google sync error on token');
+          }
+        }
+
+        // If a recurrent cron-like job fails permanently, schedule the next iteration
+        await this.rescheduleCronJobOnFailure(payload.type);
+      }
+    }
+
+    return true;
+  }
+
+  private reconnectListener() {
+    if (this.pgClient) {
+      void this.pgClient.end().catch(() => {
+        /* noop */
+      });
+      this.pgClient = null;
+    }
+    if (!this.isRunning) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      void this.setupListener();
+    }, 5000);
+  }
+
+  private async recoverStaleJobs(): Promise<void> {
+    try {
+      const staleTime = new Date(Date.now() - 30 * 60 * 1000); // 30 minutes
+      await this.db
+        .updateTable('background_jobs')
+        .set({
+          status: 'pending',
+          locked_at: null,
+          locked_by: null,
+          updated_at: new Date(),
+          error: 'Job processing timed out',
+        })
+        .where('status', '=', 'processing')
+        .where('locked_at', '<', staleTime)
+        .execute();
+
+      // Clean up/timeout data exports stuck in pending/processing for more than 1 hour
+      const staleExportTime = new Date(Date.now() - 60 * 60 * 1000); // 1 hour
+      const staleExports = await this.db
+        .selectFrom('data_exports')
+        .select(['id', 'tenant_id'])
+        .where('status', 'in', ['pending', 'processing'])
+        .where('created_at', '<', staleExportTime)
+        .execute();
+
+      if (staleExports.length > 0) {
+        const ids = staleExports.map((e) => e.id);
+        await this.db
+          .updateTable('data_exports')
+          .set({
+            status: 'failed',
+            error: 'Export processing timed out',
+            updated_at: new Date(),
+          })
+          .where('id', 'in', ids)
+          .execute();
+
+        for (const exp of staleExports) {
+          await this.db
+            .deleteFrom('background_jobs')
+            .where('tenant_id', '=', exp.tenant_id)
+            .where(sql`payload->>'type'`, '=', 'export_csv')
+            .where(sql`payload->>'export_id'`, '=', String(exp.id))
+            .execute();
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, 'Failed to recover stale background jobs');
+    }
+  }
+
+  private async rescheduleCronJobOnFailure(type: string): Promise<void> {
+    let delayMs = 0;
+    if (type === 'cleanup_activities') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'schedule_sync_jobs') {
+      delayMs = 10 * 60 * 1000;
+    } else if (type === 'recompute_all_duplicates') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'recompute_address_fingerprints') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'process_drip_workflows') {
+      delayMs = 10 * 60 * 1000;
+    } else if (type === 'perform_scheduled_deletions') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'check_all_usage_limits') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'refresh_companies_google') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'prune_newsletter_events') {
+      delayMs = 24 * 60 * 60 * 1000;
+    }
+
+    if (delayMs > 0) {
+      try {
+        await this.db
+          .insertInto('background_jobs')
+          .values({
+            tenant_id: null,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({ type }),
+            run_at: new Date(Date.now() + delayMs),
+            max_attempts: 3,
+          })
+          .execute();
+      } catch (schedErr) {
+        logger.error({ err: schedErr, type }, 'Failed to reschedule failed cron job');
+      }
+    }
+  }
+
+  private async setupListener() {
+    if (!this.isRunning) return;
+    try {
+      this.pgClient = new Client(env.db);
+      await this.pgClient.connect();
+
+      this.pgClient.on('notification', (msg) => {
+        if (msg.channel === 'background_jobs_channel') {
+          logger.debug('Background Job Worker received notify, waking up...');
+          this.wakeUp();
+        }
+      });
+
+      this.pgClient.on('error', (err) => {
+        logger.error({ err }, 'Postgres listener client error');
+        this.reconnectListener();
+      });
+
+      this.pgClient.on('end', () => {
+        logger.warn('Postgres listener connection closed');
+        this.reconnectListener();
+      });
+
+      await this.pgClient.query('LISTEN background_jobs_channel');
+      logger.info('Listening for background_jobs notifications');
+    } catch (err) {
+      logger.error({ err }, 'Failed to setup Postgres listener');
+      this.reconnectListener();
+    }
+  }
+
+  private wakeUp() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.poll();
+  }
+}
+```
+
 ## File: apps/backend/src/app/lib/mail/mentions-util.ts
 
 ```typescript
@@ -17439,541 +17917,126 @@ export async function processMentions(
 }
 ```
 
-## File: apps/backend/src/app/lib/mail/sendgrid-whitelabel.service.ts
+## File: apps/backend/src/app/lib/mail/newsletter-mail.service.ts
 
 ```typescript
-import { promises as dns } from 'dns';
-import { logger } from '../../logger';
-
-export interface DNSVerificationRecord {
-  host: string;
-  type: string;
-  data: string;
-  valid: boolean;
-}
-
-export interface DomainAuthData {
-  id: number;
-  domain: string;
-  subdomain: string;
-  dns: {
-    mail_cname?: DNSVerificationRecord;
-    dkim1?: DNSVerificationRecord;
-    dkim2?: DNSVerificationRecord;
-  };
-}
-
-export interface LinkBrandingData {
-  id: number;
-  domain: string;
-  subdomain: string;
-  valid: boolean;
-  dns: {
-    domain?: DNSVerificationRecord;
-  };
-}
-
-export class SendGridWhitelabelService {
-  private isValidApiKey(apiKey?: string): boolean {
-    if (!apiKey) return false;
-    const trimmed = apiKey.trim();
-    // Typical SendGrid API key starts with SG.
-    return trimmed.length > 20 && trimmed.startsWith('SG.');
-  }
-
-  private async request<T = any>(
-    path: string,
-    options: {
-      method: string;
-      body?: any;
-      apiKey?: string;
-      subuser?: string;
-    },
-  ): Promise<T> {
-    const { method, body, apiKey, subuser } = options;
-    const headers: Record<string, string> = {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    };
-
-    if (subuser) {
-      headers['on-behalf-of'] = subuser;
-    }
-
-    const response = await fetch(`https://api.sendgrid.com/v3${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`SendGrid API responded with ${response.status}: ${text}`);
-    }
-
-    if (response.status === 204) {
-      return {} as T;
-    }
-
-    return response.json();
-  }
-
-  public async createDomainAuthentication(domain: string, apiKey?: string, subuser?: string): Promise<DomainAuthData> {
-    if (!this.isValidApiKey(apiKey)) {
-      // Return simulated/mock domain auth records
-      const mockId = Math.floor(100000 + Math.random() * 900000);
-      return {
-        id: mockId,
-        domain,
-        subdomain: 'em',
-        dns: {
-          mail_cname: {
-            host: `em.${domain}`,
-            type: 'CNAME',
-            data: `u${mockId}.wl.sendgrid.net`,
-            valid: false,
-          },
-          dkim1: {
-            host: `s1._domainkey.${domain}`,
-            type: 'CNAME',
-            data: `s1.domainkey.u${mockId}.wl.sendgrid.net`,
-            valid: false,
-          },
-          dkim2: {
-            host: `s2._domainkey.${domain}`,
-            type: 'CNAME',
-            data: `s2.domainkey.u${mockId}.wl.sendgrid.net`,
-            valid: false,
-          },
-        },
-      };
-    }
-
-    try {
-      const res = await this.request<any>('/whitelabel/domains', {
-        method: 'POST',
-        apiKey,
-        subuser,
-        body: {
-          domain,
-          subdomain: 'em',
-          automatic_security: true,
-          custom_spf: false,
-          default: false,
-        },
-      });
-
-      return {
-        id: res.id,
-        domain: res.domain,
-        subdomain: res.subdomain,
-        dns: {
-          mail_cname: res.dns?.mail_cname ? { ...res.dns.mail_cname, valid: !!res.dns.mail_cname.valid } : undefined,
-          dkim1: res.dns?.dkim1 ? { ...res.dns.dkim1, valid: !!res.dns.dkim1.valid } : undefined,
-          dkim2: res.dns?.dkim2 ? { ...res.dns.dkim2, valid: !!res.dns.dkim2.valid } : undefined,
-        },
-      };
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] real API call failed, falling back to mock',
-      );
-      return this.createDomainAuthentication(domain, undefined);
-    }
-  }
-
-  public async createLinkBranding(domain: string, apiKey?: string, subuser?: string): Promise<LinkBrandingData> {
-    if (!this.isValidApiKey(apiKey)) {
-      const mockId = Math.floor(100000 + Math.random() * 900000);
-      return {
-        id: mockId,
-        domain,
-        subdomain: 'email',
-        valid: false,
-        dns: {
-          domain: {
-            host: `email.${domain}`,
-            type: 'CNAME',
-            data: 'sendgrid.net',
-            valid: false,
-          },
-        },
-      };
-    }
-
-    try {
-      const res = await this.request<any>('/whitelabel/links', {
-        method: 'POST',
-        apiKey,
-        subuser,
-        body: {
-          domain,
-          subdomain: 'email',
-          default: false,
-        },
-      });
-
-      return {
-        id: res.id,
-        domain: res.domain,
-        subdomain: res.subdomain,
-        valid: !!res.valid,
-        dns: {
-          domain: res.dns?.domain ? { ...res.dns.domain, valid: !!res.dns.domain.valid } : undefined,
-        },
-      };
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] real Link Branding API failed, falling back to mock',
-      );
-      return this.createLinkBranding(domain, undefined);
-    }
-  }
-
-  public async validateDomainAuthentication(
-    id: number,
-    apiKey?: string,
-    subuser?: string,
-  ): Promise<{ valid: boolean; validationResults: Record<string, boolean> }> {
-    if (!this.isValidApiKey(apiKey)) {
-      return {
-        valid: true,
-        validationResults: {
-          mail_cname: true,
-          dkim1: true,
-          dkim2: true,
-        },
-      };
-    }
-
-    try {
-      const res = await this.request<any>(`/whitelabel/domains/${id}/validate`, {
-        method: 'POST',
-        apiKey,
-        subuser,
-      });
-
-      const validationResults: Record<string, boolean> = {};
-      if (res.validation_results) {
-        for (const k of Object.keys(res.validation_results)) {
-          validationResults[k] = !!res.validation_results[k]?.valid;
-        }
-      }
-
-      return {
-        valid: !!res.valid,
-        validationResults,
-      };
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Validate domain API failed, falling back to true',
-      );
-      return {
-        valid: true,
-        validationResults: {
-          mail_cname: true,
-          dkim1: true,
-          dkim2: true,
-        },
-      };
-    }
-  }
-
-  public async validateLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<boolean> {
-    if (!this.isValidApiKey(apiKey)) {
-      return true;
-    }
-
-    try {
-      const res = await this.request<any>(`/whitelabel/links/${id}/validate`, {
-        method: 'POST',
-        apiKey,
-        subuser,
-      });
-
-      return !!res.valid;
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Validate link branding API failed, falling back to true',
-      );
-      return true;
-    }
-  }
-
-  public async deleteDomainAuthentication(id: number, apiKey?: string, subuser?: string): Promise<void> {
-    if (!this.isValidApiKey(apiKey)) return;
-
-    try {
-      await this.request(`/whitelabel/domains/${id}`, {
-        method: 'DELETE',
-        apiKey,
-        subuser,
-      });
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Delete domain authentication failed',
-      );
-    }
-  }
-
-  public async deleteLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<void> {
-    if (!this.isValidApiKey(apiKey)) return;
-
-    try {
-      await this.request(`/whitelabel/links/${id}`, {
-        method: 'DELETE',
-        apiKey,
-        subuser,
-      });
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Delete link branding failed',
-      );
-    }
-  }
-
-  public async verifyDmarc(domain: string): Promise<boolean> {
-    try {
-      const records = await dns.resolveTxt(`_dmarc.${domain}`);
-      return records.some((r) => r.join('').toUpperCase().includes('V=DMARC1'));
-    } catch {
-      return false;
-    }
-  }
-
-  public async verifyCname(host: string, expectedData?: string): Promise<boolean> {
-    try {
-      const records = await dns.resolveCname(host);
-      if (expectedData) {
-        return records.some((r) => r.toLowerCase().trim() === expectedData.toLowerCase().trim());
-      }
-      return records.length > 0;
-    } catch {
-      return false;
-    }
-  }
-}
-```
-
-## File: apps/backend/src/app/lib/mail/transactional-mail.service.ts
-
-```typescript
-import type { Transaction, Kysely } from 'kysely';
 import { env } from '../../../env';
 import { InternalError } from '../../errors/app-errors';
-import { BaseRepository } from '../base.repo';
 import { logger } from '../../logger';
 
-export interface SendMailOptions {
-  to: string;
+export interface SendNewsletterOptions {
+  fromName: string;
+  fromEmail: string;
+  replyTo?: string;
+  recipients: string[];
   subject: string;
-  text: string;
   html: string;
-  tenant_id?: string | null;
+  text?: string;
+  sendgridApiKey?: string;
+  subuserUsername?: string;
+  newsletterId?: string;
+  tenantId?: string;
 }
 
-export class TransactionalEmailService {
-  private serverToken = env.postmarkServerToken;
-  private fromEmail = env.postmarkFromEmail;
+export class NewsletterEmailService {
+  public async sendNewsletter(options: SendNewsletterOptions): Promise<number> {
+    const apiKey = options.sendgridApiKey || env.sendgridApiKey;
 
-  private wrapInTemplate(title: string, contentHtml: string): string {
-    return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-  <style>
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background-color: #f8fafc;
-      color: #1e293b;
-      margin: 0;
-      padding: 0;
-      -webkit-font-smoothing: antialiased;
-    }
-    .wrapper {
-      width: 100%;
-      background-color: #f8fafc;
-      padding: 40px 20px;
-      box-sizing: border-box;
-    }
-    .container {
-      max-width: 580px;
-      margin: 0 auto;
-      background-color: #ffffff;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-      border: 1px solid #e2e8f0;
-    }
-    .header {
-      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-      padding: 32px;
-      text-align: center;
-    }
-    .header h1 {
-      color: #ffffff;
-      font-size: 24px;
-      font-weight: 700;
-      margin: 0;
-      letter-spacing: -0.025em;
-    }
-    .content {
-      padding: 40px 32px;
-      line-height: 1.6;
-      font-size: 16px;
-    }
-    .content h2 {
-      font-size: 20px;
-      font-weight: 600;
-      color: #0f172a;
-      margin-top: 0;
-      margin-bottom: 16px;
-    }
-    .content p {
-      margin-top: 0;
-      margin-bottom: 24px;
-      color: #475569;
-    }
-    .btn-container {
-      margin: 32px 0;
-      text-align: center;
-    }
-    .btn {
-      display: inline-block;
-      background-color: #4f46e5;
-      color: #ffffff !important;
-      text-decoration: none;
-      padding: 12px 28px;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 15px;
-    }
-    .otp-container {
-      margin: 32px auto;
-      text-align: center;
-    }
-    .otp-code {
-      display: inline-block;
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 32px;
-      font-weight: 700;
-      letter-spacing: 6px;
-      color: #4f46e5;
-      background-color: #f1f5f9;
-      padding: 12px 24px;
-      border-radius: 8px;
-      border: 1px dashed #cbd5e1;
-    }
-    .footer {
-      background-color: #f8fafc;
-      padding: 24px 32px;
-      text-align: center;
-      border-top: 1px solid #e2e8f0;
-      font-size: 13px;
-      color: #64748b;
-    }
-    .footer p {
-      margin: 8px 0;
-      color: #64748b;
-    }
-    .footer a {
-      color: #4f46e5;
-      text-decoration: none;
-    }
-    .warning {
-      font-size: 14px;
-      color: #64748b;
-      background-color: #f8fafc;
-      border-left: 4px solid #cbd5e1;
-      padding: 12px 16px;
-      margin-top: 24px;
-      border-radius: 0 4px 4px 0;
-    }
-  </style>
-</head>
-<body>
-  <div class="wrapper">
-    <div class="container">
-      <div class="header">
-        <h1>CampaignRaven</h1>
-      </div>
-      <div class="content">
-        ${contentHtml}
-      </div>
-      <div class="footer">
-        <p>This is a transactional message related to your account security. Unlike marketing messages, you cannot unsubscribe from these alerts.</p>
-        <p>&copy; ${new Date().getFullYear()} CampaignRaven. All rights reserved.</p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-  }
-
-  public async sendMail(options: SendMailOptions): Promise<void> {
-    const wrappedHtml = this.wrapInTemplate(options.subject, options.html);
-
-    if (!this.serverToken) {
+    if (!apiKey) {
       logger.info(
-        { from: this.fromEmail, to: options.to, subject: options.subject },
-        '[POSTMARK DEV MOCK] Transactional Email Outbound',
-      );
-      return;
-    }
-
-    try {
-      const response = await fetch('https://api.postmarkapp.com/email', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'X-Postmark-Server-Token': this.serverToken,
-        },
-        body: JSON.stringify({
-          From: this.fromEmail,
-          To: options.to,
-          Subject: options.subject,
-          TextBody: options.text,
-          HtmlBody: wrappedHtml,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Postmark API responded with status ${response.status}: ${errorText}`);
-      }
-    } catch (error) {
-      throw new InternalError('Failed to send transactional email', undefined, { cause: error });
-    }
-  }
-
-  public async enqueueMail(options: SendMailOptions, trx?: Transaction<any> | Kysely<any>): Promise<void> {
-    const dbClient = (trx || BaseRepository.dbInstance) as any;
-    await dbClient
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: options.tenant_id ? BigInt(options.tenant_id) : null,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'send-transactional-email',
-          to: options.to,
+        {
+          from: `"${options.fromName}" <${options.fromEmail}>`,
+          replyTo: options.replyTo || null,
+          recipientCount: options.recipients.length,
           subject: options.subject,
-          text: options.text,
-          html: options.html,
-        }),
-        run_at: new Date(),
-        max_attempts: 5,
-      })
-      .execute();
+        },
+        '[SENDGRID DEV MOCK] Newsletter Outbound',
+      );
+      return options.recipients.length;
+    }
+
+    const uniqueRecipients = [...new Set(options.recipients)];
+    if (uniqueRecipients.length === 0) return 0;
+
+    // SendGrid allows up to 1000 personalizations per API request
+    const CHUNK_SIZE = 1000;
+    let deliveredCount = 0;
+
+    for (let i = 0; i < uniqueRecipients.length; i += CHUNK_SIZE) {
+      const chunk = uniqueRecipients.slice(i, i + CHUNK_SIZE);
+      const personalizations = chunk.map((email) => ({
+        to: [{ email }],
+      }));
+
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      };
+
+      if (options.subuserUsername) {
+        headers['on-behalf-of'] = options.subuserUsername;
+      }
+
+      const body = {
+        personalizations,
+        from: {
+          email: options.fromEmail,
+          name: options.fromName,
+        },
+        ...(options.replyTo ? { reply_to: { email: options.replyTo } } : {}),
+        subject: options.subject,
+        content: [
+          {
+            type: 'text/html',
+            value: options.html,
+          },
+          ...(options.text
+            ? [
+                {
+                  type: 'text/plain',
+                  value: options.text,
+                },
+              ]
+            : []),
+        ],
+        ...(options.newsletterId && options.tenantId
+          ? {
+              custom_args: {
+                newsletter_id: options.newsletterId,
+                tenant_id: options.tenantId,
+              },
+            }
+          : {}),
+        // Enable subscription tracking so SendGrid replaces the `<% unsubscribe %>` substitution tag in
+        // the server-appended footer with a working, per-recipient unsubscribe URL.
+        tracking_settings: {
+          subscription_tracking: {
+            enable: true,
+            substitution_tag: '<% unsubscribe %>',
+          },
+        },
+      };
+
+      try {
+        const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`SendGrid API responded with status ${response.status}: ${errorText}`);
+        }
+
+        deliveredCount += chunk.length;
+      } catch (error) {
+        throw new InternalError('Failed to send newsletter via SendGrid', undefined, { cause: error });
+      }
+    }
+
+    return deliveredCount;
   }
 }
 ```
@@ -18701,6 +18764,36 @@ export async function seedOnboardingData(
     })
     .execute();
 }
+```
+
+## File: apps/backend/src/app/modules/billing/routes/billing-webhook.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { BillingController } from '../controller';
+import { logger } from '../../../logger';
+
+const controller = new BillingController();
+
+const billingWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.post('/webhook', async (req, reply) => {
+    const signature = (req.headers['stripe-signature'] as string) || '';
+    const payload = req.body as string; // Raw string thanks to custom ContentTypeParser
+
+    try {
+      await controller.handleWebhook(payload, signature);
+      return reply.code(200).send({ received: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`Webhook error: ${message}`);
+      return reply.code(400).send({ error: message });
+    }
+  });
+
+  done();
+};
+
+export default billingWebhookRoute;
 ```
 
 ## File: apps/backend/src/app/modules/billing/usage-limits.ts
@@ -19860,6 +19953,7 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
       .execute();
   }
 
+  // TODO: is this called from anywhere?
   public async getByStripeSubscriptionId(
     subscriptionId: string,
   ): Promise<Selectable<Models['donation_pledges']> | undefined> {
@@ -19886,6 +19980,527 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
     return Number(result?.total || 0);
   }
 }
+```
+
+## File: apps/backend/src/app/modules/events/routes/events-public.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import formBody from '@fastify/formbody';
+import { TRPCError } from '@trpc/server';
+import { EventsController } from '../controller';
+
+const ctrl = new EventsController();
+
+const STYLES = `
+  :root {
+    --bg: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+    --accent: #0ea5e9;
+    --accent-hover: #0284c7;
+    --accent-glow: rgba(14,165,233,0.15);
+    --card-bg: rgba(255,255,255,0.85);
+    --card-border: #cbd5e1;
+    --card-shadow: 0 10px 30px -10px rgba(0,0,0,0.08), 0 20px 40px -15px rgba(0,0,0,0.05);
+    --text: #1f2937;
+    --text-muted: #6b7280;
+    --input-bg: #ffffff;
+    --input-border: #cbd5e1;
+    --input-focus-border: #0ea5e9;
+    --input-focus-ring: rgba(14,165,233,0.15);
+    --label-color: #374151;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --error: #ef4444;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: linear-gradient(135deg,#0b1220 0%,#0e1726 50%,#060a12 100%);
+      --card-bg: rgba(19,30,49,0.85);
+      --card-border: #1a2b45;
+      --card-shadow: 0 20px 40px -15px rgba(0,0,0,0.5);
+      --text: #f8fafc;
+      --text-muted: #c7d1e5;
+      --input-bg: #0b1220;
+      --input-border: #1a2b45;
+      --input-focus-border: #3ea6ff;
+      --input-focus-ring: rgba(62,166,255,0.25);
+      --label-color: #cbd5e1;
+      --accent: #3ea6ff;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-weight: 300;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 40px 24px;
+  }
+  body::before, body::after {
+    content: "";
+    position: fixed;
+    width: 400px; height: 400px;
+    border-radius: 50%;
+    background: var(--accent);
+    filter: blur(150px);
+    opacity: 0.06;
+    z-index: 0;
+    pointer-events: none;
+  }
+  body::before { top: 15%; left: 10%; }
+  body::after { bottom: 15%; right: 10%; }
+  .container { max-width: 860px; margin: 0 auto; position: relative; z-index: 1; }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 20px;
+    padding: 32px;
+    box-shadow: var(--card-shadow);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    animation: slideUp 0.5s cubic-bezier(0.16,1,0.3,1) forwards;
+  }
+  .card::before {
+    content: "";
+    display: block;
+    height: 3px;
+    margin: -32px -32px 32px;
+    border-radius: 20px 20px 0 0;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  }
+  @keyframes slideUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+  h1 { font-size: 26px; font-weight: 700; line-height: 1.2; margin-bottom: 6px; }
+  h3 { font-size: 17px; font-weight: 600; margin-bottom: 16px; }
+  .subtitle { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin-top: 4px; }
+  .layout { display: grid; grid-template-columns: 1fr; gap: 24px; margin-top: 24px; }
+  @media (min-width: 680px) { .layout { grid-template-columns: 1.2fr 1fr; } }
+  .meta-list { display: flex; flex-direction: column; gap: 14px; }
+  .meta-row { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; }
+  .meta-row svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; stroke: var(--accent); fill: none; stroke-width: 2; }
+  .meta-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: 2px; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing:.05em; margin-bottom: 16px; }
+  .badge-upcoming { background: rgba(14,165,233,.12); color: var(--accent); }
+  .badge-past { background: rgba(107,114,128,.12); color: var(--text-muted); }
+  .divider { border: none; border-top: 1px solid var(--card-border); margin: 20px 0; }
+  .tickets { display: flex; flex-direction: column; gap: 10px; }
+  .ticket-row { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border:1px solid var(--card-border); border-radius:12px; }
+  .ticket-name { font-weight:600; font-size:14px; }
+  .ticket-price { font-size:14px; font-weight:700; color:var(--accent); }
+  .spots-alert { padding:10px 14px; border-radius:10px; font-size:13px; font-weight:500; margin-bottom:18px; display:flex; align-items:center; gap:8px; }
+  .spots-warn { background:rgba(239,68,68,.1); color:var(--error); border:1px solid rgba(239,68,68,.2); }
+  .spots-info { background:var(--accent-glow); color:var(--accent); border:1px solid rgba(14,165,233,.2); }
+  .spots-ok { background:rgba(16,185,129,.1); color:var(--success); border:1px solid rgba(16,185,129,.2); }
+  label { display:block; font-size:13px; font-weight:500; margin-bottom:7px; color:var(--label-color); }
+  input, textarea, select {
+    width:100%; padding:11px 14px;
+    background:var(--input-bg); border:1px solid var(--input-border);
+    border-radius:10px; color:var(--text); font-size:14px; font-family:inherit;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  input:focus, textarea:focus, select:focus { outline:none; border-color:var(--input-focus-border); box-shadow:0 0 0 4px var(--input-focus-ring); }
+  textarea { resize:vertical; min-height:80px; }
+  .hp-field { display:none !important; }
+  .form-group { margin-bottom:18px; }
+  .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:18px; }
+  button[type=submit] {
+    width:100%; padding:13px 24px;
+    background:var(--accent); color:#fff;
+    font-size:15px; font-weight:600;
+    border:none; border-radius:12px; cursor:pointer;
+    transition: background .2s, transform .2s, box-shadow .2s;
+    box-shadow:0 4px 12px var(--accent-glow); margin-top:6px;
+  }
+  button[type=submit]:hover:not(:disabled) { background:var(--accent-hover); transform:translateY(-1px); box-shadow:0 6px 18px var(--accent-glow); }
+  button[type=submit]:disabled { background:var(--card-border); color:var(--text-muted); cursor:not-allowed; box-shadow:none; }
+  .not-found { text-align:center; padding:60px 20px; }
+`;
+
+function esc(str: string): string {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function page(title: string, body: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>${esc(title)}</title>
+  <style>${STYLES}</style>
+</head>
+<body>
+  <div class="container">${body}</div>
+</body>
+</html>`;
+}
+
+function getStatusFromError(err: any): number {
+  if (err instanceof TRPCError) {
+    switch (err.code) {
+      case 'BAD_REQUEST':
+        return 400;
+      case 'NOT_FOUND':
+        return 404;
+      case 'CONFLICT':
+        return 409;
+      case 'TOO_MANY_REQUESTS':
+        return 429;
+      default:
+        return 500;
+    }
+  }
+  return err.statusCode || 500;
+}
+
+function buildRsvpFormFields(fields: string[], disabled: boolean): string {
+  const fieldSet = new Set(fields);
+  const isEnabled = (f: string) => fieldSet.has(f) || fieldSet.has(`${f}:required`);
+  const isRequired = (f: string) => fieldSet.has(`${f}:required`);
+
+  const html: string[] = [];
+
+  html.push(`<input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />`);
+
+  if (isEnabled('first_name') && isEnabled('last_name')) {
+    html.push(`<div class="form-row">
+      <div>
+        <label for="first_name">First Name${isRequired('first_name') ? ' *' : ''}</label>
+        <input type="text" id="first_name" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>
+      <div>
+        <label for="last_name">Last Name${isRequired('last_name') ? ' *' : ''}</label>
+        <input type="text" id="last_name" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>
+    </div>`);
+  } else {
+    if (isEnabled('first_name')) {
+      html.push(`<div class="form-group">
+        <label for="first_name">First Name${isRequired('first_name') ? ' *' : ''}</label>
+        <input type="text" id="first_name" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>`);
+    }
+    if (isEnabled('last_name')) {
+      html.push(`<div class="form-group">
+        <label for="last_name">Last Name${isRequired('last_name') ? ' *' : ''}</label>
+        <input type="text" id="last_name" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>`);
+    }
+  }
+
+  // Email is always required
+  html.push(`<div class="form-group">
+    <label for="email">Email Address *</label>
+    <input type="email" id="email" name="email" placeholder="you@example.com" required ${disabled ? 'disabled' : ''} />
+  </div>`);
+
+  if (isEnabled('mobile')) {
+    html.push(`<div class="form-group">
+      <label for="mobile">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label>
+      <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isRequired('mobile') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+    </div>`);
+  }
+
+  if (isEnabled('street1')) {
+    html.push(`<div class="form-group">
+      <label for="street1">Street Address${isRequired('street1') ? ' *' : ''}</label>
+      <input type="text" id="street1" name="street1" placeholder="E.g. 123 Main St" ${isRequired('street1') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+    </div>`);
+  }
+
+  if (isEnabled('city') && isEnabled('zip')) {
+    html.push(`<div class="form-row">
+      <div>
+        <label for="city">City${isRequired('city') ? ' *' : ''}</label>
+        <input type="text" id="city" name="city" placeholder="City" ${isRequired('city') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>
+      <div>
+        <label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label>
+        <input type="text" id="zip" name="zip" placeholder="E.g. M5V 2T6" ${isRequired('zip') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>
+    </div>`);
+  } else {
+    if (isEnabled('city')) {
+      html.push(
+        `<div class="form-group"><label for="city">City${isRequired('city') ? ' *' : ''}</label><input type="text" id="city" name="city" ${isRequired('city') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
+      );
+    }
+    if (isEnabled('zip')) {
+      html.push(
+        `<div class="form-group"><label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label><input type="text" id="zip" name="zip" ${isRequired('zip') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
+      );
+    }
+  }
+
+  if (isEnabled('state') && isEnabled('country')) {
+    html.push(`<div class="form-row">
+      <div>
+        <label for="state">State / Province${isRequired('state') ? ' *' : ''}</label>
+        <input type="text" id="state" name="state" placeholder="E.g. ON" ${isRequired('state') ? 'required' : ''} ${disabled ? 'disabled' : ''} />
+      </div>
+      <div>
+        <label for="country">Country${isRequired('country') ? ' *' : ''}</label>
+        <select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${disabled ? 'disabled' : ''}>
+          <option value="">Select…</option>
+          <option value="CA">Canada</option>
+          <option value="US">United States</option>
+          <option value="GB">United Kingdom</option>
+          <option value="AU">Australia</option>
+        </select>
+      </div>
+    </div>`);
+  } else {
+    if (isEnabled('state')) {
+      html.push(
+        `<div class="form-group"><label for="state">State / Province${isRequired('state') ? ' *' : ''}</label><input type="text" id="state" name="state" ${isRequired('state') ? 'required' : ''} ${disabled ? 'disabled' : ''} /></div>`,
+      );
+    }
+    if (isEnabled('country')) {
+      html.push(
+        `<div class="form-group"><label for="country">Country${isRequired('country') ? ' *' : ''}</label><select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${disabled ? 'disabled' : ''}><option value="">Select…</option><option value="CA">Canada</option><option value="US">United States</option><option value="GB">United Kingdom</option><option value="AU">Australia</option></select></div>`,
+      );
+    }
+  }
+
+  if (isEnabled('notes')) {
+    html.push(`<div class="form-group">
+      <label for="notes">Notes / Message${isRequired('notes') ? ' *' : ''}</label>
+      <textarea id="notes" name="notes" placeholder="Any notes or questions…" ${isRequired('notes') ? 'required' : ''} ${disabled ? 'disabled' : ''}></textarea>
+    </div>`);
+  }
+
+  return html.join('\n');
+}
+
+const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
+  fastify.register(formBody);
+
+  // Success page
+  fastify.get('/rsvp-success', async (_req: any, reply) => {
+    reply.type('text/html');
+    return reply.send(
+      page(
+        'RSVP Confirmed',
+        `
+      <div class="card" style="max-width:440px;margin:40px auto;text-align:center;">
+        <div style="width:72px;height:72px;background:rgba(16,185,129,.1);border:2px solid #10b981;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;">
+          <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <h1>You're Registered!</h1>
+        <p class="subtitle" style="margin-top:10px;">Thank you! A confirmation email with event details has been sent to you.</p>
+      </div>`,
+      ),
+    );
+  });
+
+  // Event detail + RSVP form
+  fastify.get('/view/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+
+    let event: any;
+    try {
+      event = await ctrl.getEventBySlug(slug);
+    } catch (err) {
+      fastify.log.error(err);
+      reply.status(500).type('text/html');
+      return reply.send(page('Error', `<div class="not-found"><h1>Something went wrong.</h1></div>`));
+    }
+
+    if (!event) {
+      reply.status(404).type('text/html');
+      return reply.send(
+        page(
+          'Event Not Found',
+          `<div class="not-found"><h1>Event not found</h1><p class="subtitle">This event page doesn't exist or hasn't been published yet.</p></div>`,
+        ),
+      );
+    }
+
+    let ticketTypes: any[] = [];
+    try {
+      ticketTypes = await ctrl.getTicketTypesByEventId(String(event.id), String(event.tenant_id));
+    } catch {
+      /* ignore */
+    }
+
+    // Count current registrations for capacity display
+    let regCount = 0;
+    try {
+      regCount = await ctrl.getRegistrationCountForEvent(String(event.id), String(event.tenant_id));
+    } catch {
+      /* ignore */
+    }
+
+    const now = new Date();
+    const start = new Date(event.start_time);
+    const end = new Date(event.end_time);
+    const isPast = end < now;
+    const isFull = event.capacity !== null && regCount >= event.capacity;
+    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
+
+    const fields: string[] = Array.isArray(event.fields)
+      ? event.fields
+      : typeof event.fields === 'string'
+        ? JSON.parse(event.fields)
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+    const dateStr = start.toLocaleDateString(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} – ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+
+    const badge = isPast
+      ? `<span class="badge badge-past">Past Event</span>`
+      : `<span class="badge badge-upcoming">Upcoming</span>`;
+
+    const ticketsHtml =
+      ticketTypes.length === 0
+        ? ''
+        : `
+      <hr class="divider" />
+      <h3>Tickets</h3>
+      <div class="tickets">
+        ${ticketTypes
+          .map(
+            (t) => `
+          <div class="ticket-row">
+            <div>
+              <div class="ticket-name">${esc(t.name)}</div>
+              ${t.description ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;">${esc(t.description)}</div>` : ''}
+            </div>
+            <div class="ticket-price">${t.price_cents ? `$${(t.price_cents / 100).toFixed(2)}` : 'Free'}${t.capacity ? ` <span style="font-size:11px;font-weight:400;color:var(--text-muted);">· ${t.capacity} spots</span>` : ''}</div>
+          </div>`,
+          )
+          .join('')}
+      </div>`;
+
+    const contactHtml =
+      event.contact_email || event.contact_phone
+        ? `
+      <hr class="divider" />
+      <div style="font-size:13px;color:var(--text-muted);">
+        <strong style="color:var(--text);">Questions?</strong>
+        ${event.contact_email ? ` <a href="mailto:${esc(event.contact_email)}" style="color:var(--accent);">${esc(event.contact_email)}</a>` : ''}
+        ${event.contact_email && event.contact_phone ? ' · ' : ''}
+        ${event.contact_phone ? esc(event.contact_phone) : ''}
+      </div>`
+        : '';
+
+    // Capacity alert for RSVP form panel
+    let spotsAlert = '';
+    if (isPast) {
+      spotsAlert = `<div class="spots-alert spots-warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>This event has passed.</div>`;
+    } else if (isFull) {
+      spotsAlert = `<div class="spots-alert spots-warn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>This event is fully booked.</div>`;
+    } else if (remaining !== null && remaining <= 5) {
+      spotsAlert = `<div class="spots-alert spots-info"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>Hurry! Only ${remaining} spot(s) remaining.</div>`;
+    } else {
+      spotsAlert = `<div class="spots-alert spots-ok"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>${remaining === null ? 'Unlimited spots available. Register below!' : `${remaining} spot(s) available. Register below!`}</div>`;
+    }
+
+    const disabled = isPast || isFull;
+    const formFieldsHtml = buildRsvpFormFields(fields, disabled);
+
+    const body = `
+      <div class="card">
+        ${badge}
+        <h1>${esc(event.name)}</h1>
+        ${event.description ? `<p class="subtitle">${esc(event.description)}</p>` : ''}
+
+        <hr class="divider" />
+
+        <div class="layout">
+          <!-- Left: Event info -->
+          <div>
+            <div class="meta-list">
+              <div class="meta-row">
+                <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <div><div class="meta-label">Date & Time</div>${dateStr}<br/><span style="font-size:13px;opacity:.7;">${timeStr}</span></div>
+              </div>
+              ${
+                event.location_address
+                  ? `
+              <div class="meta-row">
+                <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                <div><div class="meta-label">Location</div>${esc(event.location_address)}</div>
+              </div>`
+                  : ''
+              }
+              ${
+                event.capacity
+                  ? `
+              <div class="meta-row">
+                <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+                <div><div class="meta-label">Capacity</div>${remaining !== null ? `${remaining} of ${event.capacity} spots left` : `${event.capacity} total`}</div>
+              </div>`
+                  : ''
+              }
+            </div>
+            ${ticketsHtml}
+            ${contactHtml}
+          </div>
+
+          <!-- Right: RSVP form -->
+          <div>
+            <h3>RSVP for this Event</h3>
+            ${spotsAlert}
+            <form action="/api/event-pages/rsvp/${esc(event.slug)}" method="POST">
+              ${formFieldsHtml}
+              <button type="submit" ${disabled ? 'disabled' : ''}>${isPast ? 'Registration Closed' : isFull ? 'Fully Booked' : 'Confirm RSVP'}</button>
+            </form>
+          </div>
+        </div>
+      </div>`;
+
+    reply.type('text/html');
+    return reply.send(page(event.name, body));
+  });
+
+  // Handle RSVP form POST
+  fastify.post('/rsvp/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    const isJson =
+      req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
+
+    try {
+      await ctrl.rsvpPublic(slug, req.body || {}, clientIp);
+
+      if (isJson) return reply.status(200).send({ success: true });
+      return reply.redirect('/api/event-pages/rsvp-success');
+    } catch (err) {
+      fastify.log.error(err);
+      const status = getStatusFromError(err);
+      const message = err instanceof Error && err.message ? err.message : 'An unexpected error occurred.';
+
+      if (isJson) return reply.status(status).send({ error: message });
+
+      reply.status(status).type('text/html');
+      return reply.send(
+        page(
+          'Error',
+          `
+        <div class="card" style="max-width:440px;margin:40px auto;text-align:center;">
+          <h1 style="color:var(--error);">Error</h1>
+          <p class="subtitle" style="margin-top:10px;">${esc(message)}</p>
+          <div style="margin-top:20px;"><a href="javascript:history.back()" style="color:var(--accent);font-size:14px;">← Go back</a></div>
+        </div>`,
+        ),
+      );
+    }
+  });
+
+  done();
+};
+
+export default eventsPublicRoute;
 ```
 
 ## File: apps/backend/src/app/modules/exports/routes/exports-download.route.ts
@@ -19944,6 +20559,1021 @@ const exportsDownloadRoute: FastifyPluginCallback = (fastify, _, done) => {
 };
 
 export default exportsDownloadRoute;
+```
+
+## File: apps/backend/src/app/modules/google-sync/google-callback.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { GoogleOAuthService } from './google-oauth.service';
+import { env } from '../../../env';
+import { BaseRepository } from '../../lib/base.repo';
+import { decodeOAuthState } from '../../lib/oauth-state';
+
+let _oauthSvc: GoogleOAuthService | null = null;
+
+function getOAuthService() {
+  if (!_oauthSvc) {
+    const db = (BaseRepository as any)['_db'];
+    _oauthSvc = new GoogleOAuthService(db, {
+      clientId: env.googleClientId ?? '',
+      clientSecret: env.googleClientSecret ?? '',
+      redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+    });
+  }
+  return _oauthSvc;
+}
+
+const googleSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.get('/callback', async (req: any, reply) => {
+    const { code, state, error, error_description } = req.query as Record<string, string>;
+
+    const frontendBase = env.apiUrl.replace(':3000', ':4200'); // dev: frontend is on 4200
+
+    // Verify the HMAC-signed state; a forged/expired state yields null and is
+    // rejected so an attacker cannot bind this mailbox to an arbitrary account.
+    const parsedState = decodeOAuthState(state);
+
+    // Only allow a relative path that doesn't start with // (prevents open redirect)
+    const safeReturnTo = parsedState?.returnTo?.match(/^\/(?!\/)/) ? parsedState.returnTo : null;
+    const returnBase = safeReturnTo ? `${frontendBase}${safeReturnTo}` : `${frontendBase}/settings`;
+    const sep = (base: string) => (base.includes('?') ? '&' : '?');
+
+    if (error) {
+      return reply.redirect(
+        `${returnBase}${sep(returnBase)}google_error=${encodeURIComponent(error_description ?? error)}`,
+      );
+    }
+
+    if (!code || !state) {
+      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=missing_code`);
+    }
+
+    if (!parsedState) {
+      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=invalid_state`);
+    }
+
+    const { userId, tenantId } = parsedState;
+
+    try {
+      const oauthSvc = getOAuthService();
+      await oauthSvc.handleCallback(code, userId, tenantId);
+      return reply.redirect(`${returnBase}${sep(returnBase)}google_connected=1`);
+    } catch (err) {
+      // Log the real cause server-side; never reflect internal error text back
+      // into a user-facing redirect URL.
+      fastify.log.error(err, 'Google OAuth callback failed');
+      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=connection_failed`);
+    }
+  });
+
+  done();
+};
+
+export default googleSyncCallbackRoute;
+```
+
+## File: apps/backend/src/app/modules/google-sync/trpc.router.ts
+
+```typescript
+import { authProcedure, router } from '../../../trpc';
+import { GoogleOAuthService, NEEDS_FULL_SYNC } from './google-oauth.service';
+import { GoogleSyncService } from './google-sync.service';
+import { BaseRepository } from '../../lib/base.repo';
+import { env } from '../../../env';
+import { z } from 'zod';
+import { sql } from 'kysely';
+import { encodeOAuthState } from '../../lib/oauth-state';
+
+let _oauthSvc: GoogleOAuthService | null = null;
+let _syncSvc: GoogleSyncService | null = null;
+
+function getServices() {
+  if (!_oauthSvc || !_syncSvc) {
+    const db = (BaseRepository as any)['_db']; // reuse the shared Kysely instance
+    _oauthSvc = new GoogleOAuthService(db, {
+      clientId: env.googleClientId ?? '',
+      clientSecret: env.googleClientSecret ?? '',
+      redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+    });
+    _syncSvc = new GoogleSyncService(db, _oauthSvc);
+  }
+  return { oauthSvc: _oauthSvc, syncSvc: _syncSvc };
+}
+
+function getAuthUrl() {
+  return authProcedure.input(z.object({ returnTo: z.string().optional() })).query(async ({ ctx, input }) => {
+    const { oauthSvc } = getServices();
+    const state = encodeOAuthState({
+      userId: ctx.auth.user_id,
+      tenantId: ctx.auth.tenant_id,
+      returnTo: input.returnTo,
+    });
+    const url = oauthSvc.getAuthUrl(state);
+    return { url };
+  });
+}
+
+function getConnectionStatus() {
+  return authProcedure.query(async ({ ctx }) => {
+    const { oauthSvc } = getServices();
+    const db = (BaseRepository as any)['_db'];
+    const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id);
+
+    const activeJob = await db
+      .selectFrom('background_jobs')
+      .select('id')
+      .where('status', 'in', ['pending', 'processing'])
+      .where('tenant_id', '=', ctx.auth.tenant_id)
+      .where(sql`payload->>'type'`, '=', 'google_sync')
+      .executeTakeFirst();
+
+    return {
+      ...status,
+      syncing: !!activeJob,
+    };
+  });
+}
+
+function syncNow() {
+  return authProcedure.mutation(async ({ ctx }) => {
+    const db = (BaseRepository as any)['_db'];
+
+    const existing = await db
+      .selectFrom('background_jobs')
+      .select('id')
+      .where('status', 'in', ['pending', 'processing'])
+      .where('tenant_id', '=', ctx.auth.tenant_id)
+      .where(sql`payload->>'type'`, '=', 'google_sync')
+      .executeTakeFirst();
+
+    if (!existing) {
+      await db
+        .insertInto('background_jobs')
+        .values({
+          tenant_id: ctx.auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'google_sync',
+            tenantId: ctx.auth.tenant_id,
+            requestedBy: ctx.auth.user_id,
+          }),
+          run_at: new Date(),
+          max_attempts: 3,
+        })
+        .execute();
+    }
+
+    return { inserted: 0, queued: true };
+  });
+}
+
+function disconnect() {
+  return authProcedure
+    .input(
+      z.object({
+        removeLocalEmails: z.boolean().default(false),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { oauthSvc, syncSvc } = getServices();
+
+      if (input.removeLocalEmails) {
+        await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id);
+      }
+
+      await oauthSvc.disconnect(ctx.auth.tenant_id);
+      return { success: true };
+    });
+}
+
+function resetSync() {
+  return authProcedure.mutation(async ({ ctx }) => {
+    const { oauthSvc } = getServices();
+    await oauthSvc.saveDeltaLink(ctx.auth.tenant_id, NEEDS_FULL_SYNC);
+    return { success: true };
+  });
+}
+
+export const GoogleSyncRouter = router({
+  getAuthUrl: getAuthUrl(),
+  getConnectionStatus: getConnectionStatus(),
+  syncNow: syncNow(),
+  disconnect: disconnect(),
+  resetSync: resetSync(),
+});
+export type GoogleSyncRouterType = typeof GoogleSyncRouter;
+```
+
+## File: apps/backend/src/app/modules/households/controller.ts
+
+```typescript
+import type {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  UpdateHouseholdsType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+import { TRPCError } from '@trpc/server';
+import { sql } from 'kysely';
+
+import type { QueryParams } from '../../lib/base.repo';
+import { BaseRepository } from '../../lib/base.repo';
+import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
+import { HouseholdRepo } from './repositories/households.repo';
+import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
+import { TagsRepo } from '../tags/repositories/tags.repo';
+import { matchCoordinatesToDistrict } from '../../lib/gis/geocoding';
+import { BaseController } from '../../lib/base.controller';
+import { SettingsController } from '../settings/controller';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../logger';
+
+export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
+  private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
+  private settingsController = new SettingsController();
+  private tagsRepo = new TagsRepo();
+
+  constructor() {
+    super(new HouseholdRepo());
+  }
+
+  public async deleteManyForTenant(auth: IAuthKeyPayload, idsToDelete: string[]) {
+    // Filter out any placeholder households — they are permanent and undeletable
+    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, idsToDelete);
+    const safeIds = idsToDelete.filter((id) => !placeholders.has(id));
+
+    if (safeIds.length === 0) return false;
+    // Members move to the tenant's placeholder household (persons.household_id is
+    // NOT NULL) rather than being cascade-deleted along with the household.
+    return this.getRepo().deleteManyReassigningPersons({
+      tenant_id: auth.tenant_id,
+      ids: safeIds,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
+    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
+
+    const fp_street = fingerprintStreet({
+      street_num: payload.street_num,
+      street1: payload.street1,
+      street2: payload.street2,
+    });
+    const fp_full = fingerprintFull({
+      apt: payload.apt,
+      street_num: payload.street_num,
+      street1: payload.street1,
+      street2: payload.street2,
+      city: payload.city,
+      state: payload.state,
+      zip: payload.zip,
+      country: payload.country,
+    });
+
+    // Try to dedupe: find existing by fingerprint
+    if (fp_street || fp_full) {
+      const existing = await this.getRepo().findByFingerprint({
+        tenant_id: auth.tenant_id,
+        campaign_id: String(campaign_id),
+        fp_street: fp_street,
+        fp_full: fp_full,
+      });
+      if (existing?.id) return { id: String(existing.id) } as any;
+    }
+
+    const row = {
+      ...payload,
+      address_fp_street: fp_street,
+      address_fp_full: fp_full,
+      campaign_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+    return this.add(row as OperationDataType<'households', 'insert'>);
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const household = await super.getOneById(input);
+    if (!household) return undefined;
+
+    const tenantRow = await (BaseRepository as any)['_db']
+      .selectFrom('tenants')
+      .select('placeholder_household_id')
+      .where('id', '=', input.tenant_id)
+      .executeTakeFirst();
+
+    const is_placeholder = tenantRow?.placeholder_household_id
+      ? String(tenantRow.placeholder_household_id) === String((household as any).id)
+      : false;
+    return {
+      ...household,
+      is_placeholder,
+    } as any;
+  }
+
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'households', 'update'>;
+  }) {
+    const placeholders = await this.getRepo().getPlaceholderIds(input.tenant_id, [input.id]);
+    if (placeholders.has(input.id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'The placeholder household cannot be edited.',
+      });
+    }
+
+    const keys = Object.keys(input.row || {});
+    const affectsAddress = keys.some((k) =>
+      ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country'].includes(k),
+    );
+
+    // Perform the main update without fingerprint columns first
+    const result = await super.update(input);
+
+    // Attempt fingerprint recompute in a separate, non-fatal step
+    if (affectsAddress) {
+      try {
+        const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as any;
+        const merged = { ...current, ...(input.row as any) };
+
+        let geocoding_status = isBlankAddress(merged) || isIncompleteAddress(merged) ? 'failed' : 'pending';
+        let district = null;
+        let precinct = null;
+        let ward = null;
+
+        // If autocomplete coordinates are provided in the update, use them and map boundaries synchronously
+        if (input.row.lat && input.row.lng && Number(input.row.lat) !== 0 && Number(input.row.lng) !== 0) {
+          try {
+            const matched = await matchCoordinatesToDistrict(Number(input.row.lat), Number(input.row.lng));
+            district = matched.district;
+            precinct = matched.precinct;
+            ward = matched.ward;
+            geocoding_status = 'success';
+          } catch (err) {
+            logger.error({ err }, 'Failed to map coordinates to district during update');
+          }
+        }
+
+        const fpRow: any = {
+          address_fp_street: fingerprintStreet({
+            street_num: merged.street_num,
+            street1: merged.street1,
+            street2: merged.street2,
+          }),
+          address_fp_full: fingerprintFull({
+            apt: merged.apt,
+            street_num: merged.street_num,
+            street1: merged.street1,
+            street2: merged.street2,
+            city: merged.city,
+            state: merged.state,
+            zip: merged.zip,
+            country: merged.country,
+          }),
+          geocoding_status,
+          district,
+          precinct,
+          ward,
+        };
+        await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
+
+        // Queue geocoding background job if geocoding status is pending
+        if (geocoding_status === 'pending') {
+          await this.getRepo()
+            .db.insertInto('background_jobs')
+            .values({
+              tenant_id: input.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'geocode_household',
+                household_id: input.id,
+                tenant_id: input.tenant_id,
+              }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+        // Duplicate maintenance is only calculated nightly
+      } catch (err) {
+        logger.error({ err }, 'Failed to update address fingerprint and queue duplicates maintenance');
+      }
+    }
+
+    return result;
+  }
+
+  public async attachTag(household_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
+    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, [household_id]);
+    if (placeholders.has(household_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Cannot attach tags to the placeholder household.',
+      });
+    }
+
+    const randomHexColor = () =>
+      '#' +
+      Math.floor(Math.random() * 0xffffff)
+        .toString(16)
+        .padStart(6, '0');
+    const row = {
+      name,
+      color: randomHexColor(),
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      type,
+    };
+
+    const tag = await this.tagsRepo.addOrGet({
+      row: row as OperationDataType<'tags', 'insert'>,
+      onConflictColumn: 'name',
+    });
+
+    return this.addToMap({
+      tag_id: tag?.id as string | undefined,
+      household_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    });
+  }
+
+  public async detachTag(
+    tenant_id: string,
+    household_id: string,
+    tag_name: string,
+    type: 'tag' | 'issue' = 'tag',
+    userId?: string,
+  ) {
+    const placeholders = await this.getRepo().getPlaceholderIds(tenant_id, [household_id]);
+    if (placeholders.has(household_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Cannot detach tags from the placeholder household.',
+      });
+    }
+
+    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name, type });
+    if (tag?.id) {
+      await this.mapHouseholdsTagRepo.deleteMapping(tenant_id, household_id, tag.id);
+    }
+
+    try {
+      if (userId) {
+        await this.userActivity.log({
+          tenant_id,
+          user_id: userId,
+          activity: 'update',
+          entity: 'households',
+          entity_id: household_id,
+          quantity: 1,
+          metadata: { id: household_id, action: `detach_${type}`, name: tag_name },
+        });
+      }
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log detach tag activity');
+    }
+  }
+
+  public getAllWithPeopleCount(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    const { tags, ...queryParams } = options || {};
+    return this.getRepo().getAllWithPeopleCount({
+      tenant_id: auth.tenant_id,
+      options: queryParams as QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'>,
+      tags,
+    });
+  }
+
+  public getPeopleCount(id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
+  }
+
+  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getDistinctTags(auth.tenant_id, type);
+  }
+
+  public getTags(id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getTags(id, auth.tenant_id, type);
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const result = await this.getAllWithPeopleCount(auth, input?.options);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: 'households',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+        },
+      });
+      return response;
+    }
+    return super.exportCsv(input, auth);
+  }
+
+  private async addToMap(row: {
+    tag_id: string | undefined;
+    household_id: string;
+    tenant_id: string;
+    createdby_id: string;
+    updatedby_id: string;
+  }) {
+    if (!row.tag_id) {
+      throw new TRPCError({
+        message: 'Failed to add the tag',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+    }
+
+    return await this.mapHouseholdsTagRepo.add({
+      row: row as OperationDataType<'map_households_tags', 'insert'>,
+    });
+  }
+
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
+  }
+
+  public async mergeHouseholds(target_id: string, source_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().mergeHouseholds({
+      tenant_id: auth.tenant_id,
+      target_id,
+      source_id,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async getLastFingerprintRecomputation(tenantId: string): Promise<{ lastRunAt: string | null }> {
+    const job = await this.getRepo()
+      .db.selectFrom('background_jobs')
+      .select(['created_at'])
+      .where('tenant_id', '=', tenantId)
+      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+      .orderBy('created_at', 'desc')
+      .executeTakeFirst();
+
+    return { lastRunAt: job?.created_at ? new Date(job.created_at).toISOString() : null };
+  }
+
+  public async recomputeAddressFingerprints(tenantId: string): Promise<void> {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+    const existingJob = await this.getRepo()
+      .db.selectFrom('background_jobs')
+      .select(['created_at'])
+      .where('tenant_id', '=', tenantId)
+      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+      .where('created_at', '>', oneMonthAgo)
+      .executeTakeFirst();
+
+    if (existingJob) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Address fingerprints can only be recomputed once a month. A request was already submitted recently.',
+      });
+    }
+
+    await this.getRepo()
+      .db.insertInto('background_jobs')
+      .values({
+        tenant_id: tenantId,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'recompute_address_fingerprints',
+          tenant_id: tenantId,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/ms-sync/ms-callback.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { MsOAuthService } from '../ms-sync/ms-oauth.service';
+import { env } from '../../../env';
+import { BaseRepository } from '../../lib/base.repo';
+import { decodeOAuthState } from '../../lib/oauth-state';
+
+let _oauthSvc: MsOAuthService | null = null;
+
+function getOAuthService() {
+  if (!_oauthSvc) {
+    const db = (BaseRepository as any)['_db'];
+    _oauthSvc = new MsOAuthService(db, {
+      clientId: env.msClientId ?? '',
+      clientSecret: env.msClientSecret ?? '',
+      tenantId: env.msTenantId ?? 'common',
+      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+    });
+  }
+  return _oauthSvc;
+}
+
+const msSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.get('/callback', async (req: any, reply) => {
+    const { code, state, error, error_description } = req.query as Record<string, string>;
+
+    const frontendBase = env.apiUrl.replace(':3000', ':4200'); // dev: frontend is on 4200
+
+    // Verify the HMAC-signed state; a forged/expired state yields null and is
+    // rejected so an attacker cannot bind this mailbox to an arbitrary account.
+    const parsedState = decodeOAuthState(state);
+
+    // Only allow a relative path that doesn't start with // (prevents open redirect)
+    const safeReturnTo = parsedState?.returnTo?.match(/^\/(?!\/)/) ? parsedState.returnTo : null;
+    const returnBase = safeReturnTo ? `${frontendBase}${safeReturnTo}` : `${frontendBase}/settings`;
+    const sep = (base: string) => (base.includes('?') ? '&' : '?');
+
+    if (error) {
+      return reply.redirect(
+        `${returnBase}${sep(returnBase)}ms_error=${encodeURIComponent(error_description ?? error)}`,
+      );
+    }
+
+    if (!code || !state) {
+      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=missing_code`);
+    }
+
+    if (!parsedState) {
+      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=invalid_state`);
+    }
+
+    const { userId, tenantId } = parsedState;
+
+    try {
+      const oauthSvc = getOAuthService();
+      await oauthSvc.handleCallback(code, userId, tenantId);
+      return reply.redirect(`${returnBase}${sep(returnBase)}ms_connected=1`);
+    } catch (err) {
+      // Log the real cause server-side; never reflect internal error text back
+      // into a user-facing redirect URL.
+      fastify.log.error(err, 'Microsoft OAuth callback failed');
+      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=connection_failed`);
+    }
+  });
+
+  done();
+};
+
+export default msSyncCallbackRoute;
+```
+
+## File: apps/backend/src/app/modules/ms-sync/trpc.router.ts
+
+```typescript
+import { authProcedure, router } from '../../../trpc';
+import { MsOAuthService, NEEDS_FULL_SYNC } from './ms-oauth.service';
+import { MsSyncService } from './ms-sync.service';
+import { BaseRepository } from '../../lib/base.repo';
+import { env } from '../../../env';
+import { z } from 'zod';
+import { sql } from 'kysely';
+import { encodeOAuthState } from '../../lib/oauth-state';
+
+let _oauthSvc: MsOAuthService | null = null;
+let _syncSvc: MsSyncService | null = null;
+
+function getServices() {
+  if (!_oauthSvc || !_syncSvc) {
+    const db = (BaseRepository as any)['_db']; // reuse the shared Kysely instance
+    _oauthSvc = new MsOAuthService(db, {
+      clientId: env.msClientId ?? '',
+      clientSecret: env.msClientSecret ?? '',
+      tenantId: env.msTenantId ?? 'common',
+      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+    });
+    _syncSvc = new MsSyncService(db, _oauthSvc);
+  }
+  return { oauthSvc: _oauthSvc, syncSvc: _syncSvc };
+}
+
+function getAuthUrl() {
+  return authProcedure.input(z.object({ returnTo: z.string().optional() })).query(async ({ ctx, input }) => {
+    const { oauthSvc } = getServices();
+    const state = encodeOAuthState({
+      userId: ctx.auth.user_id,
+      tenantId: ctx.auth.tenant_id,
+      returnTo: input.returnTo,
+    });
+    const url = await oauthSvc.getAuthUrl(state);
+    return { url };
+  });
+}
+
+function getConnectionStatus() {
+  return authProcedure.query(async ({ ctx }) => {
+    const { oauthSvc } = getServices();
+    const db = (BaseRepository as any)['_db'];
+    const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id);
+
+    const activeJob = await db
+      .selectFrom('background_jobs')
+      .select('id')
+      .where('status', 'in', ['pending', 'processing'])
+      .where('tenant_id', '=', ctx.auth.tenant_id)
+      .where(sql`payload->>'type'`, '=', 'ms_sync')
+      .executeTakeFirst();
+
+    return {
+      ...status,
+      syncing: !!activeJob,
+    };
+  });
+}
+
+function syncNow() {
+  return authProcedure.mutation(async ({ ctx }) => {
+    const db = (BaseRepository as any)['_db'];
+
+    const existing = await db
+      .selectFrom('background_jobs')
+      .select('id')
+      .where('status', 'in', ['pending', 'processing'])
+      .where('tenant_id', '=', ctx.auth.tenant_id)
+      .where(sql`payload->>'type'`, '=', 'ms_sync')
+      .executeTakeFirst();
+
+    if (!existing) {
+      await db
+        .insertInto('background_jobs')
+        .values({
+          tenant_id: ctx.auth.tenant_id,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({
+            type: 'ms_sync',
+            tenantId: ctx.auth.tenant_id,
+            requestedBy: ctx.auth.user_id,
+          }),
+          run_at: new Date(),
+          max_attempts: 3,
+        })
+        .execute();
+    }
+
+    return { inserted: 0, queued: true };
+  });
+}
+
+function disconnect() {
+  return authProcedure
+    .input(
+      z.object({
+        removeLocalEmails: z.boolean().default(false),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { oauthSvc, syncSvc } = getServices();
+
+      if (input.removeLocalEmails) {
+        await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id);
+      }
+
+      await oauthSvc.disconnect(ctx.auth.tenant_id);
+      return { success: true };
+    });
+}
+
+function resetSync() {
+  return authProcedure.mutation(async ({ ctx }) => {
+    const { oauthSvc } = getServices();
+    await oauthSvc.saveDeltaLink(ctx.auth.tenant_id, NEEDS_FULL_SYNC);
+    return { success: true };
+  });
+}
+
+export const MsSyncRouter = router({
+  getAuthUrl: getAuthUrl(),
+  getConnectionStatus: getConnectionStatus(),
+  syncNow: syncNow(),
+  disconnect: disconnect(),
+  resetSync: resetSync(),
+});
+```
+
+## File: apps/backend/src/app/modules/newsletters/routes/newsletters-webhook.route.ts
+
+```typescript
+import { createPublicKey, createVerify } from 'crypto';
+import type { FastifyPluginCallback } from 'fastify';
+import { BaseRepository } from '../../../lib/base.repo';
+import { env } from '../../../../env';
+import { sql } from 'kysely';
+
+const db = new BaseRepository('newsletters').db;
+
+const SIGNATURE_HEADER = 'x-twilio-email-event-webhook-signature';
+const TIMESTAMP_HEADER = 'x-twilio-email-event-webhook-timestamp';
+
+/**
+ * Verifies a SendGrid Signed Event Webhook request.
+ * SendGrid signs `timestamp + rawBody` with an ECDSA (P-256) key; we verify it
+ * against the base64-DER public verification key configured in the dashboard.
+ */
+function verifySendGridSignature(rawBody: string, signature?: string, timestamp?: string): boolean {
+  const verificationKey = env.sendgridWebhookVerificationKey;
+  if (!verificationKey || !signature || !timestamp) {
+    return false;
+  }
+
+  try {
+    const publicKey = createPublicKey({
+      key: Buffer.from(verificationKey, 'base64'),
+      format: 'der',
+      type: 'spki',
+    });
+    const verifier = createVerify('sha256');
+    verifier.update(timestamp + rawBody);
+    verifier.end();
+    return verifier.verify(publicKey, Buffer.from(signature, 'base64'));
+  } catch {
+    return false;
+  }
+}
+
+const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.post('/webhook', async (req: any, reply) => {
+    // req.body is the raw string (see content-type parser in fastify.server.ts)
+    const rawBody = typeof req.body === 'string' ? req.body : '';
+    const signature = req.headers[SIGNATURE_HEADER] as string | undefined;
+    const timestamp = req.headers[TIMESTAMP_HEADER] as string | undefined;
+
+    if (!verifySendGridSignature(rawBody, signature, timestamp)) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    let parsedBody: any;
+    try {
+      parsedBody = JSON.parse(rawBody);
+    } catch {
+      return reply.code(400).send({ error: 'Invalid payload' });
+    }
+
+    const events = Array.isArray(parsedBody) ? parsedBody : [parsedBody];
+
+    try {
+      const processedNewsletters = new Set<string>();
+
+      // Insert all events that have newsletter_id and tenant_id
+      for (const ev of events) {
+        if (!ev || !ev.newsletter_id || !ev.tenant_id || !ev.sg_event_id) {
+          continue;
+        }
+
+        const newsletterId = ev.newsletter_id;
+        const tenantId = ev.tenant_id;
+        const eventType = ev.event || '';
+        const email = ev.email || '';
+        const sgEventId = ev.sg_event_id;
+        const sgMessageId = ev.sg_message_id || null;
+        const url = ev.url || null;
+        const ip = ev.ip || null;
+        const userAgent = ev.useragent || null;
+        const timestamp = ev.timestamp ? new Date(ev.timestamp * 1000) : new Date();
+
+        try {
+          await db
+            .insertInto('newsletter_events')
+            .values({
+              tenant_id: tenantId,
+              newsletter_id: newsletterId,
+              email,
+              event_type: eventType,
+              sg_event_id: sgEventId,
+              sg_message_id: sgMessageId,
+              url,
+              ip,
+              user_agent: userAgent,
+              timestamp,
+              created_at: new Date() as any,
+            })
+            .onConflict((oc) => oc.column('sg_event_id').doNothing())
+            .execute();
+
+          processedNewsletters.add(`${tenantId}:${newsletterId}`);
+        } catch (insertErr) {
+          req.log.error(insertErr, `Failed to insert webhook event ${sgEventId}`);
+        }
+      }
+
+      // Recompute aggregates for each processed newsletter
+      for (const key of processedNewsletters) {
+        const [tenantId, newsletterId] = key.split(':') as [string, string];
+
+        await db.transaction().execute(async (trx) => {
+          // 1. Fetch aggregates
+          const stats = await trx
+            .selectFrom('newsletter_events')
+            .select([
+              sql<number>`COUNT(id) FILTER (WHERE event_type = 'delivered')`.as('delivered'),
+              sql<number>`COUNT(id) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounced'),
+              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'open')`.as('unique_opens'),
+              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'click')`.as('unique_clicks'),
+              sql<number>`COUNT(id) FILTER (WHERE event_type = 'unsubscribe')`.as('unsubscribes'),
+              sql<number>`COUNT(id) FILTER (WHERE event_type = 'spamreport')`.as('spamreports'),
+              sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('open', 'click'))`.as('last_engagement'),
+            ])
+            .where('newsletter_id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .executeTakeFirst();
+
+          // 2. Fetch top links clicked
+          const topLinksResult = await trx
+            .selectFrom('newsletter_events')
+            .select(['url'])
+            .select(({ fn }) => fn.count<number>('id').as('clicks'))
+            .where('newsletter_id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .where('event_type', '=', 'click')
+            .where('url', 'is not', null)
+            .groupBy('url')
+            .orderBy('clicks', 'desc')
+            .execute();
+
+          const topLinks = topLinksResult.map((l) => ({
+            url: l.url,
+            clicks: Number(l.clicks),
+          }));
+
+          // 3. Update the newsletters table row
+          const newsletter = await trx
+            .selectFrom('newsletters')
+            .select(['total_recipients'])
+            .where('id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .executeTakeFirst();
+
+          const totalRecipients = Number(newsletter?.total_recipients ?? 0);
+          const uniqueOpens = Number(stats?.unique_opens ?? 0);
+          const uniqueClicks = Number(stats?.unique_clicks ?? 0);
+
+          const openRate = totalRecipients > 0 ? (uniqueOpens / totalRecipients) * 100 : 0;
+          const clickRate = totalRecipients > 0 ? (uniqueClicks / totalRecipients) * 100 : 0;
+
+          await trx
+            .updateTable('newsletters')
+            .set({
+              delivered_count: Number(stats?.delivered ?? 0),
+              bounce_count: Number(stats?.bounced ?? 0),
+              unique_opens: uniqueOpens,
+              unique_clicks: uniqueClicks,
+              unsubscribe_count: Number(stats?.unsubscribes ?? 0),
+              spam_complaint_count: Number(stats?.spamreports ?? 0),
+              last_engagement_at: stats?.last_engagement || null,
+              open_rate: openRate,
+              click_rate: clickRate,
+              top_links: JSON.stringify(topLinks) as any,
+              updated_at: new Date(),
+            })
+            .where('id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .execute();
+        });
+      }
+
+      return reply.code(200).send({ success: true, processedCount: processedNewsletters.size });
+    } catch (err) {
+      req.log.error(err, 'SendGrid webhook processing error');
+      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  done();
+};
+
+export default newslettersWebhookRoute;
 ```
 
 ## File: apps/backend/src/app/modules/settings/controller.ts
@@ -21501,2502 +23131,6 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
 }
 ```
 
-## File: apps/backend/src/app/modules/volunteer-events/routes/volunteer-events-public.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { VolunteerEventsController } from '../controller';
-import formBody from '@fastify/formbody';
-import { TRPCError } from '@trpc/server';
-
-const ctrl = new VolunteerEventsController();
-
-function getStatusFromError(err: any): number {
-  if (err instanceof TRPCError) {
-    switch (err.code) {
-      case 'BAD_REQUEST':
-        return 400;
-      case 'UNAUTHORIZED':
-        return 401;
-      case 'FORBIDDEN':
-        return 403;
-      case 'NOT_FOUND':
-        return 404;
-      case 'CONFLICT':
-        return 409;
-      case 'PRECONDITION_FAILED':
-        return 412;
-      case 'PAYLOAD_TOO_LARGE':
-        return 413;
-      case 'TOO_MANY_REQUESTS':
-        return 429;
-      case 'INTERNAL_SERVER_ERROR':
-      default:
-        return 500;
-    }
-  }
-  return err.statusCode || 500;
-}
-
-// Shared CSS/Design Tokens block
-const SHARED_STYLES = `
-  :root {
-    --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-    --accent: #0ea5e9;
-    --accent-hover: #0284c7;
-    --accent-glow: rgba(14, 165, 233, 0.15);
-    --card-bg: rgba(255, 255, 255, 0.8);
-    --card-border: #cbd5e1;
-    --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-    --text-primary: #1f2937;
-    --text-secondary: #6b7280;
-    --input-bg: #ffffff;
-    --input-border: #cbd5e1;
-    --input-focus-border: #0ea5e9;
-    --input-focus-ring: rgba(14, 165, 233, 0.15);
-    --label-color: #374151;
-    --placeholder-color: #9ca3af;
-    --success: #2dd4bf;
-    --success-glow: rgba(45, 212, 191, 0.15);
-    --error: #f37373;
-    --error-glow: rgba(243, 115, 115, 0.15);
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-      --accent: #3ea6ff;
-      --accent-hover: #1a8cff;
-      --accent-glow: rgba(62, 166, 255, 0.2);
-      --card-bg: rgba(19, 30, 49, 0.85);
-      --card-border: #1a2b45;
-      --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-      --text-primary: #f8fafc;
-      --text-secondary: #c7d1e5;
-      --input-bg: #0b1220;
-      --input-border: #1a2b45;
-      --input-focus-border: #3ea6ff;
-      --input-focus-ring: rgba(62, 166, 255, 0.25);
-      --label-color: #cbd5e1;
-      --placeholder-color: #4b5563;
-      --error: #ef4444;
-      --error-glow: rgba(239, 68, 68, 0.15);
-    }
-  }
-
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
-
-  body {
-    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-weight: 300;
-    background: var(--bg-gradient);
-    color: var(--text-primary);
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    padding: 40px 24px;
-    position: relative;
-    overflow-x: hidden;
-  }
-
-  body::before, body::after {
-    content: "";
-    position: absolute;
-    width: 400px;
-    height: 400px;
-    border-radius: 50%;
-    background: var(--accent);
-    filter: blur(150px);
-    opacity: 0.06;
-    z-index: 0;
-    pointer-events: none;
-  }
-  body::before { top: 15%; left: 10%; }
-  body::after { bottom: 15%; right: 10%; }
-
-  .container {
-    width: 100%;
-    max-width: 800px;
-    z-index: 10;
-  }
-
-  .card {
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border-radius: 24px;
-    padding: 40px;
-    width: 100%;
-    box-shadow: var(--card-shadow);
-    position: relative;
-    overflow: hidden;
-    animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  }
-
-  .card::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  }
-
-  .header {
-    text-align: center;
-    margin-bottom: 32px;
-  }
-
-  h1 {
-    font-size: 28px;
-    font-weight: 500;
-    letter-spacing: -0.015em;
-    margin-bottom: 8px;
-    background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-
-  .subtitle {
-    color: var(--text-secondary);
-    font-size: 15px;
-    line-height: 1.5;
-  }
-
-  .back-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--accent);
-    text-decoration: none;
-    font-size: 14px;
-    font-weight: 500;
-    margin-bottom: 24px;
-    transition: all 0.2s ease;
-  }
-
-  .back-link:hover {
-    color: var(--accent-hover);
-    transform: translateX(-4px);
-  }
-
-  @keyframes slideUp {
-    from {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-`;
-
-const renderErrorHtml = (message: string) => `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Error</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    ${SHARED_STYLES}
-    
-    .card-error::before {
-      background: linear-gradient(90deg, transparent, var(--error), transparent);
-    }
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      background: var(--error-glow);
-      border: 2px solid var(--error);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 28px;
-      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    }
-
-    .icon-container svg {
-      width: 38px;
-      height: 38px;
-      stroke: var(--error);
-      stroke-width: 3px;
-      fill: none;
-    }
-
-    .btn {
-      display: inline-block;
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 12px;
-      text-align: center;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-      margin-top: 24px;
-    }
-
-    .btn:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-  </style>
-</head>
-<body>
-  <div class="card card-error" style="max-width: 440px; text-align: center; margin-top: 40px;">
-    <div class="icon-container">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </div>
-    <h1>Operation Failed</h1>
-    <p class="subtitle" style="margin-top: 12px;">${message}</p>
-    <a href="javascript:history.back()" class="btn">Go Back</a>
-  </div>
-</body>
-</html>
-`;
-
-function buildSignupFormFields(fields: string[], disabled: boolean): string {
-  const fieldSet = new Set(fields);
-  const isEnabled = (f: string) => fieldSet.has(f) || fieldSet.has(`${f}:required`);
-  const isRequired = (f: string) => fieldSet.has(`${f}:required`);
-  const dis = disabled ? 'disabled' : '';
-  const html: string[] = [];
-
-  html.push(`<input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />`);
-
-  if (isEnabled('first_name') || isEnabled('last_name')) {
-    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
-    if (isEnabled('first_name')) {
-      html.push(
-        `<div class="form-group"><label for="first_name">First Name${isRequired('first_name') ? ' *' : ''}</label><input type="text" id="first_name" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} ${dis} /></div>`,
-      );
-    } else {
-      html.push(`<div></div>`);
-    }
-    if (isEnabled('last_name')) {
-      html.push(
-        `<div class="form-group"><label for="last_name">Last Name${isRequired('last_name') ? ' *' : ''}</label><input type="text" id="last_name" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} ${dis} /></div>`,
-      );
-    } else {
-      html.push(`<div></div>`);
-    }
-    html.push(`</div>`);
-  }
-
-  html.push(
-    `<div class="form-group"><label for="email">Email Address *</label><input type="email" id="email" name="email" placeholder="you@example.com" required ${dis} /></div>`,
-  );
-
-  if (isEnabled('mobile')) {
-    html.push(
-      `<div class="form-group"><label for="mobile">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label><input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isRequired('mobile') ? 'required' : ''} ${dis} /></div>`,
-    );
-  }
-  if (isEnabled('street1')) {
-    html.push(
-      `<div class="form-group"><label for="street1">Street Address${isRequired('street1') ? ' *' : ''}</label><input type="text" id="street1" name="street1" placeholder="123 Main St" ${isRequired('street1') ? 'required' : ''} ${dis} /></div>`,
-    );
-  }
-  if (isEnabled('city') || isEnabled('zip')) {
-    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
-    html.push(
-      isEnabled('city')
-        ? `<div class="form-group"><label for="city">City${isRequired('city') ? ' *' : ''}</label><input type="text" id="city" name="city" ${isRequired('city') ? 'required' : ''} ${dis} /></div>`
-        : `<div></div>`,
-    );
-    html.push(
-      isEnabled('zip')
-        ? `<div class="form-group"><label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label><input type="text" id="zip" name="zip" ${isRequired('zip') ? 'required' : ''} ${dis} /></div>`
-        : `<div></div>`,
-    );
-    html.push(`</div>`);
-  }
-  if (isEnabled('state') || isEnabled('country')) {
-    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
-    html.push(
-      isEnabled('state')
-        ? `<div class="form-group"><label for="state">State / Province${isRequired('state') ? ' *' : ''}</label><input type="text" id="state" name="state" ${isRequired('state') ? 'required' : ''} ${dis} /></div>`
-        : `<div></div>`,
-    );
-    if (isEnabled('country')) {
-      html.push(
-        `<div class="form-group"><label for="country">Country${isRequired('country') ? ' *' : ''}</label><select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${dis}><option value="">Select…</option><option value="CA">Canada</option><option value="US">United States</option><option value="GB">United Kingdom</option><option value="AU">Australia</option></select></div>`,
-      );
-    } else {
-      html.push(`<div></div>`);
-    }
-    html.push(`</div>`);
-  }
-  if (isEnabled('notes')) {
-    html.push(
-      `<div class="form-group"><label for="notes">Notes / Special Requirements${isRequired('notes') ? ' *' : ''}</label><textarea id="notes" name="notes" placeholder="Optional. Any notes or scheduling preferences…" ${isRequired('notes') ? 'required' : ''} ${dis}></textarea></div>`,
-    );
-  }
-
-  return html.join('\n');
-}
-
-const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
-  fastify.register(formBody);
-
-  // Success view
-  fastify.get('/success', async (req: any, reply) => {
-    const { tenantSlug } = req.query;
-    const backUrl = tenantSlug ? `/api/events/org/${tenantSlug}` : '#';
-
-    reply.type('text/html');
-    return reply.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Signup Successful</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    ${SHARED_STYLES}
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      background: var(--success-glow);
-      border: 2px solid var(--success);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 28px;
-      position: relative;
-    }
-
-    .icon-container svg {
-      width: 38px;
-      height: 38px;
-      stroke: var(--success);
-      stroke-dasharray: 100;
-      stroke-dashoffset: 100;
-      stroke-width: 3px;
-      fill: none;
-      animation: drawCheck 0.6s 0.3s ease-out forwards;
-    }
-
-    .btn {
-      display: inline-block;
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 12px;
-      text-align: center;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-      margin-top: 24px;
-    }
-
-    .btn:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    @keyframes drawCheck {
-      to {
-        stroke-dashoffset: 0;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card" style="max-width: 440px; text-align: center; margin-top: 40px;">
-    <div class="icon-container">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M20 6L9 17L4 12" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </div>
-    <h1>You're Signed Up!</h1>
-    <p class="subtitle" style="margin-top: 12px;">Thank you for volunteering! A confirmation email has been sent to you with the event details.</p>
-    <a href="${backUrl}" class="btn">View Other Events</a>
-  </div>
-</body>
-</html>
-    `);
-  });
-
-  // Events list view for a specific organization/tenant (secure slug lookup)
-  fastify.get('/org/:tenantSlug', async (req: any, reply) => {
-    const { tenantSlug } = req.params;
-
-    try {
-      // Resolve Tenant ID from Secure Slug
-      const matchedTenant = await ctrl.getTenantFromSlug(tenantSlug);
-
-      if (!matchedTenant) {
-        reply.status(404).type('text/html');
-        return reply.send(renderErrorHtml('Organization not found.'));
-      }
-
-      const tenantId = String(matchedTenant.id);
-      const tenantName = matchedTenant.name;
-
-      const events = await ctrl.getUpcomingEventsPublic(tenantId);
-
-      const eventsListHtml =
-        events.length === 0
-          ? `<div class="empty-state">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-            </svg>
-            <p>No upcoming volunteer events scheduled at the moment.</p>
-            <p style="font-size: 13px; margin-top: 4px; opacity: 0.7;">Please check back later or contact us directly.</p>
-           </div>`
-          : events
-              .map((ev) => {
-                const start = new Date(ev.start_time);
-                const end = new Date(ev.end_time);
-
-                // Format dates
-                const dateStr = start.toLocaleDateString(undefined, {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric',
-                });
-                const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
-
-                // Roster spots remaining
-                const isFull = ev.capacity !== null && Number(ev.volunteers_count || 0) >= ev.capacity;
-                const remainingSpots = ev.capacity !== null ? ev.capacity - Number(ev.volunteers_count || 0) : null;
-                const capacityBadge =
-                  ev.capacity === null
-                    ? `<span class="badge badge-open">Unlimited Spots Available</span>`
-                    : isFull
-                      ? `<span class="badge badge-full">Event Full</span>`
-                      : `<span class="badge badge-spots">${remainingSpots} Spots Left</span>`;
-
-                return `
-              <div class="event-card">
-                <div class="event-card-body">
-                  <div class="event-card-main">
-                    <h3 class="event-name">${ev.name}</h3>
-                    <p class="event-desc">${ev.description || 'No description provided.'}</p>
-                    
-                    <div class="event-meta">
-                      <div class="meta-item">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                          <line x1="16" y1="2" x2="16" y2="6"/>
-                          <line x1="8" y1="2" x2="8" y2="6"/>
-                          <line x1="3" y1="10" x2="21" y2="10"/>
-                        </svg>
-                        <span>${dateStr} @ ${timeStr}</span>
-                      </div>
-                      ${
-                        ev.location_address
-                          ? `
-                      <div class="meta-item">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
-                          <circle cx="12" cy="10" r="3"/>
-                        </svg>
-                        <span>${ev.location_address}</span>
-                      </div>`
-                          : ''
-                      }
-                    </div>
-                  </div>
-                  
-                  <div class="event-card-footer">
-                    ${capacityBadge}
-                    ${
-                      isFull
-                        ? `<button class="btn btn-disabled" disabled>Event Full</button>`
-                        : `<a href="/api/events/view/${ev.slug}" class="btn">View Details & Sign Up</a>`
-                    }
-                  </div>
-                </div>
-              </div>
-            `;
-              })
-              .join('');
-
-      reply.type('text/html');
-      return reply.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Volunteer Opportunities - ${tenantName}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    ${SHARED_STYLES}
-
-    .event-grid {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      margin-top: 24px;
-    }
-
-    .event-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 16px;
-      overflow: hidden;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .event-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 12px 20px -8px rgba(0, 0, 0, 0.1);
-      border-color: var(--accent);
-    }
-
-    .event-card-body {
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      gap: 20px;
-    }
-
-    @media (min-width: 768px) {
-      .event-card-body {
-        flex-direction: row;
-        align-items: center;
-      }
-    }
-
-    .event-card-main {
-      flex: 1;
-    }
-
-    .event-name {
-      font-size: 20px;
-      font-weight: 500;
-      color: var(--text-primary);
-      margin-bottom: 6px;
-    }
-
-    .event-desc {
-      color: var(--text-secondary);
-      font-size: 14px;
-      line-height: 1.5;
-      margin-bottom: 16px;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-
-    .event-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 16px;
-    }
-
-    .meta-item {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 13px;
-      color: var(--text-secondary);
-    }
-
-    .meta-item svg {
-      width: 16px;
-      height: 16px;
-      opacity: 0.8;
-    }
-
-    .event-card-footer {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      align-items: stretch;
-      min-width: 200px;
-    }
-
-    @media (min-width: 768px) {
-      .event-card-footer {
-        align-items: flex-end;
-      }
-    }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 10px 20px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 14px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 8px;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 8px var(--accent-glow);
-      text-align: center;
-    }
-
-    .btn:hover:not(.btn-disabled) {
-      background: var(--accent-hover);
-      box-shadow: 0 6px 14px var(--accent-glow);
-    }
-
-    .btn-disabled {
-      background: var(--card-border);
-      color: var(--text-secondary);
-      cursor: not-allowed;
-      box-shadow: none;
-      opacity: 0.6;
-    }
-
-    .badge {
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 9999px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .badge-open {
-      background: rgba(45, 212, 191, 0.1);
-      color: var(--success);
-    }
-
-    .badge-spots {
-      background: var(--accent-glow);
-      color: var(--accent);
-    }
-
-    .badge-full {
-      background: rgba(243, 115, 115, 0.1);
-      color: var(--error);
-    }
-
-    .empty-state {
-      text-align: center;
-      padding: 60px 20px;
-      background: var(--card-bg);
-      border: 1px dashed var(--card-border);
-      border-radius: 16px;
-      color: var(--text-secondary);
-    }
-
-    .empty-state svg {
-      width: 48px;
-      height: 48px;
-      margin-bottom: 16px;
-      opacity: 0.5;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>Volunteer Events</h1>
-      <p class="subtitle">Join us and make a difference in our community. Select an upcoming shift below.</p>
-    </div>
-
-    <div class="event-grid">
-      ${eventsListHtml}
-    </div>
-  </div>
-</body>
-</html>
-      `);
-    } catch (err) {
-      const statusCode = getStatusFromError(err);
-      reply.status(statusCode).type('text/html');
-      return reply.send(
-        renderErrorHtml(err instanceof Error && err.message ? err.message : 'Failed to load volunteer events.'),
-      );
-    }
-  });
-
-  fastify.get('/view/:eventId', async (req: any, reply) => {
-    const { eventId } = req.params;
-
-    if (/^\d+$/.test(eventId)) {
-      reply.status(404).type('text/html');
-      return reply.send(renderErrorHtml('Event not found.'));
-    }
-
-    try {
-      const event = await ctrl.getEventPublic(eventId);
-      if (!event) {
-        reply.status(404).type('text/html');
-        return reply.send(renderErrorHtml('Event not found.'));
-      }
-
-      const slug = ctrl.getTenantSlug(String(event.tenant_id));
-      const start = new Date(event.start_time);
-      const end = new Date(event.end_time);
-      const hasPassed = end < new Date();
-
-      const dateStr = start.toLocaleDateString(undefined, {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-      });
-      const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
-
-      // Calculate availability
-      const isFull = event.capacity !== null && Number(event.volunteers_count || 0) >= event.capacity;
-      const remainingSpots = event.capacity !== null ? event.capacity - Number(event.volunteers_count || 0) : null;
-
-      reply.type('text/html');
-      return reply.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign Up: ${event.name}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    ${SHARED_STYLES}
-
-    .grid-layout {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 32px;
-      margin-top: 20px;
-    }
-
-    @media (min-width: 768px) {
-      .grid-layout {
-        grid-template-columns: 1.2fr 1fr;
-      }
-    }
-
-    .event-info-panel {
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-    }
-
-    .info-group {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 16px;
-      padding: 24px;
-    }
-
-    .info-title {
-      font-size: 18px;
-      font-weight: 500;
-      margin-bottom: 12px;
-      color: var(--text-primary);
-    }
-
-    .info-desc {
-      font-size: 14px;
-      line-height: 1.6;
-      color: var(--text-secondary);
-      white-space: pre-line;
-    }
-
-    .meta-details {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .meta-detail-row {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-      font-size: 14px;
-    }
-
-    .meta-detail-row svg {
-      width: 20px;
-      height: 20px;
-      color: var(--accent);
-      flex-shrink: 0;
-      margin-top: 2px;
-    }
-
-    .meta-detail-content h4 {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 2px;
-    }
-
-    .meta-detail-content p {
-      color: var(--text-primary);
-    }
-
-    .signup-form-panel {
-      position: relative;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-    }
-
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 8px;
-      color: var(--label-color);
-    }
-
-    input, textarea {
-      width: 100%;
-      padding: 12px 16px;
-      background: var(--input-bg);
-      border: 1px solid var(--input-border);
-      border-radius: 12px;
-      color: var(--text-primary);
-      font-size: 14px;
-      font-family: inherit;
-      transition: all 0.2s ease;
-    }
-
-    input::placeholder, textarea::placeholder {
-      color: var(--placeholder-color);
-    }
-
-    input:hover, textarea:hover {
-      border-color: var(--accent);
-      opacity: 0.95;
-    }
-
-    input:focus, textarea:focus {
-      outline: none;
-      border-color: var(--input-focus-border);
-      box-shadow: 0 0 0 4px var(--input-focus-ring);
-    }
-
-    textarea {
-      resize: vertical;
-      min-height: 90px;
-    }
-
-    .hp-field {
-      display: none !important;
-    }
-
-    button {
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 600;
-      border: none;
-      border-radius: 12px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-      margin-top: 8px;
-      min-height: 48px;
-    }
-
-    button:hover:not(:disabled) {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    button:disabled {
-      background: var(--card-border);
-      color: var(--text-secondary);
-      cursor: not-allowed;
-      opacity: 0.6;
-      box-shadow: none;
-    }
-
-    .spots-alert {
-      padding: 12px 16px;
-      border-radius: 12px;
-      font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 20px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .spots-alert-warning {
-      background: rgba(243, 115, 115, 0.1);
-      color: var(--error);
-      border: 1px solid rgba(243, 115, 115, 0.2);
-    }
-
-    .spots-alert-info {
-      background: var(--accent-glow);
-      color: var(--accent);
-      border: 1px solid rgba(14, 165, 233, 0.2);
-    }
-
-    .spots-alert-success {
-      background: rgba(45, 212, 191, 0.1);
-      color: var(--success);
-      border: 1px solid rgba(45, 212, 191, 0.2);
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    ${
-      !event.is_private
-        ? `
-    <a href="/api/events/org/${slug}" class="back-link">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="19" y1="12" x2="5" y2="12"/>
-        <polyline points="12 19 5 12 12 5"/>
-      </svg>
-      Back to Upcoming Events
-    </a>`
-        : ''
-    }
-
-    <div class="header" style="text-align: left; margin-bottom: 24px;">
-      <h1>${event.name}</h1>
-    </div>
-
-    <div class="grid-layout">
-      <!-- Left Panel: Event Details -->
-      <div class="event-info-panel">
-        <div class="info-group meta-details">
-          <div class="meta-detail-row">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/>
-              <line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-            </svg>
-            <div class="meta-detail-content">
-              <h4>Date & Time</h4>
-              <p>${dateStr}</p>
-              <p style="font-size: 13px; opacity: 0.8; margin-top: 2px;">${timeStr}</p>
-            </div>
-          </div>
-
-          ${
-            event.location_address
-              ? `
-          <div class="meta-detail-row">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
-              <circle cx="12" cy="10" r="3"/>
-            </svg>
-            <div class="meta-detail-content">
-              <h4>Location</h4>
-              <p>${event.location_address}</p>
-            </div>
-          </div>`
-              : ''
-          }
-
-          <div class="meta-detail-row">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-              <circle cx="9" cy="7" r="4"/>
-              <path d="M23 21v-2a4 4 0 00-3-3.87"/>
-              <path d="M16 3.13a4 4 0 010 7.75"/>
-            </svg>
-            <div class="meta-detail-content">
-              <h4>Capacity & Spots</h4>
-              <p>${event.capacity === null ? 'Open Signup (No Capacity Limit)' : `${event.capacity} total slots`}</p>
-              <p style="font-size: 13px; opacity: 0.8; margin-top: 2px;">${event.volunteers_count || 0} volunteer(s) currently signed up</p>
-            </div>
-          </div>
-
-          ${
-            event.contact_email || event.contact_phone
-              ? `
-          <div class="meta-detail-row">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
-            </svg>
-            <div class="meta-detail-content">
-              <h4>Questions / Contact</h4>
-              ${event.contact_email ? `<p><a href="mailto:${event.contact_email}" style="color: var(--accent); text-decoration: none;">${event.contact_email}</a></p>` : ''}
-              ${event.contact_phone ? `<p style="margin-top: 2px;">${event.contact_phone}</p>` : ''}
-            </div>
-          </div>`
-              : ''
-          }
-        </div>
-
-        ${
-          event.description
-            ? `
-        <div class="info-group">
-          <h3 class="info-title">Description</h3>
-          <p class="info-desc">${event.description}</p>
-        </div>`
-            : ''
-        }
-      </div>
-
-      <!-- Right Panel: Registration Form -->
-      <div class="signup-form-panel">
-        <div class="card">
-          <h3 class="info-title" style="margin-bottom: 20px;">Volunteer Signup</h3>
-
-          ${
-            hasPassed
-              ? `<div class="spots-alert spots-alert-warning">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>
-                This event has passed and registration is closed.
-               </div>`
-              : isFull
-                ? `<div class="spots-alert spots-alert-warning">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>
-                  This shift is currently fully booked.
-                 </div>`
-                : remainingSpots !== null && remainingSpots <= 5
-                  ? `<div class="spots-alert spots-alert-info">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                    Hurry! Only ${remainingSpots} spot(s) remaining.
-                   </div>`
-                  : `<div class="spots-alert spots-alert-success">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    Spots are available. Sign up below!
-                   </div>`
-          }
-
-          <form action="/api/events/signup/${event.slug || event.id}" method="POST">
-            ${buildSignupFormFields(Array.isArray(event.fields) ? event.fields : typeof event.fields === 'string' ? JSON.parse(event.fields) : ['first_name', 'last_name', 'email', 'mobile', 'notes'], isFull || hasPassed)}
-            <button type="submit" ${isFull || hasPassed ? 'disabled' : ''}>${hasPassed ? 'Registration Closed' : 'Sign Up for Shift'}</button>
-          </form>
-        </div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
-      `);
-    } catch (err) {
-      const statusCode = getStatusFromError(err);
-      reply.status(statusCode).type('text/html');
-      return reply.send(
-        renderErrorHtml(err instanceof Error && err.message ? err.message : 'Failed to load event details.'),
-      );
-    }
-  });
-
-  // Handle volunteer signup POST
-  fastify.post('/signup/:eventId', async (req: any, reply) => {
-    const { eventId } = req.params;
-    const isJsonExpected =
-      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
-
-    if (/^\d+$/.test(eventId)) {
-      if (isJsonExpected) {
-        return reply.status(404).send({ error: 'Event not found' });
-      }
-      reply.status(404).type('text/html');
-      return reply.send(renderErrorHtml('Event not found.'));
-    }
-
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
-
-    try {
-      const body = req.body || {};
-
-      // Fetch event first to get its tenant_id for the redirect
-      const event = await ctrl.getEventPublic(eventId);
-      if (!event) {
-        throw new Error('Event not found');
-      }
-
-      if (new Date(event.end_time) < new Date()) {
-        throw new Error('This event has passed and registration is closed.');
-      }
-
-      await ctrl.signupVolunteerPublic(eventId, body, clientIp);
-
-      const slug = ctrl.getTenantSlug(String(event.tenant_id));
-
-      if (isJsonExpected) {
-        return reply.status(200).send({ success: true, redirect_url: `/api/events/success?tenantSlug=${slug}` });
-      }
-
-      return reply.redirect(`/api/events/success?tenantSlug=${slug}`);
-    } catch (err) {
-      fastify.log.error(err);
-      const statusCode = getStatusFromError(err);
-      const message = err instanceof Error && err.message ? err.message : 'An unexpected error occurred during signup.';
-
-      if (isJsonExpected) {
-        return reply.status(statusCode).send({ error: message });
-      }
-
-      reply.status(statusCode).type('text/html');
-      return reply.send(renderErrorHtml(message));
-    }
-  });
-
-  done();
-};
-
-export default volunteerEventsPublicRoute;
-```
-
-## File: apps/backend/src/app/modules/web-forms/routes/web-forms-public.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { WebFormsController } from '../controller';
-import formBody from '@fastify/formbody';
-
-const webFormsController = new WebFormsController();
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-const SUCCESS_HTML = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Submission Successful</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-      --accent: #0ea5e9;
-      --accent-hover: #0284c7;
-      --accent-glow: rgba(14, 165, 233, 0.15);
-      --card-bg: rgba(255, 255, 255, 0.8);
-      --card-border: #cbd5e1;
-      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --success: #2dd4bf;
-      --success-glow: rgba(45, 212, 191, 0.15);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-        --accent: #3ea6ff;
-        --accent-hover: #1a8cff;
-        --accent-glow: rgba(62, 166, 255, 0.2);
-        --card-bg: rgba(19, 30, 49, 0.85);
-        --card-border: #1a2b45;
-        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-        --text-primary: #f8fafc;
-        --text-secondary: #c7d1e5;
-        --success: #22c55e;
-        --success-glow: rgba(34, 197, 94, 0.15);
-      }
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-weight: 300;
-      background: var(--bg-gradient);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    body::before, body::after {
-      content: "";
-      position: absolute;
-      width: 300px;
-      height: 300px;
-      border-radius: 50%;
-      background: var(--accent);
-      filter: blur(120px);
-      opacity: 0.08;
-      z-index: 0;
-    }
-    body::before { top: 10%; left: 15%; }
-    body::after { bottom: 10%; right: 15%; }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 24px;
-      padding: 48px 32px;
-      width: 100%;
-      max-width: 440px;
-      text-align: center;
-      box-shadow: var(--card-shadow);
-      z-index: 10;
-      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    }
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      background: var(--success-glow);
-      border: 2px solid var(--success);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 28px;
-      position: relative;
-      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    }
-
-    .icon-container svg {
-      width: 38px;
-      height: 38px;
-      stroke: var(--success);
-      stroke-dasharray: 100;
-      stroke-dashoffset: 100;
-      stroke-width: 3px;
-      fill: none;
-      animation: drawCheck 0.6s 0.3s ease-out forwards;
-    }
-
-    h1 {
-      font-size: 24px;
-      font-weight: 500;
-      margin-bottom: 12px;
-      letter-spacing: -0.01em;
-    }
-
-    p {
-      color: var(--text-secondary);
-      font-size: 15px;
-      line-height: 1.6;
-      margin-bottom: 32px;
-    }
-
-    .btn {
-      display: inline-block;
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 12px;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-    }
-
-    .btn:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    .btn:active {
-      transform: translateY(0);
-    }
-
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(30px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes popIn {
-      0% {
-        opacity: 0;
-        transform: scale(0.6);
-      }
-      100% {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
-
-    @keyframes drawCheck {
-      to {
-        stroke-dashoffset: 0;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon-container">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M20 6L9 17L4 12" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </div>
-    <h1>Submission Successful</h1>
-    <p>Thank you! Your information has been successfully received and processed.</p>
-    <a href="javascript:history.back()" class="btn">Go Back</a>
-  </div>
-</body>
-</html>
-`;
-
-const errorHtml = (message: string) => `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Submission Error</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-      --accent: #0ea5e9;
-      --accent-hover: #0284c7;
-      --accent-glow: rgba(14, 165, 233, 0.15);
-      --card-bg: rgba(255, 255, 255, 0.8);
-      --card-border: #cbd5e1;
-      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --error: #f37373;
-      --error-glow: rgba(243, 115, 115, 0.15);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-        --accent: #3ea6ff;
-        --accent-hover: #1a8cff;
-        --accent-glow: rgba(62, 166, 255, 0.2);
-        --card-bg: rgba(19, 30, 49, 0.85);
-        --card-border: #1a2b45;
-        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-        --text-primary: #f8fafc;
-        --text-secondary: #c7d1e5;
-        --error: #ef4444;
-        --error-glow: rgba(239, 68, 68, 0.15);
-      }
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-weight: 300;
-      background: var(--bg-gradient);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    body::before, body::after {
-      content: "";
-      position: absolute;
-      width: 300px;
-      height: 300px;
-      border-radius: 50%;
-      background: var(--error);
-      filter: blur(120px);
-      opacity: 0.08;
-      z-index: 0;
-    }
-    body::before { top: 10%; left: 15%; }
-    body::after { bottom: 10%; right: 15%; }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 24px;
-      padding: 48px 32px;
-      width: 100%;
-      max-width: 440px;
-      text-align: center;
-      box-shadow: var(--card-shadow);
-      z-index: 10;
-      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, var(--error), transparent);
-    }
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      background: var(--error-glow);
-      border: 2px solid var(--error);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 28px;
-      position: relative;
-      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    }
-
-    .icon-container svg {
-      width: 38px;
-      height: 38px;
-      stroke: var(--error);
-      stroke-width: 3px;
-      fill: none;
-    }
-
-    h1 {
-      font-size: 24px;
-      font-weight: 500;
-      margin-bottom: 12px;
-      letter-spacing: -0.01em;
-    }
-
-    p {
-      color: var(--text-secondary);
-      font-size: 15px;
-      line-height: 1.6;
-      margin-bottom: 32px;
-    }
-
-    .btn {
-      display: inline-block;
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 12px;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-    }
-
-    .btn:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    .btn:active {
-      transform: translateY(0);
-    }
-
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(30px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes popIn {
-      0% {
-        opacity: 0;
-        transform: scale(0.6);
-      }
-      100% {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon-container">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round" stroke="var(--error)"/>
-      </svg>
-    </div>
-    <h1>Submission Failed</h1>
-    <p>${escapeHtml(message)}</p>
-    <a href="javascript:history.back()" class="btn">Go Back</a>
-  </div>
-</body>
-</html>
-`;
-
-const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Register form URL-encoded parser
-  fastify.register(formBody);
-
-  fastify.get('/success', async (req: any, reply) => {
-    const { checkout_session_id, is_mock, person_id, amount_cents, province, country, tenant_id, user_id } = req.query;
-    // Mock-donation confirmation is a local/dev convenience only. This endpoint is
-    // unauthenticated and every parameter (tenant_id, person_id, amount) is
-    // attacker-controlled, so it must NEVER record donations in production — real
-    // payments are confirmed via the signed Stripe webhook / authenticated tRPC path.
-    const isProduction = process.env['NODE_ENV'] === 'production';
-    if (!isProduction && is_mock === 'true' && checkout_session_id && person_id && tenant_id) {
-      try {
-        const { DonationsController } = await import('../../donations/controller');
-        const donationsController = new DonationsController();
-        await donationsController.confirmMockDonation(
-          tenant_id,
-          user_id || '1',
-          person_id,
-          Number(amount_cents),
-          checkout_session_id,
-          province || '',
-          country || '',
-        );
-      } catch (err) {
-        fastify.log.error(err as Error, 'Failed to confirm mock donation on public success page:');
-      }
-    }
-    reply.type('text/html');
-    return reply.send(SUCCESS_HTML);
-  });
-
-  fastify.get('/view/:formId', async (req: any, reply) => {
-    const { formId } = req.params;
-    try {
-      const form = await webFormsController.getFormPublic(formId);
-      if (!form || form.status !== 'active') {
-        reply.status(404).type('text/html');
-        return reply.send(errorHtml('Web form not found or inactive.'));
-      }
-
-      const formName = form.name;
-      const formDescription = form.description || '';
-
-      // Extract fields configuration, default to all fields if null/empty
-      const fields: string[] = form.fields
-        ? Array.isArray(form.fields)
-          ? (form.fields as string[])
-          : JSON.parse(String(form.fields))
-        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-      reply.type('text/html');
-      return reply.send(renderFormHtml(formId, formName, formDescription, fields, form.form_type));
-    } catch (err) {
-      reply.status(500).type('text/html');
-      return reply.send(errorHtml(err instanceof Error && err.message ? err.message : 'Failed to load form.'));
-    }
-  });
-
-  fastify.post('/submit/:formId', async (req: any, reply) => {
-    const { formId } = req.params;
-    // Standard reverse-proxy header check, fallback to req.ip
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
-    const isJsonExpected =
-      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
-
-    try {
-      const body = req.body || {};
-      const result = await webFormsController.submitFormPublic(formId, body, clientIp);
-
-      if (isJsonExpected) {
-        return reply.status(200).send({ success: true, redirect_url: result.redirect_url });
-      }
-
-      if (result.redirect_url) {
-        return reply.redirect(result.redirect_url);
-      }
-
-      return reply.redirect('/api/forms/success');
-    } catch (err) {
-      fastify.log.error(err);
-      const statusCode =
-        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) || 500;
-      const message =
-        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during submission.';
-
-      if (isJsonExpected) {
-        return reply.status(statusCode).send({ error: message });
-      }
-
-      reply.status(statusCode).type('text/html');
-      return reply.send(errorHtml(message));
-    }
-  });
-
-  done();
-};
-
-export default webFormsPublicRoute;
-
-const renderFormHtml = (
-  formId: string,
-  formName: string,
-  formDescription: string,
-  fields: string[],
-  formType: string,
-) => {
-  const isFieldEnabled = (name: string): boolean => {
-    if (formType === 'donation') {
-      const alwaysEnabled = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
-      if (alwaysEnabled.includes(name)) return true;
-    }
-    return fields.includes(name) || fields.includes(`${name}:required`);
-  };
-
-  const isFieldRequired = (name: string): boolean => {
-    if (formType === 'donation') {
-      const alwaysRequired = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
-      if (alwaysRequired.includes(name)) return true;
-    }
-    return fields.includes(`${name}:required`);
-  };
-
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(formName)}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-      --accent: #0ea5e9;
-      --accent-hover: #0284c7;
-      --accent-glow: rgba(14, 165, 233, 0.15);
-      --card-bg: rgba(255, 255, 255, 0.8);
-      --card-border: #cbd5e1;
-      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --input-bg: #ffffff;
-      --input-border: #cbd5e1;
-      --input-focus-border: #0ea5e9;
-      --input-focus-ring: rgba(14, 165, 233, 0.15);
-      --label-color: #374151;
-      --placeholder-color: #9ca3af;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-        --accent: #3ea6ff;
-        --accent-hover: #1a8cff;
-        --accent-glow: rgba(62, 166, 255, 0.2);
-        --card-bg: rgba(19, 30, 49, 0.85);
-        --card-border: #1a2b45;
-        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-        --text-primary: #f8fafc;
-        --text-secondary: #c7d1e5;
-        --input-bg: #0b1220;
-        --input-border: #1a2b45;
-        --input-focus-border: #3ea6ff;
-        --input-focus-ring: rgba(62, 166, 255, 0.25);
-        --label-color: #cbd5e1;
-        --placeholder-color: #4b5563;
-      }
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-weight: 300;
-      background: var(--bg-gradient);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 40px 24px;
-      position: relative;
-      overflow-x: hidden;
-    }
-
-    body::before, body::after {
-      content: "";
-      position: absolute;
-      width: 400px;
-      height: 400px;
-      border-radius: 50%;
-      background: var(--accent);
-      filter: blur(150px);
-      opacity: 0.08;
-      z-index: 0;
-      pointer-events: none;
-    }
-    body::before { top: 15%; left: 10%; }
-    body::after { bottom: 15%; right: 10%; }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
-      border-radius: 24px;
-      padding: 40px;
-      width: 100%;
-      max-width: 480px;
-      box-shadow: var(--card-shadow);
-      z-index: 10;
-      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    }
-
-    .header {
-      text-align: center;
-      margin-bottom: 32px;
-    }
-
-    h1 {
-      font-size: 26px;
-      font-weight: 500;
-      letter-spacing: -0.015em;
-      margin-bottom: 8px;
-      background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .description {
-      color: var(--text-secondary);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-      position: relative;
-    }
-
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 8px;
-      color: var(--label-color);
-      letter-spacing: 0.01em;
-    }
-
-    input, textarea, select {
-      width: 100%;
-      padding: 12px 16px;
-      background: var(--input-bg);
-      border: 1px solid var(--input-border);
-      border-radius: 12px;
-      color: var(--text-primary);
-      font-size: 14px;
-      font-family: inherit;
-      transition: all 0.2s ease;
-      min-height: 46px;
-    }
-
-    input::placeholder, textarea::placeholder {
-      color: var(--placeholder-color);
-    }
-
-    input:hover, textarea:hover, select:hover {
-      border-color: var(--accent);
-      opacity: 0.95;
-    }
-
-    input:focus, textarea:focus, select:focus {
-      outline: none;
-      border-color: var(--input-focus-border);
-      box-shadow: 0 0 0 4px var(--input-focus-ring);
-    }
-
-    textarea {
-      resize: vertical;
-      min-height: 90px;
-    }
-
-    button {
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 600;
-      border: none;
-      border-radius: 12px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-      margin-top: 8px;
-      min-height: 48px;
-    }
-
-    button:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    button:active {
-      transform: translateY(0);
-    }
-
-    .hp-field {
-      display: none !important;
-    }
-
-    .footer-note {
-      text-align: center;
-      margin-top: 24px;
-      font-size: 11px;
-      color: var(--text-secondary);
-      opacity: 0.6;
-    }
-
-    .footer-note a {
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 500;
-    }
-
-    .footer-note a:hover {
-      text-decoration: underline;
-    }
-
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="header">
-      <h1>${escapeHtml(formName)}</h1>
-      <p class="description">${escapeHtml(formDescription)}</p>
-    </div>
-
-    <form action="/api/forms/submit/${formId}" method="POST">
-      <!-- Honeypot Bot Field (leave empty!) -->
-      <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
-
-      ${
-        formType === 'donation'
-          ? `
-      <div class="form-group">
-        <label for="amount">Donation Amount ($ CAD) *</label>
-        <input type="number" id="amount" name="amount" min="1" step="any" placeholder="E.g. 50.00" required />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('first_name')
-          ? `
-      <div class="form-group">
-        <label for="first_name">First Name ${isFieldRequired('first_name') ? '*' : ''}</label>
-        <input type="text" id="first_name" name="first_name" placeholder="E.g. John" ${isFieldRequired('first_name') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('last_name')
-          ? `
-      <div class="form-group">
-        <label for="last_name">Last Name ${isFieldRequired('last_name') ? '*' : ''}</label>
-        <input type="text" id="last_name" name="last_name" placeholder="E.g. Doe" ${isFieldRequired('last_name') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      <div class="form-group">
-        <label for="email">Email Address *</label>
-        <input type="email" id="email" name="email" placeholder="john@example.com" required />
-      </div>
-
-      ${
-        isFieldEnabled('street1')
-          ? `
-      <div class="form-group">
-        <label for="street1">Street Address ${isFieldRequired('street1') ? '*' : ''}</label>
-        <input type="text" id="street1" name="street1" placeholder="E.g. 123 Main St" ${isFieldRequired('street1') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('city')
-          ? `
-      <div class="form-group">
-        <label for="city">City ${isFieldRequired('city') ? '*' : ''}</label>
-        <input type="text" id="city" name="city" placeholder="E.g. Toronto" ${isFieldRequired('city') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('country')
-          ? `
-      <div class="form-group">
-        <label for="country">Country ${isFieldRequired('country') ? '*' : ''}</label>
-        <select id="country" name="country" ${isFieldRequired('country') ? 'required' : ''}>
-          <option value="CA">Canada</option>
-          <option value="US">United States</option>
-          <option value="GB">United Kingdom</option>
-          <option value="AU">Australia</option>
-        </select>
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('state')
-          ? `
-      <div class="form-group">
-        <label for="state">State / Province ${isFieldRequired('state') ? '*' : ''}</label>
-        <input type="text" id="state" name="state" placeholder="E.g. ON or NY" ${isFieldRequired('state') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('zip')
-          ? `
-      <div class="form-group">
-        <label for="zip">Zip / Postal Code ${isFieldRequired('zip') ? '*' : ''}</label>
-        <input type="text" id="zip" name="zip" placeholder="E.g. M5V 2T6" ${isFieldRequired('zip') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('mobile')
-          ? `
-      <div class="form-group">
-        <label for="mobile">Mobile / Phone ${isFieldRequired('mobile') ? '*' : ''}</label>
-        <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isFieldRequired('mobile') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('notes')
-          ? `
-      <div class="form-group">
-        <label for="notes">Notes / Message ${isFieldRequired('notes') ? '*' : ''}</label>
-        <textarea id="notes" name="notes" placeholder="How can we help you?" ${isFieldRequired('notes') ? 'required' : ''}></textarea>
-      </div>`
-          : ''
-      }
-
-      <button type="submit">${formType === 'donation' ? 'Next' : 'Submit'}</button>
-    </form>
-
-    <div class="footer-note">
-      Powered by <a href="#" target="_blank">PeopleCRM</a>
-    </div>
-  </div>
-</body>
-</html>
-`;
-};
-```
-
-## File: apps/backend/src/app/modules/workflows/controller.ts
-
-```typescript
-import { BaseController } from '../../lib/base.controller';
-import { WorkflowsRepo } from './repositories/workflows.repo';
-import { WorkflowEnrollmentsRepo } from './repositories/workflow-enrollments.repo';
-import type { Transaction, Kysely } from 'kysely';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { TRPCError } from '@trpc/server';
-import { logger } from '../../logger';
-
-export class WorkflowsController extends BaseController<'workflows', WorkflowsRepo> {
-  private readonly enrollmentsRepo = new WorkflowEnrollmentsRepo();
-
-  constructor() {
-    super(new WorkflowsRepo());
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const workflow = await super.getOneById(input);
-    if (!workflow) return workflow;
-    return this.resolveCreatorAndUpdater(input.tenant_id, workflow);
-  }
-
-  public async getSteps(tenantId: string, workflowId: string, trx?: Transaction<Models>) {
-    const db = trx || this.getRepo().db;
-    const steps = await db
-      .selectFrom('workflow_steps')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('workflow_id', '=', workflowId)
-      .orderBy('step_number', 'asc')
-      .execute();
-    return steps.map((s) => ({
-      ...s,
-      id: String(s.id),
-      workflow_id: String(s.workflow_id),
-    }));
-  }
-
-  public async saveSteps(tenantId: string, workflowId: string, steps: any[], userId: string) {
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        // 1. Verify workflow exists and belongs to tenant
-        const workflow = await trx
-          .selectFrom('workflows')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', workflowId)
-          .executeTakeFirst();
-
-        if (!workflow) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'Workflow not found.',
-          });
-        }
-
-        // 2. Delete all existing steps
-        await trx
-          .deleteFrom('workflow_steps')
-          .where('tenant_id', '=', tenantId)
-          .where('workflow_id', '=', workflowId)
-          .execute();
-
-        // 3. Insert new steps
-        if (steps.length > 0) {
-          const insertRows = steps.map(
-            (step, idx) =>
-              ({
-                tenant_id: tenantId,
-                workflow_id: workflowId,
-                step_number: idx + 1,
-                delay_days: Number(step.delay_days || 0),
-                delay_unit: step.delay_unit || 'days',
-                subject: step.subject || 'Follow-up Email',
-                preview_text: step.preview_text || null,
-                html_content: step.html_content || null,
-                plain_text_content: step.plain_text_content || null,
-              }) as any,
-          );
-
-          await trx.insertInto('workflow_steps').values(insertRows).execute();
-        }
-
-        // Log update activity
-        await this.userActivity.log(
-          {
-            tenant_id: tenantId,
-            user_id: userId,
-            activity: 'update',
-            entity: 'workflows',
-            entity_id: workflowId,
-            quantity: 1,
-            metadata: { id: workflowId, action: 'save_steps', stepsCount: steps.length },
-          },
-          trx,
-        );
-      });
-
-    return { success: true };
-  }
-
-  public async getEnrollments(tenantId: string, workflowId: string, options?: any) {
-    return this.enrollmentsRepo.getEnrollmentsWithPersonDetails({
-      tenant_id: tenantId,
-      workflow_id: workflowId,
-      options,
-    });
-  }
-
-  public async enrollPerson(
-    tenantId: string,
-    personId: string,
-    workflowId: string,
-    userId: string,
-    trx?: Transaction<Models> | Kysely<Models>,
-  ) {
-    const executeLogic = async (t: Transaction<Models> | Kysely<Models>) => {
-      // 1. Verify person exists
-      const person = await t
-        .selectFrom('persons')
-        .select(['id', 'first_name', 'last_name', 'email'])
-        .where('tenant_id', '=', tenantId)
-        .where('id', '=', personId)
-        .executeTakeFirst();
-
-      if (!person) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Person not found.',
-        });
-      }
-
-      // 2. Verify workflow exists and is active
-      const workflow = await t
-        .selectFrom('workflows')
-        .select(['id', 'status', 'name'])
-        .where('tenant_id', '=', tenantId)
-        .where('id', '=', workflowId)
-        .executeTakeFirst();
-
-      if (!workflow) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Workflow not found.',
-        });
-      }
-
-      // 3. Check if already enrolled in an active state
-      const existing = await t
-        .selectFrom('workflow_enrollments')
-        .select('id')
-        .where('tenant_id', '=', tenantId)
-        .where('workflow_id', '=', workflowId)
-        .where('person_id', '=', personId)
-        .where('status', '=', 'active')
-        .executeTakeFirst();
-
-      if (existing) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'This person is already enrolled in this workflow.',
-        });
-      }
-
-      // 4. Find the first step of this workflow
-      const firstStep = await t
-        .selectFrom('workflow_steps')
-        .select(['step_number', 'delay_days', 'delay_unit'])
-        .where('tenant_id', '=', tenantId)
-        .where('workflow_id', '=', workflowId)
-        .orderBy('step_number', 'asc')
-        .executeTakeFirst();
-
-      if (!firstStep) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'This workflow does not have any steps yet.',
-        });
-      }
-
-      // 5. Calculate next run at based on step delay
-      const delayMs =
-        firstStep.delay_unit === 'hours'
-          ? firstStep.delay_days * 60 * 60 * 1000
-          : firstStep.delay_days * 24 * 60 * 60 * 1000;
-      const nextRunAt = new Date(Date.now() + delayMs);
-
-      // 6. Insert enrollment
-      const insertRow = {
-        tenant_id: tenantId,
-        workflow_id: workflowId,
-        person_id: personId,
-        status: 'active',
-        current_step_number: firstStep.step_number,
-        next_run_at: nextRunAt,
-      } as OperationDataType<'workflow_enrollments', 'insert'>;
-
-      const result = await t
-        .insertInto('workflow_enrollments')
-        .values(insertRow)
-        .returningAll()
-        .executeTakeFirstOrThrow();
-
-      // Log user activity
-      await this.userActivity.log(
-        {
-          tenant_id: tenantId,
-          user_id: userId,
-          activity: 'assign',
-          entity: 'workflows',
-          entity_id: workflowId,
-          quantity: 1,
-          metadata: {
-            id: workflowId,
-            person_id: personId,
-            person_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
-            next_run_at: nextRunAt.toISOString(),
-          },
-        },
-        typeof (t as any).transaction === 'undefined' ? (t as Transaction<Models>) : undefined,
-      );
-
-      return {
-        ...result,
-        id: String(result.id),
-        workflow_id: String(result.workflow_id),
-        person_id: String(result.person_id),
-      };
-    };
-
-    if (trx) {
-      return executeLogic(trx);
-    } else {
-      return this.getRepo()
-        .transaction()
-        .execute(async (t) => executeLogic(t));
-    }
-  }
-
-  public async cancelEnrollment(tenantId: string, enrollmentId: string, userId: string) {
-    return this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        const enrollment = await trx
-          .selectFrom('workflow_enrollments')
-          .select(['id', 'workflow_id', 'person_id', 'status'])
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', enrollmentId)
-          .executeTakeFirst();
-
-        if (!enrollment) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'Enrollment not found.',
-          });
-        }
-
-        if (enrollment.status !== 'active') {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Only active enrollments can be cancelled.',
-          });
-        }
-
-        await trx
-          .updateTable('workflow_enrollments')
-          .set({
-            status: 'cancelled',
-            next_run_at: null,
-            updated_at: new Date(),
-          })
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', enrollmentId)
-          .execute();
-
-        // Look up person's name for log
-        const person = await trx
-          .selectFrom('persons')
-          .select(['first_name', 'last_name'])
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', enrollment.person_id)
-          .executeTakeFirst();
-
-        // Log activity
-        await this.userActivity.log(
-          {
-            tenant_id: tenantId,
-            user_id: userId,
-            activity: 'unassign',
-            entity: 'workflows',
-            entity_id: String(enrollment.workflow_id),
-            quantity: 1,
-            metadata: {
-              id: String(enrollment.workflow_id),
-              person_id: String(enrollment.person_id),
-              person_name: person ? `${person.first_name || ''} ${person.last_name || ''}`.trim() : 'Unknown Contact',
-            },
-          },
-          trx,
-        );
-
-        return { success: true };
-      });
-  }
-
-  public async triggerWorkflow(
-    tenantId: string,
-    personId: string,
-    triggerType: string,
-    triggerEventId: string | null | undefined,
-    trx?: Transaction<Models> | Kysely<Models>,
-  ) {
-    const db = trx || this.getRepo().db;
-    let query = db
-      .selectFrom('workflows')
-      .select(['id', 'name'])
-      .where('tenant_id', '=', tenantId)
-      .where('trigger_type', '=', triggerType)
-      .where('status', '=', 'active');
-
-    if (triggerEventId) {
-      query = query.where((eb) =>
-        eb.or([eb('trigger_event_id', 'is', null), eb('trigger_event_id', '=', triggerEventId as any)]),
-      );
-    } else {
-      query = query.where('trigger_event_id', 'is', null);
-    }
-
-    const activeWorkflows = await query.execute();
-    if (activeWorkflows.length === 0) return;
-
-    // Look up the default tenant admin actor ID
-    const tenantRow = await db.selectFrom('tenants').select('admin_id').where('id', '=', tenantId).executeTakeFirst();
-    if (!tenantRow?.admin_id) {
-      logger.warn(`triggerWorkflow: skipping automation for tenant ${tenantId} — admin_id not configured.`);
-      return;
-    }
-    const creatorId = String(tenantRow.admin_id);
-
-    for (const wf of activeWorkflows) {
-      try {
-        await this.enrollPerson(tenantId, personId, String(wf.id), creatorId, trx as any);
-      } catch (err) {
-        // Safe check in case they're already enrolled
-        if (err instanceof Error && err.message.includes('already enrolled')) {
-          logger.info(`Person ${personId} is already enrolled in workflow ${wf.id}. Skipping.`);
-        } else {
-          logger.error({ err }, `Failed to enroll person ${personId} in workflow ${wf.id}`);
-        }
-      }
-    }
-  }
-
-  public async triggerVolunteerSignup(
-    tenantId: string,
-    personId: string,
-    eventId: string | null | undefined,
-    trx: Transaction<Models>,
-  ) {
-    return this.triggerWorkflow(tenantId, personId, 'volunteer_signup', eventId, trx);
-  }
-
-  public async triggerTagAdded(
-    tenantId: string,
-    personId: string,
-    tagId: string,
-    tagName: string,
-    trx?: Transaction<Models> | Kysely<Models>,
-  ) {
-    // 1. General tag_added trigger (filtered by tagId, or any tag if no filter)
-    await this.triggerWorkflow(tenantId, personId, 'tag_added', tagId, trx);
-
-    // 2. Specialized triggers based on tag name
-    const normalized = tagName.trim().toLowerCase();
-    if (normalized === 'subscriber') {
-      await this.triggerWorkflow(tenantId, personId, 'new_subscriber', null, trx);
-    } else if (normalized === 'unsubscribed') {
-      await this.triggerWorkflow(tenantId, personId, 'new_unsubscriber', null, trx);
-    }
-  }
-}
-```
-
 ## File: apps/backend/src/fastify.server.ts
 
 ```typescript
@@ -24095,761 +23229,541 @@ export class FastifyServer {
 }
 ```
 
-## File: apps/backend/src/app/lib/jobs/worker.ts
+## File: apps/backend/src/app/lib/mail/sendgrid-whitelabel.service.ts
 
 ```typescript
-import { sql } from 'kysely';
-import { Client } from 'pg';
-
-import { env } from '../../../env';
+import { promises as dns } from 'dns';
 import { logger } from '../../logger';
-import { ImportsRepo } from '../../modules/imports/repositories/imports.repo';
-import { executeJob } from './job-handlers';
 
-export class BackgroundJobWorker {
-  private readonly importsRepo = new ImportsRepo();
-  private readonly db = this.importsRepo.db; // Kysely DB instance
+export interface DNSVerificationRecord {
+  host: string;
+  type: string;
+  data: string;
+  valid: boolean;
+}
 
-  private activeJobsCount = 0;
-  private isRunning = false;
-  private pgClient: Client | null = null;
-  private reconnectTimer: NodeJS.Timeout | null = null;
-  private recoveryInterval: NodeJS.Timeout | null = null;
-  private shutdownResolver: (() => void) | null = null;
-  private timer: NodeJS.Timeout | null = null;
+export interface DomainAuthData {
+  id: number;
+  domain: string;
+  subdomain: string;
+  dns: {
+    mail_cname?: DNSVerificationRecord;
+    dkim1?: DNSVerificationRecord;
+    dkim2?: DNSVerificationRecord;
+  };
+}
 
-  public start() {
-    if (this.isRunning) return;
-    this.isRunning = true;
-    logger.info('Background Job Worker started.');
+export interface LinkBrandingData {
+  id: number;
+  domain: string;
+  subdomain: string;
+  valid: boolean;
+  dns: {
+    domain?: DNSVerificationRecord;
+  };
+}
 
-    this.ensureCleanupJobScheduled().catch((err) => logger.error({ err }, 'Failed to ensure cleanup job scheduled'));
-    this.ensureSyncSchedulerJobScheduled().catch((err) =>
-      logger.error({ err }, 'Failed to ensure sync scheduler job scheduled'),
-    );
-    this.ensureDuplicatesRecomputeJobScheduled().catch((err) =>
-      logger.error({ err }, 'Failed to ensure duplicates recompute job scheduled'),
-    );
-    this.ensureAddressFingerprintsJobScheduled().catch((err) =>
-      logger.error({ err }, 'Failed to ensure address fingerprints job scheduled'),
-    );
-    this.ensureWorkflowsJobScheduled().catch((err) =>
-      logger.error({ err }, 'Failed to ensure workflows job scheduled'),
-    );
-    this.ensurePerformScheduledDeletionsJobScheduled().catch((err) =>
-      logger.error({ err }, 'Failed to ensure perform scheduled deletions job scheduled'),
-    );
-    this.ensureUsageLimitChecksScheduled().catch((err) =>
-      logger.error({ err }, 'Failed to ensure usage limit checks scheduled'),
-    );
-    this.ensureDueTasksCheckScheduled().catch((err) =>
-      logger.error({ err }, 'Failed to ensure due tasks check scheduled'),
-    );
-    this.ensureCompaniesGoogleRefreshJobScheduled().catch((err) =>
-      logger.error({ err }, 'Failed to ensure companies google refresh job scheduled'),
-    );
-    this.ensurePruneNewsletterEventsJobScheduled().catch((err) =>
-      logger.error({ err }, 'Failed to ensure prune newsletter events job scheduled'),
-    );
-
-    // Run stale job recovery on startup and then every 5 minutes
-    this.recoverStaleJobs().catch((err) => logger.error({ err }, 'Failed to recover stale jobs on startup'));
-    this.recoveryInterval = setInterval(
-      () => {
-        this.recoverStaleJobs().catch((err) => logger.error({ err }, 'Failed to recover stale jobs'));
-      },
-      5 * 60 * 1000,
-    );
-
-    void this.setupListener();
-    this.poll();
+export class SendGridWhitelabelService {
+  private isValidApiKey(apiKey?: string): boolean {
+    if (!apiKey) return false;
+    const trimmed = apiKey.trim();
+    // Typical SendGrid API key starts with SG.
+    return trimmed.length > 20 && trimmed.startsWith('SG.');
   }
 
-  public async stop(): Promise<void> {
-    this.isRunning = false;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.recoveryInterval) {
-      clearInterval(this.recoveryInterval);
-      this.recoveryInterval = null;
-    }
-    if (this.pgClient) {
-      try {
-        await this.pgClient.end();
-      } catch (err) {
-        logger.error({ err }, 'Error closing Postgres listener client on shutdown');
-      }
-      this.pgClient = null;
+  private async request<T = any>(
+    path: string,
+    options: {
+      method: string;
+      body?: any;
+      apiKey?: string;
+      subuser?: string;
+    },
+  ): Promise<T> {
+    const { method, body, apiKey, subuser } = options;
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    };
+
+    if (subuser) {
+      headers['on-behalf-of'] = subuser;
     }
 
-    if (this.activeJobsCount > 0) {
-      logger.info(
-        `Background Job Worker: Waiting for ${this.activeJobsCount} active jobs to complete before shutting down...`,
-      );
-      await new Promise<void>((resolve) => {
-        this.shutdownResolver = resolve;
-      });
-    }
-    logger.info('Background Job Worker stopped.');
-  }
-
-  private async ensureAddressFingerprintsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx) => {
-        const existing = await trx
-          .selectFrom('background_jobs')
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          logger.info('Scheduling nightly address fingerprints recomputation background job…');
-          await trx
-            .insertInto('background_jobs')
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'recompute_address_fingerprints' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to ensure address fingerprints job scheduled');
-    }
-  }
-
-  private async ensureCleanupJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx) => {
-        const existing = await trx
-          .selectFrom('background_jobs')
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'cleanup_activities')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          logger.info('Scheduling daily activity feed cleanup background job…');
-          await trx
-            .insertInto('background_jobs')
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'cleanup_activities' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to ensure cleanup job scheduled');
-    }
-  }
-
-  private async ensureCompaniesGoogleRefreshJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx) => {
-        const existing = await trx
-          .selectFrom('background_jobs')
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'refresh_companies_google')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          logger.info('Scheduling daily company google enrichment background job…');
-          await trx
-            .insertInto('background_jobs')
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'refresh_companies_google' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to ensure companies google refresh job scheduled');
-    }
-  }
-
-  private async ensureDueTasksCheckScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx) => {
-        const existing = await trx
-          .selectFrom('background_jobs')
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'check_due_tasks')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          logger.info('Scheduling daily due tasks check background job…');
-          await trx
-            .insertInto('background_jobs')
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'check_due_tasks' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to ensure due tasks check scheduled');
-    }
-  }
-
-  private async ensureDuplicatesRecomputeJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx) => {
-        const existing = await trx
-          .selectFrom('background_jobs')
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          logger.info('Scheduling nightly duplicates recomputation background job…');
-          await trx
-            .insertInto('background_jobs')
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'recompute_all_duplicates' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to ensure duplicates recompute job scheduled');
-    }
-  }
-
-  private async ensurePerformScheduledDeletionsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx) => {
-        const existing = await trx
-          .selectFrom('background_jobs')
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'perform_scheduled_deletions')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          logger.info('Scheduling daily scheduled deletions background job…');
-          await trx
-            .insertInto('background_jobs')
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'perform_scheduled_deletions' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to ensure perform scheduled deletions job scheduled');
-    }
-  }
-
-  private async ensurePruneNewsletterEventsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx) => {
-        const existing = await trx
-          .selectFrom('background_jobs')
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'prune_newsletter_events')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          logger.info('Scheduling daily newsletter events pruning background job…');
-          await trx
-            .insertInto('background_jobs')
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'prune_newsletter_events' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to ensure prune newsletter events job scheduled');
-    }
-  }
-
-  private async ensureSyncSchedulerJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx) => {
-        const existing = await trx
-          .selectFrom('background_jobs')
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'schedule_sync_jobs')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          logger.info('Scheduling sync scheduler background job…');
-          await trx
-            .insertInto('background_jobs')
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'schedule_sync_jobs' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to ensure sync scheduler job scheduled');
-    }
-  }
-
-  private async ensureUsageLimitChecksScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx) => {
-        const existing = await trx
-          .selectFrom('background_jobs')
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'check_all_usage_limits')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          logger.info('Scheduling daily usage limits check background job…');
-          await trx
-            .insertInto('background_jobs')
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'check_all_usage_limits' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to ensure usage limit checks scheduled');
-    }
-  }
-
-  private async ensureWorkflowsJobScheduled(): Promise<void> {
-    try {
-      await this.db.transaction().execute(async (trx) => {
-        const existing = await trx
-          .selectFrom('background_jobs')
-          .select('id')
-          .where('status', 'in', ['pending', 'processing'])
-          .where(sql`payload->>'type'`, '=', 'process_drip_workflows')
-          .forUpdate()
-          .executeTakeFirst();
-        if (!existing) {
-          logger.info('Scheduling periodic drip workflows processing background job…');
-          await trx
-            .insertInto('background_jobs')
-            .values({
-              tenant_id: null,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({ type: 'process_drip_workflows' }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to ensure workflows job scheduled');
-    }
-  }
-
-  private poll() {
-    if (!this.isRunning) return;
-    this.timer = setTimeout(() => {
-      void this.runPollCycle();
-    }, 0);
-  }
-
-  private async runPollCycle(): Promise<void> {
-    let processedAJob = false;
-    try {
-      this.activeJobsCount++;
-      processedAJob = await this.processNextJob();
-    } catch (err) {
-      logger.error({ err }, 'Error in background job worker poll cycle');
-    } finally {
-      this.activeJobsCount--;
-
-      // If shutdown was requested and no active jobs remain, resolve the stop() promise
-      if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
-        this.shutdownResolver();
-      } else {
-        // Poll again immediately (10ms) if we processed a job (to drain the queue),
-        // or back off to 30 seconds if no jobs were found.
-        const delay = processedAJob ? 10 : 30000;
-        this.pollWithDelay(delay);
-      }
-    }
-  }
-
-  private pollWithDelay(ms: number) {
-    if (!this.isRunning) return;
-    this.timer = setTimeout(() => this.poll(), ms);
-  }
-
-  private async processNextJob(): Promise<boolean> {
-    const workerId = `worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
-
-    // Try to find and lock a job using SKIP LOCKED
-    const job = await this.db.transaction().execute(async (trx) => {
-      const pendingJob = await trx
-        .selectFrom('background_jobs')
-        .selectAll()
-        .where('status', '=', 'pending')
-        .where('run_at', '<=', new Date())
-        .orderBy('id', 'asc')
-        .limit(1)
-        .forUpdate()
-        .skipLocked()
-        .executeTakeFirst();
-
-      if (!pendingJob) return null;
-
-      const updatedJob = await trx
-        .updateTable('background_jobs')
-        .set({
-          status: 'processing',
-          locked_at: new Date(),
-          locked_by: workerId,
-          attempts: Number(pendingJob.attempts || 0) + 1,
-          updated_at: new Date(),
-        })
-        .where('id', '=', pendingJob.id)
-        .returningAll()
-        .executeTakeFirst();
-
-      return updatedJob;
+    const response = await fetch(`https://api.sendgrid.com/v3${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
     });
 
-    if (!job) return false;
-
-    logger.info({ jobId: job.id, queue: job.queue }, 'Processing job');
-
-    const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
-
-    try {
-      await executeJob(payload, this.db, job.id);
-
-      // Mark job as completed
-      await this.db
-        .updateTable('background_jobs')
-        .set({
-          status: 'completed',
-          locked_at: null,
-          locked_by: null,
-          updated_at: new Date(),
-        })
-        .where('id', '=', job.id)
-        .execute();
-
-      logger.info({ jobId: job.id }, 'Job completed successfully');
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      logger.error({ err, jobId: job.id }, 'Failed to process background job');
-
-      try {
-        // If it was an import job, mark the import as failed and store the error message
-        if (payload.import_id) {
-          await this.importsRepo.update({
-            tenant_id: payload.tenant_id,
-            id: payload.import_id,
-            row: {
-              status: 'failed',
-              error_message: errorMsg.substring(0, 1000), // Truncate just in case
-              processed_at: new Date(),
-              updated_at: new Date(),
-            },
-          });
-        }
-      } catch (dbErr) {
-        logger.error({ err: dbErr }, 'Failed to mark data_imports as failed');
-      }
-
-      const attempts = Number(job.attempts || 0);
-      const maxAttempts = Number(job.max_attempts || 3);
-
-      if (attempts < maxAttempts) {
-        // Retry with backoff (exponential backoff for mail, linear for others)
-        const isMail =
-          payload.type === 'send-transactional-email' ||
-          payload.type === 'send-form-notifications' ||
-          payload.type === 'send-webform-notifications' ||
-          payload.type === 'send-shift-reminder' ||
-          payload.type === 'send-newsletter';
-        const delaySeconds = isMail ? Math.pow(2, attempts) * 30 : attempts * 30;
-        const runAt = new Date(Date.now() + delaySeconds * 1000);
-        logger.info({ jobId: job.id, runAt: runAt.toISOString(), attempt: attempts, maxAttempts }, 'Rescheduling job');
-
-        await this.db
-          .updateTable('background_jobs')
-          .set({
-            status: 'pending',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            run_at: runAt,
-            updated_at: new Date(),
-          })
-          .where('id', '=', job.id)
-          .execute();
-      } else {
-        logger.error({ jobId: job.id, maxAttempts }, 'Job exceeded maximum attempts, marking as failed');
-        await this.db
-          .updateTable('background_jobs')
-          .set({
-            status: 'failed',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            updated_at: new Date(),
-          })
-          .where('id', '=', job.id)
-          .execute();
-
-        if (payload.export_id) {
-          try {
-            const { ExportsRepo } = await import('../../modules/exports/repositories/exports.repo');
-            const exportsRepo = new ExportsRepo();
-            await exportsRepo.updateStatus(String(payload.export_id), String(payload.tenant_id), 'failed', {
-              error: `Export failed after all retries. Last error: ${errorMsg.substring(0, 400)}`,
-            });
-          } catch (exportErr) {
-            logger.error({ err: exportErr }, 'Failed to update export status on job permanent failure');
-          }
-        }
-
-        if (payload.type === 'ms_sync' && payload.userId) {
-          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
-          logger.error({ err, correlationId, userId: payload.userId }, 'MS sync permanently failed');
-          try {
-            const { MsOAuthService } = await import('../../modules/ms-sync/ms-oauth.service');
-            const { env } = await import('../../../env');
-            const oauthSvc = new MsOAuthService(this.db, {
-              clientId: env.msClientId ?? '',
-              clientSecret: env.msClientSecret ?? '',
-              tenantId: env.msTenantId ?? 'common',
-              redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-            });
-            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
-          } catch (recordErr) {
-            logger.error({ err: recordErr }, 'Failed to record MS sync error on token');
-          }
-        }
-
-        if (payload.type === 'google_sync' && payload.userId) {
-          const correlationId = Math.random().toString(36).slice(2, 10).toUpperCase();
-          logger.error({ err, correlationId, userId: payload.userId }, 'Google sync permanently failed');
-          try {
-            const { GoogleOAuthService } = await import('../../modules/google-sync/google-oauth.service');
-            const { env } = await import('../../../env');
-            const oauthSvc = new GoogleOAuthService(this.db, {
-              clientId: env.googleClientId ?? '',
-              clientSecret: env.googleClientSecret ?? '',
-              redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-            });
-            await oauthSvc.recordSyncError(payload.userId, `Sync failed — support code: ${correlationId}`);
-          } catch (recordErr) {
-            logger.error({ err: recordErr }, 'Failed to record Google sync error on token');
-          }
-        }
-
-        // If a recurrent cron-like job fails permanently, schedule the next iteration
-        await this.rescheduleCronJobOnFailure(payload.type);
-      }
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`SendGrid API responded with ${response.status}: ${text}`);
     }
 
-    return true;
+    if (response.status === 204) {
+      return {} as T;
+    }
+
+    return response.json();
   }
 
-  private reconnectListener() {
-    if (this.pgClient) {
-      void this.pgClient.end().catch(() => {
-        /* noop */
+  public async createDomainAuthentication(domain: string, apiKey?: string, subuser?: string): Promise<DomainAuthData> {
+    if (!this.isValidApiKey(apiKey)) {
+      // Return simulated/mock domain auth records
+      const mockId = Math.floor(100000 + Math.random() * 900000);
+      return {
+        id: mockId,
+        domain,
+        subdomain: 'em',
+        dns: {
+          mail_cname: {
+            host: `em.${domain}`,
+            type: 'CNAME',
+            data: `u${mockId}.wl.sendgrid.net`,
+            valid: false,
+          },
+          dkim1: {
+            host: `s1._domainkey.${domain}`,
+            type: 'CNAME',
+            data: `s1.domainkey.u${mockId}.wl.sendgrid.net`,
+            valid: false,
+          },
+          dkim2: {
+            host: `s2._domainkey.${domain}`,
+            type: 'CNAME',
+            data: `s2.domainkey.u${mockId}.wl.sendgrid.net`,
+            valid: false,
+          },
+        },
+      };
+    }
+
+    try {
+      const res = await this.request<any>('/whitelabel/domains', {
+        method: 'POST',
+        apiKey,
+        subuser,
+        body: {
+          domain,
+          subdomain: 'em',
+          automatic_security: true,
+          custom_spf: false,
+          default: false,
+        },
       });
-      this.pgClient = null;
-    }
-    if (!this.isRunning) return;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = setTimeout(() => {
-      void this.setupListener();
-    }, 5000);
-  }
 
-  private async recoverStaleJobs(): Promise<void> {
-    try {
-      const staleTime = new Date(Date.now() - 30 * 60 * 1000); // 30 minutes
-      await this.db
-        .updateTable('background_jobs')
-        .set({
-          status: 'pending',
-          locked_at: null,
-          locked_by: null,
-          updated_at: new Date(),
-          error: 'Job processing timed out',
-        })
-        .where('status', '=', 'processing')
-        .where('locked_at', '<', staleTime)
-        .execute();
-
-      // Clean up/timeout data exports stuck in pending/processing for more than 1 hour
-      const staleExportTime = new Date(Date.now() - 60 * 60 * 1000); // 1 hour
-      const staleExports = await this.db
-        .selectFrom('data_exports')
-        .select(['id', 'tenant_id'])
-        .where('status', 'in', ['pending', 'processing'])
-        .where('created_at', '<', staleExportTime)
-        .execute();
-
-      if (staleExports.length > 0) {
-        const ids = staleExports.map((e) => e.id);
-        await this.db
-          .updateTable('data_exports')
-          .set({
-            status: 'failed',
-            error: 'Export processing timed out',
-            updated_at: new Date(),
-          })
-          .where('id', 'in', ids)
-          .execute();
-
-        for (const exp of staleExports) {
-          await this.db
-            .deleteFrom('background_jobs')
-            .where('tenant_id', '=', exp.tenant_id)
-            .where(sql`payload->>'type'`, '=', 'export_csv')
-            .where(sql`payload->>'export_id'`, '=', String(exp.id))
-            .execute();
-        }
-      }
+      return {
+        id: res.id,
+        domain: res.domain,
+        subdomain: res.subdomain,
+        dns: {
+          mail_cname: res.dns?.mail_cname ? { ...res.dns.mail_cname, valid: !!res.dns.mail_cname.valid } : undefined,
+          dkim1: res.dns?.dkim1 ? { ...res.dns.dkim1, valid: !!res.dns.dkim1.valid } : undefined,
+          dkim2: res.dns?.dkim2 ? { ...res.dns.dkim2, valid: !!res.dns.dkim2.valid } : undefined,
+        },
+      };
     } catch (err) {
-      logger.error({ err }, 'Failed to recover stale background jobs');
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] real API call failed, falling back to mock',
+      );
+      return this.createDomainAuthentication(domain, undefined);
     }
   }
 
-  private async rescheduleCronJobOnFailure(type: string): Promise<void> {
-    let delayMs = 0;
-    if (type === 'cleanup_activities') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'schedule_sync_jobs') {
-      delayMs = 10 * 60 * 1000;
-    } else if (type === 'recompute_all_duplicates') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'recompute_address_fingerprints') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'process_drip_workflows') {
-      delayMs = 10 * 60 * 1000;
-    } else if (type === 'perform_scheduled_deletions') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'check_all_usage_limits') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'refresh_companies_google') {
-      delayMs = 24 * 60 * 60 * 1000;
-    } else if (type === 'prune_newsletter_events') {
-      delayMs = 24 * 60 * 60 * 1000;
+  public async createLinkBranding(domain: string, apiKey?: string, subuser?: string): Promise<LinkBrandingData> {
+    if (!this.isValidApiKey(apiKey)) {
+      const mockId = Math.floor(100000 + Math.random() * 900000);
+      return {
+        id: mockId,
+        domain,
+        subdomain: 'email',
+        valid: false,
+        dns: {
+          domain: {
+            host: `email.${domain}`,
+            type: 'CNAME',
+            data: 'sendgrid.net',
+            valid: false,
+          },
+        },
+      };
     }
 
-    if (delayMs > 0) {
-      try {
-        await this.db
-          .insertInto('background_jobs')
-          .values({
-            tenant_id: null,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({ type }),
-            run_at: new Date(Date.now() + delayMs),
-            max_attempts: 3,
-          })
-          .execute();
-      } catch (schedErr) {
-        logger.error({ err: schedErr, type }, 'Failed to reschedule failed cron job');
-      }
-    }
-  }
-
-  private async setupListener() {
-    if (!this.isRunning) return;
     try {
-      this.pgClient = new Client(env.db);
-      await this.pgClient.connect();
-
-      this.pgClient.on('notification', (msg) => {
-        if (msg.channel === 'background_jobs_channel') {
-          logger.debug('Background Job Worker received notify, waking up...');
-          this.wakeUp();
-        }
+      const res = await this.request<any>('/whitelabel/links', {
+        method: 'POST',
+        apiKey,
+        subuser,
+        body: {
+          domain,
+          subdomain: 'email',
+          default: false,
+        },
       });
 
-      this.pgClient.on('error', (err) => {
-        logger.error({ err }, 'Postgres listener client error');
-        this.reconnectListener();
-      });
-
-      this.pgClient.on('end', () => {
-        logger.warn('Postgres listener connection closed');
-        this.reconnectListener();
-      });
-
-      await this.pgClient.query('LISTEN background_jobs_channel');
-      logger.info('Listening for background_jobs notifications');
+      return {
+        id: res.id,
+        domain: res.domain,
+        subdomain: res.subdomain,
+        valid: !!res.valid,
+        dns: {
+          domain: res.dns?.domain ? { ...res.dns.domain, valid: !!res.dns.domain.valid } : undefined,
+        },
+      };
     } catch (err) {
-      logger.error({ err }, 'Failed to setup Postgres listener');
-      this.reconnectListener();
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] real Link Branding API failed, falling back to mock',
+      );
+      return this.createLinkBranding(domain, undefined);
     }
   }
 
-  private wakeUp() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
+  public async validateDomainAuthentication(
+    id: number,
+    apiKey?: string,
+    subuser?: string,
+  ): Promise<{ valid: boolean; validationResults: Record<string, boolean> }> {
+    if (!this.isValidApiKey(apiKey)) {
+      return {
+        valid: true,
+        validationResults: {
+          mail_cname: true,
+          dkim1: true,
+          dkim2: true,
+        },
+      };
     }
-    this.poll();
+
+    try {
+      const res = await this.request<any>(`/whitelabel/domains/${id}/validate`, {
+        method: 'POST',
+        apiKey,
+        subuser,
+      });
+
+      const validationResults: Record<string, boolean> = {};
+      if (res.validation_results) {
+        for (const k of Object.keys(res.validation_results)) {
+          validationResults[k] = !!res.validation_results[k]?.valid;
+        }
+      }
+
+      return {
+        valid: !!res.valid,
+        validationResults,
+      };
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Validate domain API failed, falling back to true',
+      );
+      return {
+        valid: true,
+        validationResults: {
+          mail_cname: true,
+          dkim1: true,
+          dkim2: true,
+        },
+      };
+    }
+  }
+
+  public async validateLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<boolean> {
+    if (!this.isValidApiKey(apiKey)) {
+      return true;
+    }
+
+    try {
+      const res = await this.request<any>(`/whitelabel/links/${id}/validate`, {
+        method: 'POST',
+        apiKey,
+        subuser,
+      });
+
+      return !!res.valid;
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Validate link branding API failed, falling back to true',
+      );
+      return true;
+    }
+  }
+
+  public async deleteDomainAuthentication(id: number, apiKey?: string, subuser?: string): Promise<void> {
+    if (!this.isValidApiKey(apiKey)) return;
+
+    try {
+      await this.request(`/whitelabel/domains/${id}`, {
+        method: 'DELETE',
+        apiKey,
+        subuser,
+      });
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Delete domain authentication failed',
+      );
+    }
+  }
+
+  public async deleteLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<void> {
+    if (!this.isValidApiKey(apiKey)) return;
+
+    try {
+      await this.request(`/whitelabel/links/${id}`, {
+        method: 'DELETE',
+        apiKey,
+        subuser,
+      });
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Delete link branding failed',
+      );
+    }
+  }
+
+  public async verifyDmarc(domain: string): Promise<boolean> {
+    try {
+      const records = await dns.resolveTxt(`_dmarc.${domain}`);
+      return records.some((r) => r.join('').toUpperCase().includes('V=DMARC1'));
+    } catch {
+      return false;
+    }
+  }
+
+  public async verifyCname(host: string, expectedData?: string): Promise<boolean> {
+    try {
+      const records = await dns.resolveCname(host);
+      if (expectedData) {
+        return records.some((r) => r.toLowerCase().trim() === expectedData.toLowerCase().trim());
+      }
+      return records.length > 0;
+    } catch {
+      return false;
+    }
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/mail/transactional-mail.service.ts
+
+```typescript
+import type { Transaction, Kysely } from 'kysely';
+import { env } from '../../../env';
+import { InternalError } from '../../errors/app-errors';
+import { BaseRepository } from '../base.repo';
+import { logger } from '../../logger';
+
+export interface SendMailOptions {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+  tenant_id?: string | null;
+}
+
+export class TransactionalEmailService {
+  private serverToken = env.postmarkServerToken;
+  private fromEmail = env.postmarkFromEmail;
+
+  private wrapInTemplate(title: string, contentHtml: string): string {
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f8fafc;
+      color: #1e293b;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper {
+      width: 100%;
+      background-color: #f8fafc;
+      padding: 40px 20px;
+      box-sizing: border-box;
+    }
+    .container {
+      max-width: 580px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      border: 1px solid #e2e8f0;
+    }
+    .header {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      padding: 32px;
+      text-align: center;
+    }
+    .header h1 {
+      color: #ffffff;
+      font-size: 24px;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -0.025em;
+    }
+    .content {
+      padding: 40px 32px;
+      line-height: 1.6;
+      font-size: 16px;
+    }
+    .content h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #0f172a;
+      margin-top: 0;
+      margin-bottom: 16px;
+    }
+    .content p {
+      margin-top: 0;
+      margin-bottom: 24px;
+      color: #475569;
+    }
+    .btn-container {
+      margin: 32px 0;
+      text-align: center;
+    }
+    .btn {
+      display: inline-block;
+      background-color: #4f46e5;
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 15px;
+    }
+    .otp-container {
+      margin: 32px auto;
+      text-align: center;
+    }
+    .otp-code {
+      display: inline-block;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: 6px;
+      color: #4f46e5;
+      background-color: #f1f5f9;
+      padding: 12px 24px;
+      border-radius: 8px;
+      border: 1px dashed #cbd5e1;
+    }
+    .footer {
+      background-color: #f8fafc;
+      padding: 24px 32px;
+      text-align: center;
+      border-top: 1px solid #e2e8f0;
+      font-size: 13px;
+      color: #64748b;
+    }
+    .footer p {
+      margin: 8px 0;
+      color: #64748b;
+    }
+    .footer a {
+      color: #4f46e5;
+      text-decoration: none;
+    }
+    .warning {
+      font-size: 14px;
+      color: #64748b;
+      background-color: #f8fafc;
+      border-left: 4px solid #cbd5e1;
+      padding: 12px 16px;
+      margin-top: 24px;
+      border-radius: 0 4px 4px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <h1>CampaignRaven</h1>
+      </div>
+      <div class="content">
+        ${contentHtml}
+      </div>
+      <div class="footer">
+        <p>This is a transactional message related to your account security. Unlike marketing messages, you cannot unsubscribe from these alerts.</p>
+        <p>&copy; ${new Date().getFullYear()} CampaignRaven. All rights reserved.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+  }
+
+  public async sendMail(options: SendMailOptions): Promise<void> {
+    const wrappedHtml = this.wrapInTemplate(options.subject, options.html);
+
+    if (!this.serverToken) {
+      logger.info(
+        { from: this.fromEmail, to: options.to, subject: options.subject },
+        '[POSTMARK DEV MOCK] Transactional Email Outbound',
+      );
+      return;
+    }
+
+    try {
+      const response = await fetch('https://api.postmarkapp.com/email', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-Postmark-Server-Token': this.serverToken,
+        },
+        body: JSON.stringify({
+          From: this.fromEmail,
+          To: options.to,
+          Subject: options.subject,
+          TextBody: options.text,
+          HtmlBody: wrappedHtml,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Postmark API responded with status ${response.status}: ${errorText}`);
+      }
+    } catch (error) {
+      throw new InternalError('Failed to send transactional email', undefined, { cause: error });
+    }
+  }
+
+  public async enqueueMail(options: SendMailOptions, trx?: Transaction<any> | Kysely<any>): Promise<void> {
+    const dbClient = (trx || BaseRepository.dbInstance) as any;
+    await dbClient
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: options.tenant_id ? BigInt(options.tenant_id) : null,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-transactional-email',
+          to: options.to,
+          subject: options.subject,
+          text: options.text,
+          html: options.html,
+        }),
+        run_at: new Date(),
+        max_attempts: 5,
+      })
+      .execute();
   }
 }
 ```
@@ -24888,269 +23802,6 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): vo
     const firstHit = hits[0] ?? now;
     const retryAfterSec = Math.ceil((firstHit + windowMs - now) / 1000);
     throw new TooManyRequestsError(`Too many requests. Retry in ${retryAfterSec} seconds.`, { retryAfterSec });
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/companies/controller.ts
-
-```typescript
-import { BaseController } from '../../lib/base.controller';
-import { CompaniesRepo } from './repositories/companies.repo';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { ImportsRepo } from '../imports/repositories/imports.repo';
-import { StorageService } from '../../lib/storage.service';
-import { TRPCError } from '@trpc/server';
-import { logger } from '../../logger';
-
-export class CompaniesController extends BaseController<'companies', CompaniesRepo> {
-  constructor() {
-    super(new CompaniesRepo());
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
-    const company = (await super.getOneById(input)) as any;
-    if (company) {
-      let currentJson: any = {};
-      if (company.json) {
-        currentJson = typeof company.json === 'string' ? JSON.parse(company.json) : company.json;
-      }
-      if (!currentJson || !currentJson.google_enriched) {
-        await this.getRepo()
-          .db.insertInto('background_jobs')
-          .values({
-            tenant_id: input.tenant_id,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'enrich_company_google',
-              company_id: String(company.id),
-              tenant_id: String(input.tenant_id),
-            }),
-            run_at: new Date(),
-            max_attempts: 3,
-          })
-          .execute()
-          .catch((err) => logger.error({ err }, 'Failed to queue google enrichment job on getOneById'));
-      }
-    }
-    return company;
-  }
-
-  public addCompany(payload: any, auth: IAuthKeyPayload) {
-    const row = {
-      name: payload.name,
-      description: payload.description ?? null,
-      website: payload.website ?? null,
-      email: payload.email ?? null,
-      phone: payload.phone ?? null,
-      industry: payload.industry ?? null,
-      notes: payload.notes ?? null,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'companies', 'insert'>;
-    return this.add(row);
-  }
-
-  public updateCompany(id: string, row: any, auth: IAuthKeyPayload) {
-    const rowWithUpdatedBy = {
-      ...row,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'companies', 'update'>;
-    return this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
-  }
-
-  public async getAllCompanies(auth: IAuthKeyPayload, options?: any) {
-    return this.getAllWithCounts(auth.tenant_id, options);
-  }
-
-  private readonly importsRepo = new ImportsRepo();
-  private readonly storageService = new StorageService();
-
-  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
-  }
-
-  public async mergeCompanies(target_id: string, source_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().mergeCompanies({
-      tenant_id: auth.tenant_id,
-      target_id,
-      source_id,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async importRows(
-    input: {
-      rows: Array<{
-        name: string;
-        description?: string | null;
-        website?: string | null;
-        email?: string | null;
-        phone?: string | null;
-        industry?: string | null;
-        notes?: string | null;
-      }>;
-      skipped?: number;
-      file_name?: string | null;
-    },
-    auth: IAuthKeyPayload,
-  ) {
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const autoTag = `Imported-Companies-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-
-    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
-    const requestedFileName = (input.file_name ?? '').trim();
-    const baseFileName = requestedFileName || `${autoTag}.csv`;
-    const totalRows = input.rows.length + skippedFromClient;
-
-    const importRow = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      file_name: baseFileName,
-      source: 'companies',
-      tag_name: null,
-      tag_id: null,
-      row_count: totalRows,
-      inserted_count: 0,
-      error_count: 0,
-      skipped_count: skippedFromClient,
-      households_created: 0,
-      status: 'pending',
-      metadata: null,
-      processed_at: now,
-    } as any;
-
-    const savedImport = await this.importsRepo.add({ row: importRow });
-    if (!savedImport || !savedImport.id) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create data import record',
-      });
-    }
-
-    const importRecordId = String(savedImport.id);
-    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
-
-    try {
-      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
-      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
-    } catch (err) {
-      logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to store import payload on server storage',
-      });
-    }
-
-    await this.importsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: importRecordId,
-      row: {
-        metadata: JSON.stringify({ storage_key: storageKey }),
-      } as any,
-    });
-
-    await this.importsRepo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          import_id: importRecordId,
-          storage_key: storageKey,
-          skipped: skippedFromClient,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          file_name: baseFileName,
-          source: 'companies',
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return {
-      inserted: 0,
-      errors: 0,
-      skipped: skippedFromClient,
-      file_name: baseFileName,
-      import_id: importRecordId,
-      tenant_id: auth.tenant_id,
-      status: 'pending',
-    } as any;
-  }
-
-  public async processImportRows(import_id: string, tenant_id: string, user_id: string, skipped: number, rows: any[]) {
-    const results = { inserted: 0, errors: 0, skipped: 0 };
-    const errorMessages: string[] = [];
-
-    const chunkSize = 100;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-
-      // 1. Filter valid rows upfront
-      const validRows: any[] = [];
-      for (const raw of chunk) {
-        if (!raw.name || !raw.name.trim()) {
-          results.skipped += 1;
-        } else {
-          validRows.push(raw);
-        }
-      }
-
-      if (validRows.length > 0) {
-        try {
-          // 2. Batch insert all valid company rows in one statement
-          const companyRows = validRows.map((raw) => ({
-            tenant_id,
-            createdby_id: user_id,
-            updatedby_id: user_id,
-            name: raw.name.trim(),
-            description: raw.description ?? null,
-            website: raw.website ?? null,
-            email: raw.email ?? null,
-            phone: raw.phone ?? null,
-            industry: raw.industry ?? null,
-            notes: raw.notes ?? null,
-            file_id: import_id,
-          }));
-          await this.getRepo()
-            .transaction()
-            .execute(async (trx) => {
-              await (trx as any).insertInto('companies').values(companyRows).execute();
-            });
-          results.inserted += validRows.length;
-        } catch (err) {
-          results.errors += validRows.length;
-          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
-        }
-      }
-
-      await this.importsRepo.update({
-        tenant_id: tenant_id,
-        id: import_id,
-        row: {
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skipped + results.skipped,
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        } as any,
-      });
-    }
-
-    return {
-      inserted: results.inserted,
-      errors: results.errors,
-      skipped: skipped + results.skipped,
-      errorMessages,
-    };
   }
 }
 ```
@@ -25950,6 +24601,429 @@ export class DonationsController extends BaseController<'donations', DonationsRe
 }
 ```
 
+## File: apps/backend/src/app/modules/emails/services/email-ingester.service.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { StorageService } from '../../../lib/storage.service';
+import { env } from '../../../../env';
+import crypto from 'crypto';
+import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+import { logger } from '../../../logger';
+
+export interface IngestableEmail {
+  id: string; // Remote provider's unique message ID
+  internetMessageId?: string | null;
+  fromEmail: string | null;
+  toEmail: string | null;
+  subject: string | null;
+  dateSent: Date;
+  bodyHtml: string;
+  recipients: Array<{
+    kind: 'to' | 'cc' | 'bcc';
+    name: string | null;
+    email: string;
+  }>;
+  attachments: Array<{
+    name: string;
+    contentType: string;
+    size: number;
+    contentId: string | null;
+    isInline: boolean;
+    fetchContent: () => Promise<Buffer>;
+  }>;
+}
+
+export class EmailIngesterService {
+  private readonly storageService = new StorageService();
+
+  constructor(
+    private readonly db: Kysely<Models>,
+    private readonly prefix: string, // 'ms' or 'google'
+  ) {}
+
+  public async removeAllLocalEmails(tenantId: string): Promise<void> {
+    const matchedEmails = await this.db
+      .selectFrom('emails')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .where('preview', 'like', `${this.prefix}:%`)
+      .execute();
+
+    if (matchedEmails.length === 0) return;
+    const emailIds = matchedEmails.map((e) => String(e.id));
+
+    // Capture attachment file references before the rows are deleted.
+    const fileIds = await this.getAttachmentFileIds(tenantId, emailIds);
+
+    await this.db.transaction().execute(async (trx) => {
+      // Delete from dependent tables sequentially to prevent foreign key constraint issues
+      await trx
+        .deleteFrom('email_comments')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx
+        .deleteFrom('email_bodies')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx
+        .deleteFrom('email_headers')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx
+        .deleteFrom('email_recipients')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx
+        .deleteFrom('email_attachments')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx.deleteFrom('email_trash').where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
+
+      // Delete from emails table
+      await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', 'in', emailIds).execute();
+    });
+
+    await this.purgeOrphanedFiles(tenantId, fileIds);
+  }
+
+  public async deleteMessage(tenantId: string, remoteId: string): Promise<void> {
+    const dedupeKey = `${this.prefix}:${remoteId}`;
+    const existing = await this.db
+      .selectFrom('emails')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .where('preview', '=', dedupeKey)
+      .executeTakeFirst();
+
+    if (!existing) return;
+    const emailId = String(existing.id);
+
+    // Capture attachment file references before the rows are deleted.
+    const fileIds = await this.getAttachmentFileIds(tenantId, [emailId]);
+
+    await this.db.transaction().execute(async (trx) => {
+      // Delete from dependent tables sequentially to prevent foreign key constraint issues
+      await trx
+        .deleteFrom('email_comments')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', '=', emailId)
+        .execute();
+      await trx.deleteFrom('email_bodies').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+      await trx.deleteFrom('email_headers').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+      await trx
+        .deleteFrom('email_recipients')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', '=', emailId)
+        .execute();
+      await trx
+        .deleteFrom('email_attachments')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', '=', emailId)
+        .execute();
+      await trx.deleteFrom('email_trash').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+
+      // Delete from emails table
+      await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', emailId).execute();
+    });
+
+    await this.purgeOrphanedFiles(tenantId, fileIds);
+  }
+
+  /** Distinct, non-null file_ids referenced by the given emails' attachments. */
+  private async getAttachmentFileIds(tenantId: string, emailIds: string[]): Promise<string[]> {
+    if (emailIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom('email_attachments')
+      .select('file_id')
+      .distinct()
+      .where('tenant_id', '=', tenantId)
+      .where('email_id', 'in', emailIds)
+      .where('file_id', 'is not', null)
+      .execute();
+    return rows.map((r) => String(r.file_id)).filter((id) => id !== 'null');
+  }
+
+  /**
+   * Delete file rows + storage blobs for files no longer referenced by any
+   * remaining attachment (files are sha256-deduped and can be shared). Storage
+   * deletion is best-effort and must not throw.
+   */
+  private async purgeOrphanedFiles(tenantId: string, fileIds: string[]): Promise<void> {
+    for (const fileId of fileIds) {
+      try {
+        const stillReferenced = await this.db
+          .selectFrom('email_attachments')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('file_id', '=', fileId)
+          .limit(1)
+          .executeTakeFirst();
+
+        if (stillReferenced) continue;
+
+        const file = await this.db
+          .selectFrom('files')
+          .select(['id', 'storage_key'])
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', fileId)
+          .executeTakeFirst();
+
+        if (!file) continue;
+
+        await this.db.deleteFrom('files').where('tenant_id', '=', tenantId).where('id', '=', fileId).execute();
+
+        if (file.storage_key) {
+          try {
+            await this.storageService.delete(file.storage_key);
+          } catch (err) {
+            logger.error({ err }, `Failed to delete storage blob ${file.storage_key} for file ${fileId}`);
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, `Failed to purge orphaned file ${fileId}`);
+      }
+    }
+  }
+
+  public async ingestEmail(
+    email: IngestableEmail,
+    tenantId: string,
+    requestedBy: string,
+    folderId: string,
+  ): Promise<boolean> {
+    const dedupeKey = `${this.prefix}:${email.id}`;
+
+    // Dedup: use remote message ID stored in email preview field (prefixed)
+    const existing = await this.db
+      .selectFrom('emails')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .where('preview', '=', dedupeKey)
+      .executeTakeFirst();
+
+    if (existing) return false;
+
+    // Try finding by internetMessageId in email_headers to match locally composed
+    // & sent emails. The provider may reassign a message's ID when it moves
+    // between folders (e.g. MS Graph changes the ID on Drafts -> Sent), so the
+    // preview-based dedup above can miss the local copy. The Message-ID header is
+    // stable across that move, so use it as a folder-aware fallback.
+    if (email.internetMessageId) {
+      const matches = await this.db
+        .selectFrom('emails')
+        .innerJoin('email_headers', 'email_headers.email_id', 'emails.id')
+        .select(['emails.id as id', 'emails.folder_id as folder_id', 'emails.preview as preview'])
+        .where('emails.tenant_id', '=', tenantId)
+        .where('email_headers.tenant_id', '=', tenantId)
+        .where('email_headers.raw_headers', 'like', `%Message-ID: ${email.internetMessageId}%`)
+        .execute();
+
+      // 1. Same message already present in THIS folder. This is the same item
+      //    re-synced (possibly under a new provider ID) — refresh the dedupe key
+      //    so future syncs match by preview, and skip insertion.
+      const sameFolder = matches.find((m) => String(m.folder_id) === String(folderId));
+      if (sameFolder) {
+        if (sameFolder.preview !== dedupeKey) {
+          await this.db
+            .updateTable('emails')
+            .set({ preview: dedupeKey, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(sameFolder.id))
+            .execute();
+        }
+        return false;
+      }
+
+      // 2. An untagged (locally composed, not yet provider-tagged) copy exists in
+      //    another folder — claim it: tag with the provider ID and align its folder.
+      const untagged = matches.find((m) => !(m.preview?.startsWith('ms:') || m.preview?.startsWith('google:')));
+      if (untagged) {
+        await this.db
+          .updateTable('emails')
+          .set({ preview: dedupeKey, folder_id: folderId, updated_at: new Date() })
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', String(untagged.id))
+          .execute();
+
+        return false; // prevent duplicate insertion
+      }
+
+      // 3. Otherwise the message only exists in other folders and is already
+      //    provider-tagged — this is a genuine cross-folder copy (e.g.
+      //    send-to-self in both Sent and Inbox). Fall through and insert fresh.
+    }
+
+    // Upload attachment files to storage outside database transaction
+
+    const uploadResults = await Promise.all(
+      email.attachments.map(async (att) => {
+        try {
+          const buffer = await att.fetchContent();
+          const sha256_hex = crypto.createHash('sha256').update(buffer).digest('hex');
+          const fileUUID = crypto.randomUUID();
+          const storage_key = `emails/attachments/${fileUUID}_${att.name}`;
+
+          await this.storageService.upload(storage_key, buffer, att.contentType);
+
+          return {
+            filename: att.name,
+            content_type: att.contentType,
+            size_bytes: att.size,
+            storage_key,
+            sha256_hex,
+            cid: att.contentId,
+            is_inline: att.isInline,
+          };
+        } catch (err) {
+          logger.error({ err }, `Failed to upload attachment ${att.name} for message ${email.id} to storage`);
+          return null;
+        }
+      }),
+    );
+
+    const uploadedFiles = uploadResults.filter((f): f is NonNullable<typeof f> => f !== null);
+
+    return this.db.transaction().execute(async (trx) => {
+      // 1. Insert into emails
+      const emailRow = await trx
+        .insertInto('emails')
+        .values({
+          tenant_id: tenantId,
+          folder_id: folderId,
+          from_email: email.fromEmail,
+          to_email: email.toEmail,
+          subject: email.subject,
+          preview: dedupeKey, // store ID as dedup key
+          assigned_to: null,
+          is_favourite: false,
+          deleted_at: null,
+          status: 'open',
+          createdby_id: requestedBy,
+          updatedby_id: requestedBy,
+        })
+        .returningAll()
+        .executeTakeFirst();
+
+      if (!emailRow) return false;
+
+      const emailId = String(emailRow.id);
+
+      // 2. Rewrite inline CID references in body content, then insert body
+      let bodyHtml = sanitizeHtml(email.bodyHtml);
+      for (const file of uploadedFiles) {
+        if (file.is_inline && file.cid) {
+          const cidEscaped = file.cid.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const regex = new RegExp(`src=['"]cid:${cidEscaped}['"]`, 'gi');
+          bodyHtml = bodyHtml.replace(regex, `src="${env.apiUrl}/api/emails/${emailId}/attachments/cid/${file.cid}"`);
+        }
+      }
+
+      await trx
+        .insertInto('email_bodies')
+        .values({
+          tenant_id: tenantId,
+          email_id: emailId,
+          body_html: bodyHtml,
+          createdby_id: requestedBy,
+          updatedby_id: requestedBy,
+        })
+        .execute();
+
+      // 3. Insert files and email_attachments metadata
+      for (const [i, file] of uploadedFiles.entries()) {
+        let fileId: string;
+
+        // Persist (or reuse, via sha256 dedup) the file row, then link the
+        // attachment to it so downloads can resolve the stored blob.
+        const existingFile = await trx
+          .selectFrom('files')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('sha256_hex', '=', file.sha256_hex)
+          .executeTakeFirst();
+
+        if (existingFile) {
+          fileId = String(existingFile.id);
+        } else {
+          const fileResult = await trx
+            .insertInto('files')
+            .values({
+              tenant_id: tenantId,
+              filename: file.filename,
+              mime_type: file.content_type,
+              size_bytes: file.size_bytes,
+              storage_key: file.storage_key,
+              sha256_hex: file.sha256_hex,
+              uploaded_by: requestedBy,
+            })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+          fileId = String(fileResult.id);
+        }
+
+        await trx
+          .insertInto('email_attachments')
+          .values({
+            tenant_id: tenantId,
+            email_id: emailId,
+            filename: file.filename,
+            content_type: file.content_type,
+            size_bytes: file.size_bytes,
+            cid: file.cid,
+            is_inline: file.is_inline,
+            pos: i + 1,
+            file_id: fileId,
+            createdby_id: requestedBy,
+            updatedby_id: requestedBy,
+          })
+          .execute();
+      }
+
+      // 4. Insert headers
+      const internetMessageId = email.internetMessageId ?? '';
+      const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${email.subject ?? ''}\r\nFrom: ${email.fromEmail ?? ''}\r\nTo: ${email.toEmail ?? ''}\r\nDate: ${email.dateSent.toUTCString()}\r\n`;
+
+      await trx
+        .insertInto('email_headers')
+        .values({
+          tenant_id: tenantId,
+          email_id: emailId,
+          headers_json: JSON.stringify({ internetMessageId }),
+          raw_headers: rawHeaders,
+          date_sent: email.dateSent,
+          createdby_id: requestedBy,
+          updatedby_id: requestedBy,
+        })
+        .execute();
+
+      // 5. Insert recipients
+      if (email.recipients.length > 0) {
+        const recipientRows = email.recipients.map((r, i) => ({
+          tenant_id: tenantId,
+          email_id: emailId,
+          kind: r.kind,
+          name: r.name,
+          email: r.email,
+          pos: i,
+          createdby_id: requestedBy,
+          updatedby_id: requestedBy,
+        }));
+        await trx.insertInto('email_recipients').values(recipientRows).execute();
+      }
+
+      return true;
+    });
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/emails/controller.ts
 
 ```typescript
@@ -26506,673 +25580,6 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       if (err instanceof AppError) throw err;
       throw new InternalError('Failed to set email read status', undefined, { cause: err });
     }
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/google-sync/google-oauth.service.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-
-export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
-
-const GOOGLE_SCOPES = [
-  'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.send',
-  'https://www.googleapis.com/auth/userinfo.email',
-];
-
-export class GoogleOAuthService {
-  private readonly db: Kysely<Models>;
-  private readonly clientId: string;
-  private readonly clientSecret: string;
-  private readonly redirectUri: string;
-
-  constructor(db: Kysely<Models>, config: { clientId: string; clientSecret: string; redirectUri: string }) {
-    this.db = db;
-    this.clientId = config.clientId;
-    this.clientSecret = config.clientSecret;
-    this.redirectUri = config.redirectUri;
-  }
-
-  public getAuthUrl(state: string): string {
-    const params = new URLSearchParams({
-      client_id: this.clientId,
-      redirect_uri: this.redirectUri,
-      response_type: 'code',
-      scope: GOOGLE_SCOPES.join(' '),
-      access_type: 'offline',
-      prompt: 'consent', // force consent to ensure refresh token is returned
-      state,
-    });
-    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-  }
-
-  public async handleCallback(code: string, connectedBy: string, tenantId: string): Promise<void> {
-    const res = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code,
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        redirect_uri: this.redirectUri,
-        grant_type: 'authorization_code',
-      }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to acquire token from Google: ${errorText}`);
-    }
-
-    const data: any = await res.json();
-    const accessToken = data.access_token;
-    const refreshToken = data.refresh_token; // Google only returns this on initial consent
-    const expiresIn = data.expires_in ?? 3600;
-    const expiresAt = new Date(Date.now() + expiresIn * 1000);
-
-    // Fetch user profile to get Google email
-    const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    let googleEmail: string | null = null;
-    if (profileRes.ok) {
-      const profile: any = await profileRes.json();
-      googleEmail = profile.email ?? null;
-    }
-
-    const insertObj: any = {
-      tenant_id: tenantId,
-      user_id: connectedBy,
-      access_token: accessToken,
-      expires_at: expiresAt,
-      google_email: googleEmail,
-      delta_link: NEEDS_FULL_SYNC,
-      synced_at: null,
-    };
-
-    if (!refreshToken) {
-      // If we don't have refresh token in this callback, try keeping the existing one
-      const existing = await this.db
-        .selectFrom('google_oauth_tokens')
-        .select('refresh_token')
-        .where('tenant_id', '=', tenantId)
-        .executeTakeFirst();
-      insertObj.refresh_token = existing?.refresh_token ?? '';
-    } else {
-      insertObj.refresh_token = refreshToken;
-    }
-
-    if (!insertObj.refresh_token) {
-      throw new Error('Consent required to obtain refresh token. Please disconnect and reconnect.');
-    }
-
-    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
-    await this.db.transaction().execute(async (trx) => {
-      await trx
-        .insertInto('google_oauth_tokens')
-        .values(insertObj)
-        .onConflict((oc) =>
-          oc.column('tenant_id').doUpdateSet({
-            user_id: connectedBy,
-            access_token: insertObj.access_token,
-            refresh_token: insertObj.refresh_token,
-            expires_at: insertObj.expires_at,
-            google_email: insertObj.google_email,
-            delta_link: NEEDS_FULL_SYNC,
-            synced_at: null,
-            last_sync_error: null,
-            last_sync_error_at: null,
-            updated_at: new Date(),
-          }),
-        )
-        .execute();
-
-      await trx
-        .insertInto('background_jobs')
-        .values({
-          tenant_id: tenantId,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({ type: 'google_sync', tenantId, requestedBy: connectedBy }),
-          run_at: new Date(),
-          max_attempts: 3,
-        })
-        .execute();
-    });
-  }
-
-  public async getValidToken(tenantId: string): Promise<string> {
-    const row = await this.db
-      .selectFrom('google_oauth_tokens')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    if (!row) {
-      throw new Error('No Google account connected for this tenant');
-    }
-
-    const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
-    if (!isExpired) {
-      return row.access_token;
-    }
-
-    // Refresh token
-    const res = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        refresh_token: row.refresh_token,
-        grant_type: 'refresh_token',
-      }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Token refresh failed: ${errorText} — tenant must reconnect their Google account`);
-    }
-
-    const data: any = await res.json();
-    const newAccessToken = data.access_token;
-    const newExpiresIn = data.expires_in ?? 3600;
-    const newExpiry = new Date(Date.now() + newExpiresIn * 1000);
-    const newRefreshToken = data.refresh_token ?? row.refresh_token;
-
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({
-        access_token: newAccessToken,
-        refresh_token: newRefreshToken,
-        expires_at: newExpiry,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-
-    return newAccessToken;
-  }
-
-  public async getConnectionStatus(tenantId: string): Promise<{
-    connected: boolean;
-    googleEmail: string | null;
-    syncedAt: Date | null;
-    lastSyncError: string | null;
-    lastSyncErrorAt: Date | null;
-  }> {
-    const row = await this.db
-      .selectFrom('google_oauth_tokens')
-      .select(['google_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    return {
-      connected: !!row,
-      googleEmail: row?.google_email ?? null,
-      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
-      lastSyncError: row?.last_sync_error ?? null,
-      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
-    };
-  }
-
-  public async disconnect(tenantId: string): Promise<void> {
-    await this.db.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tenantId).execute();
-  }
-
-  public async saveDeltaLink(tenantId: string, deltaLink: string): Promise<void> {
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({
-        delta_link: deltaLink,
-        synced_at: new Date(),
-        last_sync_error: null,
-        last_sync_error_at: null,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-
-  public async recordSyncError(tenantId: string, error: string): Promise<void> {
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-
-  public async getDeltaLink(tenantId: string): Promise<string | null> {
-    const row = await this.db
-      .selectFrom('google_oauth_tokens')
-      .select('delta_link')
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-    return row?.delta_link ?? null;
-  }
-
-  public async resetDeltaLink(tenantId: string): Promise<void> {
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/households/controller.ts
-
-```typescript
-import type {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthKeyPayload,
-  UpdateHouseholdsType,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-import { TRPCError } from '@trpc/server';
-import { sql } from 'kysely';
-
-import type { QueryParams } from '../../lib/base.repo';
-import { BaseRepository } from '../../lib/base.repo';
-import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
-import { HouseholdRepo } from './repositories/households.repo';
-import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
-import { TagsRepo } from '../tags/repositories/tags.repo';
-import { matchCoordinatesToDistrict } from '../../lib/gis/geocoding';
-import { BaseController } from '../../lib/base.controller';
-import { SettingsController } from '../settings/controller';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../logger';
-
-export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
-  private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
-  private settingsController = new SettingsController();
-  private tagsRepo = new TagsRepo();
-
-  constructor() {
-    super(new HouseholdRepo());
-  }
-
-  public async deleteManyForTenant(auth: IAuthKeyPayload, idsToDelete: string[]) {
-    // Filter out any placeholder households — they are permanent and undeletable
-    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, idsToDelete);
-    const safeIds = idsToDelete.filter((id) => !placeholders.has(id));
-
-    if (safeIds.length === 0) return false;
-    // Members move to the tenant's placeholder household (persons.household_id is
-    // NOT NULL) rather than being cascade-deleted along with the household.
-    return this.getRepo().deleteManyReassigningPersons({
-      tenant_id: auth.tenant_id,
-      ids: safeIds,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
-    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
-
-    const fp_street = fingerprintStreet({
-      street_num: payload.street_num,
-      street1: payload.street1,
-      street2: payload.street2,
-    });
-    const fp_full = fingerprintFull({
-      apt: payload.apt,
-      street_num: payload.street_num,
-      street1: payload.street1,
-      street2: payload.street2,
-      city: payload.city,
-      state: payload.state,
-      zip: payload.zip,
-      country: payload.country,
-    });
-
-    // Try to dedupe: find existing by fingerprint
-    if (fp_street || fp_full) {
-      const existing = await this.getRepo().findByFingerprint({
-        tenant_id: auth.tenant_id,
-        campaign_id: String(campaign_id),
-        fp_street: fp_street,
-        fp_full: fp_full,
-      });
-      if (existing?.id) return { id: String(existing.id) } as any;
-    }
-
-    const row = {
-      ...payload,
-      address_fp_street: fp_street,
-      address_fp_full: fp_full,
-      campaign_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-    return this.add(row as OperationDataType<'households', 'insert'>);
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const household = await super.getOneById(input);
-    if (!household) return undefined;
-
-    const tenantRow = await (BaseRepository as any)['_db']
-      .selectFrom('tenants')
-      .select('placeholder_household_id')
-      .where('id', '=', input.tenant_id)
-      .executeTakeFirst();
-
-    const is_placeholder = tenantRow?.placeholder_household_id
-      ? String(tenantRow.placeholder_household_id) === String((household as any).id)
-      : false;
-    return {
-      ...household,
-      is_placeholder,
-    } as any;
-  }
-
-  public override async update(input: {
-    tenant_id: string;
-    id: string;
-    row: OperationDataType<'households', 'update'>;
-  }) {
-    const placeholders = await this.getRepo().getPlaceholderIds(input.tenant_id, [input.id]);
-    if (placeholders.has(input.id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'The placeholder household cannot be edited.',
-      });
-    }
-
-    const keys = Object.keys(input.row || {});
-    const affectsAddress = keys.some((k) =>
-      ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country'].includes(k),
-    );
-
-    // Perform the main update without fingerprint columns first
-    const result = await super.update(input);
-
-    // Attempt fingerprint recompute in a separate, non-fatal step
-    if (affectsAddress) {
-      try {
-        const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as any;
-        const merged = { ...current, ...(input.row as any) };
-
-        let geocoding_status = isBlankAddress(merged) || isIncompleteAddress(merged) ? 'failed' : 'pending';
-        let district = null;
-        let precinct = null;
-        let ward = null;
-
-        // If autocomplete coordinates are provided in the update, use them and map boundaries synchronously
-        if (input.row.lat && input.row.lng && Number(input.row.lat) !== 0 && Number(input.row.lng) !== 0) {
-          try {
-            const matched = await matchCoordinatesToDistrict(Number(input.row.lat), Number(input.row.lng));
-            district = matched.district;
-            precinct = matched.precinct;
-            ward = matched.ward;
-            geocoding_status = 'success';
-          } catch (err) {
-            logger.error({ err }, 'Failed to map coordinates to district during update');
-          }
-        }
-
-        const fpRow: any = {
-          address_fp_street: fingerprintStreet({
-            street_num: merged.street_num,
-            street1: merged.street1,
-            street2: merged.street2,
-          }),
-          address_fp_full: fingerprintFull({
-            apt: merged.apt,
-            street_num: merged.street_num,
-            street1: merged.street1,
-            street2: merged.street2,
-            city: merged.city,
-            state: merged.state,
-            zip: merged.zip,
-            country: merged.country,
-          }),
-          geocoding_status,
-          district,
-          precinct,
-          ward,
-        };
-        await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
-
-        // Queue geocoding background job if geocoding status is pending
-        if (geocoding_status === 'pending') {
-          await this.getRepo()
-            .db.insertInto('background_jobs')
-            .values({
-              tenant_id: input.tenant_id,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({
-                type: 'geocode_household',
-                household_id: input.id,
-                tenant_id: input.tenant_id,
-              }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-        // Duplicate maintenance is only calculated nightly
-      } catch (err) {
-        logger.error({ err }, 'Failed to update address fingerprint and queue duplicates maintenance');
-      }
-    }
-
-    return result;
-  }
-
-  public async attachTag(household_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
-    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, [household_id]);
-    if (placeholders.has(household_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Cannot attach tags to the placeholder household.',
-      });
-    }
-
-    const randomHexColor = () =>
-      '#' +
-      Math.floor(Math.random() * 0xffffff)
-        .toString(16)
-        .padStart(6, '0');
-    const row = {
-      name,
-      color: randomHexColor(),
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      type,
-    };
-
-    const tag = await this.tagsRepo.addOrGet({
-      row: row as OperationDataType<'tags', 'insert'>,
-      onConflictColumn: 'name',
-    });
-
-    return this.addToMap({
-      tag_id: tag?.id as string | undefined,
-      household_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    });
-  }
-
-  public async detachTag(
-    tenant_id: string,
-    household_id: string,
-    tag_name: string,
-    type: 'tag' | 'issue' = 'tag',
-    userId?: string,
-  ) {
-    const placeholders = await this.getRepo().getPlaceholderIds(tenant_id, [household_id]);
-    if (placeholders.has(household_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Cannot detach tags from the placeholder household.',
-      });
-    }
-
-    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name, type });
-    if (tag?.id) {
-      await this.mapHouseholdsTagRepo.deleteMapping(tenant_id, household_id, tag.id);
-    }
-
-    try {
-      if (userId) {
-        await this.userActivity.log({
-          tenant_id,
-          user_id: userId,
-          activity: 'update',
-          entity: 'households',
-          entity_id: household_id,
-          quantity: 1,
-          metadata: { id: household_id, action: `detach_${type}`, name: tag_name },
-        });
-      }
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log detach tag activity');
-    }
-  }
-
-  public getAllWithPeopleCount(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    const { tags, ...queryParams } = options || {};
-    return this.getRepo().getAllWithPeopleCount({
-      tenant_id: auth.tenant_id,
-      options: queryParams as QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'>,
-      tags,
-    });
-  }
-
-  public getPeopleCount(id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
-  }
-
-  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getDistinctTags(auth.tenant_id, type);
-  }
-
-  public getTags(id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getTags(id, auth.tenant_id, type);
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const result = await this.getAllWithPeopleCount(auth, input?.options);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'export',
-        entity: 'households',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-        },
-      });
-      return response;
-    }
-    return super.exportCsv(input, auth);
-  }
-
-  private async addToMap(row: {
-    tag_id: string | undefined;
-    household_id: string;
-    tenant_id: string;
-    createdby_id: string;
-    updatedby_id: string;
-  }) {
-    if (!row.tag_id) {
-      throw new TRPCError({
-        message: 'Failed to add the tag',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
-    }
-
-    return await this.mapHouseholdsTagRepo.add({
-      row: row as OperationDataType<'map_households_tags', 'insert'>,
-    });
-  }
-
-  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
-  }
-
-  public async mergeHouseholds(target_id: string, source_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().mergeHouseholds({
-      tenant_id: auth.tenant_id,
-      target_id,
-      source_id,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async getLastFingerprintRecomputation(tenantId: string): Promise<{ lastRunAt: string | null }> {
-    const job = await this.getRepo()
-      .db.selectFrom('background_jobs')
-      .select(['created_at'])
-      .where('tenant_id', '=', tenantId)
-      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
-      .orderBy('created_at', 'desc')
-      .executeTakeFirst();
-
-    return { lastRunAt: job?.created_at ? new Date(job.created_at).toISOString() : null };
-  }
-
-  public async recomputeAddressFingerprints(tenantId: string): Promise<void> {
-    const oneMonthAgo = new Date();
-    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-
-    const existingJob = await this.getRepo()
-      .db.selectFrom('background_jobs')
-      .select(['created_at'])
-      .where('tenant_id', '=', tenantId)
-      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
-      .where('created_at', '>', oneMonthAgo)
-      .executeTakeFirst();
-
-    if (existingJob) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Address fingerprints can only be recomputed once a month. A request was already submitted recently.',
-      });
-    }
-
-    await this.getRepo()
-      .db.insertInto('background_jobs')
-      .values({
-        tenant_id: tenantId,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'recompute_address_fingerprints',
-          tenant_id: tenantId,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      })
-      .execute();
   }
 }
 ```
@@ -28135,231 +26542,6 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     }
     if (!list) return list;
     return this.resolveCreatorAndUpdater(input.tenant_id, list);
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/ms-sync/ms-oauth.service.ts
-
-```typescript
-import type { AuthorizationCodeRequest } from '@azure/msal-node';
-import { ConfidentialClientApplication } from '@azure/msal-node';
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-
-export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
-
-const MS_SCOPES = [
-  'https://graph.microsoft.com/Mail.Read',
-  'https://graph.microsoft.com/Mail.ReadWrite',
-  'https://graph.microsoft.com/Mail.Send',
-  'offline_access',
-];
-
-export class MsOAuthService {
-  private readonly msalApp: ConfidentialClientApplication;
-  private readonly db: Kysely<Models>;
-  private readonly redirectUri: string;
-
-  constructor(
-    db: Kysely<Models>,
-    config: { clientId: string; clientSecret: string; tenantId: string; redirectUri: string },
-  ) {
-    this.db = db;
-    this.redirectUri = config.redirectUri;
-    this.msalApp = new ConfidentialClientApplication({
-      auth: {
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-        authority: `https://login.microsoftonline.com/${config.tenantId}`,
-      },
-    });
-  }
-
-  public async getAuthUrl(state: string): Promise<string> {
-    return this.msalApp.getAuthCodeUrl({
-      scopes: MS_SCOPES,
-      redirectUri: this.redirectUri,
-      state,
-      prompt: 'select_account',
-    });
-  }
-
-  public async handleCallback(code: string, connectedBy: string, tenantId: string): Promise<void> {
-    const request: AuthorizationCodeRequest = {
-      code,
-      scopes: MS_SCOPES,
-      redirectUri: this.redirectUri,
-    };
-
-    const response = await this.msalApp.acquireTokenByCode(request);
-    if (!response?.accessToken || !response.account) {
-      throw new Error('Failed to acquire token from Microsoft');
-    }
-
-    const expiresAt = response.expiresOn ?? new Date(Date.now() + 3600 * 1000);
-
-    // Retrieve the refresh token from the MSAL cache
-    const cache = this.msalApp.getTokenCache().serialize();
-    const parsedCache = JSON.parse(cache);
-    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
-    const refreshToken = refreshTokenEntry[0]?.secret ?? '';
-
-    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
-    await this.db.transaction().execute(async (trx) => {
-      await trx
-        .insertInto('ms_oauth_tokens')
-        .values({
-          tenant_id: tenantId,
-          user_id: connectedBy,
-          access_token: response.accessToken,
-          refresh_token: refreshToken,
-          expires_at: expiresAt,
-          ms_email: response.account?.username ?? null,
-          delta_link: NEEDS_FULL_SYNC,
-          synced_at: null,
-        })
-        .onConflict((oc) =>
-          oc.column('tenant_id').doUpdateSet({
-            user_id: connectedBy,
-            access_token: response.accessToken,
-            refresh_token: refreshToken,
-            expires_at: expiresAt,
-            ms_email: response.account?.username ?? null,
-            delta_link: NEEDS_FULL_SYNC,
-            synced_at: null,
-            last_sync_error: null,
-            last_sync_error_at: null,
-            updated_at: new Date(),
-          }),
-        )
-        .execute();
-
-      await trx
-        .insertInto('background_jobs')
-        .values({
-          tenant_id: tenantId,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({ type: 'ms_sync', tenantId, requestedBy: connectedBy }),
-          run_at: new Date(),
-          max_attempts: 3,
-        })
-        .execute();
-    });
-  }
-
-  public async getValidToken(tenantId: string): Promise<string> {
-    const row = await this.db
-      .selectFrom('ms_oauth_tokens')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    if (!row) {
-      throw new Error('No Microsoft account connected for this tenant');
-    }
-
-    const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
-    if (!isExpired) {
-      return row.access_token;
-    }
-
-    // Refresh via MSAL silent flow
-    const response = await this.msalApp.acquireTokenByRefreshToken({
-      refreshToken: row.refresh_token,
-      scopes: MS_SCOPES,
-    });
-
-    if (!response?.accessToken) {
-      throw new Error('Token refresh failed — tenant must reconnect their Microsoft account');
-    }
-
-    const newExpiry = response.expiresOn ?? new Date(Date.now() + 3600 * 1000);
-
-    // Retrieve fresh refresh token from cache
-    const cache = this.msalApp.getTokenCache().serialize();
-    const parsedCache = JSON.parse(cache);
-    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
-    const newRefreshToken = refreshTokenEntry[0]?.secret ?? row.refresh_token;
-
-    await this.db
-      .updateTable('ms_oauth_tokens')
-      .set({
-        access_token: response.accessToken,
-        refresh_token: newRefreshToken,
-        expires_at: newExpiry,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-
-    return response.accessToken;
-  }
-
-  public async getConnectionStatus(tenantId: string): Promise<{
-    connected: boolean;
-    msEmail: string | null;
-    syncedAt: Date | null;
-    lastSyncError: string | null;
-    lastSyncErrorAt: Date | null;
-  }> {
-    const row = await this.db
-      .selectFrom('ms_oauth_tokens')
-      .select(['ms_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    return {
-      connected: !!row,
-      msEmail: row?.ms_email ?? null,
-      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
-      lastSyncError: row?.last_sync_error ?? null,
-      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
-    };
-  }
-
-  public async disconnect(tenantId: string): Promise<void> {
-    await this.db.deleteFrom('ms_oauth_tokens').where('tenant_id', '=', tenantId).execute();
-  }
-
-  public async saveDeltaLink(tenantId: string, deltaLink: string): Promise<void> {
-    await this.db
-      .updateTable('ms_oauth_tokens')
-      .set({
-        delta_link: deltaLink,
-        synced_at: new Date(),
-        last_sync_error: null,
-        last_sync_error_at: null,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-
-  public async recordSyncError(tenantId: string, error: string): Promise<void> {
-    await this.db
-      .updateTable('ms_oauth_tokens')
-      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-
-  public async getDeltaLink(tenantId: string): Promise<string | null> {
-    const row = await this.db
-      .selectFrom('ms_oauth_tokens')
-      .select('delta_link')
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-    return row?.delta_link ?? null;
-  }
-
-  public async resetDeltaLink(tenantId: string): Promise<void> {
-    await this.db
-      .updateTable('ms_oauth_tokens')
-      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
-      .where('tenant_id', '=', tenantId)
-      .execute();
   }
 }
 ```
@@ -30198,6 +28380,1190 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
 }
 ```
 
+## File: apps/backend/src/app/modules/volunteer-events/routes/volunteer-events-public.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { VolunteerEventsController } from '../controller';
+import formBody from '@fastify/formbody';
+import { TRPCError } from '@trpc/server';
+
+const ctrl = new VolunteerEventsController();
+
+function getStatusFromError(err: any): number {
+  if (err instanceof TRPCError) {
+    switch (err.code) {
+      case 'BAD_REQUEST':
+        return 400;
+      case 'UNAUTHORIZED':
+        return 401;
+      case 'FORBIDDEN':
+        return 403;
+      case 'NOT_FOUND':
+        return 404;
+      case 'CONFLICT':
+        return 409;
+      case 'PRECONDITION_FAILED':
+        return 412;
+      case 'PAYLOAD_TOO_LARGE':
+        return 413;
+      case 'TOO_MANY_REQUESTS':
+        return 429;
+      case 'INTERNAL_SERVER_ERROR':
+      default:
+        return 500;
+    }
+  }
+  return err.statusCode || 500;
+}
+
+// Shared CSS/Design Tokens block
+const SHARED_STYLES = `
+  :root {
+    --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+    --accent: #0ea5e9;
+    --accent-hover: #0284c7;
+    --accent-glow: rgba(14, 165, 233, 0.15);
+    --card-bg: rgba(255, 255, 255, 0.8);
+    --card-border: #cbd5e1;
+    --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+    --text-primary: #1f2937;
+    --text-secondary: #6b7280;
+    --input-bg: #ffffff;
+    --input-border: #cbd5e1;
+    --input-focus-border: #0ea5e9;
+    --input-focus-ring: rgba(14, 165, 233, 0.15);
+    --label-color: #374151;
+    --placeholder-color: #9ca3af;
+    --success: #2dd4bf;
+    --success-glow: rgba(45, 212, 191, 0.15);
+    --error: #f37373;
+    --error-glow: rgba(243, 115, 115, 0.15);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+      --accent: #3ea6ff;
+      --accent-hover: #1a8cff;
+      --accent-glow: rgba(62, 166, 255, 0.2);
+      --card-bg: rgba(19, 30, 49, 0.85);
+      --card-border: #1a2b45;
+      --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+      --text-primary: #f8fafc;
+      --text-secondary: #c7d1e5;
+      --input-bg: #0b1220;
+      --input-border: #1a2b45;
+      --input-focus-border: #3ea6ff;
+      --input-focus-ring: rgba(62, 166, 255, 0.25);
+      --label-color: #cbd5e1;
+      --placeholder-color: #4b5563;
+      --error: #ef4444;
+      --error-glow: rgba(239, 68, 68, 0.15);
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-weight: 300;
+    background: var(--bg-gradient);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 40px 24px;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  body::before, body::after {
+    content: "";
+    position: absolute;
+    width: 400px;
+    height: 400px;
+    border-radius: 50%;
+    background: var(--accent);
+    filter: blur(150px);
+    opacity: 0.06;
+    z-index: 0;
+    pointer-events: none;
+  }
+  body::before { top: 15%; left: 10%; }
+  body::after { bottom: 15%; right: 10%; }
+
+  .container {
+    width: 100%;
+    max-width: 800px;
+    z-index: 10;
+  }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-radius: 24px;
+    padding: 40px;
+    width: 100%;
+    box-shadow: var(--card-shadow);
+    position: relative;
+    overflow: hidden;
+    animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    color: var(--text-secondary);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 24px;
+    transition: all 0.2s ease;
+  }
+
+  .back-link:hover {
+    color: var(--accent-hover);
+    transform: translateX(-4px);
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+`;
+
+const renderErrorHtml = (message: string) => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Error</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    ${SHARED_STYLES}
+    
+    .card-error::before {
+      background: linear-gradient(90deg, transparent, var(--error), transparent);
+    }
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      background: var(--error-glow);
+      border: 2px solid var(--error);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .icon-container svg {
+      width: 38px;
+      height: 38px;
+      stroke: var(--error);
+      stroke-width: 3px;
+      fill: none;
+    }
+
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 12px;
+      text-align: center;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+      margin-top: 24px;
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+  </style>
+</head>
+<body>
+  <div class="card card-error" style="max-width: 440px; text-align: center; margin-top: 40px;">
+    <div class="icon-container">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1>Operation Failed</h1>
+    <p class="subtitle" style="margin-top: 12px;">${message}</p>
+    <a href="javascript:history.back()" class="btn">Go Back</a>
+  </div>
+</body>
+</html>
+`;
+
+function buildSignupFormFields(fields: string[], disabled: boolean): string {
+  const fieldSet = new Set(fields);
+  const isEnabled = (f: string) => fieldSet.has(f) || fieldSet.has(`${f}:required`);
+  const isRequired = (f: string) => fieldSet.has(`${f}:required`);
+  const dis = disabled ? 'disabled' : '';
+  const html: string[] = [];
+
+  html.push(`<input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />`);
+
+  if (isEnabled('first_name') || isEnabled('last_name')) {
+    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
+    if (isEnabled('first_name')) {
+      html.push(
+        `<div class="form-group"><label for="first_name">First Name${isRequired('first_name') ? ' *' : ''}</label><input type="text" id="first_name" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} ${dis} /></div>`,
+      );
+    } else {
+      html.push(`<div></div>`);
+    }
+    if (isEnabled('last_name')) {
+      html.push(
+        `<div class="form-group"><label for="last_name">Last Name${isRequired('last_name') ? ' *' : ''}</label><input type="text" id="last_name" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} ${dis} /></div>`,
+      );
+    } else {
+      html.push(`<div></div>`);
+    }
+    html.push(`</div>`);
+  }
+
+  html.push(
+    `<div class="form-group"><label for="email">Email Address *</label><input type="email" id="email" name="email" placeholder="you@example.com" required ${dis} /></div>`,
+  );
+
+  if (isEnabled('mobile')) {
+    html.push(
+      `<div class="form-group"><label for="mobile">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label><input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isRequired('mobile') ? 'required' : ''} ${dis} /></div>`,
+    );
+  }
+  if (isEnabled('street1')) {
+    html.push(
+      `<div class="form-group"><label for="street1">Street Address${isRequired('street1') ? ' *' : ''}</label><input type="text" id="street1" name="street1" placeholder="123 Main St" ${isRequired('street1') ? 'required' : ''} ${dis} /></div>`,
+    );
+  }
+  if (isEnabled('city') || isEnabled('zip')) {
+    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
+    html.push(
+      isEnabled('city')
+        ? `<div class="form-group"><label for="city">City${isRequired('city') ? ' *' : ''}</label><input type="text" id="city" name="city" ${isRequired('city') ? 'required' : ''} ${dis} /></div>`
+        : `<div></div>`,
+    );
+    html.push(
+      isEnabled('zip')
+        ? `<div class="form-group"><label for="zip">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label><input type="text" id="zip" name="zip" ${isRequired('zip') ? 'required' : ''} ${dis} /></div>`
+        : `<div></div>`,
+    );
+    html.push(`</div>`);
+  }
+  if (isEnabled('state') || isEnabled('country')) {
+    html.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">`);
+    html.push(
+      isEnabled('state')
+        ? `<div class="form-group"><label for="state">State / Province${isRequired('state') ? ' *' : ''}</label><input type="text" id="state" name="state" ${isRequired('state') ? 'required' : ''} ${dis} /></div>`
+        : `<div></div>`,
+    );
+    if (isEnabled('country')) {
+      html.push(
+        `<div class="form-group"><label for="country">Country${isRequired('country') ? ' *' : ''}</label><select id="country" name="country" ${isRequired('country') ? 'required' : ''} ${dis}><option value="">Select…</option><option value="CA">Canada</option><option value="US">United States</option><option value="GB">United Kingdom</option><option value="AU">Australia</option></select></div>`,
+      );
+    } else {
+      html.push(`<div></div>`);
+    }
+    html.push(`</div>`);
+  }
+  if (isEnabled('notes')) {
+    html.push(
+      `<div class="form-group"><label for="notes">Notes / Special Requirements${isRequired('notes') ? ' *' : ''}</label><textarea id="notes" name="notes" placeholder="Optional. Any notes or scheduling preferences…" ${isRequired('notes') ? 'required' : ''} ${dis}></textarea></div>`,
+    );
+  }
+
+  return html.join('\n');
+}
+
+const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
+  fastify.register(formBody);
+
+  // Success view
+  fastify.get('/success', async (req: any, reply) => {
+    const { tenantSlug } = req.query;
+    const backUrl = tenantSlug ? `/api/events/org/${tenantSlug}` : '#';
+
+    reply.type('text/html');
+    return reply.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signup Successful</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    ${SHARED_STYLES}
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      background: var(--success-glow);
+      border: 2px solid var(--success);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      position: relative;
+    }
+
+    .icon-container svg {
+      width: 38px;
+      height: 38px;
+      stroke: var(--success);
+      stroke-dasharray: 100;
+      stroke-dashoffset: 100;
+      stroke-width: 3px;
+      fill: none;
+      animation: drawCheck 0.6s 0.3s ease-out forwards;
+    }
+
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 12px;
+      text-align: center;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+      margin-top: 24px;
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    @keyframes drawCheck {
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card" style="max-width: 440px; text-align: center; margin-top: 40px;">
+    <div class="icon-container">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20 6L9 17L4 12" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1>You're Signed Up!</h1>
+    <p class="subtitle" style="margin-top: 12px;">Thank you for volunteering! A confirmation email has been sent to you with the event details.</p>
+    <a href="${backUrl}" class="btn">View Other Events</a>
+  </div>
+</body>
+</html>
+    `);
+  });
+
+  // Events list view for a specific organization/tenant (secure slug lookup)
+  fastify.get('/org/:tenantSlug', async (req: any, reply) => {
+    const { tenantSlug } = req.params;
+
+    try {
+      // Resolve Tenant ID from Secure Slug
+      const matchedTenant = await ctrl.getTenantFromSlug(tenantSlug);
+
+      if (!matchedTenant) {
+        reply.status(404).type('text/html');
+        return reply.send(renderErrorHtml('Organization not found.'));
+      }
+
+      const tenantId = String(matchedTenant.id);
+      const tenantName = matchedTenant.name;
+
+      const events = await ctrl.getUpcomingEventsPublic(tenantId);
+
+      const eventsListHtml =
+        events.length === 0
+          ? `<div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <p>No upcoming volunteer events scheduled at the moment.</p>
+            <p style="font-size: 13px; margin-top: 4px; opacity: 0.7;">Please check back later or contact us directly.</p>
+           </div>`
+          : events
+              .map((ev) => {
+                const start = new Date(ev.start_time);
+                const end = new Date(ev.end_time);
+
+                // Format dates
+                const dateStr = start.toLocaleDateString(undefined, {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                });
+                const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+
+                // Roster spots remaining
+                const isFull = ev.capacity !== null && Number(ev.volunteers_count || 0) >= ev.capacity;
+                const remainingSpots = ev.capacity !== null ? ev.capacity - Number(ev.volunteers_count || 0) : null;
+                const capacityBadge =
+                  ev.capacity === null
+                    ? `<span class="badge badge-open">Unlimited Spots Available</span>`
+                    : isFull
+                      ? `<span class="badge badge-full">Event Full</span>`
+                      : `<span class="badge badge-spots">${remainingSpots} Spots Left</span>`;
+
+                return `
+              <div class="event-card">
+                <div class="event-card-body">
+                  <div class="event-card-main">
+                    <h3 class="event-name">${ev.name}</h3>
+                    <p class="event-desc">${ev.description || 'No description provided.'}</p>
+                    
+                    <div class="event-meta">
+                      <div class="meta-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                          <line x1="16" y1="2" x2="16" y2="6"/>
+                          <line x1="8" y1="2" x2="8" y2="6"/>
+                          <line x1="3" y1="10" x2="21" y2="10"/>
+                        </svg>
+                        <span>${dateStr} @ ${timeStr}</span>
+                      </div>
+                      ${
+                        ev.location_address
+                          ? `
+                      <div class="meta-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+                          <circle cx="12" cy="10" r="3"/>
+                        </svg>
+                        <span>${ev.location_address}</span>
+                      </div>`
+                          : ''
+                      }
+                    </div>
+                  </div>
+                  
+                  <div class="event-card-footer">
+                    ${capacityBadge}
+                    ${
+                      isFull
+                        ? `<button class="btn btn-disabled" disabled>Event Full</button>`
+                        : `<a href="/api/events/view/${ev.slug}" class="btn">View Details & Sign Up</a>`
+                    }
+                  </div>
+                </div>
+              </div>
+            `;
+              })
+              .join('');
+
+      reply.type('text/html');
+      return reply.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Volunteer Opportunities - ${tenantName}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    ${SHARED_STYLES}
+
+    .event-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      margin-top: 24px;
+    }
+
+    .event-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .event-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 20px -8px rgba(0, 0, 0, 0.1);
+      border-color: var(--accent);
+    }
+
+    .event-card-body {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    @media (min-width: 768px) {
+      .event-card-body {
+        flex-direction: row;
+        align-items: center;
+      }
+    }
+
+    .event-card-main {
+      flex: 1;
+    }
+
+    .event-name {
+      font-size: 20px;
+      font-weight: 500;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .event-desc {
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 16px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .event-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .meta-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .meta-item svg {
+      width: 16px;
+      height: 16px;
+      opacity: 0.8;
+    }
+
+    .event-card-footer {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: stretch;
+      min-width: 200px;
+    }
+
+    @media (min-width: 768px) {
+      .event-card-footer {
+        align-items: flex-end;
+      }
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 20px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 14px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 8px var(--accent-glow);
+      text-align: center;
+    }
+
+    .btn:hover:not(.btn-disabled) {
+      background: var(--accent-hover);
+      box-shadow: 0 6px 14px var(--accent-glow);
+    }
+
+    .btn-disabled {
+      background: var(--card-border);
+      color: var(--text-secondary);
+      cursor: not-allowed;
+      box-shadow: none;
+      opacity: 0.6;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .badge-open {
+      background: rgba(45, 212, 191, 0.1);
+      color: var(--success);
+    }
+
+    .badge-spots {
+      background: var(--accent-glow);
+      color: var(--accent);
+    }
+
+    .badge-full {
+      background: rgba(243, 115, 115, 0.1);
+      color: var(--error);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      background: var(--card-bg);
+      border: 1px dashed var(--card-border);
+      border-radius: 16px;
+      color: var(--text-secondary);
+    }
+
+    .empty-state svg {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Volunteer Events</h1>
+      <p class="subtitle">Join us and make a difference in our community. Select an upcoming shift below.</p>
+    </div>
+
+    <div class="event-grid">
+      ${eventsListHtml}
+    </div>
+  </div>
+</body>
+</html>
+      `);
+    } catch (err) {
+      const statusCode = getStatusFromError(err);
+      reply.status(statusCode).type('text/html');
+      return reply.send(
+        renderErrorHtml(err instanceof Error && err.message ? err.message : 'Failed to load volunteer events.'),
+      );
+    }
+  });
+
+  fastify.get('/view/:eventId', async (req: any, reply) => {
+    const { eventId } = req.params;
+
+    if (/^\d+$/.test(eventId)) {
+      reply.status(404).type('text/html');
+      return reply.send(renderErrorHtml('Event not found.'));
+    }
+
+    try {
+      const event = await ctrl.getEventPublic(eventId);
+      if (!event) {
+        reply.status(404).type('text/html');
+        return reply.send(renderErrorHtml('Event not found.'));
+      }
+
+      const slug = ctrl.getTenantSlug(String(event.tenant_id));
+      const start = new Date(event.start_time);
+      const end = new Date(event.end_time);
+      const hasPassed = end < new Date();
+
+      const dateStr = start.toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      });
+      const timeStr = `${start.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+
+      // Calculate availability
+      const isFull = event.capacity !== null && Number(event.volunteers_count || 0) >= event.capacity;
+      const remainingSpots = event.capacity !== null ? event.capacity - Number(event.volunteers_count || 0) : null;
+
+      reply.type('text/html');
+      return reply.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign Up: ${event.name}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    ${SHARED_STYLES}
+
+    .grid-layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 32px;
+      margin-top: 20px;
+    }
+
+    @media (min-width: 768px) {
+      .grid-layout {
+        grid-template-columns: 1.2fr 1fr;
+      }
+    }
+
+    .event-info-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .info-group {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 16px;
+      padding: 24px;
+    }
+
+    .info-title {
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      color: var(--text-primary);
+    }
+
+    .info-desc {
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      white-space: pre-line;
+    }
+
+    .meta-details {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .meta-detail-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 14px;
+    }
+
+    .meta-detail-row svg {
+      width: 20px;
+      height: 20px;
+      color: var(--accent);
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .meta-detail-content h4 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 2px;
+    }
+
+    .meta-detail-content p {
+      color: var(--text-primary);
+    }
+
+    .signup-form-panel {
+      position: relative;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: var(--label-color);
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 12px;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s ease;
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: var(--placeholder-color);
+    }
+
+    input:hover, textarea:hover {
+      border-color: var(--accent);
+      opacity: 0.95;
+    }
+
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: var(--input-focus-border);
+      box-shadow: 0 0 0 4px var(--input-focus-ring);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 90px;
+    }
+
+    .hp-field {
+      display: none !important;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+      margin-top: 8px;
+      min-height: 48px;
+    }
+
+    button:hover:not(:disabled) {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    button:disabled {
+      background: var(--card-border);
+      color: var(--text-secondary);
+      cursor: not-allowed;
+      opacity: 0.6;
+      box-shadow: none;
+    }
+
+    .spots-alert {
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .spots-alert-warning {
+      background: rgba(243, 115, 115, 0.1);
+      color: var(--error);
+      border: 1px solid rgba(243, 115, 115, 0.2);
+    }
+
+    .spots-alert-info {
+      background: var(--accent-glow);
+      color: var(--accent);
+      border: 1px solid rgba(14, 165, 233, 0.2);
+    }
+
+    .spots-alert-success {
+      background: rgba(45, 212, 191, 0.1);
+      color: var(--success);
+      border: 1px solid rgba(45, 212, 191, 0.2);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    ${
+      !event.is_private
+        ? `
+    <a href="/api/events/org/${slug}" class="back-link">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="19" y1="12" x2="5" y2="12"/>
+        <polyline points="12 19 5 12 12 5"/>
+      </svg>
+      Back to Upcoming Events
+    </a>`
+        : ''
+    }
+
+    <div class="header" style="text-align: left; margin-bottom: 24px;">
+      <h1>${event.name}</h1>
+    </div>
+
+    <div class="grid-layout">
+      <!-- Left Panel: Event Details -->
+      <div class="event-info-panel">
+        <div class="info-group meta-details">
+          <div class="meta-detail-row">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <div class="meta-detail-content">
+              <h4>Date & Time</h4>
+              <p>${dateStr}</p>
+              <p style="font-size: 13px; opacity: 0.8; margin-top: 2px;">${timeStr}</p>
+            </div>
+          </div>
+
+          ${
+            event.location_address
+              ? `
+          <div class="meta-detail-row">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+            <div class="meta-detail-content">
+              <h4>Location</h4>
+              <p>${event.location_address}</p>
+            </div>
+          </div>`
+              : ''
+          }
+
+          <div class="meta-detail-row">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 00-3-3.87"/>
+              <path d="M16 3.13a4 4 0 010 7.75"/>
+            </svg>
+            <div class="meta-detail-content">
+              <h4>Capacity & Spots</h4>
+              <p>${event.capacity === null ? 'Open Signup (No Capacity Limit)' : `${event.capacity} total slots`}</p>
+              <p style="font-size: 13px; opacity: 0.8; margin-top: 2px;">${event.volunteers_count || 0} volunteer(s) currently signed up</p>
+            </div>
+          </div>
+
+          ${
+            event.contact_email || event.contact_phone
+              ? `
+          <div class="meta-detail-row">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
+            </svg>
+            <div class="meta-detail-content">
+              <h4>Questions / Contact</h4>
+              ${event.contact_email ? `<p><a href="mailto:${event.contact_email}" style="color: var(--accent); text-decoration: none;">${event.contact_email}</a></p>` : ''}
+              ${event.contact_phone ? `<p style="margin-top: 2px;">${event.contact_phone}</p>` : ''}
+            </div>
+          </div>`
+              : ''
+          }
+        </div>
+
+        ${
+          event.description
+            ? `
+        <div class="info-group">
+          <h3 class="info-title">Description</h3>
+          <p class="info-desc">${event.description}</p>
+        </div>`
+            : ''
+        }
+      </div>
+
+      <!-- Right Panel: Registration Form -->
+      <div class="signup-form-panel">
+        <div class="card">
+          <h3 class="info-title" style="margin-bottom: 20px;">Volunteer Signup</h3>
+
+          ${
+            hasPassed
+              ? `<div class="spots-alert spots-alert-warning">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>
+                This event has passed and registration is closed.
+               </div>`
+              : isFull
+                ? `<div class="spots-alert spots-alert-warning">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01"/></svg>
+                  This shift is currently fully booked.
+                 </div>`
+                : remainingSpots !== null && remainingSpots <= 5
+                  ? `<div class="spots-alert spots-alert-info">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                    Hurry! Only ${remainingSpots} spot(s) remaining.
+                   </div>`
+                  : `<div class="spots-alert spots-alert-success">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    Spots are available. Sign up below!
+                   </div>`
+          }
+
+          <form action="/api/events/signup/${event.slug || event.id}" method="POST">
+            ${buildSignupFormFields(Array.isArray(event.fields) ? event.fields : typeof event.fields === 'string' ? JSON.parse(event.fields) : ['first_name', 'last_name', 'email', 'mobile', 'notes'], isFull || hasPassed)}
+            <button type="submit" ${isFull || hasPassed ? 'disabled' : ''}>${hasPassed ? 'Registration Closed' : 'Sign Up for Shift'}</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+      `);
+    } catch (err) {
+      const statusCode = getStatusFromError(err);
+      reply.status(statusCode).type('text/html');
+      return reply.send(
+        renderErrorHtml(err instanceof Error && err.message ? err.message : 'Failed to load event details.'),
+      );
+    }
+  });
+
+  // Handle volunteer signup POST
+  fastify.post('/signup/:eventId', async (req: any, reply) => {
+    const { eventId } = req.params;
+    const isJsonExpected =
+      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
+
+    if (/^\d+$/.test(eventId)) {
+      if (isJsonExpected) {
+        return reply.status(404).send({ error: 'Event not found' });
+      }
+      reply.status(404).type('text/html');
+      return reply.send(renderErrorHtml('Event not found.'));
+    }
+
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
+
+    try {
+      const body = req.body || {};
+
+      // Fetch event first to get its tenant_id for the redirect
+      const event = await ctrl.getEventPublic(eventId);
+      if (!event) {
+        throw new Error('Event not found');
+      }
+
+      if (new Date(event.end_time) < new Date()) {
+        throw new Error('This event has passed and registration is closed.');
+      }
+
+      await ctrl.signupVolunteerPublic(eventId, body, clientIp);
+
+      const slug = ctrl.getTenantSlug(String(event.tenant_id));
+
+      if (isJsonExpected) {
+        return reply.status(200).send({ success: true, redirect_url: `/api/events/success?tenantSlug=${slug}` });
+      }
+
+      return reply.redirect(`/api/events/success?tenantSlug=${slug}`);
+    } catch (err) {
+      fastify.log.error(err);
+      const statusCode = getStatusFromError(err);
+      const message = err instanceof Error && err.message ? err.message : 'An unexpected error occurred during signup.';
+
+      if (isJsonExpected) {
+        return reply.status(statusCode).send({ error: message });
+      }
+
+      reply.status(statusCode).type('text/html');
+      return reply.send(renderErrorHtml(message));
+    }
+  });
+
+  done();
+};
+
+export default volunteerEventsPublicRoute;
+```
+
 ## File: apps/backend/src/app/modules/web-forms/repositories/web-forms.repo.ts
 
 ```typescript
@@ -30300,6 +29666,932 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
     };
   }
 }
+```
+
+## File: apps/backend/src/app/modules/web-forms/routes/web-forms-public.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { WebFormsController } from '../controller';
+import formBody from '@fastify/formbody';
+
+const webFormsController = new WebFormsController();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const SUCCESS_HTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Submission Successful</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --success: #2dd4bf;
+      --success-glow: rgba(45, 212, 191, 0.15);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --success: #22c55e;
+        --success-glow: rgba(34, 197, 94, 0.15);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: var(--accent);
+      filter: blur(120px);
+      opacity: 0.08;
+      z-index: 0;
+    }
+    body::before { top: 10%; left: 15%; }
+    body::after { bottom: 10%; right: 15%; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 24px;
+      padding: 48px 32px;
+      width: 100%;
+      max-width: 440px;
+      text-align: center;
+      box-shadow: var(--card-shadow);
+      z-index: 10;
+      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    }
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      background: var(--success-glow);
+      border: 2px solid var(--success);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      position: relative;
+      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .icon-container svg {
+      width: 38px;
+      height: 38px;
+      stroke: var(--success);
+      stroke-dasharray: 100;
+      stroke-dashoffset: 100;
+      stroke-width: 3px;
+      fill: none;
+      animation: drawCheck 0.6s 0.3s ease-out forwards;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 12px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes popIn {
+      0% {
+        opacity: 0;
+        transform: scale(0.6);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    @keyframes drawCheck {
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-container">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20 6L9 17L4 12" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1>Submission Successful</h1>
+    <p>Thank you! Your information has been successfully received and processed.</p>
+    <a href="javascript:history.back()" class="btn">Go Back</a>
+  </div>
+</body>
+</html>
+`;
+
+const errorHtml = (message: string) => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Submission Error</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --error: #f37373;
+      --error-glow: rgba(243, 115, 115, 0.15);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --error: #ef4444;
+        --error-glow: rgba(239, 68, 68, 0.15);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: var(--error);
+      filter: blur(120px);
+      opacity: 0.08;
+      z-index: 0;
+    }
+    body::before { top: 10%; left: 15%; }
+    body::after { bottom: 10%; right: 15%; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 24px;
+      padding: 48px 32px;
+      width: 100%;
+      max-width: 440px;
+      text-align: center;
+      box-shadow: var(--card-shadow);
+      z-index: 10;
+      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--error), transparent);
+    }
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      background: var(--error-glow);
+      border: 2px solid var(--error);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      position: relative;
+      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .icon-container svg {
+      width: 38px;
+      height: 38px;
+      stroke: var(--error);
+      stroke-width: 3px;
+      fill: none;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 12px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes popIn {
+      0% {
+        opacity: 0;
+        transform: scale(0.6);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-container">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round" stroke="var(--error)"/>
+      </svg>
+    </div>
+    <h1>Submission Failed</h1>
+    <p>${escapeHtml(message)}</p>
+    <a href="javascript:history.back()" class="btn">Go Back</a>
+  </div>
+</body>
+</html>
+`;
+
+const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Register form URL-encoded parser
+  fastify.register(formBody);
+
+  fastify.get('/success', async (req: any, reply) => {
+    const { checkout_session_id, is_mock, person_id, amount_cents, province, country, tenant_id, user_id } = req.query;
+    // Mock-donation confirmation is a local/dev convenience only. This endpoint is
+    // unauthenticated and every parameter (tenant_id, person_id, amount) is
+    // attacker-controlled, so it must NEVER record donations in production — real
+    // payments are confirmed via the signed Stripe webhook / authenticated tRPC path.
+    const isProduction = process.env['NODE_ENV'] === 'production';
+    if (!isProduction && is_mock === 'true' && checkout_session_id && person_id && tenant_id) {
+      try {
+        const { DonationsController } = await import('../../donations/controller');
+        const donationsController = new DonationsController();
+        await donationsController.confirmMockDonation(
+          tenant_id,
+          user_id || '1',
+          person_id,
+          Number(amount_cents),
+          checkout_session_id,
+          province || '',
+          country || '',
+        );
+      } catch (err) {
+        fastify.log.error(err as Error, 'Failed to confirm mock donation on public success page:');
+      }
+    }
+    reply.type('text/html');
+    return reply.send(SUCCESS_HTML);
+  });
+
+  fastify.get('/view/:formId', async (req: any, reply) => {
+    const { formId } = req.params;
+    try {
+      const form = await webFormsController.getFormPublic(formId);
+      if (!form || form.status !== 'active') {
+        reply.status(404).type('text/html');
+        return reply.send(errorHtml('Web form not found or inactive.'));
+      }
+
+      const formName = form.name;
+      const formDescription = form.description || '';
+
+      // Extract fields configuration, default to all fields if null/empty
+      const fields: string[] = form.fields
+        ? Array.isArray(form.fields)
+          ? (form.fields as string[])
+          : JSON.parse(String(form.fields))
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+      reply.type('text/html');
+      return reply.send(renderFormHtml(formId, formName, formDescription, fields, form.form_type));
+    } catch (err) {
+      reply.status(500).type('text/html');
+      return reply.send(errorHtml(err instanceof Error && err.message ? err.message : 'Failed to load form.'));
+    }
+  });
+
+  fastify.post('/submit/:formId', async (req: any, reply) => {
+    const { formId } = req.params;
+    // Standard reverse-proxy header check, fallback to req.ip
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
+    const isJsonExpected =
+      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
+
+    try {
+      const body = req.body || {};
+      const result = await webFormsController.submitFormPublic(formId, body, clientIp);
+
+      if (isJsonExpected) {
+        return reply.status(200).send({ success: true, redirect_url: result.redirect_url });
+      }
+
+      if (result.redirect_url) {
+        return reply.redirect(result.redirect_url);
+      }
+
+      return reply.redirect('/api/forms/success');
+    } catch (err) {
+      fastify.log.error(err);
+      const statusCode =
+        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) || 500;
+      const message =
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during submission.';
+
+      if (isJsonExpected) {
+        return reply.status(statusCode).send({ error: message });
+      }
+
+      reply.status(statusCode).type('text/html');
+      return reply.send(errorHtml(message));
+    }
+  });
+
+  done();
+};
+
+export default webFormsPublicRoute;
+
+const renderFormHtml = (
+  formId: string,
+  formName: string,
+  formDescription: string,
+  fields: string[],
+  formType: string,
+) => {
+  const isFieldEnabled = (name: string): boolean => {
+    if (formType === 'donation') {
+      const alwaysEnabled = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+      if (alwaysEnabled.includes(name)) return true;
+    }
+    return fields.includes(name) || fields.includes(`${name}:required`);
+  };
+
+  const isFieldRequired = (name: string): boolean => {
+    if (formType === 'donation') {
+      const alwaysRequired = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+      if (alwaysRequired.includes(name)) return true;
+    }
+    return fields.includes(`${name}:required`);
+  };
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(formName)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --input-bg: #ffffff;
+      --input-border: #cbd5e1;
+      --input-focus-border: #0ea5e9;
+      --input-focus-ring: rgba(14, 165, 233, 0.15);
+      --label-color: #374151;
+      --placeholder-color: #9ca3af;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --input-bg: #0b1220;
+        --input-border: #1a2b45;
+        --input-focus-border: #3ea6ff;
+        --input-focus-ring: rgba(62, 166, 255, 0.25);
+        --label-color: #cbd5e1;
+        --placeholder-color: #4b5563;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      border-radius: 50%;
+      background: var(--accent);
+      filter: blur(150px);
+      opacity: 0.08;
+      z-index: 0;
+      pointer-events: none;
+    }
+    body::before { top: 15%; left: 10%; }
+    body::after { bottom: 15%; right: 10%; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-radius: 24px;
+      padding: 40px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: var(--card-shadow);
+      z-index: 10;
+      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 500;
+      letter-spacing: -0.015em;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .description {
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+      position: relative;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: var(--label-color);
+      letter-spacing: 0.01em;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 12px;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s ease;
+      min-height: 46px;
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: var(--placeholder-color);
+    }
+
+    input:hover, textarea:hover, select:hover {
+      border-color: var(--accent);
+      opacity: 0.95;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--input-focus-border);
+      box-shadow: 0 0 0 4px var(--input-focus-ring);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 90px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+      margin-top: 8px;
+      min-height: 48px;
+    }
+
+    button:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .hp-field {
+      display: none !important;
+    }
+
+    .footer-note {
+      text-align: center;
+      margin-top: 24px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      opacity: 0.6;
+    }
+
+    .footer-note a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .footer-note a:hover {
+      text-decoration: underline;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>${escapeHtml(formName)}</h1>
+      <p class="description">${escapeHtml(formDescription)}</p>
+    </div>
+
+    <form action="/api/forms/submit/${formId}" method="POST">
+      <!-- Honeypot Bot Field (leave empty!) -->
+      <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
+
+      ${
+        formType === 'donation'
+          ? `
+      <div class="form-group">
+        <label for="amount">Donation Amount ($ CAD) *</label>
+        <input type="number" id="amount" name="amount" min="1" step="any" placeholder="E.g. 50.00" required />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('first_name')
+          ? `
+      <div class="form-group">
+        <label for="first_name">First Name ${isFieldRequired('first_name') ? '*' : ''}</label>
+        <input type="text" id="first_name" name="first_name" placeholder="E.g. John" ${isFieldRequired('first_name') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('last_name')
+          ? `
+      <div class="form-group">
+        <label for="last_name">Last Name ${isFieldRequired('last_name') ? '*' : ''}</label>
+        <input type="text" id="last_name" name="last_name" placeholder="E.g. Doe" ${isFieldRequired('last_name') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      <div class="form-group">
+        <label for="email">Email Address *</label>
+        <input type="email" id="email" name="email" placeholder="john@example.com" required />
+      </div>
+
+      ${
+        isFieldEnabled('street1')
+          ? `
+      <div class="form-group">
+        <label for="street1">Street Address ${isFieldRequired('street1') ? '*' : ''}</label>
+        <input type="text" id="street1" name="street1" placeholder="E.g. 123 Main St" ${isFieldRequired('street1') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('city')
+          ? `
+      <div class="form-group">
+        <label for="city">City ${isFieldRequired('city') ? '*' : ''}</label>
+        <input type="text" id="city" name="city" placeholder="E.g. Toronto" ${isFieldRequired('city') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('country')
+          ? `
+      <div class="form-group">
+        <label for="country">Country ${isFieldRequired('country') ? '*' : ''}</label>
+        <select id="country" name="country" ${isFieldRequired('country') ? 'required' : ''}>
+          <option value="CA">Canada</option>
+          <option value="US">United States</option>
+          <option value="GB">United Kingdom</option>
+          <option value="AU">Australia</option>
+        </select>
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('state')
+          ? `
+      <div class="form-group">
+        <label for="state">State / Province ${isFieldRequired('state') ? '*' : ''}</label>
+        <input type="text" id="state" name="state" placeholder="E.g. ON or NY" ${isFieldRequired('state') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('zip')
+          ? `
+      <div class="form-group">
+        <label for="zip">Zip / Postal Code ${isFieldRequired('zip') ? '*' : ''}</label>
+        <input type="text" id="zip" name="zip" placeholder="E.g. M5V 2T6" ${isFieldRequired('zip') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('mobile')
+          ? `
+      <div class="form-group">
+        <label for="mobile">Mobile / Phone ${isFieldRequired('mobile') ? '*' : ''}</label>
+        <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isFieldRequired('mobile') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('notes')
+          ? `
+      <div class="form-group">
+        <label for="notes">Notes / Message ${isFieldRequired('notes') ? '*' : ''}</label>
+        <textarea id="notes" name="notes" placeholder="How can we help you?" ${isFieldRequired('notes') ? 'required' : ''}></textarea>
+      </div>`
+          : ''
+      }
+
+      <button type="submit">${formType === 'donation' ? 'Next' : 'Submit'}</button>
+    </form>
+
+    <div class="footer-note">
+      Powered by <a href="#" target="_blank">PeopleCRM</a>
+    </div>
+  </div>
+</body>
+</html>
+`;
+};
 ```
 
 ## File: apps/backend/src/app/modules/workflows/repositories/workflows.repo.ts
@@ -30408,6 +30700,392 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
 }
 ```
 
+## File: apps/backend/src/app/modules/workflows/controller.ts
+
+```typescript
+import { BaseController } from '../../lib/base.controller';
+import { WorkflowsRepo } from './repositories/workflows.repo';
+import { WorkflowEnrollmentsRepo } from './repositories/workflow-enrollments.repo';
+import type { Transaction, Kysely } from 'kysely';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { TRPCError } from '@trpc/server';
+import { logger } from '../../logger';
+
+export class WorkflowsController extends BaseController<'workflows', WorkflowsRepo> {
+  private readonly enrollmentsRepo = new WorkflowEnrollmentsRepo();
+
+  constructor() {
+    super(new WorkflowsRepo());
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const workflow = await super.getOneById(input);
+    if (!workflow) return workflow;
+    return this.resolveCreatorAndUpdater(input.tenant_id, workflow);
+  }
+
+  public async getSteps(tenantId: string, workflowId: string, trx?: Transaction<Models>) {
+    const db = trx || this.getRepo().db;
+    const steps = await db
+      .selectFrom('workflow_steps')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('workflow_id', '=', workflowId)
+      .orderBy('step_number', 'asc')
+      .execute();
+    return steps.map((s) => ({
+      ...s,
+      id: String(s.id),
+      workflow_id: String(s.workflow_id),
+    }));
+  }
+
+  public async saveSteps(tenantId: string, workflowId: string, steps: any[], userId: string) {
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        // 1. Verify workflow exists and belongs to tenant
+        const workflow = await trx
+          .selectFrom('workflows')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', workflowId)
+          .executeTakeFirst();
+
+        if (!workflow) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Workflow not found.',
+          });
+        }
+
+        // 2. Delete all existing steps
+        await trx
+          .deleteFrom('workflow_steps')
+          .where('tenant_id', '=', tenantId)
+          .where('workflow_id', '=', workflowId)
+          .execute();
+
+        // 3. Insert new steps
+        if (steps.length > 0) {
+          const insertRows = steps.map(
+            (step, idx) =>
+              ({
+                tenant_id: tenantId,
+                workflow_id: workflowId,
+                step_number: idx + 1,
+                delay_days: Number(step.delay_days || 0),
+                delay_unit: step.delay_unit || 'days',
+                subject: step.subject || 'Follow-up Email',
+                preview_text: step.preview_text || null,
+                html_content: step.html_content || null,
+                plain_text_content: step.plain_text_content || null,
+              }) as any,
+          );
+
+          await trx.insertInto('workflow_steps').values(insertRows).execute();
+        }
+
+        // Log update activity
+        await this.userActivity.log(
+          {
+            tenant_id: tenantId,
+            user_id: userId,
+            activity: 'update',
+            entity: 'workflows',
+            entity_id: workflowId,
+            quantity: 1,
+            metadata: { id: workflowId, action: 'save_steps', stepsCount: steps.length },
+          },
+          trx,
+        );
+      });
+
+    return { success: true };
+  }
+
+  public async getEnrollments(tenantId: string, workflowId: string, options?: any) {
+    return this.enrollmentsRepo.getEnrollmentsWithPersonDetails({
+      tenant_id: tenantId,
+      workflow_id: workflowId,
+      options,
+    });
+  }
+
+  public async enrollPerson(
+    tenantId: string,
+    personId: string,
+    workflowId: string,
+    userId: string,
+    trx?: Transaction<Models> | Kysely<Models>,
+  ) {
+    const executeLogic = async (t: Transaction<Models> | Kysely<Models>) => {
+      // 1. Verify person exists
+      const person = await t
+        .selectFrom('persons')
+        .select(['id', 'first_name', 'last_name', 'email'])
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', personId)
+        .executeTakeFirst();
+
+      if (!person) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Person not found.',
+        });
+      }
+
+      // 2. Verify workflow exists and is active
+      const workflow = await t
+        .selectFrom('workflows')
+        .select(['id', 'status', 'name'])
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', workflowId)
+        .executeTakeFirst();
+
+      if (!workflow) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Workflow not found.',
+        });
+      }
+
+      // 3. Check if already enrolled in an active state
+      const existing = await t
+        .selectFrom('workflow_enrollments')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where('workflow_id', '=', workflowId)
+        .where('person_id', '=', personId)
+        .where('status', '=', 'active')
+        .executeTakeFirst();
+
+      if (existing) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This person is already enrolled in this workflow.',
+        });
+      }
+
+      // 4. Find the first step of this workflow
+      const firstStep = await t
+        .selectFrom('workflow_steps')
+        .select(['step_number', 'delay_days', 'delay_unit'])
+        .where('tenant_id', '=', tenantId)
+        .where('workflow_id', '=', workflowId)
+        .orderBy('step_number', 'asc')
+        .executeTakeFirst();
+
+      if (!firstStep) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This workflow does not have any steps yet.',
+        });
+      }
+
+      // 5. Calculate next run at based on step delay
+      const delayMs =
+        firstStep.delay_unit === 'hours'
+          ? firstStep.delay_days * 60 * 60 * 1000
+          : firstStep.delay_days * 24 * 60 * 60 * 1000;
+      const nextRunAt = new Date(Date.now() + delayMs);
+
+      // 6. Insert enrollment
+      const insertRow = {
+        tenant_id: tenantId,
+        workflow_id: workflowId,
+        person_id: personId,
+        status: 'active',
+        current_step_number: firstStep.step_number,
+        next_run_at: nextRunAt,
+      } as OperationDataType<'workflow_enrollments', 'insert'>;
+
+      const result = await t
+        .insertInto('workflow_enrollments')
+        .values(insertRow)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      // Log user activity
+      await this.userActivity.log(
+        {
+          tenant_id: tenantId,
+          user_id: userId,
+          activity: 'assign',
+          entity: 'workflows',
+          entity_id: workflowId,
+          quantity: 1,
+          metadata: {
+            id: workflowId,
+            person_id: personId,
+            person_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
+            next_run_at: nextRunAt.toISOString(),
+          },
+        },
+        typeof (t as any).transaction === 'undefined' ? (t as Transaction<Models>) : undefined,
+      );
+
+      return {
+        ...result,
+        id: String(result.id),
+        workflow_id: String(result.workflow_id),
+        person_id: String(result.person_id),
+      };
+    };
+
+    if (trx) {
+      return executeLogic(trx);
+    } else {
+      return this.getRepo()
+        .transaction()
+        .execute(async (t) => executeLogic(t));
+    }
+  }
+
+  public async cancelEnrollment(tenantId: string, enrollmentId: string, userId: string) {
+    return this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        const enrollment = await trx
+          .selectFrom('workflow_enrollments')
+          .select(['id', 'workflow_id', 'person_id', 'status'])
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', enrollmentId)
+          .executeTakeFirst();
+
+        if (!enrollment) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Enrollment not found.',
+          });
+        }
+
+        if (enrollment.status !== 'active') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Only active enrollments can be cancelled.',
+          });
+        }
+
+        await trx
+          .updateTable('workflow_enrollments')
+          .set({
+            status: 'cancelled',
+            next_run_at: null,
+            updated_at: new Date(),
+          })
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', enrollmentId)
+          .execute();
+
+        // Look up person's name for log
+        const person = await trx
+          .selectFrom('persons')
+          .select(['first_name', 'last_name'])
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', enrollment.person_id)
+          .executeTakeFirst();
+
+        // Log activity
+        await this.userActivity.log(
+          {
+            tenant_id: tenantId,
+            user_id: userId,
+            activity: 'unassign',
+            entity: 'workflows',
+            entity_id: String(enrollment.workflow_id),
+            quantity: 1,
+            metadata: {
+              id: String(enrollment.workflow_id),
+              person_id: String(enrollment.person_id),
+              person_name: person ? `${person.first_name || ''} ${person.last_name || ''}`.trim() : 'Unknown Contact',
+            },
+          },
+          trx,
+        );
+
+        return { success: true };
+      });
+  }
+
+  public async triggerWorkflow(
+    tenantId: string,
+    personId: string,
+    triggerType: string,
+    triggerEventId: string | null | undefined,
+    trx?: Transaction<Models> | Kysely<Models>,
+  ) {
+    const db = trx || this.getRepo().db;
+    let query = db
+      .selectFrom('workflows')
+      .select(['id', 'name'])
+      .where('tenant_id', '=', tenantId)
+      .where('trigger_type', '=', triggerType)
+      .where('status', '=', 'active');
+
+    if (triggerEventId) {
+      query = query.where((eb) =>
+        eb.or([eb('trigger_event_id', 'is', null), eb('trigger_event_id', '=', triggerEventId as any)]),
+      );
+    } else {
+      query = query.where('trigger_event_id', 'is', null);
+    }
+
+    const activeWorkflows = await query.execute();
+    if (activeWorkflows.length === 0) return;
+
+    // Look up the default tenant admin actor ID
+    const tenantRow = await db.selectFrom('tenants').select('admin_id').where('id', '=', tenantId).executeTakeFirst();
+    if (!tenantRow?.admin_id) {
+      logger.warn(`triggerWorkflow: skipping automation for tenant ${tenantId} — admin_id not configured.`);
+      return;
+    }
+    const creatorId = String(tenantRow.admin_id);
+
+    for (const wf of activeWorkflows) {
+      try {
+        await this.enrollPerson(tenantId, personId, String(wf.id), creatorId, trx as any);
+      } catch (err) {
+        // Safe check in case they're already enrolled
+        if (err instanceof Error && err.message.includes('already enrolled')) {
+          logger.info(`Person ${personId} is already enrolled in workflow ${wf.id}. Skipping.`);
+        } else {
+          logger.error({ err }, `Failed to enroll person ${personId} in workflow ${wf.id}`);
+        }
+      }
+    }
+  }
+
+  public async triggerVolunteerSignup(
+    tenantId: string,
+    personId: string,
+    eventId: string | null | undefined,
+    trx: Transaction<Models>,
+  ) {
+    return this.triggerWorkflow(tenantId, personId, 'volunteer_signup', eventId, trx);
+  }
+
+  public async triggerTagAdded(
+    tenantId: string,
+    personId: string,
+    tagId: string,
+    tagName: string,
+    trx?: Transaction<Models> | Kysely<Models>,
+  ) {
+    // 1. General tag_added trigger (filtered by tagId, or any tag if no filter)
+    await this.triggerWorkflow(tenantId, personId, 'tag_added', tagId, trx);
+
+    // 2. Specialized triggers based on tag name
+    const normalized = tagName.trim().toLowerCase();
+    if (normalized === 'subscriber') {
+      await this.triggerWorkflow(tenantId, personId, 'new_subscriber', null, trx);
+    } else if (normalized === 'unsubscribed') {
+      await this.triggerWorkflow(tenantId, personId, 'new_unsubscriber', null, trx);
+    }
+  }
+}
+```
+
 ## File: apps/backend/src/trpc.ts
 
 ```typescript
@@ -30419,8 +31097,7 @@ import type { Context } from './context';
 import { toTRPCError } from './app/errors/to-trpc-errors';
 import superjson from 'superjson';
 import { logger } from './app/logger';
-
-const GENERIC_LOGIN_MSG = 'Please check your email and password and try again';
+import { GENERIC_SIGNIN_ERROR } from '../../../libs/common/src';
 
 const trpc = initTRPC.context<Context>().create({
   transformer: superjson,
@@ -30464,7 +31141,7 @@ const trpc = initTRPC.context<Context>().create({
     }
 
     if (isSignIn && (isZodOrBadRequest || isCredsProblem)) {
-      return { ...finalShape, message: GENERIC_LOGIN_MSG };
+      return { ...finalShape, message: GENERIC_SIGNIN_ERROR };
     }
 
     // Forward safe metadata from AppError (e.g. retryAfterSec for rate limits)
@@ -31617,534 +32294,265 @@ export class BillingController {
 }
 ```
 
-## File: apps/backend/src/app/modules/donations/routes/donations-webhook.route.ts
+## File: apps/backend/src/app/modules/companies/controller.ts
 
 ```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import Stripe from 'stripe';
-import { env } from '../../../../env';
-import { BaseRepository } from '../../../lib/base.repo';
-import { logger } from '../../../logger';
+import { BaseController } from '../../lib/base.controller';
+import { CompaniesRepo } from './repositories/companies.repo';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { ImportsRepo } from '../imports/repositories/imports.repo';
+import { StorageService } from '../../lib/storage.service';
+import { TRPCError } from '@trpc/server';
+import { logger } from '../../logger';
 
-const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.post('/webhook', async (req, reply) => {
-    const query = req.query as { token?: string };
-    const token = query.token;
-    if (!token) {
-      logger.error('Webhook error: Missing token query parameter');
-      return reply.code(400).send({ error: 'Missing token parameter' });
-    }
+export class CompaniesController extends BaseController<'companies', CompaniesRepo> {
+  constructor() {
+    super(new CompaniesRepo());
+  }
 
-    let tenantId = 'unknown';
-    try {
-      // Look up tenant setting donations.webhook_token with matching value
-      // eslint-disable-next-line local/no-unscoped-db-query
-      const tokenRow = await BaseRepository.dbInstance
-        .selectFrom('settings')
-        .select('tenant_id')
-        .where('key', '=', 'donations.webhook_token')
-        .where('value', '=', JSON.stringify(token))
-        .executeTakeFirst();
-
-      if (!tokenRow) {
-        logger.error(`Webhook error: Invalid webhook token: ${token}`);
-        return reply.code(400).send({ error: 'Invalid webhook token' });
+  public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
+    const company = (await super.getOneById(input)) as any;
+    if (company) {
+      let currentJson: any = {};
+      if (company.json) {
+        currentJson = typeof company.json === 'string' ? JSON.parse(company.json) : company.json;
       }
-
-      tenantId = String(tokenRow.tenant_id);
-
-      const signature = (req.headers['stripe-signature'] as string) || '';
-      const payload = req.body as string; // Raw string thanks to ContentTypeParser setup
-
-      // 1. Look up settings for this tenant ID in Kysely
-      const secretRow = await BaseRepository.dbInstance
-        .selectFrom('settings')
-        .select('value')
-        .where('tenant_id', '=', tenantId)
-        .where('key', '=', 'donations.stripe_webhook_secret')
-        .executeTakeFirst();
-
-      const webhookSecret = secretRow?.value as string | undefined;
-
-      const keyRow = await BaseRepository.dbInstance
-        .selectFrom('settings')
-        .select('value')
-        .where('tenant_id', '=', tenantId)
-        .where('key', '=', 'donations.stripe_secret_key')
-        .executeTakeFirst();
-
-      const stripeKey = (keyRow?.value as string | undefined) || env.stripeSecretKey;
-
-      // Mock mode (unsigned payload parsing) is ONLY permitted outside production.
-      // In production we must never accept an unauthenticated webhook body, or an
-      // attacker who knows the tenant's webhook token could forge payment events.
-      const isProduction = process.env['NODE_ENV'] === 'production';
-      const isMock = !isProduction && (!stripeKey || stripeKey.includes('MockKey') || stripeKey === '');
-
-      let event: Stripe.Event;
-
-      if (isMock) {
-        // Direct parse in mock/local dev mode
-        event = JSON.parse(payload);
-      } else {
-        if (!stripeKey || stripeKey.includes('MockKey')) {
-          throw new Error('Tenant donations stripe secret key not configured.');
-        }
-        if (!webhookSecret) {
-          throw new Error('Tenant donations stripe webhook secret not configured.');
-        }
-        const stripe = new Stripe(stripeKey);
-        event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
+      if (!currentJson || !currentJson.google_enriched) {
+        await this.getRepo()
+          .db.insertInto('background_jobs')
+          .values({
+            tenant_id: input.tenant_id,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'enrich_company_google',
+              company_id: String(company.id),
+              tenant_id: String(input.tenant_id),
+            }),
+            run_at: new Date(),
+            max_attempts: 3,
+          })
+          .execute()
+          .catch((err) => logger.error({ err }, 'Failed to queue google enrichment job on getOneById'));
       }
-
-      logger.info(`[DonationsWebhook] Persisting webhook event: ${event.id} (${event.type}) for Tenant: ${tenantId}`);
-
-      // 2. Persist webhook event for background worker processing
-      await BaseRepository.dbInstance
-        .insertInto('webhook_events')
-        .values({
-          tenant_id: tenantId,
-          stripe_event_id: event.id,
-          type: event.type,
-          payload: JSON.stringify(event),
-          status: 'pending',
-        })
-        .onConflict((oc: any) => oc.column('stripe_event_id').doNothing())
-        .execute();
-
-      return reply.code(200).send({ received: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error({ err: message }, `Donations Webhook error for Tenant ${tenantId}`);
-      return reply.code(400).send({ error: message });
     }
-  });
+    return company;
+  }
 
-  done();
-};
+  public addCompany(payload: any, auth: IAuthKeyPayload) {
+    const row = {
+      name: payload.name,
+      description: payload.description ?? null,
+      website: payload.website ?? null,
+      email: payload.email ?? null,
+      phone: payload.phone ?? null,
+      industry: payload.industry ?? null,
+      notes: payload.notes ?? null,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'companies', 'insert'>;
+    return this.add(row);
+  }
 
-export default donationsWebhookRoute;
-```
+  public updateCompany(id: string, row: any, auth: IAuthKeyPayload) {
+    const rowWithUpdatedBy = {
+      ...row,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'companies', 'update'>;
+    return this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
+  }
 
-## File: apps/backend/src/app/modules/emails/services/email-ingester.service.ts
+  public async getAllCompanies(auth: IAuthKeyPayload, options?: any) {
+    return this.getAllWithCounts(auth.tenant_id, options);
+  }
 
-```typescript
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { StorageService } from '../../../lib/storage.service';
-import { env } from '../../../../env';
-import crypto from 'crypto';
-import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
-import { logger } from '../../../logger';
-
-export interface IngestableEmail {
-  id: string; // Remote provider's unique message ID
-  internetMessageId?: string | null;
-  fromEmail: string | null;
-  toEmail: string | null;
-  subject: string | null;
-  dateSent: Date;
-  bodyHtml: string;
-  recipients: Array<{
-    kind: 'to' | 'cc' | 'bcc';
-    name: string | null;
-    email: string;
-  }>;
-  attachments: Array<{
-    name: string;
-    contentType: string;
-    size: number;
-    contentId: string | null;
-    isInline: boolean;
-    fetchContent: () => Promise<Buffer>;
-  }>;
-}
-
-export class EmailIngesterService {
+  private readonly importsRepo = new ImportsRepo();
   private readonly storageService = new StorageService();
 
-  constructor(
-    private readonly db: Kysely<Models>,
-    private readonly prefix: string, // 'ms' or 'google'
-  ) {}
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
+  }
 
-  public async removeAllLocalEmails(tenantId: string): Promise<void> {
-    const matchedEmails = await this.db
-      .selectFrom('emails')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .where('preview', 'like', `${this.prefix}:%`)
-      .execute();
-
-    if (matchedEmails.length === 0) return;
-    const emailIds = matchedEmails.map((e) => String(e.id));
-
-    // Capture attachment file references before the rows are deleted.
-    const fileIds = await this.getAttachmentFileIds(tenantId, emailIds);
-
-    await this.db.transaction().execute(async (trx) => {
-      // Delete from dependent tables sequentially to prevent foreign key constraint issues
-      await trx
-        .deleteFrom('email_comments')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', 'in', emailIds)
-        .execute();
-      await trx
-        .deleteFrom('email_bodies')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', 'in', emailIds)
-        .execute();
-      await trx
-        .deleteFrom('email_headers')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', 'in', emailIds)
-        .execute();
-      await trx
-        .deleteFrom('email_recipients')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', 'in', emailIds)
-        .execute();
-      await trx
-        .deleteFrom('email_attachments')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', 'in', emailIds)
-        .execute();
-      await trx.deleteFrom('email_trash').where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
-
-      // Delete from emails table
-      await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', 'in', emailIds).execute();
+  public async mergeCompanies(target_id: string, source_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().mergeCompanies({
+      tenant_id: auth.tenant_id,
+      target_id,
+      source_id,
+      user_id: auth.user_id,
     });
-
-    await this.purgeOrphanedFiles(tenantId, fileIds);
   }
 
-  public async deleteMessage(tenantId: string, remoteId: string): Promise<void> {
-    const dedupeKey = `${this.prefix}:${remoteId}`;
-    const existing = await this.db
-      .selectFrom('emails')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .where('preview', '=', dedupeKey)
-      .executeTakeFirst();
+  public async importRows(
+    input: {
+      rows: Array<{
+        name: string;
+        description?: string | null;
+        website?: string | null;
+        email?: string | null;
+        phone?: string | null;
+        industry?: string | null;
+        notes?: string | null;
+      }>;
+      skipped?: number;
+      file_name?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-Companies-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
 
-    if (!existing) return;
-    const emailId = String(existing.id);
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
 
-    // Capture attachment file references before the rows are deleted.
-    const fileIds = await this.getAttachmentFileIds(tenantId, [emailId]);
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'companies',
+      tag_name: null,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    } as any;
 
-    await this.db.transaction().execute(async (trx) => {
-      // Delete from dependent tables sequentially to prevent foreign key constraint issues
-      await trx
-        .deleteFrom('email_comments')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', '=', emailId)
-        .execute();
-      await trx.deleteFrom('email_bodies').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
-      await trx.deleteFrom('email_headers').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
-      await trx
-        .deleteFrom('email_recipients')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', '=', emailId)
-        .execute();
-      await trx
-        .deleteFrom('email_attachments')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', '=', emailId)
-        .execute();
-      await trx.deleteFrom('email_trash').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
-
-      // Delete from emails table
-      await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', emailId).execute();
-    });
-
-    await this.purgeOrphanedFiles(tenantId, fileIds);
-  }
-
-  /** Distinct, non-null file_ids referenced by the given emails' attachments. */
-  private async getAttachmentFileIds(tenantId: string, emailIds: string[]): Promise<string[]> {
-    if (emailIds.length === 0) return [];
-    const rows = await this.db
-      .selectFrom('email_attachments')
-      .select('file_id')
-      .distinct()
-      .where('tenant_id', '=', tenantId)
-      .where('email_id', 'in', emailIds)
-      .where('file_id', 'is not', null)
-      .execute();
-    return rows.map((r) => String(r.file_id)).filter((id) => id !== 'null');
-  }
-
-  /**
-   * Delete file rows + storage blobs for files no longer referenced by any
-   * remaining attachment (files are sha256-deduped and can be shared). Storage
-   * deletion is best-effort and must not throw.
-   */
-  private async purgeOrphanedFiles(tenantId: string, fileIds: string[]): Promise<void> {
-    for (const fileId of fileIds) {
-      try {
-        const stillReferenced = await this.db
-          .selectFrom('email_attachments')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('file_id', '=', fileId)
-          .limit(1)
-          .executeTakeFirst();
-
-        if (stillReferenced) continue;
-
-        const file = await this.db
-          .selectFrom('files')
-          .select(['id', 'storage_key'])
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', fileId)
-          .executeTakeFirst();
-
-        if (!file) continue;
-
-        await this.db.deleteFrom('files').where('tenant_id', '=', tenantId).where('id', '=', fileId).execute();
-
-        if (file.storage_key) {
-          try {
-            await this.storageService.delete(file.storage_key);
-          } catch (err) {
-            logger.error({ err }, `Failed to delete storage blob ${file.storage_key} for file ${fileId}`);
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, `Failed to purge orphaned file ${fileId}`);
-      }
-    }
-  }
-
-  public async ingestEmail(
-    email: IngestableEmail,
-    tenantId: string,
-    requestedBy: string,
-    folderId: string,
-  ): Promise<boolean> {
-    const dedupeKey = `${this.prefix}:${email.id}`;
-
-    // Dedup: use remote message ID stored in email preview field (prefixed)
-    const existing = await this.db
-      .selectFrom('emails')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .where('preview', '=', dedupeKey)
-      .executeTakeFirst();
-
-    if (existing) return false;
-
-    // Try finding by internetMessageId in email_headers to match locally composed
-    // & sent emails. The provider may reassign a message's ID when it moves
-    // between folders (e.g. MS Graph changes the ID on Drafts -> Sent), so the
-    // preview-based dedup above can miss the local copy. The Message-ID header is
-    // stable across that move, so use it as a folder-aware fallback.
-    if (email.internetMessageId) {
-      const matches = await this.db
-        .selectFrom('emails')
-        .innerJoin('email_headers', 'email_headers.email_id', 'emails.id')
-        .select(['emails.id as id', 'emails.folder_id as folder_id', 'emails.preview as preview'])
-        .where('emails.tenant_id', '=', tenantId)
-        .where('email_headers.tenant_id', '=', tenantId)
-        .where('email_headers.raw_headers', 'like', `%Message-ID: ${email.internetMessageId}%`)
-        .execute();
-
-      // 1. Same message already present in THIS folder. This is the same item
-      //    re-synced (possibly under a new provider ID) — refresh the dedupe key
-      //    so future syncs match by preview, and skip insertion.
-      const sameFolder = matches.find((m) => String(m.folder_id) === String(folderId));
-      if (sameFolder) {
-        if (sameFolder.preview !== dedupeKey) {
-          await this.db
-            .updateTable('emails')
-            .set({ preview: dedupeKey, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(sameFolder.id))
-            .execute();
-        }
-        return false;
-      }
-
-      // 2. An untagged (locally composed, not yet provider-tagged) copy exists in
-      //    another folder — claim it: tag with the provider ID and align its folder.
-      const untagged = matches.find((m) => !(m.preview?.startsWith('ms:') || m.preview?.startsWith('google:')));
-      if (untagged) {
-        await this.db
-          .updateTable('emails')
-          .set({ preview: dedupeKey, folder_id: folderId, updated_at: new Date() })
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', String(untagged.id))
-          .execute();
-
-        return false; // prevent duplicate insertion
-      }
-
-      // 3. Otherwise the message only exists in other folders and is already
-      //    provider-tagged — this is a genuine cross-folder copy (e.g.
-      //    send-to-self in both Sent and Inbox). Fall through and insert fresh.
+    const savedImport = await this.importsRepo.add({ row: importRow });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
     }
 
-    // Upload attachment files to storage outside database transaction
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
 
-    const uploadResults = await Promise.all(
-      email.attachments.map(async (att) => {
-        try {
-          const buffer = await att.fetchContent();
-          const sha256_hex = crypto.createHash('sha256').update(buffer).digest('hex');
-          const fileUUID = crypto.randomUUID();
-          const storage_key = `emails/attachments/${fileUUID}_${att.name}`;
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
 
-          await this.storageService.upload(storage_key, buffer, att.contentType);
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+      } as any,
+    });
 
-          return {
-            filename: att.name,
-            content_type: att.contentType,
-            size_bytes: att.size,
-            storage_key,
-            sha256_hex,
-            cid: att.contentId,
-            is_inline: att.isInline,
-          };
-        } catch (err) {
-          logger.error({ err }, `Failed to upload attachment ${att.name} for message ${email.id} to storage`);
-          return null;
-        }
-      }),
-    );
+    await this.importsRepo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          skipped: skippedFromClient,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+          source: 'companies',
+        }),
+        run_at: new Date(),
+      })
+      .execute();
 
-    const uploadedFiles = uploadResults.filter((f): f is NonNullable<typeof f> => f !== null);
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      status: 'pending',
+    } as any;
+  }
 
-    return this.db.transaction().execute(async (trx) => {
-      // 1. Insert into emails
-      const emailRow = await trx
-        .insertInto('emails')
-        .values({
-          tenant_id: tenantId,
-          folder_id: folderId,
-          from_email: email.fromEmail,
-          to_email: email.toEmail,
-          subject: email.subject,
-          preview: dedupeKey, // store ID as dedup key
-          assigned_to: null,
-          is_favourite: false,
-          deleted_at: null,
-          status: 'open',
-          createdby_id: requestedBy,
-          updatedby_id: requestedBy,
-        })
-        .returningAll()
-        .executeTakeFirst();
+  public async processImportRows(import_id: string, tenant_id: string, user_id: string, skipped: number, rows: any[]) {
+    const results = { inserted: 0, errors: 0, skipped: 0 };
+    const errorMessages: string[] = [];
 
-      if (!emailRow) return false;
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
 
-      const emailId = String(emailRow.id);
-
-      // 2. Rewrite inline CID references in body content, then insert body
-      let bodyHtml = sanitizeHtml(email.bodyHtml);
-      for (const file of uploadedFiles) {
-        if (file.is_inline && file.cid) {
-          const cidEscaped = file.cid.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-          const regex = new RegExp(`src=['"]cid:${cidEscaped}['"]`, 'gi');
-          bodyHtml = bodyHtml.replace(regex, `src="${env.apiUrl}/api/emails/${emailId}/attachments/cid/${file.cid}"`);
-        }
-      }
-
-      await trx
-        .insertInto('email_bodies')
-        .values({
-          tenant_id: tenantId,
-          email_id: emailId,
-          body_html: bodyHtml,
-          createdby_id: requestedBy,
-          updatedby_id: requestedBy,
-        })
-        .execute();
-
-      // 3. Insert files and email_attachments metadata
-      for (const [i, file] of uploadedFiles.entries()) {
-        let fileId: string;
-
-        // Persist (or reuse, via sha256 dedup) the file row, then link the
-        // attachment to it so downloads can resolve the stored blob.
-        const existingFile = await trx
-          .selectFrom('files')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('sha256_hex', '=', file.sha256_hex)
-          .executeTakeFirst();
-
-        if (existingFile) {
-          fileId = String(existingFile.id);
+      // 1. Filter valid rows upfront
+      const validRows: any[] = [];
+      for (const raw of chunk) {
+        if (!raw.name || !raw.name.trim()) {
+          results.skipped += 1;
         } else {
-          const fileResult = await trx
-            .insertInto('files')
-            .values({
-              tenant_id: tenantId,
-              filename: file.filename,
-              mime_type: file.content_type,
-              size_bytes: file.size_bytes,
-              storage_key: file.storage_key,
-              sha256_hex: file.sha256_hex,
-              uploaded_by: requestedBy,
-            })
-            .returning('id')
-            .executeTakeFirstOrThrow();
-          fileId = String(fileResult.id);
+          validRows.push(raw);
         }
-
-        await trx
-          .insertInto('email_attachments')
-          .values({
-            tenant_id: tenantId,
-            email_id: emailId,
-            filename: file.filename,
-            content_type: file.content_type,
-            size_bytes: file.size_bytes,
-            cid: file.cid,
-            is_inline: file.is_inline,
-            pos: i + 1,
-            file_id: fileId,
-            createdby_id: requestedBy,
-            updatedby_id: requestedBy,
-          })
-          .execute();
       }
 
-      // 4. Insert headers
-      const internetMessageId = email.internetMessageId ?? '';
-      const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${email.subject ?? ''}\r\nFrom: ${email.fromEmail ?? ''}\r\nTo: ${email.toEmail ?? ''}\r\nDate: ${email.dateSent.toUTCString()}\r\n`;
-
-      await trx
-        .insertInto('email_headers')
-        .values({
-          tenant_id: tenantId,
-          email_id: emailId,
-          headers_json: JSON.stringify({ internetMessageId }),
-          raw_headers: rawHeaders,
-          date_sent: email.dateSent,
-          createdby_id: requestedBy,
-          updatedby_id: requestedBy,
-        })
-        .execute();
-
-      // 5. Insert recipients
-      if (email.recipients.length > 0) {
-        const recipientRows = email.recipients.map((r, i) => ({
-          tenant_id: tenantId,
-          email_id: emailId,
-          kind: r.kind,
-          name: r.name,
-          email: r.email,
-          pos: i,
-          createdby_id: requestedBy,
-          updatedby_id: requestedBy,
-        }));
-        await trx.insertInto('email_recipients').values(recipientRows).execute();
+      if (validRows.length > 0) {
+        try {
+          // 2. Batch insert all valid company rows in one statement
+          const companyRows = validRows.map((raw) => ({
+            tenant_id,
+            createdby_id: user_id,
+            updatedby_id: user_id,
+            name: raw.name.trim(),
+            description: raw.description ?? null,
+            website: raw.website ?? null,
+            email: raw.email ?? null,
+            phone: raw.phone ?? null,
+            industry: raw.industry ?? null,
+            notes: raw.notes ?? null,
+            file_id: import_id,
+          }));
+          await this.getRepo()
+            .transaction()
+            .execute(async (trx) => {
+              await (trx as any).insertInto('companies').values(companyRows).execute();
+            });
+          results.inserted += validRows.length;
+        } catch (err) {
+          results.errors += validRows.length;
+          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
+        }
       }
 
-      return true;
-    });
+      await this.importsRepo.update({
+        tenant_id: tenant_id,
+        id: import_id,
+        row: {
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      errorMessages,
+    };
   }
 }
 ```
@@ -32519,282 +32927,1809 @@ const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
 export default filesRoute;
 ```
 
-## File: apps/backend/src/app/modules/google-sync/google-callback.route.ts
+## File: apps/backend/src/app/modules/google-sync/google-sync.service.ts
 
 ```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { GoogleOAuthService } from './google-oauth.service';
-import { env } from '../../../env';
-import { BaseRepository } from '../../lib/base.repo';
-import { decodeOAuthState } from '../../lib/oauth-state';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { GoogleOAuthService } from './google-oauth.service';
+import type { IngestableEmail } from '../emails/services/email-ingester.service';
+import { EmailIngesterService } from '../emails/services/email-ingester.service';
+import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
+import { logger } from '../../logger';
 
-let _oauthSvc: GoogleOAuthService | null = null;
+const MAX_MESSAGES_PER_SYNC = 50;
 
-function getOAuthService() {
-  if (!_oauthSvc) {
-    const db = (BaseRepository as any)['_db'];
-    _oauthSvc = new GoogleOAuthService(db, {
-      clientId: env.googleClientId ?? '',
-      clientSecret: env.googleClientSecret ?? '',
-      redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-    });
-  }
-  return _oauthSvc;
-}
-
-const googleSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.get('/callback', async (req: any, reply) => {
-    const { code, state, error, error_description } = req.query as Record<string, string>;
-
-    const frontendBase = env.apiUrl.replace(':3000', ':4200'); // dev: frontend is on 4200
-
-    // Verify the HMAC-signed state; a forged/expired state yields null and is
-    // rejected so an attacker cannot bind this mailbox to an arbitrary account.
-    const parsedState = decodeOAuthState(state);
-
-    // Only allow a relative path that doesn't start with // (prevents open redirect)
-    const safeReturnTo = parsedState?.returnTo?.match(/^\/(?!\/)/) ? parsedState.returnTo : null;
-    const returnBase = safeReturnTo ? `${frontendBase}${safeReturnTo}` : `${frontendBase}/settings`;
-    const sep = (base: string) => (base.includes('?') ? '&' : '?');
-
-    if (error) {
-      return reply.redirect(
-        `${returnBase}${sep(returnBase)}google_error=${encodeURIComponent(error_description ?? error)}`,
+async function fetchWithRetry(url: string, init?: RequestInit, maxRetries = 3): Promise<Response> {
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    const res = await fetch(url, init);
+    if (res.status === 429 && attempt <= maxRetries) {
+      const retryAfterHeader = res.headers.get('Retry-After');
+      let delayMs = 5000;
+      if (retryAfterHeader) {
+        const parsed = parseInt(retryAfterHeader, 10);
+        if (!isNaN(parsed)) {
+          delayMs = parsed * 1000;
+        } else {
+          const parsedDate = Date.parse(retryAfterHeader);
+          if (!isNaN(parsedDate)) {
+            delayMs = Math.max(0, parsedDate - Date.now());
+          }
+        }
+      } else {
+        delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
+      }
+      logger.warn(
+        `Google API rate limited (429) on ${url}. Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`,
       );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      continue;
     }
-
-    if (!code || !state) {
-      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=missing_code`);
-    }
-
-    if (!parsedState) {
-      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=invalid_state`);
-    }
-
-    const { userId, tenantId } = parsedState;
-
-    try {
-      const oauthSvc = getOAuthService();
-      await oauthSvc.handleCallback(code, userId, tenantId);
-      return reply.redirect(`${returnBase}${sep(returnBase)}google_connected=1`);
-    } catch (err) {
-      // Log the real cause server-side; never reflect internal error text back
-      // into a user-facing redirect URL.
-      fastify.log.error(err, 'Google OAuth callback failed');
-      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=connection_failed`);
-    }
-  });
-
-  done();
-};
-
-export default googleSyncCallbackRoute;
-```
-
-## File: apps/backend/src/app/modules/google-sync/trpc.router.ts
-
-```typescript
-import { authProcedure, router } from '../../../trpc';
-import { GoogleOAuthService, NEEDS_FULL_SYNC } from './google-oauth.service';
-import { GoogleSyncService } from './google-sync.service';
-import { BaseRepository } from '../../lib/base.repo';
-import { env } from '../../../env';
-import { z } from 'zod';
-import { sql } from 'kysely';
-import { encodeOAuthState } from '../../lib/oauth-state';
-
-let _oauthSvc: GoogleOAuthService | null = null;
-let _syncSvc: GoogleSyncService | null = null;
-
-function getServices() {
-  if (!_oauthSvc || !_syncSvc) {
-    const db = (BaseRepository as any)['_db']; // reuse the shared Kysely instance
-    _oauthSvc = new GoogleOAuthService(db, {
-      clientId: env.googleClientId ?? '',
-      clientSecret: env.googleClientSecret ?? '',
-      redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-    });
-    _syncSvc = new GoogleSyncService(db, _oauthSvc);
+    return res;
   }
-  return { oauthSvc: _oauthSvc, syncSvc: _syncSvc };
 }
 
-function getAuthUrl() {
-  return authProcedure.input(z.object({ returnTo: z.string().optional() })).query(async ({ ctx, input }) => {
-    const { oauthSvc } = getServices();
-    const state = encodeOAuthState({
-      userId: ctx.auth.user_id,
-      tenantId: ctx.auth.tenant_id,
-      returnTo: input.returnTo,
-    });
-    const url = oauthSvc.getAuthUrl(state);
-    return { url };
-  });
-}
+export class GoogleSyncService {
+  private readonly ingester: EmailIngesterService;
 
-function getConnectionStatus() {
-  return authProcedure.query(async ({ ctx }) => {
-    const { oauthSvc } = getServices();
-    const db = (BaseRepository as any)['_db'];
-    const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id);
+  constructor(
+    private readonly db: Kysely<Models>,
+    private readonly oauthSvc: GoogleOAuthService,
+  ) {
+    this.ingester = new EmailIngesterService(db, 'google');
+  }
 
-    const activeJob = await db
-      .selectFrom('background_jobs')
-      .select('id')
-      .where('status', 'in', ['pending', 'processing'])
-      .where('tenant_id', '=', ctx.auth.tenant_id)
-      .where(sql`payload->>'type'`, '=', 'google_sync')
-      .executeTakeFirst();
+  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
+    const accessToken = await this.oauthSvc.getValidToken(tenantId);
 
-    return {
-      ...status,
-      syncing: !!activeJob,
-    };
-  });
-}
+    // Map Gmail label names to pplcrm folder IDs
+    const syncFolders = [
+      { label: 'INBOX', pplcrmId: ALL_FOLDERS.INBOX },
+      { label: 'SENT', pplcrmId: ALL_FOLDERS.SENT },
+      { label: 'TRASH', pplcrmId: ALL_FOLDERS.TRASH },
+      { label: 'SPAM', pplcrmId: ALL_FOLDERS.SPAM },
+    ];
 
-function syncNow() {
-  return authProcedure.mutation(async ({ ctx }) => {
-    const db = (BaseRepository as any)['_db'];
-
-    const existing = await db
-      .selectFrom('background_jobs')
-      .select('id')
-      .where('status', 'in', ['pending', 'processing'])
-      .where('tenant_id', '=', ctx.auth.tenant_id)
-      .where(sql`payload->>'type'`, '=', 'google_sync')
-      .executeTakeFirst();
-
-    if (!existing) {
-      await db
-        .insertInto('background_jobs')
-        .values({
-          tenant_id: ctx.auth.tenant_id,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({
-            type: 'google_sync',
-            tenantId: ctx.auth.tenant_id,
-            requestedBy: ctx.auth.user_id,
-          }),
-          run_at: new Date(),
-          max_attempts: 3,
-        })
-        .execute();
+    // Stored delta_link is a JSON-encoded map of label -> last_sync_time (epoch seconds).
+    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
+    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
+    // positions after a successful sync, so no explicit clear is needed.
+    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
+    let deltaMap: Record<string, number> = {};
+    if (dbDeltaLink) {
+      try {
+        const parsed = JSON.parse(dbDeltaLink);
+        if (!parsed._needs_full_sync) {
+          deltaMap = parsed;
+        }
+        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
+      } catch {
+        deltaMap = {};
+      }
     }
 
-    return { inserted: 0, queued: true };
-  });
-}
+    let inserted = 0;
+    const nextDeltaMap: Record<string, number> = { ...deltaMap };
+    const currentSyncTime = Math.floor(Date.now() / 1000);
 
-function disconnect() {
-  return authProcedure
-    .input(
-      z.object({
-        removeLocalEmails: z.boolean().default(false),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const { oauthSvc, syncSvc } = getServices();
+    for (const folder of syncFolders) {
+      const folderLastSync = deltaMap[folder.label] || 0;
 
-      if (input.removeLocalEmails) {
-        await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id);
+      let pageToken: string | null = null;
+      let hasMore = true;
+      const allMessageIds: string[] = [];
+
+      // Query Gmail messages: `label:<LABEL>` and `after:<epoch_seconds>` (with a small 60s overlap buffer)
+      const queryParts = [`label:${folder.label}`];
+      if (folderLastSync > 0) {
+        queryParts.push(`after:${folderLastSync - 60}`);
+      }
+      const q = queryParts.join(' ');
+
+      while (hasMore) {
+        const urlParams = new URLSearchParams({
+          maxResults: String(MAX_MESSAGES_PER_SYNC),
+          q,
+        });
+        if (pageToken) urlParams.set('pageToken', pageToken);
+
+        const res = await fetchWithRetry(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?${urlParams.toString()}`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          },
+        );
+
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(`Gmail API error: ${errText}`);
+        }
+
+        const data: any = await res.json();
+        const messages = data.messages ?? [];
+        allMessageIds.push(...messages.map((m: any) => m.id));
+
+        if (data.nextPageToken) {
+          pageToken = data.nextPageToken;
+        } else {
+          hasMore = false;
+        }
       }
 
-      await oauthSvc.disconnect(ctx.auth.tenant_id);
-      return { success: true };
+      // Process all messages fetched
+      for (const msgId of allMessageIds) {
+        try {
+          const wasSaved = await this.syncMessageDetails(accessToken, msgId, tenantId, requestedBy, folder.pplcrmId);
+          if (wasSaved) inserted++;
+        } catch (err) {
+          logger.error({ err }, `Failed to sync Gmail message details for ${msgId}`);
+        }
+      }
+
+      nextDeltaMap[folder.label] = currentSyncTime;
+
+      // Handle clean-up for deleted/moved emails
+      // If we performed a full sync (started with no previous sync time), we compare
+      // messages in Gmail with local emails having `google:` preview prefix in this folder.
+      if (folderLastSync === 0) {
+        const serverGoogleIds = new Set(allMessageIds);
+        const localEmails = await this.db
+          .selectFrom('emails')
+          .select(['id', 'preview'])
+          .where('tenant_id', '=', tenantId)
+          .where('folder_id', '=', folder.pplcrmId)
+          .where('preview', 'like', 'google:%')
+          .execute();
+
+        for (const localEmail of localEmails) {
+          const previewKey = localEmail.preview ?? '';
+          const googleId = previewKey.replace(/^google:/, '');
+          if (!serverGoogleIds.has(googleId)) {
+            await this.ingester.deleteMessage(tenantId, googleId);
+          }
+        }
+      }
+    }
+
+    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
+    return { inserted };
+  }
+
+  public async removeAllLocalEmails(tenantId: string): Promise<void> {
+    await this.ingester.removeAllLocalEmails(tenantId);
+  }
+
+  private async syncMessageDetails(
+    accessToken: string,
+    msgId: string,
+    tenantId: string,
+    requestedBy: string,
+    folderId: string,
+  ): Promise<boolean> {
+    const res = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
-}
 
-function resetSync() {
-  return authProcedure.mutation(async ({ ctx }) => {
-    const { oauthSvc } = getServices();
-    await oauthSvc.saveDeltaLink(ctx.auth.tenant_id, NEEDS_FULL_SYNC);
-    return { success: true };
-  });
-}
+    if (!res.ok) {
+      if (res.status === 404) {
+        return false; // message deleted in the meantime
+      }
+      const errText = await res.text();
+      throw new Error(`Failed to fetch Gmail message ${msgId} details: ${errText}`);
+    }
 
-export const GoogleSyncRouter = router({
-  getAuthUrl: getAuthUrl(),
-  getConnectionStatus: getConnectionStatus(),
-  syncNow: syncNow(),
-  disconnect: disconnect(),
-  resetSync: resetSync(),
-});
-export type GoogleSyncRouterType = typeof GoogleSyncRouter;
+    const data: any = await res.json();
+    const payload = data.payload;
+    if (!payload) return false;
+
+    const headers = payload.headers ?? [];
+    const getHeader = (name: string) =>
+      headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
+
+    const subject = getHeader('subject');
+    const fromVal = getHeader('from');
+    const toVal = getHeader('to');
+    const dateVal = getHeader('date');
+    const internetMessageId = getHeader('message-id');
+
+    // Parse email addresses from "Name <email@domain.com>" format
+    const extractEmail = (val: string | null): string | null => {
+      if (!val) return null;
+      const match = val.match(/<([^>]+)>/);
+      return match ? (match[1] as string) : val.trim();
+    };
+
+    const fromEmail = extractEmail(fromVal);
+    const toEmail = extractEmail(toVal);
+    let dateSent = dateVal ? new Date(dateVal) : new Date();
+    if (isNaN(dateSent.getTime())) {
+      dateSent = new Date();
+    }
+
+    // Parse body parts recursively
+    const parts = payload.parts ? payload.parts : [payload];
+    const { html, text, attachments } = this.parseGmailParts(parts);
+    const bodyHtml = html || text || '';
+
+    // Map attachments to the generic ingestable structure
+    const mappedAttachments = attachments.map((att: any) => ({
+      name: att.filename,
+      contentType: att.mimeType,
+      size: att.size,
+      contentId: att.cid,
+      isInline: att.isInline,
+      fetchContent: async () => {
+        const attRes = await fetchWithRetry(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${att.attachmentId}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        if (!attRes.ok) {
+          throw new Error(`Failed to fetch attachment ${att.filename} from Gmail`);
+        }
+        const attData: any = await attRes.json();
+        return this.decodeBase64UrlToBuffer(attData.data);
+      },
+    }));
+
+    // Parse recipients
+    const recipients: Array<{ kind: 'to' | 'cc' | 'bcc'; name: string | null; email: string }> = [];
+
+    const parseRecipientHeader = (val: string | null, kind: 'to' | 'cc' | 'bcc') => {
+      if (!val) return;
+      // Split by comma, respecting quotes
+      const list = val.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+      list.forEach((item) => {
+        const trimmed = item.trim();
+        if (!trimmed) return;
+        const emailMatch = trimmed.match(/<([^>]+)>/);
+        const email = emailMatch ? (emailMatch[1] as string) : trimmed;
+        const nameMatch = trimmed.match(/^([^<]+)/);
+        let name = nameMatch ? (nameMatch[1] as string).trim() : null;
+        if (name) {
+          name = name.replace(/^["']|["']$/g, ''); // strip quotes
+        }
+        recipients.push({ kind, name, email });
+      });
+    };
+
+    parseRecipientHeader(getHeader('to'), 'to');
+    parseRecipientHeader(getHeader('cc'), 'cc');
+    parseRecipientHeader(getHeader('bcc'), 'bcc');
+
+    const ingestable: IngestableEmail = {
+      id: msgId,
+      internetMessageId,
+      fromEmail,
+      toEmail,
+      subject,
+      dateSent,
+      bodyHtml,
+      recipients,
+      attachments: mappedAttachments,
+    };
+
+    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
+  }
+
+  private parseGmailParts(parts: any[]): { html: string; text: string; attachments: any[] } {
+    let html = '';
+    let text = '';
+    const attachments: any[] = [];
+
+    const traverse = (part: any) => {
+      const mimeType = part.mimeType?.toLowerCase();
+      const filename = part.filename;
+      const body = part.body;
+
+      if (filename && body?.attachmentId) {
+        const headers = part.headers ?? [];
+        const contentDisposition =
+          headers.find((h: any) => h.name.toLowerCase() === 'content-disposition')?.value ?? '';
+        const isInline = contentDisposition.toLowerCase().includes('inline');
+        const contentIdHeader = headers.find((h: any) => h.name.toLowerCase() === 'content-id')?.value ?? '';
+        const cid = contentIdHeader ? contentIdHeader.replace(/[<>]/g, '') : null;
+
+        attachments.push({
+          filename,
+          mimeType: part.mimeType,
+          attachmentId: body.attachmentId,
+          size: body.size ?? 0,
+          cid,
+          isInline,
+        });
+      } else if (mimeType === 'text/html' && body?.data) {
+        html += this.decodeBase64Url(body.data);
+      } else if (mimeType === 'text/plain' && body?.data) {
+        text += this.decodeBase64Url(body.data);
+      }
+
+      if (part.parts) {
+        for (const p of part.parts) {
+          traverse(p);
+        }
+      }
+    };
+
+    for (const part of parts) {
+      traverse(part);
+    }
+
+    return { html, text, attachments };
+  }
+
+  private decodeBase64Url(str: string): string {
+    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    return Buffer.from(base64, 'base64').toString('utf8');
+  }
+
+  private decodeBase64UrlToBuffer(str: string): Buffer {
+    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    return Buffer.from(base64, 'base64');
+  }
+}
 ```
 
-## File: apps/backend/src/app/modules/ms-sync/ms-callback.route.ts
+## File: apps/backend/src/app/modules/ms-sync/ms-sync.service.ts
 
 ```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { MsOAuthService } from '../ms-sync/ms-oauth.service';
-import { env } from '../../../env';
-import { BaseRepository } from '../../lib/base.repo';
-import { decodeOAuthState } from '../../lib/oauth-state';
+import { Client } from '@microsoft/microsoft-graph-client';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { MsOAuthService } from './ms-oauth.service';
+import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
+import type { IngestableEmail } from '../emails/services/email-ingester.service';
+import { EmailIngesterService } from '../emails/services/email-ingester.service';
+import { logger } from '../../logger';
 
-let _oauthSvc: MsOAuthService | null = null;
+const MAX_MESSAGES_PER_SYNC = 50;
 
-function getOAuthService() {
-  if (!_oauthSvc) {
-    const db = (BaseRepository as any)['_db'];
-    _oauthSvc = new MsOAuthService(db, {
-      clientId: env.msClientId ?? '',
-      clientSecret: env.msClientSecret ?? '',
-      tenantId: env.msTenantId ?? 'common',
-      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-    });
-  }
-  return _oauthSvc;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
-const msSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.get('/callback', async (req: any, reply) => {
-    const { code, state, error, error_description } = req.query as Record<string, string>;
+function getStatusCode(err: unknown): number | undefined {
+  return isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined;
+}
 
-    const frontendBase = env.apiUrl.replace(':3000', ':4200'); // dev: frontend is on 4200
+function getRetryAfterHeader(err: unknown): string | undefined {
+  if (!isRecord(err)) return undefined;
+  const headers = err['headers'];
+  if (!isRecord(headers)) return undefined;
+  const getFn = headers['get'];
+  if (typeof getFn === 'function') {
+    const value: unknown = (getFn as (name: string) => unknown).call(headers, 'Retry-After');
+    if (typeof value === 'string') return value;
+  }
+  const raw = headers['retry-after'];
+  return typeof raw === 'string' ? raw : undefined;
+}
 
-    // Verify the HMAC-signed state; a forged/expired state yields null and is
-    // rejected so an attacker cannot bind this mailbox to an arbitrary account.
-    const parsedState = decodeOAuthState(state);
+async function graphCallWithRetry<T>(callFn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    try {
+      return await callFn();
+    } catch (err) {
+      if (getStatusCode(err) === 429 && attempt <= maxRetries) {
+        let delayMs = 5000;
+        const retryAfter = getRetryAfterHeader(err);
+        if (retryAfter) {
+          const parsed = parseInt(retryAfter, 10);
+          if (!isNaN(parsed)) {
+            delayMs = parsed * 1000;
+          }
+        } else {
+          delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
+        }
+        logger.warn(`MS Graph API rate limited (429). Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
 
-    // Only allow a relative path that doesn't start with // (prevents open redirect)
-    const safeReturnTo = parsedState?.returnTo?.match(/^\/(?!\/)/) ? parsedState.returnTo : null;
-    const returnBase = safeReturnTo ? `${frontendBase}${safeReturnTo}` : `${frontendBase}/settings`;
-    const sep = (base: string) => (base.includes('?') ? '&' : '?');
+export class MsSyncService {
+  private readonly ingester: EmailIngesterService;
 
-    if (error) {
-      return reply.redirect(
-        `${returnBase}${sep(returnBase)}ms_error=${encodeURIComponent(error_description ?? error)}`,
+  constructor(
+    private readonly db: Kysely<Models>,
+    private readonly oauthSvc: MsOAuthService,
+  ) {
+    this.ingester = new EmailIngesterService(db, 'ms');
+  }
+
+  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
+    const accessToken = await this.oauthSvc.getValidToken(tenantId);
+    const client = this.buildGraphClient(accessToken);
+
+    const syncFolders = [
+      { wellKnownName: 'inbox', pplcrmId: ALL_FOLDERS.INBOX },
+      { wellKnownName: 'sentitems', pplcrmId: ALL_FOLDERS.SENT },
+      { wellKnownName: 'deleteditems', pplcrmId: ALL_FOLDERS.TRASH },
+      { wellKnownName: 'junkemail', pplcrmId: ALL_FOLDERS.SPAM },
+    ];
+
+    // Read stored delta map.
+    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
+    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
+    // positions after a successful sync, so no explicit clear is needed.
+    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
+    let deltaMap: Record<string, string> = {};
+    if (dbDeltaLink) {
+      try {
+        const parsed = JSON.parse(dbDeltaLink);
+        if (!parsed._needs_full_sync) {
+          deltaMap = parsed;
+        }
+        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
+      } catch {
+        // If not valid JSON, it's a legacy plain URL string. Clear it.
+        deltaMap = {};
+      }
+    }
+
+    let inserted = 0;
+    const nextDeltaMap: Record<string, string> = { ...deltaMap };
+
+    for (const folder of syncFolders) {
+      const folderDeltaLink = deltaMap[folder.wellKnownName] || null;
+
+      let pageUrl: string | null =
+        folderDeltaLink ??
+        `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
+
+      const allMessages: any[] = [];
+      let isInitialSync = folderDeltaLink === null;
+      let hasMore = true;
+
+      while (pageUrl && hasMore) {
+        const url = pageUrl;
+        try {
+          const response: any = await graphCallWithRetry(() => client.api(url).get());
+          const messages = response.value ?? [];
+          allMessages.push(...messages);
+
+          const nextLink = response['@odata.nextLink'] ?? null;
+          const deltaLink = response['@odata.deltaLink'] ?? null;
+
+          if (deltaLink) {
+            nextDeltaMap[folder.wellKnownName] = deltaLink;
+            hasMore = false;
+          } else if (nextLink) {
+            pageUrl = nextLink;
+          } else {
+            hasMore = false;
+          }
+        } catch (err) {
+          if (getStatusCode(err) === 410) {
+            // Delta link expired for this folder, clear it
+            delete nextDeltaMap[folder.wellKnownName];
+            isInitialSync = true;
+            allMessages.length = 0; // clear any partially loaded pages before restarting
+            pageUrl = `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      // Process all messages fetched in this sync run
+      for (const msg of allMessages) {
+        if (msg['@removed']) {
+          const msId = msg.id;
+          if (msId) {
+            await this.ingester.deleteMessage(tenantId, msId);
+          }
+          continue;
+        }
+
+        try {
+          const wasSaved = await this.saveMessage(client, msg, tenantId, requestedBy, folder.pplcrmId);
+          if (wasSaved) inserted++;
+        } catch (err) {
+          logger.error({ err }, `Failed to ingest MS Graph message ${msg.id}`);
+        }
+      }
+
+      // If it was an initial/full sync (meaning we started with no delta link, or it expired and we retried),
+      // we have retrieved the entire list of active server messages.
+      // Therefore, any local email that has an MS preview key but is NOT in the server's list must have been deleted or moved.
+      if (isInitialSync) {
+        const serverMsIds = new Set(allMessages.filter((m) => !m['@removed']).map((m) => String(m.id)));
+        const localEmails = await this.db
+          .selectFrom('emails')
+          .select(['id', 'preview'])
+          .where('tenant_id', '=', tenantId)
+          .where('folder_id', '=', folder.pplcrmId)
+          .where('preview', 'like', 'ms:%')
+          .execute();
+
+        for (const localEmail of localEmails) {
+          const previewKey = localEmail.preview ?? '';
+          const msId = previewKey.replace(/^ms:/, '');
+          if (!serverMsIds.has(msId)) {
+            await this.ingester.deleteMessage(tenantId, msId);
+          }
+        }
+      }
+    }
+
+    // Save updated delta map back to database
+    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
+
+    return { inserted };
+  }
+
+  public async removeAllLocalEmails(tenantId: string): Promise<void> {
+    await this.ingester.removeAllLocalEmails(tenantId);
+  }
+
+  private async saveMessage(
+    client: Client,
+    msg: any,
+    tenantId: string,
+    requestedBy: string,
+    folderId: string,
+  ): Promise<boolean> {
+    const msId: string = msg.id ?? '';
+    if (!msId) return false;
+
+    const fromEmail = msg.from?.emailAddress?.address ?? null;
+    const toEmail = msg.toRecipients?.[0]?.emailAddress?.address ?? null;
+    const subject = msg.subject ?? null;
+    let dateSent = msg.receivedDateTime ? new Date(msg.receivedDateTime) : new Date();
+    if (isNaN(dateSent.getTime())) {
+      dateSent = new Date();
+    }
+    const bodyHtml = msg.body?.content ?? '';
+
+    // Fetch Graph attachments if any
+    let graphAttachments: any[] = [];
+    const hasCid = bodyHtml && bodyHtml.includes('cid:');
+    if (msg.hasAttachments || hasCid) {
+      try {
+        const attRes = await graphCallWithRetry(() => client.api(`/me/messages/${msId}/attachments`).get());
+        graphAttachments = attRes.value ?? [];
+      } catch (err) {
+        logger.error({ err }, `Failed to fetch attachments for message ${msId}`);
+      }
+    }
+
+    const fileAttachments = graphAttachments.filter(
+      (att: any) => att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes,
+    );
+
+    // Map MS Graph attachments to IngestableEmail attachments
+    const attachments = fileAttachments.map((att: any) => ({
+      name: att.name,
+      contentType: att.contentType,
+      size: att.size,
+      contentId: att.contentId ?? null,
+      isInline: att.isInline ?? false,
+      fetchContent: async () => Buffer.from(att.contentBytes, 'base64'),
+    }));
+
+    // Map recipients
+    const recipients: Array<{ kind: 'to' | 'cc' | 'bcc'; name: string | null; email: string }> = [];
+    const toList: any[] = msg.toRecipients ?? [];
+    const ccList: any[] = msg.ccRecipients ?? [];
+    const bccList: any[] = msg.bccRecipients ?? [];
+
+    toList.forEach((r) => {
+      recipients.push({ kind: 'to', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
+    });
+    ccList.forEach((r) => {
+      recipients.push({ kind: 'cc', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
+    });
+    bccList.forEach((r) => {
+      recipients.push({ kind: 'bcc', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
+    });
+
+    const ingestable: IngestableEmail = {
+      id: msId,
+      internetMessageId: msg.internetMessageId ?? null,
+      fromEmail,
+      toEmail,
+      subject,
+      dateSent,
+      bodyHtml,
+      recipients,
+      attachments,
+    };
+
+    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
+  }
+
+  private buildGraphClient(accessToken: string): Client {
+    return Client.init({
+      authProvider: (done) => done(null, accessToken),
+    });
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/persons/services/persons.service.ts
+
+```typescript
+import { env } from '../../../../env';
+import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
+import { TRPCError } from '@trpc/server';
+
+import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
+import { HouseholdRepo } from '../../households/repositories/households.repo';
+import { SettingsController } from '../../settings/controller';
+import { TagsRepo } from '../../tags/repositories/tags.repo';
+import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
+import { PersonsRepo } from '../repositories/persons.repo';
+import { CompaniesRepo } from '../../companies/repositories/companies.repo';
+import { MapTeamsPersonsRepo } from '../../teams/repositories/map-teams-persons.repo';
+import { TeamsRepo } from '../../teams/repositories/teams.repo';
+import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { ImportsRepo } from '../../imports/repositories/imports.repo';
+import { UserActivityRepo } from '../../../lib/user-activity.repo';
+import { StorageService } from '../../../lib/storage.service';
+import { WorkflowsController } from '../../workflows/controller';
+import { TransactionalEmailService } from '../../../lib/mail/transactional-mail.service';
+import { queueZapierTrigger, pickPersonFields } from '../../zapier/zapier.service';
+import { logger } from '../../../logger';
+
+export class PersonsService {
+  private mapPersonsTagRepo = new MapPersonsTagRepo();
+  private settingsController = new SettingsController();
+  private tagsRepo = new TagsRepo();
+  private mapTeamsPersonsRepo = new MapTeamsPersonsRepo();
+  private teamsRepo = new TeamsRepo();
+  private importsRepo = new ImportsRepo();
+  private personsRepo = new PersonsRepo();
+  private userActivity = new UserActivityRepo();
+  private storageService = new StorageService();
+  private householdRepo = new HouseholdRepo();
+  private companiesRepo = new CompaniesRepo();
+
+  public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
+    // Enforce email uniqueness within the tenant
+    const emailToCheck = payload.email?.trim();
+    if (emailToCheck) {
+      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
+      if (existing) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `A person with the email "${emailToCheck}" already exists.`,
+        });
+      }
+    }
+
+    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
+    const households = new HouseholdRepo();
+
+    let household_id = payload.household_id as string | undefined;
+    if (!household_id) {
+      const existingBlank = await households.getBlankHousehold({
+        tenant_id: auth.tenant_id,
+        campaign_id: String(campaign_id),
+      });
+      if (existingBlank?.id) {
+        household_id = String(existingBlank.id);
+      } else {
+        const created = await households.add({
+          row: {
+            tenant_id: auth.tenant_id,
+            campaign_id: String(campaign_id),
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          } as OperationDataType<'households', 'insert'>,
+        });
+        household_id = String(created?.id);
+      }
+    }
+
+    const row = {
+      ...payload,
+      household_id,
+      campaign_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+
+    const result = await this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
+    if (result && typeof result === 'object') {
+      try {
+        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+        await queueUsageLimitCheck(auth.tenant_id, this.personsRepo.db);
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger usage check in addPerson');
+      }
+      try {
+        const workflowsController = new WorkflowsController();
+        await workflowsController.triggerWorkflow(
+          auth.tenant_id,
+          String((result as Record<string, unknown>)['id']),
+          'contact_created',
+          null,
+        );
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger contact_created workflow in add');
+      }
+
+      if (payload.assigned_to) {
+        try {
+          const assignee = await this.personsRepo.db
+            .selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .where('authusers.id', '=', String(payload.assigned_to))
+            .executeTakeFirst();
+          if (assignee && assignee.email) {
+            let optedIn = true;
+            if (assignee.profile_json) {
+              const json =
+                typeof assignee.profile_json === 'string' ? JSON.parse(assignee.profile_json) : assignee.profile_json;
+              if (json?.notifications?.person_assigned === false) {
+                optedIn = false;
+              }
+            }
+            if (optedIn) {
+              const createdPerson = result as Record<string, unknown>;
+              const personName =
+                `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
+              const link = `${env.appUrl}/persons/${createdPerson['id']}`;
+              const mailService = new TransactionalEmailService();
+              await mailService.sendMail({
+                to: assignee.email,
+                subject: `Contact Assigned to You: ${personName}`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${createdPerson['email'] || 'None'}\nPhone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${createdPerson['email'] || 'None'}<br>Phone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+              });
+            }
+          }
+        } catch (mailErr) {
+          logger.error({ err: mailErr }, 'Failed to send contact assignment email in addPerson');
+        }
+      }
+    }
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'create',
+        entity: 'persons',
+        entity_id: result?.id ? String(result.id) : null,
+        quantity: 1,
+        metadata: {
+          id: result?.id,
+          entity_label: `${result?.first_name || ''} ${result?.last_name || ''}`.trim() || 'Person',
+          ...(auth.source ? { source: auth.source } : {}),
+        },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log create person activity');
+    }
+    try {
+      await queueZapierTrigger(
+        this.personsRepo.db,
+        auth.tenant_id,
+        'person_created',
+        pickPersonFields(result as Record<string, unknown>),
       );
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_created trigger');
+    }
+    return result;
+  }
+
+  public async updatePerson(id: string, data: UpdatePersonsType, auth: IAuthKeyPayload) {
+    // Enforce email uniqueness within the tenant (excluding the person being updated)
+    const emailToCheck = data.email?.trim();
+    if (emailToCheck) {
+      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
+      if (existing && String(existing.id) !== String(id)) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `A person with the email "${emailToCheck}" already exists.`,
+        });
+      }
     }
 
-    if (!code || !state) {
-      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=missing_code`);
+    let original: Record<string, unknown> | null = null;
+    try {
+      original = ((await this.personsRepo.getOneBy('id', { value: id, tenant_id: auth.tenant_id })) ?? null) as Record<
+        string,
+        unknown
+      > | null;
+    } catch (err) {
+      logger.error({ err }, 'Failed to fetch original person record for activity log');
+    }
+    const result = await this.personsRepo.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: {
+        ...data,
+        updatedby_id: auth.user_id,
+      } as OperationDataType<'persons', 'update'>,
+    });
+    if (result && typeof result === 'object') {
+      const updatedPerson = result as Record<string, unknown>;
+      if (data.assigned_to !== undefined && original && String(data.assigned_to) !== String(original['assigned_to'])) {
+        const newAssigneeId = data.assigned_to;
+        if (newAssigneeId) {
+          try {
+            const assignee = await this.personsRepo.db
+              .selectFrom('authusers')
+              .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+              .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+              // String conversion ensures precision is maintained down to the database driver level
+              .where('authusers.id', '=', String(newAssigneeId))
+              .executeTakeFirst();
+
+            if (assignee && assignee.email) {
+              let optedIn = true;
+              if (assignee.profile_json) {
+                const json =
+                  typeof assignee.profile_json === 'string' ? JSON.parse(assignee.profile_json) : assignee.profile_json;
+                if (json?.notifications?.person_assigned === false) {
+                  optedIn = false;
+                }
+              }
+              if (optedIn) {
+                const personName =
+                  `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
+                  'unnamed contact';
+                const link = `${env.appUrl}/persons/${updatedPerson['id']}`;
+                const mailService = new TransactionalEmailService();
+                await mailService.sendMail({
+                  to: assignee.email,
+                  subject: `Contact Assigned to You: ${personName}`,
+                  text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${updatedPerson['email'] || 'None'}\nPhone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
+                  html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${updatedPerson['email'] || 'None'}<br>Phone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+                });
+              }
+            }
+          } catch (mailErr) {
+            logger.error({ err: mailErr }, 'Failed to send contact assignment email in updatePerson');
+          }
+        }
+      }
+    }
+    try {
+      const changes: Record<string, unknown> = {};
+      const resultObj = result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
+      if (original && resultObj) {
+        const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
+        for (const key of Object.keys(data)) {
+          if (skipKeys.includes(key)) continue;
+          const oldVal = (original as Record<string, unknown>)[key];
+          const newVal = resultObj[key];
+          if (oldVal !== newVal) {
+            changes[key] = { from: oldVal ?? null, to: newVal ?? null };
+          }
+        }
+      }
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'persons',
+        entity_id: id ? String(id) : null,
+        quantity: 1,
+        metadata: {
+          id,
+          entity_label: resultObj
+            ? `${resultObj['first_name'] || ''} ${resultObj['last_name'] || ''}`.trim() || 'Person'
+            : 'Person',
+          changes,
+          ...(auth.source ? { source: auth.source } : {}),
+        },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log update person activity');
+    }
+    try {
+      await queueZapierTrigger(
+        this.personsRepo.db,
+        auth.tenant_id,
+        'person_updated',
+        pickPersonFields(result as Record<string, unknown>),
+      );
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_updated trigger');
+    }
+    return result;
+  }
+
+  private stripHtmlAndTruncate(html: string | null | undefined, limit = 160): string {
+    if (!html) return '';
+    const text = html
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (text.length <= limit) return text;
+    return text.substring(0, limit) + '...';
+  }
+
+  public async getPersonActivity(person_id: string, auth: IAuthKeyPayload) {
+    const person = (await this.personsRepo.getOneBy('id', { value: person_id, tenant_id: auth.tenant_id })) as Record<
+      string,
+      unknown
+    > | null;
+    if (!person) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Person not found',
+      });
     }
 
-    if (!parsedState) {
-      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=invalid_state`);
+    const emails: string[] = [];
+    if (person['email']) emails.push((person['email'] as string).trim().toLowerCase());
+    if (person['email2']) emails.push((person['email2'] as string).trim().toLowerCase());
+
+    if (emails.length === 0) {
+      return {
+        emails: [],
+        newsletters: [],
+      };
     }
 
-    const { userId, tenantId } = parsedState;
+    const db = this.personsRepo.db;
+
+    // 1. Fetch email conversations (sent and received)
+    const conversations = await db
+      .selectFrom('emails')
+      .leftJoin('email_bodies', 'email_bodies.email_id', 'emails.id')
+      .selectAll('emails')
+      .select('email_bodies.body_html as body_html')
+      .where('emails.tenant_id', '=', auth.tenant_id)
+      .where((eb) => eb.or([eb('emails.from_email', 'in', emails), eb('emails.to_email', 'in', emails)]))
+      .orderBy('emails.created_at', 'desc')
+      .limit(50)
+      .execute();
+
+    // 2. Fetch newsletter events (received, opened, clicked links, etc.)
+    const newsletterEvents = await db
+      .selectFrom('newsletter_events')
+      .innerJoin('newsletters', 'newsletters.id', 'newsletter_events.newsletter_id')
+      .select([
+        'newsletter_events.id',
+        'newsletter_events.event_type',
+        'newsletter_events.timestamp',
+        'newsletter_events.url',
+        'newsletters.subject as newsletter_subject',
+        'newsletters.name as newsletter_name',
+      ])
+      .where('newsletter_events.tenant_id', '=', auth.tenant_id)
+      .where('newsletter_events.email', 'in', emails)
+      .orderBy('newsletter_events.timestamp', 'desc')
+      .limit(100)
+      .execute();
+
+    return {
+      emails: conversations.map((mail) => {
+        let snippet = '';
+        if (mail.body_html) {
+          snippet = this.stripHtmlAndTruncate(mail.body_html, 160);
+        }
+        if (!snippet && mail.preview && !/^(ms|google):/i.test(mail.preview)) {
+          snippet = mail.preview;
+        }
+        return {
+          ...mail,
+          preview: snippet,
+        };
+      }),
+      newsletters: newsletterEvents,
+    };
+  }
+
+  public async attachTag(person_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
+    const randomHexColor = () =>
+      '#' +
+      Math.floor(Math.random() * 0xffffff)
+        .toString(16)
+        .padStart(6, '0');
+    const row = {
+      name,
+      color: randomHexColor(),
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      type,
+    };
+
+    const tag = await this.tagsRepo.addOrGet({
+      row: row as OperationDataType<'tags', 'insert'>,
+      onConflictColumn: 'name',
+    });
+
+    const result = await this.addToMap({
+      tag_id: tag?.id as string | undefined,
+      person_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    });
+
+    if (result && tag?.id) {
+      try {
+        const workflowsController = new WorkflowsController();
+        await workflowsController.triggerTagAdded(auth.tenant_id, person_id, String(tag.id), name);
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger tag_added workflow');
+      }
+    }
 
     try {
-      const oauthSvc = getOAuthService();
-      await oauthSvc.handleCallback(code, userId, tenantId);
-      return reply.redirect(`${returnBase}${sep(returnBase)}ms_connected=1`);
-    } catch (err) {
-      // Log the real cause server-side; never reflect internal error text back
-      // into a user-facing redirect URL.
-      fastify.log.error(err, 'Microsoft OAuth callback failed');
-      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=connection_failed`);
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'persons',
+        entity_id: person_id,
+        quantity: 1,
+        metadata: { id: person_id, action: `attach_${type}`, name, ...(auth.source ? { source: auth.source } : {}) },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log attach tag activity');
     }
-  });
+    try {
+      await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_tag_added', {
+        person_id,
+        tag_name: name,
+        tag_type: type,
+      });
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_added trigger');
+    }
 
-  done();
-};
+    return result;
+  }
 
-export default msSyncCallbackRoute;
+  public async detachTag(input: {
+    tenant_id: string;
+    person_id: string;
+    name: string;
+    type?: 'tag' | 'issue';
+    user_id?: string;
+    source?: string;
+  }) {
+    const tag = await this.tagsRepo.getIdByName({
+      tenant_id: input.tenant_id,
+      name: input.name,
+      type: input.type ?? 'tag',
+    });
+
+    if (tag?.id) {
+      await this.mapPersonsTagRepo.deleteMapping({
+        tenant_id: input.tenant_id,
+        person_id: input.person_id,
+        tag_id: tag.id,
+      });
+    }
+
+    try {
+      if (input.user_id) {
+        await this.userActivity.log({
+          tenant_id: input.tenant_id,
+          user_id: input.user_id,
+          activity: 'update',
+          entity: 'persons',
+          entity_id: input.person_id,
+          quantity: 1,
+          metadata: {
+            id: input.person_id,
+            action: `detach_${input.type ?? 'tag'}`,
+            name: input.name,
+            ...(input.source ? { source: input.source } : {}),
+          },
+        });
+      }
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log detach tag activity');
+    }
+    try {
+      await queueZapierTrigger(this.personsRepo.db, input.tenant_id, 'person_tag_removed', {
+        person_id: input.person_id,
+        tag_name: input.name,
+        tag_type: input.type ?? 'tag',
+      });
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_removed trigger');
+    }
+
+    const isVolunteerTag = input.name.trim().toLowerCase() === 'volunteer';
+    if (!isVolunteerTag) {
+      return { removed_team_ids: [], removed_teams: [] };
+    }
+
+    const teams = await this.mapTeamsPersonsRepo.getTeamsForPerson({
+      tenant_id: input.tenant_id,
+      person_id: input.person_id,
+    });
+
+    if (!teams.length) {
+      return { removed_team_ids: [], removed_teams: [] };
+    }
+
+    await this.mapTeamsPersonsRepo.deleteByPerson({ tenant_id: input.tenant_id, person_id: input.person_id });
+
+    for (const team of teams) {
+      if (team.is_captain && team.team_id) {
+        await this.teamsRepo.clearCaptain({ tenant_id: input.tenant_id, team_id: team.team_id });
+      }
+    }
+
+    const removedTeams = teams
+      .filter((team) => team.team_id)
+      .map((team) => ({
+        id: team.team_id,
+        name: team.team_name ?? '',
+        was_captain: team.is_captain,
+      }));
+
+    return {
+      removed_team_ids: removedTeams.map((team) => team.id),
+      removed_teams: removedTeams,
+    };
+  }
+
+  public async importRows(
+    input: {
+      rows: Array<{
+        first_name?: string;
+        last_name?: string;
+        email?: string;
+        mobile?: string;
+        notes?: string;
+        home_phone?: string;
+        street_num?: string;
+        street1?: string;
+        street2?: string;
+        apt?: string;
+        city?: string;
+        state?: string;
+        zip?: string;
+        country?: string;
+      }>;
+      tags?: string[];
+      skipped?: number;
+      file_name?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const tags = [...(input.tags ?? []), autoTag].filter((t) => !!t && t.trim().length > 0);
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    let hasImportableRow = false;
+    for (const candidate of input.rows) {
+      const sanitized = this.sanitizeRow(candidate);
+      if (sanitized.first_name || sanitized.last_name || sanitized.email || sanitized.mobile || sanitized.notes) {
+        hasImportableRow = true;
+        break;
+      }
+    }
+
+    if (!hasImportableRow) {
+      const totalSkipped = skippedFromClient + input.rows.length;
+      const personsBefore = await this.personsRepo.count(auth.tenant_id);
+      return {
+        inserted: 0,
+        errors: 0,
+        skipped: totalSkipped,
+        tag: null,
+        file_name: requestedFileName || null,
+        import_id: null,
+        tenant_id: auth.tenant_id,
+        campaign_id,
+        persons_total_after: personsBefore,
+        persons_total_before: personsBefore,
+        status: 'completed',
+      };
+    }
+
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'persons',
+      tag_name: autoTag,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    } as any;
+
+    const savedImport = await this.importsRepo.add({ row: importRow });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
+    }
+
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
+
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({ tenant_id: auth.tenant_id, id: importRecordId });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+      } as any,
+    });
+
+    await this.importsRepo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          tags,
+          skipped: skippedFromClient,
+          campaign_id,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      tag: autoTag,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      campaign_id,
+      status: 'pending',
+    };
+  }
+
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    campaign_id: string,
+    tags: string[],
+    skipped: number,
+    rows: Record<string, string>[],
+  ) {
+    const households = new HouseholdRepo();
+    const results: { inserted: number; errors: number; households_created: number; skipped: number } = {
+      inserted: 0,
+      errors: 0,
+      households_created: 0,
+      skipped: 0,
+    };
+    const importedPersonIds: string[] = [];
+
+    const errorMessages: string[] = [];
+    let cachedBlankHouseholdId: string | null = null;
+    let autoTagId: string | null = null;
+    const autoTag = tags.find((t) => t.startsWith('Imported-')) || tags[0];
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      // 1. Sanitize and classify all valid rows in the chunk upfront
+      type ValidEntry = {
+        sanitized: {
+          first_name?: string;
+          last_name?: string;
+          email?: string;
+          mobile?: string;
+          notes?: string;
+          home_phone?: string;
+          street_num?: string;
+          street1?: string;
+          street2?: string;
+          apt?: string;
+          city?: string;
+          state?: string;
+          zip?: string;
+          country?: string;
+        };
+        isBlankAddress: boolean;
+        fp_street: string | null;
+        fp_full: string | null;
+      };
+      const validEntries: ValidEntry[] = [];
+      for (const raw of chunk) {
+        const sanitized = this.sanitizeRow(raw);
+        if (
+          !sanitized.first_name &&
+          !sanitized.last_name &&
+          !sanitized.email &&
+          !sanitized.mobile &&
+          !sanitized.notes
+        ) {
+          results.skipped += 1;
+          continue;
+        }
+        const isBlankAddress =
+          !sanitized.home_phone &&
+          !sanitized.street_num &&
+          !sanitized.street1 &&
+          !sanitized.street2 &&
+          !sanitized.apt &&
+          !sanitized.city &&
+          !sanitized.state &&
+          !sanitized.zip &&
+          !sanitized.country;
+        validEntries.push({
+          sanitized,
+          isBlankAddress,
+          fp_street: isBlankAddress
+            ? null
+            : fingerprintStreet({
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+              }),
+          fp_full: isBlankAddress
+            ? null
+            : fingerprintFull({
+                apt: sanitized.apt,
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+                city: sanitized.city,
+                state: sanitized.state,
+                zip: sanitized.zip,
+                country: sanitized.country,
+              }),
+        });
+      }
+
+      if (validEntries.length === 0) {
+        await this.importsRepo.update({
+          tenant_id: tenant_id,
+          id: import_id,
+          row: {
+            tag_id: autoTagId,
+            inserted_count: results.inserted,
+            error_count: results.errors,
+            skipped_count: skipped + results.skipped,
+            households_created: results.households_created,
+            updatedby_id: user_id,
+            updated_at: new Date(),
+          } as any,
+        });
+        continue;
+      }
+
+      try {
+        const outcome = await this.personsRepo.transaction().execute(async (trx) => {
+          let localBlankHouseholdId = cachedBlankHouseholdId;
+          let localAutoTagId = autoTagId;
+          let householdsCreatedDelta = 0;
+
+          // 2a. Resolve blank household once for the whole chunk
+          if (validEntries.some((e) => e.isBlankAddress)) {
+            if (!localBlankHouseholdId) {
+              const existingBlank = await households.getBlankHousehold({ tenant_id, campaign_id }, trx);
+              if (existingBlank?.id) {
+                localBlankHouseholdId = String(existingBlank.id);
+              } else {
+                const created = await households.add(
+                  {
+                    row: {
+                      tenant_id,
+                      campaign_id,
+                      createdby_id: user_id,
+                      updatedby_id: user_id,
+                      file_id: import_id,
+                    } as OperationDataType<'households', 'insert'>,
+                  },
+                  trx,
+                );
+                localBlankHouseholdId = String(created?.id);
+                householdsCreatedDelta += 1;
+              }
+            }
+          }
+
+          // 2b. Batch-resolve addressed households with a single IN query
+          const fpCache = new Map<string, string>(); // fp_full -> household_id
+          const uniqueFps = [
+            ...new Set(validEntries.filter((e) => !e.isBlankAddress && e.fp_full).map((e) => e.fp_full as string)),
+          ];
+          if (uniqueFps.length > 0) {
+            const existingHouseholds = await trx
+              .selectFrom('households')
+              .select(['id', 'address_fp_full'])
+              .where('tenant_id', '=', tenant_id)
+              .where('campaign_id', '=', campaign_id)
+              .where('address_fp_full', 'in', uniqueFps)
+              .execute();
+            for (const h of existingHouseholds) {
+              if (h.address_fp_full) fpCache.set(h.address_fp_full, String(h.id));
+            }
+          }
+
+          // 2c. Create only missing households (deduplicated within this chunk)
+          for (const entry of validEntries) {
+            if (entry.isBlankAddress || !entry.fp_full) continue;
+            if (fpCache.has(entry.fp_full)) continue;
+            const { sanitized, fp_street, fp_full } = entry;
+            const hhRow = {
+              tenant_id,
+              campaign_id,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+              home_phone: sanitized.home_phone ?? null,
+              street_num: sanitized.street_num ?? null,
+              street1: sanitized.street1 ?? null,
+              street2: sanitized.street2 ?? null,
+              apt: sanitized.apt ?? null,
+              city: sanitized.city ?? null,
+              state: sanitized.state ?? null,
+              zip: sanitized.zip ?? null,
+              country: sanitized.country ?? null,
+              address_fp_street: fp_street,
+              address_fp_full: fp_full,
+              notes: null,
+              json: null,
+              file_id: import_id,
+            } as OperationDataType<'households', 'insert'>;
+            const household = await households.add({ row: hhRow }, trx);
+            fpCache.set(fp_full, String(household?.id));
+            householdsCreatedDelta += 1;
+          }
+
+          // 3. Batch insert all persons in one statement
+          const personRows = validEntries.map(({ sanitized, isBlankAddress, fp_full }) => ({
+            tenant_id,
+            campaign_id,
+            createdby_id: user_id,
+            updatedby_id: user_id,
+            household_id: isBlankAddress ? (localBlankHouseholdId ?? '') : (fpCache.get(fp_full ?? '') ?? ''),
+            first_name: sanitized.first_name ?? null,
+            middle_names: null,
+            last_name: sanitized.last_name ?? null,
+            email: sanitized.email ?? null,
+            email2: null,
+            mobile: sanitized.mobile ?? null,
+            home_phone: null,
+            file_id: import_id,
+            notes: sanitized.notes ?? null,
+            json: null,
+          }));
+          const insertedPersons = await trx
+            .insertInto('persons')
+            .values(personRows)
+            .onConflict((oc) => oc.doNothing())
+            .returningAll()
+            .execute();
+
+          // Count rows silently skipped due to duplicate email
+          const duplicatesSkipped = personRows.length - insertedPersons.length;
+          if (duplicatesSkipped > 0) results.skipped += duplicatesSkipped;
+
+          // 4. Upsert each unique tag name exactly once (not once per row)
+          const tagRecords: Array<{ name: string; id: string }> = [];
+          for (const name of tags) {
+            const row = {
+              name,
+              tenant_id,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+            } as OperationDataType<'tags', 'insert'>;
+            const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, trx);
+            if (name === autoTag && tag?.id != null && !localAutoTagId) localAutoTagId = String(tag.id);
+            if (tag?.id) tagRecords.push({ name, id: String(tag.id) });
+          }
+
+          // 5. Batch insert all tag-person mappings in one statement
+          if (tagRecords.length > 0 && insertedPersons.length > 0) {
+            const tagMapRows = insertedPersons.flatMap((person) =>
+              tagRecords.map(({ id: tag_id }) => ({
+                tenant_id,
+                person_id: String(person.id),
+                tag_id: tag_id as unknown as string,
+                createdby_id: user_id,
+                updatedby_id: user_id,
+              })),
+            );
+            await (trx as any).insertInto('map_peoples_tags').values(tagMapRows).execute();
+          }
+
+          return {
+            insertedPersons,
+            tagRecords,
+            householdsCreatedDelta,
+            blankHouseholdId: localBlankHouseholdId,
+            autoTagId: localAutoTagId,
+          };
+        });
+
+        // 6. Trigger workflows outside the transaction (fire-and-forget per person)
+        const workflowsController = new WorkflowsController();
+        for (const person of outcome.insertedPersons) {
+          const personId = String(person.id);
+          importedPersonIds.push(personId);
+          try {
+            await workflowsController.triggerWorkflow(tenant_id, personId, 'contact_created', null);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in CSV import');
+          }
+          for (const { name, id: tagId } of outcome.tagRecords) {
+            try {
+              await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger tag_added workflow in CSV import');
+            }
+          }
+        }
+
+        results.inserted += outcome.insertedPersons.length;
+        results.households_created += outcome.householdsCreatedDelta;
+        if (outcome.blankHouseholdId) cachedBlankHouseholdId = outcome.blankHouseholdId;
+        if (!autoTagId && outcome.autoTagId) autoTagId = outcome.autoTagId;
+      } catch (err: unknown) {
+        // If the chunk transaction fails, count all valid rows in the chunk as errors
+        results.errors += validEntries.length;
+        const message = err instanceof Error ? err.message : String(err);
+        errorMessages.push(message);
+        logger.error({ err, message }, 'Import chunk failed');
+      }
+
+      // Update intermediate counts after each chunk
+      await this.importsRepo.update({
+        tenant_id: tenant_id,
+        id: import_id,
+        row: {
+          tag_id: autoTagId,
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          households_created: results.households_created,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+    }
+
+    // Log the user activity
+    try {
+      await this.userActivity.log({
+        tenant_id,
+        user_id,
+        activity: 'import',
+        entity: 'persons',
+        quantity: results.inserted,
+        metadata: {
+          rows_received: rows.length,
+          tags_applied: tags.slice(0, 10),
+          auto_tag: autoTag,
+          households_created: results.households_created,
+          errors: results.errors,
+          skipped: skipped + results.skipped,
+          import_id,
+        },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log import activity');
+    }
+
+    if (importedPersonIds.length > 0) {
+      try {
+        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+        await queueUsageLimitCheck(tenant_id, this.personsRepo.db);
+      } catch (err) {
+        logger.error({ err }, 'Failed to queue duplicate maintenance job or usage check for imported persons');
+      }
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      households_created: results.households_created,
+      tag_id: autoTagId,
+      errorMessages,
+    };
+  }
+
+  public async removeHousehold(person_id: string, auth: IAuthKeyPayload) {
+    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
+    return this.personsRepo.moveToNewHousehold({
+      tenant_id: auth.tenant_id,
+      person_id,
+      user_id: auth.user_id,
+      campaign_id,
+    });
+  }
+
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.personsRepo.getPotentialDuplicates(auth.tenant_id, options);
+  }
+
+  public async getDuplicateCounts(auth: IAuthKeyPayload) {
+    const [people, households, companies] = await Promise.all([
+      this.personsRepo.getDuplicateCount(auth.tenant_id),
+      this.householdRepo.getDuplicateCount(auth.tenant_id),
+      this.companiesRepo.getDuplicateCount(auth.tenant_id),
+    ]);
+    return { people, households, companies };
+  }
+
+  public async mergePersons(input: { target_id: string; source_id: string }, auth: IAuthKeyPayload) {
+    const result = await this.personsRepo.mergePersons({
+      tenant_id: auth.tenant_id,
+      target_id: input.target_id,
+      source_id: input.source_id,
+      user_id: auth.user_id,
+    });
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'merge',
+      entity: 'persons',
+      quantity: 1,
+      metadata: {
+        target_id: input.target_id,
+        source_id: input.source_id,
+      },
+    });
+    return result;
+  }
+
+  private async addToMap(row: {
+    tag_id: string | undefined;
+    person_id: string;
+    tenant_id: string;
+    createdby_id: string;
+    updatedby_id: string;
+  }) {
+    if (!row.tag_id) {
+      throw new TRPCError({
+        message: 'Failed to add the tag',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+    }
+
+    return await this.mapPersonsTagRepo.add({
+      row: row as OperationDataType<'map_peoples_tags', 'insert'>,
+    });
+  }
+
+  private sanitizePhone(v?: string) {
+    if (!v) return undefined;
+    const digits = v.replace(/[^0-9+]/g, '');
+    if (digits.startsWith('+')) return '+' + digits.slice(1).replace(/[^0-9]/g, '');
+    return digits.replace(/[^0-9]/g, '');
+  }
+
+  private sanitizeRow(row: {
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    mobile?: string;
+    notes?: string;
+    home_phone?: string;
+    street_num?: string;
+    street1?: string;
+    street2?: string;
+    apt?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    country?: string;
+  }) {
+    const trim = (v?: string) => (v ? v.trim() : undefined);
+
+    let first_name = trim(row.first_name);
+    const last_name = trim(row.last_name);
+    let email = (trim(row.email) || '').toLowerCase();
+    let mobile = this.sanitizePhone(row.mobile);
+    const home_phone = this.sanitizePhone(row.home_phone);
+    const notes = trim(row.notes);
+
+    if (!email) {
+      email = (this.findEmail(first_name || '') || this.findEmail(last_name || '') || '').toLowerCase();
+    }
+    if (email && !/.+@.+\..+/.test(email)) email = '';
+
+    if (!mobile) {
+      const possiblePhone = this.findPhone(first_name) || this.findPhone(last_name);
+      mobile = this.sanitizePhone(possiblePhone);
+    }
+
+    if (first_name) first_name = this.stripNoise(first_name);
+    if (!first_name && email) first_name = this.nameFromEmail(email);
+
+    return {
+      first_name,
+      last_name,
+      email: email || undefined,
+      mobile,
+      notes,
+      home_phone,
+      street_num: trim(row.street_num),
+      street1: trim(row.street1),
+      street2: trim(row.street2),
+      apt: trim(row.apt),
+      city: trim(row.city),
+      state: trim(row.state),
+      zip: trim(row.zip),
+      country: trim(row.country),
+    };
+  }
+
+  private findEmail(text: string): string | undefined {
+    const m = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    return m?.[0];
+  }
+
+  private findPhone(text?: string): string | undefined {
+    if (!text) return undefined;
+    const m = text.match(/\+?\d[\d\s-]{7,}\d/);
+    return m?.[0];
+  }
+
+  private stripNoise(text: string): string | undefined {
+    const noEmail = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, ' ');
+    const noPhone = noEmail.replace(/\+?\d[\d\s-]{7,}\d/g, ' ');
+    const cleaned = noPhone
+      .replace(/[,]+/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return cleaned || undefined;
+  }
+
+  private nameFromEmail(email: string): string | undefined {
+    const local = (email || '').split('@')[0] || '';
+    const token = local.split(/[._+-]/)[0] || '';
+    if (!token) return undefined;
+    return token.charAt(0).toUpperCase() + token.slice(1);
+  }
+}
 ```
 
 ## File: apps/backend/src/app/modules/volunteer-events/controller.ts
@@ -32869,7 +34804,12 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       send_signup_confirmation: payload.send_signup_confirmation ?? true,
       send_volunteer_alert: payload.send_volunteer_alert ?? true,
       slug: payload.slug,
-      fields: payload.fields ?? DEFAULT_FIELDS,
+      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
+      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
+      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
+      // Stringifying it first makes node-postgres send plain text, which Postgres casts
+      // to jsonb correctly.
+      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
     } as OperationDataType<'volunteer_events', 'insert'>;
     return this.add(row);
   }
@@ -32909,8 +34849,13 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
     }
 
+    // `fields` is a jsonb column but modeled as `string[]`; pull it out of the raw payload
+    // spread and stringify it so node-postgres sends valid JSON text instead of a Postgres
+    // ARRAY literal (see addEvent() above for the full explanation).
+    const { fields, ...restPayload } = payload;
     const row = {
-      ...payload,
+      ...restPayload,
+      ...(fields !== undefined ? { fields: JSON.stringify(fields) as unknown as string[] } : {}),
       updatedby_id: auth.user_id,
     } as OperationDataType<'volunteer_events', 'update'>;
     const result = await this.update({
@@ -34480,6 +36425,345 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 }
 ```
 
+## File: apps/backend/src/app/modules/companies/repositories/companies.repo.ts
+
+```typescript
+import type { Selectable, Transaction } from 'kysely';
+import { sql } from 'kysely';
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class CompaniesRepo extends BaseRepository<'companies'> {
+  constructor() {
+    super('companies');
+  }
+
+  public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // Note: tenant ID is taken in the subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    return Number(countResult?.total ?? 0);
+  }
+
+  public async getPotentialDuplicates(
+    tenant_id: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ groups: any[]; total: number }> {
+    const page = options?.page ?? 1;
+    const pageSize = options?.pageSize ?? 20;
+
+    // Note: tenant ID is taken in the subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    const total = Number(countResult?.total ?? 0);
+
+    if (total === 0) {
+      return { groups: [], total: 0 };
+    }
+
+    const keysRows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
+      .select('potential_duplicates.group_key')
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .groupBy('potential_duplicates.group_key')
+      .having(sql`count(potential_duplicates.id)`, '>', 1)
+      .orderBy(sql`min(potential_duplicates.id)`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .execute();
+
+    const groupKeys = keysRows.map((r) => r.group_key);
+
+    if (groupKeys.length === 0) {
+      return { groups: [], total };
+    }
+
+    const rows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
+      .select([
+        'potential_duplicates.group_key',
+        'potential_duplicates.reason',
+        'companies.id',
+        'companies.name',
+        'companies.description',
+        'companies.website',
+        'companies.email',
+        'companies.phone',
+        'companies.industry',
+        'companies.notes',
+        'companies.created_at',
+      ])
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .where('potential_duplicates.group_key', 'in', groupKeys)
+      .execute();
+
+    const companyIds = rows.map((r) => String(r.id));
+    if (companyIds.length === 0) {
+      return { groups: [], total };
+    }
+
+    const persons = await this.db
+      .selectFrom('persons')
+      .select(['id', 'first_name', 'last_name', 'email', 'company_id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('company_id', 'in', companyIds)
+      .execute();
+
+    const companyToPersons = new Map<string, any[]>();
+    for (const p of persons) {
+      const compId = String(p.company_id);
+      let companyPersons = companyToPersons.get(compId);
+      if (!companyPersons) {
+        companyPersons = [];
+        companyToPersons.set(compId, companyPersons);
+      }
+      companyPersons.push(p);
+    }
+
+    const groupsMap = new Map<string, { reason: string; companies: any[] }>();
+    for (const row of rows) {
+      const groupKey = row.group_key;
+      let group = groupsMap.get(groupKey);
+      if (!group) {
+        group = {
+          reason: row.reason,
+          companies: [],
+        };
+        groupsMap.set(groupKey, group);
+      }
+      group.companies.push({
+        ...row,
+        id: String(row.id),
+        persons: companyToPersons.get(String(row.id)) || [],
+      });
+    }
+
+    const sortedGroups = groupKeys
+      .map((key) => groupsMap.get(key))
+      .filter((g): g is NonNullable<typeof g> => !!(g && g.companies.length > 1));
+
+    return { groups: sortedGroups, total };
+  }
+
+  public async mergeCompanies(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
+    return this.transaction().execute(async (trx) => {
+      const target = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'companies'>, value: input.target_id },
+        trx,
+      )) as Selectable<Models['companies']>;
+      const source = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'companies'>, value: input.source_id },
+        trx,
+      )) as Selectable<Models['companies']>;
+
+      if (!target || !source) {
+        throw new Error('Target or Source company not found');
+      }
+
+      // 1. Merge fields (copy null/empty fields from source to target)
+      const targetUpdate: Record<string, any> = {};
+      const fields = ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'] as const;
+
+      for (const field of fields) {
+        const targetVal = target[field];
+        const sourceVal = source[field];
+        if (
+          (targetVal == null || String(targetVal).trim() === '') &&
+          sourceVal != null &&
+          String(sourceVal).trim() !== ''
+        ) {
+          targetUpdate[field] = sourceVal;
+        }
+      }
+
+      if (Object.keys(targetUpdate).length > 0) {
+        targetUpdate['updatedby_id'] = input.user_id;
+        targetUpdate['updated_at'] = sql`now()`;
+        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
+      }
+
+      // 2. Reassign people (persons.company_id)
+      await trx
+        .updateTable('persons')
+        .set({ company_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('company_id', '=', input.source_id)
+        .execute();
+
+      // 3. Delete source company
+      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
+
+      return { success: true };
+    });
+  }
+
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    const rows = await this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id)
+      .execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: sql`now()`,
+        updatedby_id: input.user_id,
+      } as unknown as OperationDataType<'companies', 'update'>)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
+      .executeTakeFirst();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/donations/routes/donations-webhook.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import Stripe from 'stripe';
+import { env } from '../../../../env';
+import { BaseRepository } from '../../../lib/base.repo';
+import { logger } from '../../../logger';
+
+const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.post('/webhook', async (req, reply) => {
+    const query = req.query as { token?: string };
+    const token = query.token;
+    if (!token) {
+      logger.error('Webhook error: Missing token query parameter');
+      return reply.code(400).send({ error: 'Missing token parameter' });
+    }
+
+    let tenantId = 'unknown';
+    try {
+      // Look up tenant setting donations.webhook_token with matching value
+      // eslint-disable-next-line local/no-unscoped-db-query
+      const tokenRow = await BaseRepository.dbInstance
+        .selectFrom('settings')
+        .select('tenant_id')
+        .where('key', '=', 'donations.webhook_token')
+        .where('value', '=', JSON.stringify(token))
+        .executeTakeFirst();
+
+      if (!tokenRow) {
+        logger.error(`Webhook error: Invalid webhook token: ${token}`);
+        return reply.code(400).send({ error: 'Invalid webhook token' });
+      }
+
+      tenantId = String(tokenRow.tenant_id);
+
+      const signature = (req.headers['stripe-signature'] as string) || '';
+      const payload = req.body as string; // Raw string thanks to ContentTypeParser setup
+
+      // 1. Look up settings for this tenant ID in Kysely
+      const secretRow = await BaseRepository.dbInstance
+        .selectFrom('settings')
+        .select('value')
+        .where('tenant_id', '=', tenantId)
+        .where('key', '=', 'donations.stripe_webhook_secret')
+        .executeTakeFirst();
+
+      const webhookSecret = secretRow?.value as string | undefined;
+
+      const keyRow = await BaseRepository.dbInstance
+        .selectFrom('settings')
+        .select('value')
+        .where('tenant_id', '=', tenantId)
+        .where('key', '=', 'donations.stripe_secret_key')
+        .executeTakeFirst();
+
+      const stripeKey = (keyRow?.value as string | undefined) || env.stripeSecretKey;
+
+      // Mock mode (unsigned payload parsing) is ONLY permitted outside production.
+      // In production we must never accept an unauthenticated webhook body, or an
+      // attacker who knows the tenant's webhook token could forge payment events.
+      const isProduction = process.env['NODE_ENV'] === 'production';
+      const isMock = !isProduction && (!stripeKey || stripeKey.includes('MockKey') || stripeKey === '');
+
+      let event: Stripe.Event;
+
+      if (isMock) {
+        // Direct parse in mock/local dev mode
+        event = JSON.parse(payload);
+      } else {
+        if (!stripeKey || stripeKey.includes('MockKey')) {
+          throw new Error('Tenant donations stripe secret key not configured.');
+        }
+        if (!webhookSecret) {
+          throw new Error('Tenant donations stripe webhook secret not configured.');
+        }
+        const stripe = new Stripe(stripeKey);
+        event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
+      }
+
+      logger.info(`[DonationsWebhook] Persisting webhook event: ${event.id} (${event.type}) for Tenant: ${tenantId}`);
+
+      // 2. Persist webhook event for background worker processing
+      await BaseRepository.dbInstance
+        .insertInto('webhook_events')
+        .values({
+          tenant_id: tenantId,
+          stripe_event_id: event.id,
+          type: event.type,
+          payload: JSON.stringify(event),
+          status: 'pending',
+        })
+        .onConflict((oc: any) => oc.column('stripe_event_id').doNothing())
+        .execute();
+
+      return reply.code(200).send({ received: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, `Donations Webhook error for Tenant ${tenantId}`);
+      return reply.code(400).send({ error: message });
+    }
+  });
+
+  done();
+};
+
+export default donationsWebhookRoute;
+```
+
 ## File: apps/backend/src/app/modules/zapier/zapier-inbound.route.ts
 
 ```typescript
@@ -34679,200 +36963,20 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 export default zapierInboundRoute;
 ```
 
-## File: apps/backend/src/app/modules/companies/repositories/companies.repo.ts
+## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
 
 ```typescript
-import type { Selectable, Transaction } from 'kysely';
+import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
-import { BaseRepository } from '../../../lib/base.repo';
+
 import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import { HouseholdRepo } from '../../households/repositories/households.repo';
 
-export class CompaniesRepo extends BaseRepository<'companies'> {
+export class PersonsRepo extends BaseRepository<'persons'> {
   constructor() {
-    super('companies');
-  }
-
-  public async getDuplicateCount(tenant_id: string): Promise<number> {
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    return Number(countResult?.total ?? 0);
-  }
-
-  public async getPotentialDuplicates(
-    tenant_id: string,
-    options?: { page?: number; pageSize?: number },
-  ): Promise<{ groups: any[]; total: number }> {
-    const page = options?.page ?? 1;
-    const pageSize = options?.pageSize ?? 20;
-
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    const total = Number(countResult?.total ?? 0);
-
-    if (total === 0) {
-      return { groups: [], total: 0 };
-    }
-
-    const keysRows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
-      .select('potential_duplicates.group_key')
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .groupBy('potential_duplicates.group_key')
-      .having(sql`count(potential_duplicates.id)`, '>', 1)
-      .orderBy(sql`min(potential_duplicates.id)`)
-      .limit(pageSize)
-      .offset((page - 1) * pageSize)
-      .execute();
-
-    const groupKeys = keysRows.map((r) => r.group_key);
-
-    if (groupKeys.length === 0) {
-      return { groups: [], total };
-    }
-
-    const rows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
-      .select([
-        'potential_duplicates.group_key',
-        'potential_duplicates.reason',
-        'companies.id',
-        'companies.name',
-        'companies.description',
-        'companies.website',
-        'companies.email',
-        'companies.phone',
-        'companies.industry',
-        'companies.notes',
-        'companies.created_at',
-      ])
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .where('potential_duplicates.group_key', 'in', groupKeys)
-      .execute();
-
-    const companyIds = rows.map((r) => String(r.id));
-    if (companyIds.length === 0) {
-      return { groups: [], total };
-    }
-
-    const persons = await this.db
-      .selectFrom('persons')
-      .select(['id', 'first_name', 'last_name', 'email', 'company_id'])
-      .where('tenant_id', '=', tenant_id)
-      .where('company_id', 'in', companyIds)
-      .execute();
-
-    const companyToPersons = new Map<string, any[]>();
-    for (const p of persons) {
-      const compId = String(p.company_id);
-      let companyPersons = companyToPersons.get(compId);
-      if (!companyPersons) {
-        companyPersons = [];
-        companyToPersons.set(compId, companyPersons);
-      }
-      companyPersons.push(p);
-    }
-
-    const groupsMap = new Map<string, { reason: string; companies: any[] }>();
-    for (const row of rows) {
-      const groupKey = row.group_key;
-      let group = groupsMap.get(groupKey);
-      if (!group) {
-        group = {
-          reason: row.reason,
-          companies: [],
-        };
-        groupsMap.set(groupKey, group);
-      }
-      group.companies.push({
-        ...row,
-        id: String(row.id),
-        persons: companyToPersons.get(String(row.id)) || [],
-      });
-    }
-
-    const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
-      .filter((g): g is NonNullable<typeof g> => !!(g && g.companies.length > 1));
-
-    return { groups: sortedGroups, total };
-  }
-
-  public async mergeCompanies(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
-    return this.transaction().execute(async (trx) => {
-      const target = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'companies'>, value: input.target_id },
-        trx,
-      )) as Selectable<Models['companies']>;
-      const source = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'companies'>, value: input.source_id },
-        trx,
-      )) as Selectable<Models['companies']>;
-
-      if (!target || !source) {
-        throw new Error('Target or Source company not found');
-      }
-
-      // 1. Merge fields (copy null/empty fields from source to target)
-      const targetUpdate: Record<string, any> = {};
-      const fields = ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'] as const;
-
-      for (const field of fields) {
-        const targetVal = target[field];
-        const sourceVal = source[field];
-        if (
-          (targetVal == null || String(targetVal).trim() === '') &&
-          sourceVal != null &&
-          String(sourceVal).trim() !== ''
-        ) {
-          targetUpdate[field] = sourceVal;
-        }
-      }
-
-      if (Object.keys(targetUpdate).length > 0) {
-        targetUpdate['updatedby_id'] = input.user_id;
-        targetUpdate['updated_at'] = sql`now()`;
-        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
-      }
-
-      // 2. Reassign people (persons.company_id)
-      await trx
-        .updateTable('persons')
-        .set({ company_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
-        .where('tenant_id', '=', input.tenant_id)
-        .where('company_id', '=', input.source_id)
-        .execute();
-
-      // 3. Delete source company
-      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
-
-      return { success: true };
-    });
+    super('persons');
   }
 
   public async getIdsByFileId(
@@ -34896,2680 +37000,694 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
       .set({
         file_id: null,
         updated_at: sql`now()`,
-        updatedby_id: input.user_id,
-      } as unknown as OperationDataType<'companies', 'update'>)
+      })
       .where('tenant_id', '=', input.tenant_id)
       .where('file_id', '=', input.import_id)
       .executeTakeFirst();
   }
-}
-```
 
-## File: apps/backend/src/app/modules/ms-sync/ms-sync.service.ts
+  public async getByIds(input: { tenant_id: string; ids: string[]; tags?: string[] }, trx?: Transaction<Models>) {
+    const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
+    if (!ids.length) return [];
 
-```typescript
-import { Client } from '@microsoft/microsoft-graph-client';
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { MsOAuthService } from './ms-oauth.service';
-import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
-import type { IngestableEmail } from '../emails/services/email-ingester.service';
-import { EmailIngesterService } from '../emails/services/email-ingester.service';
-import { logger } from '../../logger';
+    const tags = (input.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean);
 
-const MAX_MESSAGES_PER_SYNC = 50;
+    let query = this.getSelect(trx)
+      .select(['persons.id', 'persons.first_name', 'persons.last_name', 'persons.email'])
+      .where('persons.tenant_id', '=', input.tenant_id)
+      .where('persons.id', 'in', ids);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function getStatusCode(err: unknown): number | undefined {
-  return isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined;
-}
-
-function getRetryAfterHeader(err: unknown): string | undefined {
-  if (!isRecord(err)) return undefined;
-  const headers = err['headers'];
-  if (!isRecord(headers)) return undefined;
-  const getFn = headers['get'];
-  if (typeof getFn === 'function') {
-    const value: unknown = (getFn as (name: string) => unknown).call(headers, 'Retry-After');
-    if (typeof value === 'string') return value;
-  }
-  const raw = headers['retry-after'];
-  return typeof raw === 'string' ? raw : undefined;
-}
-
-async function graphCallWithRetry<T>(callFn: () => Promise<T>, maxRetries = 3): Promise<T> {
-  let attempt = 0;
-  while (true) {
-    attempt++;
-    try {
-      return await callFn();
-    } catch (err) {
-      if (getStatusCode(err) === 429 && attempt <= maxRetries) {
-        let delayMs = 5000;
-        const retryAfter = getRetryAfterHeader(err);
-        if (retryAfter) {
-          const parsed = parseInt(retryAfter, 10);
-          if (!isNaN(parsed)) {
-            delayMs = parsed * 1000;
-          }
-        } else {
-          delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
-        }
-        logger.warn(`MS Graph API rate limited (429). Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        continue;
-      }
-      throw err;
-    }
-  }
-}
-
-export class MsSyncService {
-  private readonly ingester: EmailIngesterService;
-
-  constructor(
-    private readonly db: Kysely<Models>,
-    private readonly oauthSvc: MsOAuthService,
-  ) {
-    this.ingester = new EmailIngesterService(db, 'ms');
-  }
-
-  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
-    const accessToken = await this.oauthSvc.getValidToken(tenantId);
-    const client = this.buildGraphClient(accessToken);
-
-    const syncFolders = [
-      { wellKnownName: 'inbox', pplcrmId: ALL_FOLDERS.INBOX },
-      { wellKnownName: 'sentitems', pplcrmId: ALL_FOLDERS.SENT },
-      { wellKnownName: 'deleteditems', pplcrmId: ALL_FOLDERS.TRASH },
-      { wellKnownName: 'junkemail', pplcrmId: ALL_FOLDERS.SPAM },
-    ];
-
-    // Read stored delta map.
-    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
-    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
-    // positions after a successful sync, so no explicit clear is needed.
-    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
-    let deltaMap: Record<string, string> = {};
-    if (dbDeltaLink) {
-      try {
-        const parsed = JSON.parse(dbDeltaLink);
-        if (!parsed._needs_full_sync) {
-          deltaMap = parsed;
-        }
-        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
-      } catch {
-        // If not valid JSON, it's a legacy plain URL string. Clear it.
-        deltaMap = {};
-      }
+    if (tags.length > 0) {
+      query = query
+        .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .where(sql`LOWER(tags.name)`, 'in', tags)
+        .distinct();
     }
 
-    let inserted = 0;
-    const nextDeltaMap: Record<string, string> = { ...deltaMap };
-
-    for (const folder of syncFolders) {
-      const folderDeltaLink = deltaMap[folder.wellKnownName] || null;
-
-      let pageUrl: string | null =
-        folderDeltaLink ??
-        `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
-
-      const allMessages: any[] = [];
-      let isInitialSync = folderDeltaLink === null;
-      let hasMore = true;
-
-      while (pageUrl && hasMore) {
-        const url = pageUrl;
-        try {
-          const response: any = await graphCallWithRetry(() => client.api(url).get());
-          const messages = response.value ?? [];
-          allMessages.push(...messages);
-
-          const nextLink = response['@odata.nextLink'] ?? null;
-          const deltaLink = response['@odata.deltaLink'] ?? null;
-
-          if (deltaLink) {
-            nextDeltaMap[folder.wellKnownName] = deltaLink;
-            hasMore = false;
-          } else if (nextLink) {
-            pageUrl = nextLink;
-          } else {
-            hasMore = false;
-          }
-        } catch (err) {
-          if (getStatusCode(err) === 410) {
-            // Delta link expired for this folder, clear it
-            delete nextDeltaMap[folder.wellKnownName];
-            isInitialSync = true;
-            allMessages.length = 0; // clear any partially loaded pages before restarting
-            pageUrl = `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
-          } else {
-            throw err;
-          }
-        }
-      }
-
-      // Process all messages fetched in this sync run
-      for (const msg of allMessages) {
-        if (msg['@removed']) {
-          const msId = msg.id;
-          if (msId) {
-            await this.ingester.deleteMessage(tenantId, msId);
-          }
-          continue;
-        }
-
-        try {
-          const wasSaved = await this.saveMessage(client, msg, tenantId, requestedBy, folder.pplcrmId);
-          if (wasSaved) inserted++;
-        } catch (err) {
-          logger.error({ err }, `Failed to ingest MS Graph message ${msg.id}`);
-        }
-      }
-
-      // If it was an initial/full sync (meaning we started with no delta link, or it expired and we retried),
-      // we have retrieved the entire list of active server messages.
-      // Therefore, any local email that has an MS preview key but is NOT in the server's list must have been deleted or moved.
-      if (isInitialSync) {
-        const serverMsIds = new Set(allMessages.filter((m) => !m['@removed']).map((m) => String(m.id)));
-        const localEmails = await this.db
-          .selectFrom('emails')
-          .select(['id', 'preview'])
-          .where('tenant_id', '=', tenantId)
-          .where('folder_id', '=', folder.pplcrmId)
-          .where('preview', 'like', 'ms:%')
-          .execute();
-
-        for (const localEmail of localEmails) {
-          const previewKey = localEmail.preview ?? '';
-          const msId = previewKey.replace(/^ms:/, '');
-          if (!serverMsIds.has(msId)) {
-            await this.ingester.deleteMessage(tenantId, msId);
-          }
-        }
-      }
+    const rows = await query.execute();
+    const map = new Map<string, { id: string; first_name: string; last_name: string; email: string | null }>();
+    for (const row of rows) {
+      const id = row.id != null ? String(row.id) : '';
+      if (!id || map.has(id)) continue;
+      map.set(id, {
+        id,
+        first_name: row.first_name ?? '',
+        last_name: row.last_name ?? '',
+        email: row.email ?? null,
+      });
     }
-
-    // Save updated delta map back to database
-    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
-
-    return { inserted };
+    return Array.from(map.values());
   }
 
-  public async removeAllLocalEmails(tenantId: string): Promise<void> {
-    await this.ingester.removeAllLocalEmails(tenantId);
-  }
-
-  private async saveMessage(
-    client: Client,
-    msg: any,
-    tenantId: string,
-    requestedBy: string,
-    folderId: string,
-  ): Promise<boolean> {
-    const msId: string = msg.id ?? '';
-    if (!msId) return false;
-
-    const fromEmail = msg.from?.emailAddress?.address ?? null;
-    const toEmail = msg.toRecipients?.[0]?.emailAddress?.address ?? null;
-    const subject = msg.subject ?? null;
-    let dateSent = msg.receivedDateTime ? new Date(msg.receivedDateTime) : new Date();
-    if (isNaN(dateSent.getTime())) {
-      dateSent = new Date();
-    }
-    const bodyHtml = msg.body?.content ?? '';
-
-    // Fetch Graph attachments if any
-    let graphAttachments: any[] = [];
-    const hasCid = bodyHtml && bodyHtml.includes('cid:');
-    if (msg.hasAttachments || hasCid) {
-      try {
-        const attRes = await graphCallWithRetry(() => client.api(`/me/messages/${msId}/attachments`).get());
-        graphAttachments = attRes.value ?? [];
-      } catch (err) {
-        logger.error({ err }, `Failed to fetch attachments for message ${msId}`);
-      }
-    }
-
-    const fileAttachments = graphAttachments.filter(
-      (att: any) => att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes,
-    );
-
-    // Map MS Graph attachments to IngestableEmail attachments
-    const attachments = fileAttachments.map((att: any) => ({
-      name: att.name,
-      contentType: att.contentType,
-      size: att.size,
-      contentId: att.contentId ?? null,
-      isInline: att.isInline ?? false,
-      fetchContent: async () => Buffer.from(att.contentBytes, 'base64'),
-    }));
-
-    // Map recipients
-    const recipients: Array<{ kind: 'to' | 'cc' | 'bcc'; name: string | null; email: string }> = [];
-    const toList: any[] = msg.toRecipients ?? [];
-    const ccList: any[] = msg.ccRecipients ?? [];
-    const bccList: any[] = msg.bccRecipients ?? [];
-
-    toList.forEach((r) => {
-      recipients.push({ kind: 'to', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
-    });
-    ccList.forEach((r) => {
-      recipients.push({ kind: 'cc', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
-    });
-    bccList.forEach((r) => {
-      recipients.push({ kind: 'bcc', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
-    });
-
-    const ingestable: IngestableEmail = {
-      id: msId,
-      internetMessageId: msg.internetMessageId ?? null,
-      fromEmail,
-      toEmail,
-      subject,
-      dateSent,
-      bodyHtml,
-      recipients,
-      attachments,
-    };
-
-    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
-  }
-
-  private buildGraphClient(accessToken: string): Client {
-    return Client.init({
-      authProvider: (done) => done(null, accessToken),
-    });
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/ms-sync/trpc.router.ts
-
-```typescript
-import { authProcedure, router } from '../../../trpc';
-import { MsOAuthService, NEEDS_FULL_SYNC } from './ms-oauth.service';
-import { MsSyncService } from './ms-sync.service';
-import { BaseRepository } from '../../lib/base.repo';
-import { env } from '../../../env';
-import { z } from 'zod';
-import { sql } from 'kysely';
-import { encodeOAuthState } from '../../lib/oauth-state';
-
-let _oauthSvc: MsOAuthService | null = null;
-let _syncSvc: MsSyncService | null = null;
-
-function getServices() {
-  if (!_oauthSvc || !_syncSvc) {
-    const db = (BaseRepository as any)['_db']; // reuse the shared Kysely instance
-    _oauthSvc = new MsOAuthService(db, {
-      clientId: env.msClientId ?? '',
-      clientSecret: env.msClientSecret ?? '',
-      tenantId: env.msTenantId ?? 'common',
-      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-    });
-    _syncSvc = new MsSyncService(db, _oauthSvc);
-  }
-  return { oauthSvc: _oauthSvc, syncSvc: _syncSvc };
-}
-
-function getAuthUrl() {
-  return authProcedure.input(z.object({ returnTo: z.string().optional() })).query(async ({ ctx, input }) => {
-    const { oauthSvc } = getServices();
-    const state = encodeOAuthState({
-      userId: ctx.auth.user_id,
-      tenantId: ctx.auth.tenant_id,
-      returnTo: input.returnTo,
-    });
-    const url = await oauthSvc.getAuthUrl(state);
-    return { url };
-  });
-}
-
-function getConnectionStatus() {
-  return authProcedure.query(async ({ ctx }) => {
-    const { oauthSvc } = getServices();
-    const db = (BaseRepository as any)['_db'];
-    const status = await oauthSvc.getConnectionStatus(ctx.auth.tenant_id);
-
-    const activeJob = await db
-      .selectFrom('background_jobs')
-      .select('id')
-      .where('status', 'in', ['pending', 'processing'])
-      .where('tenant_id', '=', ctx.auth.tenant_id)
-      .where(sql`payload->>'type'`, '=', 'ms_sync')
+  public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
+    const row = await this.getSelect()
+      .select(() => [sql<number>`count(*)`.as('total'), sql<Date>`max(created_at)`.as('last_created_at')])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('createdby_id', '=', input.user_id)
       .executeTakeFirst();
 
     return {
-      ...status,
-      syncing: !!activeJob,
-    };
-  });
-}
-
-function syncNow() {
-  return authProcedure.mutation(async ({ ctx }) => {
-    const db = (BaseRepository as any)['_db'];
-
-    const existing = await db
-      .selectFrom('background_jobs')
-      .select('id')
-      .where('status', 'in', ['pending', 'processing'])
-      .where('tenant_id', '=', ctx.auth.tenant_id)
-      .where(sql`payload->>'type'`, '=', 'ms_sync')
-      .executeTakeFirst();
-
-    if (!existing) {
-      await db
-        .insertInto('background_jobs')
-        .values({
-          tenant_id: ctx.auth.tenant_id,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({
-            type: 'ms_sync',
-            tenantId: ctx.auth.tenant_id,
-            requestedBy: ctx.auth.user_id,
-          }),
-          run_at: new Date(),
-          max_attempts: 3,
-        })
-        .execute();
-    }
-
-    return { inserted: 0, queued: true };
-  });
-}
-
-function disconnect() {
-  return authProcedure
-    .input(
-      z.object({
-        removeLocalEmails: z.boolean().default(false),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const { oauthSvc, syncSvc } = getServices();
-
-      if (input.removeLocalEmails) {
-        await syncSvc.removeAllLocalEmails(ctx.auth.tenant_id);
-      }
-
-      await oauthSvc.disconnect(ctx.auth.tenant_id);
-      return { success: true };
-    });
-}
-
-function resetSync() {
-  return authProcedure.mutation(async ({ ctx }) => {
-    const { oauthSvc } = getServices();
-    await oauthSvc.saveDeltaLink(ctx.auth.tenant_id, NEEDS_FULL_SYNC);
-    return { success: true };
-  });
-}
-
-export const MsSyncRouter = router({
-  getAuthUrl: getAuthUrl(),
-  getConnectionStatus: getConnectionStatus(),
-  syncNow: syncNow(),
-  disconnect: disconnect(),
-  resetSync: resetSync(),
-});
-```
-
-## File: apps/backend/src/app/modules/persons/services/persons.service.ts
-
-```typescript
-import { env } from '../../../../env';
-import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
-import { TRPCError } from '@trpc/server';
-
-import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
-import { HouseholdRepo } from '../../households/repositories/households.repo';
-import { SettingsController } from '../../settings/controller';
-import { TagsRepo } from '../../tags/repositories/tags.repo';
-import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
-import { PersonsRepo } from '../repositories/persons.repo';
-import { CompaniesRepo } from '../../companies/repositories/companies.repo';
-import { MapTeamsPersonsRepo } from '../../teams/repositories/map-teams-persons.repo';
-import { TeamsRepo } from '../../teams/repositories/teams.repo';
-import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { ImportsRepo } from '../../imports/repositories/imports.repo';
-import { UserActivityRepo } from '../../../lib/user-activity.repo';
-import { StorageService } from '../../../lib/storage.service';
-import { WorkflowsController } from '../../workflows/controller';
-import { TransactionalEmailService } from '../../../lib/mail/transactional-mail.service';
-import { queueZapierTrigger, pickPersonFields } from '../../zapier/zapier.service';
-import { logger } from '../../../logger';
-
-export class PersonsService {
-  private mapPersonsTagRepo = new MapPersonsTagRepo();
-  private settingsController = new SettingsController();
-  private tagsRepo = new TagsRepo();
-  private mapTeamsPersonsRepo = new MapTeamsPersonsRepo();
-  private teamsRepo = new TeamsRepo();
-  private importsRepo = new ImportsRepo();
-  private personsRepo = new PersonsRepo();
-  private userActivity = new UserActivityRepo();
-  private storageService = new StorageService();
-  private householdRepo = new HouseholdRepo();
-  private companiesRepo = new CompaniesRepo();
-
-  public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
-    // Enforce email uniqueness within the tenant
-    const emailToCheck = payload.email?.trim();
-    if (emailToCheck) {
-      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
-      if (existing) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: `A person with the email "${emailToCheck}" already exists.`,
-        });
-      }
-    }
-
-    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
-    const households = new HouseholdRepo();
-
-    let household_id = payload.household_id as string | undefined;
-    if (!household_id) {
-      const existingBlank = await households.getBlankHousehold({
-        tenant_id: auth.tenant_id,
-        campaign_id: String(campaign_id),
-      });
-      if (existingBlank?.id) {
-        household_id = String(existingBlank.id);
-      } else {
-        const created = await households.add({
-          row: {
-            tenant_id: auth.tenant_id,
-            campaign_id: String(campaign_id),
-            createdby_id: auth.user_id,
-            updatedby_id: auth.user_id,
-          } as OperationDataType<'households', 'insert'>,
-        });
-        household_id = String(created?.id);
-      }
-    }
-
-    const row = {
-      ...payload,
-      household_id,
-      campaign_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-
-    const result = await this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
-    if (result && typeof result === 'object') {
-      try {
-        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-        await queueUsageLimitCheck(auth.tenant_id, this.personsRepo.db);
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger usage check in addPerson');
-      }
-      try {
-        const workflowsController = new WorkflowsController();
-        await workflowsController.triggerWorkflow(
-          auth.tenant_id,
-          String((result as Record<string, unknown>)['id']),
-          'contact_created',
-          null,
-        );
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger contact_created workflow in add');
-      }
-
-      if (payload.assigned_to) {
-        try {
-          const assignee = await this.personsRepo.db
-            .selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-            .where('authusers.id', '=', String(payload.assigned_to))
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            let optedIn = true;
-            if (assignee.profile_json) {
-              const json =
-                typeof assignee.profile_json === 'string' ? JSON.parse(assignee.profile_json) : assignee.profile_json;
-              if (json?.notifications?.person_assigned === false) {
-                optedIn = false;
-              }
-            }
-            if (optedIn) {
-              const createdPerson = result as Record<string, unknown>;
-              const personName =
-                `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
-              const link = `${env.appUrl}/persons/${createdPerson['id']}`;
-              const mailService = new TransactionalEmailService();
-              await mailService.sendMail({
-                to: assignee.email,
-                subject: `Contact Assigned to You: ${personName}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${createdPerson['email'] || 'None'}\nPhone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${createdPerson['email'] || 'None'}<br>Phone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
-              });
-            }
-          }
-        } catch (mailErr) {
-          logger.error({ err: mailErr }, 'Failed to send contact assignment email in addPerson');
-        }
-      }
-    }
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'create',
-        entity: 'persons',
-        entity_id: result?.id ? String(result.id) : null,
-        quantity: 1,
-        metadata: {
-          id: result?.id,
-          entity_label: `${result?.first_name || ''} ${result?.last_name || ''}`.trim() || 'Person',
-          ...(auth.source ? { source: auth.source } : {}),
-        },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log create person activity');
-    }
-    try {
-      await queueZapierTrigger(
-        this.personsRepo.db,
-        auth.tenant_id,
-        'person_created',
-        pickPersonFields(result as Record<string, unknown>),
-      );
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_created trigger');
-    }
-    return result;
-  }
-
-  public async updatePerson(id: string, data: UpdatePersonsType, auth: IAuthKeyPayload) {
-    // Enforce email uniqueness within the tenant (excluding the person being updated)
-    const emailToCheck = data.email?.trim();
-    if (emailToCheck) {
-      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
-      if (existing && String(existing.id) !== String(id)) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: `A person with the email "${emailToCheck}" already exists.`,
-        });
-      }
-    }
-
-    let original: Record<string, unknown> | null = null;
-    try {
-      original = ((await this.personsRepo.getOneBy('id', { value: id, tenant_id: auth.tenant_id })) ?? null) as Record<
-        string,
-        unknown
-      > | null;
-    } catch (err) {
-      logger.error({ err }, 'Failed to fetch original person record for activity log');
-    }
-    const result = await this.personsRepo.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: {
-        ...data,
-        updatedby_id: auth.user_id,
-      } as OperationDataType<'persons', 'update'>,
-    });
-    if (result && typeof result === 'object') {
-      const updatedPerson = result as Record<string, unknown>;
-      if (data.assigned_to !== undefined && original && String(data.assigned_to) !== String(original['assigned_to'])) {
-        const newAssigneeId = data.assigned_to;
-        if (newAssigneeId) {
-          try {
-            const assignee = await this.personsRepo.db
-              .selectFrom('authusers')
-              .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-              .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-              // String conversion ensures precision is maintained down to the database driver level
-              .where('authusers.id', '=', String(newAssigneeId))
-              .executeTakeFirst();
-
-            if (assignee && assignee.email) {
-              let optedIn = true;
-              if (assignee.profile_json) {
-                const json =
-                  typeof assignee.profile_json === 'string' ? JSON.parse(assignee.profile_json) : assignee.profile_json;
-                if (json?.notifications?.person_assigned === false) {
-                  optedIn = false;
-                }
-              }
-              if (optedIn) {
-                const personName =
-                  `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
-                  'unnamed contact';
-                const link = `${env.appUrl}/persons/${updatedPerson['id']}`;
-                const mailService = new TransactionalEmailService();
-                await mailService.sendMail({
-                  to: assignee.email,
-                  subject: `Contact Assigned to You: ${personName}`,
-                  text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${updatedPerson['email'] || 'None'}\nPhone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
-                  html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${updatedPerson['email'] || 'None'}<br>Phone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
-                });
-              }
-            }
-          } catch (mailErr) {
-            logger.error({ err: mailErr }, 'Failed to send contact assignment email in updatePerson');
-          }
-        }
-      }
-    }
-    try {
-      const changes: Record<string, unknown> = {};
-      const resultObj = result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
-      if (original && resultObj) {
-        const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
-        for (const key of Object.keys(data)) {
-          if (skipKeys.includes(key)) continue;
-          const oldVal = (original as Record<string, unknown>)[key];
-          const newVal = resultObj[key];
-          if (oldVal !== newVal) {
-            changes[key] = { from: oldVal ?? null, to: newVal ?? null };
-          }
-        }
-      }
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'persons',
-        entity_id: id ? String(id) : null,
-        quantity: 1,
-        metadata: {
-          id,
-          entity_label: resultObj
-            ? `${resultObj['first_name'] || ''} ${resultObj['last_name'] || ''}`.trim() || 'Person'
-            : 'Person',
-          changes,
-          ...(auth.source ? { source: auth.source } : {}),
-        },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log update person activity');
-    }
-    try {
-      await queueZapierTrigger(
-        this.personsRepo.db,
-        auth.tenant_id,
-        'person_updated',
-        pickPersonFields(result as Record<string, unknown>),
-      );
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_updated trigger');
-    }
-    return result;
-  }
-
-  private stripHtmlAndTruncate(html: string | null | undefined, limit = 160): string {
-    if (!html) return '';
-    const text = html
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (text.length <= limit) return text;
-    return text.substring(0, limit) + '...';
-  }
-
-  public async getPersonActivity(person_id: string, auth: IAuthKeyPayload) {
-    const person = (await this.personsRepo.getOneBy('id', { value: person_id, tenant_id: auth.tenant_id })) as Record<
-      string,
-      unknown
-    > | null;
-    if (!person) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Person not found',
-      });
-    }
-
-    const emails: string[] = [];
-    if (person['email']) emails.push((person['email'] as string).trim().toLowerCase());
-    if (person['email2']) emails.push((person['email2'] as string).trim().toLowerCase());
-
-    if (emails.length === 0) {
-      return {
-        emails: [],
-        newsletters: [],
-      };
-    }
-
-    const db = this.personsRepo.db;
-
-    // 1. Fetch email conversations (sent and received)
-    const conversations = await db
-      .selectFrom('emails')
-      .leftJoin('email_bodies', 'email_bodies.email_id', 'emails.id')
-      .selectAll('emails')
-      .select('email_bodies.body_html as body_html')
-      .where('emails.tenant_id', '=', auth.tenant_id)
-      .where((eb) => eb.or([eb('emails.from_email', 'in', emails), eb('emails.to_email', 'in', emails)]))
-      .orderBy('emails.created_at', 'desc')
-      .limit(50)
-      .execute();
-
-    // 2. Fetch newsletter events (received, opened, clicked links, etc.)
-    const newsletterEvents = await db
-      .selectFrom('newsletter_events')
-      .innerJoin('newsletters', 'newsletters.id', 'newsletter_events.newsletter_id')
-      .select([
-        'newsletter_events.id',
-        'newsletter_events.event_type',
-        'newsletter_events.timestamp',
-        'newsletter_events.url',
-        'newsletters.subject as newsletter_subject',
-        'newsletters.name as newsletter_name',
-      ])
-      .where('newsletter_events.tenant_id', '=', auth.tenant_id)
-      .where('newsletter_events.email', 'in', emails)
-      .orderBy('newsletter_events.timestamp', 'desc')
-      .limit(100)
-      .execute();
-
-    return {
-      emails: conversations.map((mail) => {
-        let snippet = '';
-        if (mail.body_html) {
-          snippet = this.stripHtmlAndTruncate(mail.body_html, 160);
-        }
-        if (!snippet && mail.preview && !/^(ms|google):/i.test(mail.preview)) {
-          snippet = mail.preview;
-        }
-        return {
-          ...mail,
-          preview: snippet,
-        };
-      }),
-      newsletters: newsletterEvents,
+      total: Number(row?.total ?? 0),
+      last_created_at: row?.last_created_at ? new Date(row.last_created_at) : null,
     };
   }
 
-  public async attachTag(person_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
-    const randomHexColor = () =>
-      '#' +
-      Math.floor(Math.random() * 0xffffff)
-        .toString(16)
-        .padStart(6, '0');
-    const row = {
-      name,
-      color: randomHexColor(),
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      type,
-    };
-
-    const tag = await this.tagsRepo.addOrGet({
-      row: row as OperationDataType<'tags', 'insert'>,
-      onConflictColumn: 'name',
-    });
-
-    const result = await this.addToMap({
-      tag_id: tag?.id as string | undefined,
-      person_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    });
-
-    if (result && tag?.id) {
-      try {
-        const workflowsController = new WorkflowsController();
-        await workflowsController.triggerTagAdded(auth.tenant_id, person_id, String(tag.id), name);
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger tag_added workflow');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'persons',
-        entity_id: person_id,
-        quantity: 1,
-        metadata: { id: person_id, action: `attach_${type}`, name, ...(auth.source ? { source: auth.source } : {}) },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log attach tag activity');
-    }
-    try {
-      await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_tag_added', {
-        person_id,
-        tag_name: name,
-        tag_type: type,
-      });
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_added trigger');
-    }
-
-    return result;
-  }
-
-  public async detachTag(input: {
+  public async moveToNewHousehold(input: {
     tenant_id: string;
     person_id: string;
-    name: string;
-    type?: 'tag' | 'issue';
-    user_id?: string;
-    source?: string;
+    user_id: string;
+    campaign_id: string;
   }) {
-    const tag = await this.tagsRepo.getIdByName({
-      tenant_id: input.tenant_id,
-      name: input.name,
-      type: input.type ?? 'tag',
-    });
+    const households = new HouseholdRepo();
+    return this.transaction().execute(async (trx) => {
+      // Reuse existing blank household if available
+      const existingBlank = await households.getBlankHousehold(
+        { tenant_id: input.tenant_id, campaign_id: input.campaign_id },
+        trx,
+      );
+      let targetId = existingBlank?.id as string | undefined;
 
-    if (tag?.id) {
-      await this.mapPersonsTagRepo.deleteMapping({
-        tenant_id: input.tenant_id,
-        person_id: input.person_id,
-        tag_id: tag.id,
-      });
-    }
-
-    try {
-      if (input.user_id) {
-        await this.userActivity.log({
-          tenant_id: input.tenant_id,
-          user_id: input.user_id,
-          activity: 'update',
-          entity: 'persons',
-          entity_id: input.person_id,
-          quantity: 1,
-          metadata: {
-            id: input.person_id,
-            action: `detach_${input.type ?? 'tag'}`,
-            name: input.name,
-            ...(input.source ? { source: input.source } : {}),
+      if (!targetId) {
+        const newHousehold = await households.add(
+          {
+            row: {
+              tenant_id: input.tenant_id,
+              campaign_id: input.campaign_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            } as OperationDataType<'households', 'insert'>,
           },
-        });
+          trx,
+        );
+        targetId = newHousehold?.id as string | undefined;
       }
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log detach tag activity');
-    }
-    try {
-      await queueZapierTrigger(this.personsRepo.db, input.tenant_id, 'person_tag_removed', {
-        person_id: input.person_id,
-        tag_name: input.name,
-        tag_type: input.type ?? 'tag',
-      });
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_removed trigger');
-    }
 
-    const isVolunteerTag = input.name.trim().toLowerCase() === 'volunteer';
-    if (!isVolunteerTag) {
-      return { removed_team_ids: [], removed_teams: [] };
-    }
+      await this.update(
+        {
+          tenant_id: input.tenant_id,
+          id: input.person_id,
+          row: { household_id: targetId, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
+        },
+        trx,
+      );
 
-    const teams = await this.mapTeamsPersonsRepo.getTeamsForPerson({
-      tenant_id: input.tenant_id,
-      person_id: input.person_id,
+      return { household_id: targetId };
     });
-
-    if (!teams.length) {
-      return { removed_team_ids: [], removed_teams: [] };
-    }
-
-    await this.mapTeamsPersonsRepo.deleteByPerson({ tenant_id: input.tenant_id, person_id: input.person_id });
-
-    for (const team of teams) {
-      if (team.is_captain && team.team_id) {
-        await this.teamsRepo.clearCaptain({ tenant_id: input.tenant_id, team_id: team.team_id });
-      }
-    }
-
-    const removedTeams = teams
-      .filter((team) => team.team_id)
-      .map((team) => ({
-        id: team.team_id,
-        name: team.team_name ?? '',
-        was_captain: team.is_captain,
-      }));
-
-    return {
-      removed_team_ids: removedTeams.map((team) => team.id),
-      removed_teams: removedTeams,
-    };
   }
 
-  public async importRows(
+  public async getAllWithAddress(
     input: {
-      rows: Array<{
-        first_name?: string;
-        last_name?: string;
-        email?: string;
-        mobile?: string;
-        notes?: string;
-        home_phone?: string;
-        street_num?: string;
-        street1?: string;
-        street2?: string;
-        apt?: string;
-        city?: string;
-        state?: string;
-        zip?: string;
-        country?: string;
-      }>;
+      tenant_id: string;
+      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'> & { issues?: string[] };
       tags?: string[];
-      skipped?: number;
-      file_name?: string | null;
+      issues?: string[];
     },
-    auth: IAuthKeyPayload,
-  ) {
-    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const autoTag = `Imported-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
 
-    const tags = [...(input.tags ?? []), autoTag].filter((t) => !!t && t.trim().length > 0);
-    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
-    const requestedFileName = (input.file_name ?? '').trim();
-    const baseFileName = requestedFileName || `${autoTag}.csv`;
-    const totalRows = input.rows.length + skippedFromClient;
+    // Shared where clause builder
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+      let q = qb
+        .leftJoin('households', 'persons.household_id', 'households.id')
+        .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+        .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .leftJoin('companies', 'persons.company_id', 'companies.id')
+        .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
+        .where('households.tenant_id', '=', tenantId)
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
+        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
+        .$if(!!options.listId, (qb) =>
+          qb.where('persons.id', 'in', (eb: any) =>
+            eb
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('list_id', '=', options.listId ?? '')
+              .where('tenant_id', '=', tenantId),
+          ),
+        )
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          return qb.where(
+            sql<boolean>`(
+            LOWER(persons.first_name) LIKE ${text} OR
+            LOWER(persons.last_name) LIKE ${text} OR
+            LOWER(persons.email) LIKE ${text} OR
+            LOWER(persons.mobile) LIKE ${text} OR
+            LOWER(households.city) LIKE ${text} OR
+            LOWER(households.street1) LIKE ${text} OR
+            LOWER(companies.name) LIKE ${text} OR
+            LOWER(tags.name) LIKE ${text}
+          )`,
+          );
+        });
 
-    let hasImportableRow = false;
-    for (const candidate of input.rows) {
-      const sanitized = this.sanitizeRow(candidate);
-      if (sanitized.first_name || sanitized.last_name || sanitized.email || sanitized.mobile || sanitized.notes) {
-        hasImportableRow = true;
-        break;
+      // Apply dynamic, operator-aware column filters
+      q = this.applyColumnFilter(q, 'persons.first_name', filterModel['first_name'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.last_name', filterModel['last_name'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.email', filterModel['email'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.mobile', filterModel['mobile'] ?? {});
+      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
+      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
+      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
+      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
+      if (filterModel['tags']?.value && filterModel['issues']?.value) {
+        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
+        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
+        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
+        q = q.where((eb) =>
+          eb.or([
+            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
+            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
+          ]),
+        );
+      } else if (filterModel['tags']?.value) {
+        q = q.where('tags.type', '=', 'tag');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
+      } else if (filterModel['issues']?.value) {
+        q = q.where('tags.type', '=', 'issue');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
       }
-    }
+      q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name'] ?? {});
 
-    if (!hasImportableRow) {
-      const totalSkipped = skippedFromClient + input.rows.length;
-      const personsBefore = await this.personsRepo.count(auth.tenant_id);
-      return {
-        inserted: 0,
-        errors: 0,
-        skipped: totalSkipped,
-        tag: null,
-        file_name: requestedFileName || null,
-        import_id: null,
-        tenant_id: auth.tenant_id,
-        campaign_id,
-        persons_total_after: personsBefore,
-        persons_total_before: personsBefore,
-        status: 'completed',
+      // Apply advanced query builder filters if present
+      const columnMapping = {
+        first_name: { col: 'persons.first_name' },
+        last_name: { col: 'persons.last_name' },
+        email: { col: 'persons.email' },
+        mobile: { col: 'persons.mobile' },
+        city: { col: 'households.city' },
+        state: { col: 'households.state' },
+        street1: { col: 'households.street1' },
+        street_num: { col: 'households.street_num::text', isCast: true },
+        zip: { col: 'households.zip' },
+        tag: { col: 'tags.name' },
+        tags: { col: 'tags.name' },
+        issues: { col: 'tags.name' },
+        company_name: { col: 'companies.name' },
       };
-    }
+      const advModel =
+        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
+      q = this.applyAdvancedFilters(q, advModel, columnMapping);
 
-    const importRow = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      file_name: baseFileName,
-      source: 'persons',
-      tag_name: autoTag,
-      tag_id: null,
-      row_count: totalRows,
-      inserted_count: 0,
-      error_count: 0,
-      skipped_count: skippedFromClient,
-      households_created: 0,
-      status: 'pending',
-      metadata: null,
-      processed_at: now,
-    } as any;
+      return q;
+    };
 
-    const savedImport = await this.importsRepo.add({ row: importRow });
-    if (!savedImport || !savedImport.id) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create data import record',
-      });
-    }
-
-    const importRecordId = String(savedImport.id);
-    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
-
-    try {
-      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
-      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
-    } catch (err) {
-      logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({ tenant_id: auth.tenant_id, id: importRecordId });
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to store import payload on server storage',
-      });
-    }
-
-    await this.importsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: importRecordId,
-      row: {
-        metadata: JSON.stringify({ storage_key: storageKey }),
-      } as any,
-    });
-
-    await this.importsRepo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          import_id: importRecordId,
-          storage_key: storageKey,
-          tags,
-          skipped: skippedFromClient,
-          campaign_id,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          file_name: baseFileName,
-        }),
-        run_at: new Date(),
-      })
+    // Count query
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
       .execute();
 
-    return {
-      inserted: 0,
-      errors: 0,
-      skipped: skippedFromClient,
-      tag: autoTag,
-      file_name: baseFileName,
-      import_id: importRecordId,
-      tenant_id: auth.tenant_id,
-      campaign_id,
-      status: 'pending',
-    };
-  }
+    const count = Number(countResult[0]?.['total'] || 0);
 
-  public async processImportRows(
-    import_id: string,
-    tenant_id: string,
-    user_id: string,
-    campaign_id: string,
-    tags: string[],
-    skipped: number,
-    rows: Record<string, string>[],
-  ) {
-    const households = new HouseholdRepo();
-    const results: { inserted: number; errors: number; households_created: number; skipped: number } = {
-      inserted: 0,
-      errors: 0,
-      households_created: 0,
-      skipped: 0,
-    };
-    const importedPersonIds: string[] = [];
-
-    const errorMessages: string[] = [];
-    let cachedBlankHouseholdId: string | null = null;
-    let autoTagId: string | null = null;
-    const autoTag = tags.find((t) => t.startsWith('Imported-')) || tags[0];
-
-    const chunkSize = 100;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-
-      // 1. Sanitize and classify all valid rows in the chunk upfront
-      type ValidEntry = {
-        sanitized: {
-          first_name?: string;
-          last_name?: string;
-          email?: string;
-          mobile?: string;
-          notes?: string;
-          home_phone?: string;
-          street_num?: string;
-          street1?: string;
-          street2?: string;
-          apt?: string;
-          city?: string;
-          state?: string;
-          zip?: string;
-          country?: string;
-        };
-        isBlankAddress: boolean;
-        fp_street: string | null;
-        fp_full: string | null;
-      };
-      const validEntries: ValidEntry[] = [];
-      for (const raw of chunk) {
-        const sanitized = this.sanitizeRow(raw);
-        if (
-          !sanitized.first_name &&
-          !sanitized.last_name &&
-          !sanitized.email &&
-          !sanitized.mobile &&
-          !sanitized.notes
-        ) {
-          results.skipped += 1;
-          continue;
-        }
-        const isBlankAddress =
-          !sanitized.home_phone &&
-          !sanitized.street_num &&
-          !sanitized.street1 &&
-          !sanitized.street2 &&
-          !sanitized.apt &&
-          !sanitized.city &&
-          !sanitized.state &&
-          !sanitized.zip &&
-          !sanitized.country;
-        validEntries.push({
-          sanitized,
-          isBlankAddress,
-          fp_street: isBlankAddress
-            ? null
-            : fingerprintStreet({
-                street_num: sanitized.street_num,
-                street1: sanitized.street1,
-                street2: sanitized.street2,
-              }),
-          fp_full: isBlankAddress
-            ? null
-            : fingerprintFull({
-                apt: sanitized.apt,
-                street_num: sanitized.street_num,
-                street1: sanitized.street1,
-                street2: sanitized.street2,
-                city: sanitized.city,
-                state: sanitized.state,
-                zip: sanitized.zip,
-                country: sanitized.country,
-              }),
-        });
-      }
-
-      if (validEntries.length === 0) {
-        await this.importsRepo.update({
-          tenant_id: tenant_id,
-          id: import_id,
-          row: {
-            tag_id: autoTagId,
-            inserted_count: results.inserted,
-            error_count: results.errors,
-            skipped_count: skipped + results.skipped,
-            households_created: results.households_created,
-            updatedby_id: user_id,
-            updated_at: new Date(),
-          } as any,
-        });
-        continue;
-      }
-
-      try {
-        const outcome = await this.personsRepo.transaction().execute(async (trx) => {
-          let localBlankHouseholdId = cachedBlankHouseholdId;
-          let localAutoTagId = autoTagId;
-          let householdsCreatedDelta = 0;
-
-          // 2a. Resolve blank household once for the whole chunk
-          if (validEntries.some((e) => e.isBlankAddress)) {
-            if (!localBlankHouseholdId) {
-              const existingBlank = await households.getBlankHousehold({ tenant_id, campaign_id }, trx);
-              if (existingBlank?.id) {
-                localBlankHouseholdId = String(existingBlank.id);
-              } else {
-                const created = await households.add(
-                  {
-                    row: {
-                      tenant_id,
-                      campaign_id,
-                      createdby_id: user_id,
-                      updatedby_id: user_id,
-                      file_id: import_id,
-                    } as OperationDataType<'households', 'insert'>,
-                  },
-                  trx,
-                );
-                localBlankHouseholdId = String(created?.id);
-                householdsCreatedDelta += 1;
+    // Data query
+    const rows = await applyFilters(this.getSelect(trx))
+      .select((eb) => [
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.notes',
+        'persons.household_id',
+        'persons.company_id',
+        'companies.name as company_name',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.apt',
+        eb
+          .case()
+          .when('tenants.placeholder_household_id', '=', eb.ref('persons.household_id'))
+          .then(true)
+          .else(false)
+          .end()
+          .as('household_is_placeholder'),
+        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
+          'tags',
+        ),
+        sql<
+          string[]
+        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
+      ])
+      .groupBy([
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.notes',
+        'persons.household_id',
+        'persons.company_id',
+        'persons.created_at',
+        'persons.updated_at',
+        'persons.tenant_id',
+        'persons.createdby_id',
+        'persons.updatedby_id',
+        'companies.name',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.apt',
+        'tenants.placeholder_household_id',
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce((acc, sort) => {
+          let col = sort.colId;
+          if (typeof col === 'string' && !col.includes('.')) {
+            const personsCols = [
+              'id',
+              'first_name',
+              'last_name',
+              'email',
+              'mobile',
+              'notes',
+              'household_id',
+              'company_id',
+              'created_at',
+              'updated_at',
+              'tenant_id',
+              'createdby_id',
+              'updatedby_id',
+            ];
+            if (personsCols.includes(col)) {
+              col = `persons.${col}`;
+            } else {
+              const hhCols = [
+                'country',
+                'zip',
+                'state',
+                'home_phone',
+                'city',
+                'street1',
+                'street2',
+                'street_num',
+                'apt',
+              ];
+              if (hhCols.includes(col)) {
+                col = `households.${col}`;
+              } else if (col === 'company_name') {
+                col = `companies.name`;
+              } else if (col === 'address') {
+                col = `households.street1`;
               }
             }
           }
+          return acc.orderBy(col, sort.sort);
+        }, qb),
+      )
+      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
+        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
+      )
+      .execute();
 
-          // 2b. Batch-resolve addressed households with a single IN query
-          const fpCache = new Map<string, string>(); // fp_full -> household_id
-          const uniqueFps = [
-            ...new Set(validEntries.filter((e) => !e.isBlankAddress && e.fp_full).map((e) => e.fp_full as string)),
-          ];
-          if (uniqueFps.length > 0) {
-            const existingHouseholds = await trx
-              .selectFrom('households')
-              .select(['id', 'address_fp_full'])
-              .where('tenant_id', '=', tenant_id)
-              .where('campaign_id', '=', campaign_id)
-              .where('address_fp_full', 'in', uniqueFps)
-              .execute();
-            for (const h of existingHouseholds) {
-              if (h.address_fp_full) fpCache.set(h.address_fp_full, String(h.id));
-            }
-          }
-
-          // 2c. Create only missing households (deduplicated within this chunk)
-          for (const entry of validEntries) {
-            if (entry.isBlankAddress || !entry.fp_full) continue;
-            if (fpCache.has(entry.fp_full)) continue;
-            const { sanitized, fp_street, fp_full } = entry;
-            const hhRow = {
-              tenant_id,
-              campaign_id,
-              createdby_id: user_id,
-              updatedby_id: user_id,
-              home_phone: sanitized.home_phone ?? null,
-              street_num: sanitized.street_num ?? null,
-              street1: sanitized.street1 ?? null,
-              street2: sanitized.street2 ?? null,
-              apt: sanitized.apt ?? null,
-              city: sanitized.city ?? null,
-              state: sanitized.state ?? null,
-              zip: sanitized.zip ?? null,
-              country: sanitized.country ?? null,
-              address_fp_street: fp_street,
-              address_fp_full: fp_full,
-              notes: null,
-              json: null,
-              file_id: import_id,
-            } as OperationDataType<'households', 'insert'>;
-            const household = await households.add({ row: hhRow }, trx);
-            fpCache.set(fp_full, String(household?.id));
-            householdsCreatedDelta += 1;
-          }
-
-          // 3. Batch insert all persons in one statement
-          const personRows = validEntries.map(({ sanitized, isBlankAddress, fp_full }) => ({
-            tenant_id,
-            campaign_id,
-            createdby_id: user_id,
-            updatedby_id: user_id,
-            household_id: isBlankAddress ? (localBlankHouseholdId ?? '') : (fpCache.get(fp_full ?? '') ?? ''),
-            first_name: sanitized.first_name ?? null,
-            middle_names: null,
-            last_name: sanitized.last_name ?? null,
-            email: sanitized.email ?? null,
-            email2: null,
-            mobile: sanitized.mobile ?? null,
-            home_phone: null,
-            file_id: import_id,
-            notes: sanitized.notes ?? null,
-            json: null,
-          }));
-          const insertedPersons = await trx
-            .insertInto('persons')
-            .values(personRows)
-            .onConflict((oc) => oc.doNothing())
-            .returningAll()
-            .execute();
-
-          // Count rows silently skipped due to duplicate email
-          const duplicatesSkipped = personRows.length - insertedPersons.length;
-          if (duplicatesSkipped > 0) results.skipped += duplicatesSkipped;
-
-          // 4. Upsert each unique tag name exactly once (not once per row)
-          const tagRecords: Array<{ name: string; id: string }> = [];
-          for (const name of tags) {
-            const row = {
-              name,
-              tenant_id,
-              createdby_id: user_id,
-              updatedby_id: user_id,
-            } as OperationDataType<'tags', 'insert'>;
-            const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, trx);
-            if (name === autoTag && tag?.id != null && !localAutoTagId) localAutoTagId = String(tag.id);
-            if (tag?.id) tagRecords.push({ name, id: String(tag.id) });
-          }
-
-          // 5. Batch insert all tag-person mappings in one statement
-          if (tagRecords.length > 0 && insertedPersons.length > 0) {
-            const tagMapRows = insertedPersons.flatMap((person) =>
-              tagRecords.map(({ id: tag_id }) => ({
-                tenant_id,
-                person_id: String(person.id),
-                tag_id: tag_id as unknown as string,
-                createdby_id: user_id,
-                updatedby_id: user_id,
-              })),
-            );
-            await (trx as any).insertInto('map_peoples_tags').values(tagMapRows).execute();
-          }
-
-          return {
-            insertedPersons,
-            tagRecords,
-            householdsCreatedDelta,
-            blankHouseholdId: localBlankHouseholdId,
-            autoTagId: localAutoTagId,
-          };
-        });
-
-        // 6. Trigger workflows outside the transaction (fire-and-forget per person)
-        const workflowsController = new WorkflowsController();
-        for (const person of outcome.insertedPersons) {
-          const personId = String(person.id);
-          importedPersonIds.push(personId);
-          try {
-            await workflowsController.triggerWorkflow(tenant_id, personId, 'contact_created', null);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in CSV import');
-          }
-          for (const { name, id: tagId } of outcome.tagRecords) {
-            try {
-              await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger tag_added workflow in CSV import');
-            }
-          }
-        }
-
-        results.inserted += outcome.insertedPersons.length;
-        results.households_created += outcome.householdsCreatedDelta;
-        if (outcome.blankHouseholdId) cachedBlankHouseholdId = outcome.blankHouseholdId;
-        if (!autoTagId && outcome.autoTagId) autoTagId = outcome.autoTagId;
-      } catch (err: unknown) {
-        // If the chunk transaction fails, count all valid rows in the chunk as errors
-        results.errors += validEntries.length;
-        const message = err instanceof Error ? err.message : String(err);
-        errorMessages.push(message);
-        logger.error({ err, message }, 'Import chunk failed');
-      }
-
-      // Update intermediate counts after each chunk
-      await this.importsRepo.update({
-        tenant_id: tenant_id,
-        id: import_id,
-        row: {
-          tag_id: autoTagId,
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skipped + results.skipped,
-          households_created: results.households_created,
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        } as any,
-      });
-    }
-
-    // Log the user activity
-    try {
-      await this.userActivity.log({
-        tenant_id,
-        user_id,
-        activity: 'import',
-        entity: 'persons',
-        quantity: results.inserted,
-        metadata: {
-          rows_received: rows.length,
-          tags_applied: tags.slice(0, 10),
-          auto_tag: autoTag,
-          households_created: results.households_created,
-          errors: results.errors,
-          skipped: skipped + results.skipped,
-          import_id,
-        },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log import activity');
-    }
-
-    if (importedPersonIds.length > 0) {
-      try {
-        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-        await queueUsageLimitCheck(tenant_id, this.personsRepo.db);
-      } catch (err) {
-        logger.error({ err }, 'Failed to queue duplicate maintenance job or usage check for imported persons');
-      }
-    }
-
-    return {
-      inserted: results.inserted,
-      errors: results.errors,
-      skipped: skipped + results.skipped,
-      households_created: results.households_created,
-      tag_id: autoTagId,
-      errorMessages,
-    };
+    return { count, rows };
   }
 
-  public async removeHousehold(person_id: string, auth: IAuthKeyPayload) {
-    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
-    return this.personsRepo.moveToNewHousehold({
-      tenant_id: auth.tenant_id,
-      person_id,
-      user_id: auth.user_id,
-      campaign_id,
-    });
-  }
-
-  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.personsRepo.getPotentialDuplicates(auth.tenant_id, options);
-  }
-
-  public async getDuplicateCounts(auth: IAuthKeyPayload) {
-    const [people, households, companies] = await Promise.all([
-      this.personsRepo.getDuplicateCount(auth.tenant_id),
-      this.householdRepo.getDuplicateCount(auth.tenant_id),
-      this.companiesRepo.getDuplicateCount(auth.tenant_id),
-    ]);
-    return { people, households, companies };
-  }
-
-  public async mergePersons(input: { target_id: string; source_id: string }, auth: IAuthKeyPayload) {
-    const result = await this.personsRepo.mergePersons({
-      tenant_id: auth.tenant_id,
-      target_id: input.target_id,
-      source_id: input.source_id,
-      user_id: auth.user_id,
-    });
-    await this.userActivity.log({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      activity: 'merge',
-      entity: 'persons',
-      quantity: 1,
-      metadata: {
-        target_id: input.target_id,
-        source_id: input.source_id,
-      },
-    });
-    return result;
-  }
-
-  private async addToMap(row: {
-    tag_id: string | undefined;
-    person_id: string;
-    tenant_id: string;
-    createdby_id: string;
-    updatedby_id: string;
-  }) {
-    if (!row.tag_id) {
-      throw new TRPCError({
-        message: 'Failed to add the tag',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
-    }
-
-    return await this.mapPersonsTagRepo.add({
-      row: row as OperationDataType<'map_peoples_tags', 'insert'>,
-    });
-  }
-
-  private sanitizePhone(v?: string) {
-    if (!v) return undefined;
-    const digits = v.replace(/[^0-9+]/g, '');
-    if (digits.startsWith('+')) return '+' + digits.slice(1).replace(/[^0-9]/g, '');
-    return digits.replace(/[^0-9]/g, '');
-  }
-
-  private sanitizeRow(row: {
-    first_name?: string;
-    last_name?: string;
-    email?: string;
-    mobile?: string;
-    notes?: string;
-    home_phone?: string;
-    street_num?: string;
-    street1?: string;
-    street2?: string;
-    apt?: string;
-    city?: string;
-    state?: string;
-    zip?: string;
-    country?: string;
-  }) {
-    const trim = (v?: string) => (v ? v.trim() : undefined);
-
-    let first_name = trim(row.first_name);
-    const last_name = trim(row.last_name);
-    let email = (trim(row.email) || '').toLowerCase();
-    let mobile = this.sanitizePhone(row.mobile);
-    const home_phone = this.sanitizePhone(row.home_phone);
-    const notes = trim(row.notes);
-
-    if (!email) {
-      email = (this.findEmail(first_name || '') || this.findEmail(last_name || '') || '').toLowerCase();
-    }
-    if (email && !/.+@.+\..+/.test(email)) email = '';
-
-    if (!mobile) {
-      const possiblePhone = this.findPhone(first_name) || this.findPhone(last_name);
-      mobile = this.sanitizePhone(possiblePhone);
-    }
-
-    if (first_name) first_name = this.stripNoise(first_name);
-    if (!first_name && email) first_name = this.nameFromEmail(email);
-
-    return {
-      first_name,
-      last_name,
-      email: email || undefined,
-      mobile,
-      notes,
-      home_phone,
-      street_num: trim(row.street_num),
-      street1: trim(row.street1),
-      street2: trim(row.street2),
-      apt: trim(row.apt),
-      city: trim(row.city),
-      state: trim(row.state),
-      zip: trim(row.zip),
-      country: trim(row.country),
-    };
-  }
-
-  private findEmail(text: string): string | undefined {
-    const m = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-    return m?.[0];
-  }
-
-  private findPhone(text?: string): string | undefined {
-    if (!text) return undefined;
-    const m = text.match(/\+?\d[\d\s-]{7,}\d/);
-    return m?.[0];
-  }
-
-  private stripNoise(text: string): string | undefined {
-    const noEmail = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, ' ');
-    const noPhone = noEmail.replace(/\+?\d[\d\s-]{7,}\d/g, ' ');
-    const cleaned = noPhone
-      .replace(/[,]+/g, ' ')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-    return cleaned || undefined;
-  }
-
-  private nameFromEmail(email: string): string | undefined {
-    const local = (email || '').split('@')[0] || '';
-    const token = local.split(/[._+-]/)[0] || '';
-    if (!token) return undefined;
-    return token.charAt(0).toUpperCase() + token.slice(1);
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/events/controller.ts
-
-```typescript
-import { TRPCError } from '@trpc/server';
-import type { Transaction } from 'kysely';
-import { sql } from 'kysely';
-import { BaseController } from '../../lib/base.controller';
-import { EventsRepo } from './repositories/events.repo';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { WorkflowsController } from '../workflows/controller';
-import { logger } from '../../logger';
-
-const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-const ipRsvpTimestamps = new Map<string, number[]>();
-const RSVP_RATE_LIMIT_MAX = 5;
-const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
-
-export class EventsController extends BaseController<'events', EventsRepo> {
-  constructor() {
-    super(new EventsRepo());
-  }
-
-  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
-    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
-  }
-
-  public async addEvent(payload: any, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', payload.slug)
-      .executeTakeFirst();
-
-    if (existing) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This URL slug is already in use. Please choose a different one.',
-      });
-    }
-
-    const row = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      location_address: payload.location_address ?? null,
-      start_time: payload.start_time,
-      end_time: payload.end_time,
-      capacity: payload.capacity ?? null,
-      contact_email: payload.contact_email ?? null,
-      contact_phone: payload.contact_phone ?? null,
-      slug: payload.slug,
-      is_published: payload.is_published ?? false,
-      send_reminder: payload.send_reminder ?? true,
-      send_registration_confirmation: payload.send_registration_confirmation ?? true,
-      fields: payload.fields ?? DEFAULT_FIELDS,
-    } as OperationDataType<'events', 'insert'>;
-
-    try {
-      return await this.add(row);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-      }
-      throw err;
-    }
-  }
-
-  public async getEventBySlug(slug: string) {
-    // NOTE: unscoped by design — public registration page: tenant is unknown until the event is resolved by slug
-    return this.getRepo()
-      .db.selectFrom('events')
-      .selectAll()
-      .where('slug', '=', slug)
-      .where('is_published', '=', true)
-      .executeTakeFirst();
-  }
-
-  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
-    const row = await this.getRepo()
-      .db.selectFrom('event_registrations')
-      .select(({ fn }) => [fn.count('id').as('cnt')])
-      .where('tenant_id', '=', tenantId)
-      .where('event_id', '=', eventId)
-      .where('status', '!=', 'cancelled')
-      .executeTakeFirst();
-    return Number(row?.cnt ?? 0);
-  }
-
-  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
-    return this.getRepo()
-      .db.selectFrom('event_ticket_types')
-      .selectAll()
-      .where('event_id', '=', eventId)
-      .where('tenant_id', '=', tenantId)
-      .orderBy('sort_order', 'asc')
+  public getByHouseholdId(
+    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(input.options, trx)
+      .where('household_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
       .execute();
   }
 
-  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
-    if (!slug) return { unique: true };
-    let query = this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const existing = await query.executeTakeFirst();
-    return { unique: !existing };
+  public getByCompanyId(
+    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(input.options, trx)
+      .where('company_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .execute();
   }
 
-  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
-    if (payload.slug) {
-      const existing = await this.getRepo()
-        .db.selectFrom('events')
-        .select('id')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('slug', '=', payload.slug)
-        .where('id', '!=', id)
-        .executeTakeFirst();
+  public async countByCompanyId(input: { id: string; tenant_id: string }): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('company_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .executeTakeFirst();
+    return Number(result?.total ?? 0);
+  }
 
-      if (existing) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'This URL slug is already in use. Please choose a different one.',
+  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
+    return this.getSelect()
+      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .where('persons.tenant_id', '=', tenant_id)
+      .where('tags.type', '=', type)
+      .select('tags.name')
+      .distinct()
+      .execute();
+  }
+
+  public getTags(input: { id: string; tenant_id: string; type?: 'tag' | 'issue' }) {
+    let q = this.getSelect()
+      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .where('persons.id', '=', input.id)
+      .where('persons.tenant_id', '=', input.tenant_id);
+    if (input.type) {
+      q = q.where('tags.type', '=', input.type);
+    }
+    return q.select('tags.name').execute();
+  }
+  public async findByEmail(input: { tenant_id: string; email: string }) {
+    return this.getSelect()
+      .select(['id', 'email'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where(sql`lower(email)`, '=', input.email.trim().toLowerCase())
+      .executeTakeFirst();
+  }
+
+  public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    return Number(countResult?.total ?? 0);
+  }
+
+  public async getPotentialDuplicates(
+    tenant_id: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ groups: unknown[]; total: number }> {
+    const page = options?.page ?? 1;
+    const pageSize = options?.pageSize ?? 20;
+
+    // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    const total = Number(countResult?.total ?? 0);
+
+    if (total === 0) {
+      return { groups: [], total: 0 };
+    }
+
+    const keysRows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+      .select('potential_duplicates.group_key')
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .groupBy('potential_duplicates.group_key')
+      .having(sql`count(potential_duplicates.id)`, '>', 1)
+      .orderBy(sql`min(potential_duplicates.id)`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .execute();
+
+    const groupKeys = keysRows.map((r) => r.group_key);
+
+    if (groupKeys.length === 0) {
+      return { groups: [], total };
+    }
+
+    const rows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+      .select([
+        'potential_duplicates.group_key',
+        'potential_duplicates.reason',
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.home_phone',
+        'persons.notes',
+        'persons.company_id',
+        'persons.household_id',
+        'persons.created_at',
+      ])
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .where('potential_duplicates.group_key', 'in', groupKeys)
+      .execute();
+
+    const groupsMap = new Map<string, { reason: string; persons: Record<string, unknown>[] }>();
+    for (const row of rows) {
+      const groupKey = row.group_key;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          reason: row.reason,
+          persons: [],
         });
       }
+      groupsMap.get(groupKey)?.persons.push({
+        ...row,
+        id: String(row.id),
+      });
     }
 
-    const row = {
-      ...payload,
-      ...(payload.fields !== undefined ? { fields: payload.fields } : {}),
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'events', 'update'>;
-    let result;
-    try {
-      result = await this.update({ tenant_id: auth.tenant_id, id, row });
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+    const sortedGroups = groupKeys
+      .map((key) => groupsMap.get(key))
+      .filter((g): g is NonNullable<typeof g> => !!(g && g.persons.length > 1));
+
+    return { groups: sortedGroups, total };
+  }
+
+  public async mergePersons(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
+    return this.transaction().execute(async (trx) => {
+      const target = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.target_id },
+        trx,
+      )) as Selectable<Models['persons']>;
+      const source = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.source_id },
+        trx,
+      )) as Selectable<Models['persons']>;
+
+      if (!target || !source) {
+        throw new Error('Target or Source person not found');
       }
-      throw err;
-    }
 
-    // Manage pending reminder jobs when the toggle changes
-    if (payload.send_reminder === false) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'eventId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to clean up pending event reminders');
-      }
-    } else if (payload.send_reminder === true) {
-      try {
-        const event = await this.getRepo()
-          .db.selectFrom('events')
-          .select(['start_time'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', id)
-          .executeTakeFirst();
+      // 1. Merge fields (copy null/empty fields from source to target)
+      const targetUpdate: Record<string, unknown> = {};
+      const fields = [
+        'first_name',
+        'middle_names',
+        'last_name',
+        'email',
+        'email2',
+        'mobile',
+        'home_phone',
+        'notes',
+        'company_id',
+        'file_id',
+      ] as const;
 
-        if (event) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            const registrations = await this.getRepo()
-              .db.selectFrom('event_registrations')
-              .select(['id', 'person_id'])
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('event_id', '=', id)
-              .where('status', '=', 'registered')
-              .execute();
-
-            for (const reg of registrations) {
-              await this.getRepo()
-                .db.deleteFrom('background_jobs')
-                .where('tenant_id', '=', auth.tenant_id)
-                .where('status', '=', 'pending')
-                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
-                .execute();
-
-              await this.getRepo()
-                .db.insertInto('background_jobs')
-                .values({
-                  tenant_id: auth.tenant_id,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(id),
-                    personId: String(reg.person_id),
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, 'Failed to re-schedule event reminders');
-      }
-    }
-
-    return result;
-  }
-
-  // Ticket types
-
-  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().addTicketType({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      price_cents: payload.price_cents ?? 0,
-      capacity: payload.capacity ?? null,
-      sort_order: payload.sort_order ?? 0,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
-  }
-
-  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
-  }
-
-  // Registrations
-
-  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
-    // Capacity check across the whole event
-    const event = await this.getRepo()
-      .db.selectFrom('events')
-      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', payload.event_id)
-      .executeTakeFirst();
-
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    if (event.capacity !== null) {
-      const countRow = await this.getRepo()
-        .db.selectFrom('event_registrations')
-        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('event_id', '=', payload.event_id)
-        .where('status', '!=', 'cancelled')
-        .executeTakeFirst();
-      if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-      }
-    }
-
-    // Per-ticket-type capacity check
-    if (payload.ticket_type_id) {
-      const ticketType = await this.getRepo()
-        .db.selectFrom('event_ticket_types')
-        .select(['capacity'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', payload.ticket_type_id)
-        .executeTakeFirst();
-
-      if (ticketType && ticketType.capacity !== null) {
-        const ticketCountRow = await this.getRepo()
-          .db.selectFrom('event_registrations')
-          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('ticket_type_id', '=', payload.ticket_type_id)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-        if (Number((ticketCountRow as any)?.cnt || 0) >= ticketType.capacity) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
+      for (const field of fields) {
+        const targetVal = target[field];
+        const sourceVal = source[field];
+        if (
+          (targetVal == null || String(targetVal).trim() === '') &&
+          sourceVal != null &&
+          String(sourceVal).trim() !== ''
+        ) {
+          targetUpdate[field] = sourceVal;
         }
       }
-    }
 
-    const result = await this.getRepo().addRegistration({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      person_id: payload.person_id,
-      ticket_type_id: payload.ticket_type_id ?? null,
-      status: payload.status ?? 'registered',
-      notes: payload.notes ?? null,
-      user_id: auth.user_id,
-    });
+      if (Object.keys(targetUpdate).length > 0) {
+        targetUpdate['updatedby_id'] = input.user_id;
+        targetUpdate['updated_at'] = sql`now()`;
+        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
+      }
 
-    if (result) {
-      // Queue registration confirmation email
-      if (event.send_registration_confirmation !== false) {
-        try {
-          await this.getRepo()
-            .db.insertInto('background_jobs')
+      // 2. Transfer tags (map_peoples_tags)
+      const targetTags = await trx
+        .selectFrom('map_peoples_tags')
+        .select('tag_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
+
+      const sourceTags = await trx
+        .selectFrom('map_peoples_tags')
+        .select(['tag_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTags) {
+        const tagIdStr = String(st.tag_id);
+        if (!targetTagIds.has(tagIdStr)) {
+          await trx
+            .insertInto('map_peoples_tags')
             .values({
-              tenant_id: auth.tenant_id,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({
-                type: 'send-event-registration-confirmation',
-                registrationId: String(result.id),
-                eventId: String(payload.event_id),
-                personId: String(payload.person_id),
-              }),
-              run_at: new Date(),
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              tag_id: st.tag_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
             })
             .execute();
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue registration confirmation');
         }
       }
-
-      // Queue 24h reminder
-      if (event.send_reminder !== false) {
-        try {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            await this.getRepo()
-              .db.insertInto('background_jobs')
-              .values({
-                tenant_id: auth.tenant_id,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-reminder',
-                  registrationId: String(result.id),
-                  eventId: String(payload.event_id),
-                  personId: String(payload.person_id),
-                }),
-                run_at: runAt,
-              })
-              .execute();
-          }
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue event reminder');
-        }
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'assign',
-          entity: 'event_registrations',
-          entity_id: String(result.id),
-          quantity: 1,
-          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async checkIn(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { status: 'attended', checked_in_at: new Date() },
-      user_id: auth.user_id,
-    });
-
-    // Cancel pending reminder — they've already arrived
-    try {
-      await this.getRepo()
-        .db.deleteFrom('background_jobs')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('status', '=', 'pending')
-        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-        .where(sql`payload->>'registrationId'`, '=', String(id))
+      await trx
+        .deleteFrom('map_peoples_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
         .execute();
-    } catch (err) {
-      logger.error({ err }, 'Failed to cancel event reminder on check-in');
-    }
 
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log check-in activity');
-    }
+      // 3. Transfer lists (map_lists_persons)
+      const targetLists = await trx
+        .selectFrom('map_lists_persons')
+        .select('list_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
 
-    return result;
-  }
+      const sourceLists = await trx
+        .selectFrom('map_lists_persons')
+        .select(['list_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
 
-  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: payload,
-      user_id: auth.user_id,
-    });
-
-    // Cancel reminder if status moves away from 'registered'
-    if (payload.status && payload.status !== 'registered') {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on status change');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: payload.status },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log registration update activity');
-    }
-
-    return result;
-  }
-
-  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
-
-    if (result) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'delete',
-          entity: 'event_registrations',
-          entity_id: id,
-          quantity: 1,
-          metadata: { id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration delete activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async rsvpPublic(slug: string, payload: Record<string, string>, clientIp: string) {
-    // Rate limiting
-    const now = Date.now();
-    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
-      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
-    }
-    timestamps.push(now);
-    ipRsvpTimestamps.set(clientIp, timestamps);
-
-    const event = await this.getEventBySlug(slug);
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    // Honeypot
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      return { success: true };
-    }
-
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
-    }
-
-    if (new Date(event.end_time) < new Date()) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
-    }
-
-    const tenantId = String(event.tenant_id);
-    const firstName = payload['first_name']?.trim() || null;
-    const lastName = payload['last_name']?.trim() || null;
-    const mobile = payload['mobile']?.trim() || null;
-    const notes = payload['notes']?.trim() || null;
-    const street1 = payload['street1']?.trim() || null;
-    const city = payload['city']?.trim() || null;
-    const state = payload['state']?.trim() || null;
-    const zip = payload['zip']?.trim() || null;
-    const country = payload['country']?.trim() || null;
-
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id', 'admin_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        const creatorId = tenantRow?.admin_id;
-
-        if (!householdId || !creatorId) {
-          throw new Error('Tenant configuration is incomplete.');
+      for (const sl of sourceLists) {
+        if (!targetListIds.has(String(sl.list_id))) {
+          await trx
+            .insertInto('map_lists_persons')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              list_id: sl.list_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
         }
+      }
+      await trx
+        .deleteFrom('map_lists_persons')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
 
-        // Check overall capacity
-        if (event.capacity !== null) {
-          const countRow = await trx
-            .selectFrom('event_registrations')
-            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-            .where('tenant_id', '=', tenantId)
-            .where('event_id', '=', String(event.id))
-            .where('status', '!=', 'cancelled')
-            .executeTakeFirst();
-          if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-          }
+      // 4. Transfer teams (map_teams_persons)
+      const targetTeams = await trx
+        .selectFrom('map_teams_persons')
+        .select('team_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetTeamIds = new Set(targetTeams.map((t) => String(t.team_id)));
+
+      const sourceTeams = await trx
+        .selectFrom('map_teams_persons')
+        .select(['team_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTeams) {
+        if (!targetTeamIds.has(String(st.team_id))) {
+          await trx
+            .insertInto('map_teams_persons')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              team_id: st.team_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
         }
+      }
+      await trx
+        .deleteFrom('map_teams_persons')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
 
-        // Find or create person
-        const existing = await trx
+      // 5. Reassign captaincy if source was captain of any team
+      await trx
+        .updateTable('teams')
+        .set({ team_captain_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('team_captain_id', '=', input.source_id)
+        .execute();
+      // 6. Delete source person
+      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
+
+      // 7. Clean up empty household if source's household is now empty
+      const sourceHhId = source.household_id;
+      if (sourceHhId && sourceHhId !== target.household_id) {
+        const remainingHhMembers = await trx
           .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (notes) {
-            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
-          }
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          let campaignId: string | null = null;
-          try {
-            const campaignRow = await trx
-              .selectFrom('campaigns')
-              .select('id')
-              .where('tenant_id', '=', tenantId)
-              .orderBy('created_at', 'asc')
-              .limit(1)
-              .executeTakeFirst();
-            campaignId = campaignRow ? String(campaignRow.id) : null;
-          } catch {
-            /* ignore */
-          }
-
-          const insertRow: any = {
-            tenant_id: tenantId,
-            household_id: householdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email,
-            mobile,
-            notes,
-            street1,
-            city,
-            state,
-            zip,
-            country,
-          };
-          if (campaignId) insertRow.campaign_id = campaignId as any;
-
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          try {
-            const workflowsCtrl = new WorkflowsController();
-            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
-          }
-        }
-
-        // Check duplicate registration
-        const existingReg = await trx
-          .selectFrom('event_registrations')
           .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('event_id', '=', String(event.id))
-          .where('person_id', '=', personId)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-
-        if (existingReg) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
-        }
-
-        // Insert registration
-        const reg = await trx
-          .insertInto('event_registrations')
-          .values({
-            tenant_id: tenantId,
-            event_id: String(event.id) as any,
-            person_id: personId,
-            ticket_type_id: null,
-            status: 'registered',
-            notes: notes ?? null,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-
-        // Queue confirmation email
-        if ((event as any).send_registration_confirmation !== false) {
-          try {
-            await trx
-              .insertInto('background_jobs')
-              .values({
-                tenant_id: tenantId,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-registration-confirmation',
-                  registrationId: String(reg.id),
-                  eventId: String(event.id),
-                  personId,
-                }),
-                run_at: new Date(),
-              })
-              .execute();
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue RSVP confirmation');
-          }
-        }
-
-        // Queue 24h reminder
-        if ((event as any).send_reminder !== false) {
-          try {
-            const startMs = new Date(event.start_time).getTime();
-            const nowMs = Date.now();
-            if (startMs > nowMs) {
-              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-              await trx
-                .insertInto('background_jobs')
-                .values({
-                  tenant_id: tenantId,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(event.id),
-                    personId,
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
-          }
-        }
-      });
-
-    return { success: true };
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/google-sync/google-sync.service.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { GoogleOAuthService } from './google-oauth.service';
-import type { IngestableEmail } from '../emails/services/email-ingester.service';
-import { EmailIngesterService } from '../emails/services/email-ingester.service';
-import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
-import { logger } from '../../logger';
-
-const MAX_MESSAGES_PER_SYNC = 50;
-
-async function fetchWithRetry(url: string, init?: RequestInit, maxRetries = 3): Promise<Response> {
-  let attempt = 0;
-  while (true) {
-    attempt++;
-    const res = await fetch(url, init);
-    if (res.status === 429 && attempt <= maxRetries) {
-      const retryAfterHeader = res.headers.get('Retry-After');
-      let delayMs = 5000;
-      if (retryAfterHeader) {
-        const parsed = parseInt(retryAfterHeader, 10);
-        if (!isNaN(parsed)) {
-          delayMs = parsed * 1000;
-        } else {
-          const parsedDate = Date.parse(retryAfterHeader);
-          if (!isNaN(parsedDate)) {
-            delayMs = Math.max(0, parsedDate - Date.now());
-          }
-        }
-      } else {
-        delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
-      }
-      logger.warn(
-        `Google API rate limited (429) on ${url}. Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-      continue;
-    }
-    return res;
-  }
-}
-
-export class GoogleSyncService {
-  private readonly ingester: EmailIngesterService;
-
-  constructor(
-    private readonly db: Kysely<Models>,
-    private readonly oauthSvc: GoogleOAuthService,
-  ) {
-    this.ingester = new EmailIngesterService(db, 'google');
-  }
-
-  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
-    const accessToken = await this.oauthSvc.getValidToken(tenantId);
-
-    // Map Gmail label names to pplcrm folder IDs
-    const syncFolders = [
-      { label: 'INBOX', pplcrmId: ALL_FOLDERS.INBOX },
-      { label: 'SENT', pplcrmId: ALL_FOLDERS.SENT },
-      { label: 'TRASH', pplcrmId: ALL_FOLDERS.TRASH },
-      { label: 'SPAM', pplcrmId: ALL_FOLDERS.SPAM },
-    ];
-
-    // Stored delta_link is a JSON-encoded map of label -> last_sync_time (epoch seconds).
-    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
-    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
-    // positions after a successful sync, so no explicit clear is needed.
-    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
-    let deltaMap: Record<string, number> = {};
-    if (dbDeltaLink) {
-      try {
-        const parsed = JSON.parse(dbDeltaLink);
-        if (!parsed._needs_full_sync) {
-          deltaMap = parsed;
-        }
-        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
-      } catch {
-        deltaMap = {};
-      }
-    }
-
-    let inserted = 0;
-    const nextDeltaMap: Record<string, number> = { ...deltaMap };
-    const currentSyncTime = Math.floor(Date.now() / 1000);
-
-    for (const folder of syncFolders) {
-      const folderLastSync = deltaMap[folder.label] || 0;
-
-      let pageToken: string | null = null;
-      let hasMore = true;
-      const allMessageIds: string[] = [];
-
-      // Query Gmail messages: `label:<LABEL>` and `after:<epoch_seconds>` (with a small 60s overlap buffer)
-      const queryParts = [`label:${folder.label}`];
-      if (folderLastSync > 0) {
-        queryParts.push(`after:${folderLastSync - 60}`);
-      }
-      const q = queryParts.join(' ');
-
-      while (hasMore) {
-        const urlParams = new URLSearchParams({
-          maxResults: String(MAX_MESSAGES_PER_SYNC),
-          q,
-        });
-        if (pageToken) urlParams.set('pageToken', pageToken);
-
-        const res = await fetchWithRetry(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages?${urlParams.toString()}`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          },
-        );
-
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`Gmail API error: ${errText}`);
-        }
-
-        const data: any = await res.json();
-        const messages = data.messages ?? [];
-        allMessageIds.push(...messages.map((m: any) => m.id));
-
-        if (data.nextPageToken) {
-          pageToken = data.nextPageToken;
-        } else {
-          hasMore = false;
-        }
-      }
-
-      // Process all messages fetched
-      for (const msgId of allMessageIds) {
-        try {
-          const wasSaved = await this.syncMessageDetails(accessToken, msgId, tenantId, requestedBy, folder.pplcrmId);
-          if (wasSaved) inserted++;
-        } catch (err) {
-          logger.error({ err }, `Failed to sync Gmail message details for ${msgId}`);
-        }
-      }
-
-      nextDeltaMap[folder.label] = currentSyncTime;
-
-      // Handle clean-up for deleted/moved emails
-      // If we performed a full sync (started with no previous sync time), we compare
-      // messages in Gmail with local emails having `google:` preview prefix in this folder.
-      if (folderLastSync === 0) {
-        const serverGoogleIds = new Set(allMessageIds);
-        const localEmails = await this.db
-          .selectFrom('emails')
-          .select(['id', 'preview'])
-          .where('tenant_id', '=', tenantId)
-          .where('folder_id', '=', folder.pplcrmId)
-          .where('preview', 'like', 'google:%')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('household_id', '=', sourceHhId)
           .execute();
-
-        for (const localEmail of localEmails) {
-          const previewKey = localEmail.preview ?? '';
-          const googleId = previewKey.replace(/^google:/, '');
-          if (!serverGoogleIds.has(googleId)) {
-            await this.ingester.deleteMessage(tenantId, googleId);
-          }
+        if (remainingHhMembers.length === 0) {
+          // Clean up orphaned household associations before deletion
+          await trx
+            .deleteFrom('map_households_tags')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('household_id', '=', sourceHhId)
+            .execute();
+          await trx
+            .deleteFrom('map_lists_households')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('household_id', '=', sourceHhId)
+            .execute();
+          await trx
+            .deleteFrom('households')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', sourceHhId)
+            .execute();
         }
       }
-    }
 
-    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
-    return { inserted };
-  }
-
-  public async removeAllLocalEmails(tenantId: string): Promise<void> {
-    await this.ingester.removeAllLocalEmails(tenantId);
-  }
-
-  private async syncMessageDetails(
-    accessToken: string,
-    msgId: string,
-    tenantId: string,
-    requestedBy: string,
-    folderId: string,
-  ): Promise<boolean> {
-    const res = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      return { success: true };
     });
-
-    if (!res.ok) {
-      if (res.status === 404) {
-        return false; // message deleted in the meantime
-      }
-      const errText = await res.text();
-      throw new Error(`Failed to fetch Gmail message ${msgId} details: ${errText}`);
-    }
-
-    const data: any = await res.json();
-    const payload = data.payload;
-    if (!payload) return false;
-
-    const headers = payload.headers ?? [];
-    const getHeader = (name: string) =>
-      headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
-
-    const subject = getHeader('subject');
-    const fromVal = getHeader('from');
-    const toVal = getHeader('to');
-    const dateVal = getHeader('date');
-    const internetMessageId = getHeader('message-id');
-
-    // Parse email addresses from "Name <email@domain.com>" format
-    const extractEmail = (val: string | null): string | null => {
-      if (!val) return null;
-      const match = val.match(/<([^>]+)>/);
-      return match ? (match[1] as string) : val.trim();
-    };
-
-    const fromEmail = extractEmail(fromVal);
-    const toEmail = extractEmail(toVal);
-    let dateSent = dateVal ? new Date(dateVal) : new Date();
-    if (isNaN(dateSent.getTime())) {
-      dateSent = new Date();
-    }
-
-    // Parse body parts recursively
-    const parts = payload.parts ? payload.parts : [payload];
-    const { html, text, attachments } = this.parseGmailParts(parts);
-    const bodyHtml = html || text || '';
-
-    // Map attachments to the generic ingestable structure
-    const mappedAttachments = attachments.map((att: any) => ({
-      name: att.filename,
-      contentType: att.mimeType,
-      size: att.size,
-      contentId: att.cid,
-      isInline: att.isInline,
-      fetchContent: async () => {
-        const attRes = await fetchWithRetry(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${att.attachmentId}`,
-          { headers: { Authorization: `Bearer ${accessToken}` } },
-        );
-        if (!attRes.ok) {
-          throw new Error(`Failed to fetch attachment ${att.filename} from Gmail`);
-        }
-        const attData: any = await attRes.json();
-        return this.decodeBase64UrlToBuffer(attData.data);
-      },
-    }));
-
-    // Parse recipients
-    const recipients: Array<{ kind: 'to' | 'cc' | 'bcc'; name: string | null; email: string }> = [];
-
-    const parseRecipientHeader = (val: string | null, kind: 'to' | 'cc' | 'bcc') => {
-      if (!val) return;
-      // Split by comma, respecting quotes
-      const list = val.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
-      list.forEach((item) => {
-        const trimmed = item.trim();
-        if (!trimmed) return;
-        const emailMatch = trimmed.match(/<([^>]+)>/);
-        const email = emailMatch ? (emailMatch[1] as string) : trimmed;
-        const nameMatch = trimmed.match(/^([^<]+)/);
-        let name = nameMatch ? (nameMatch[1] as string).trim() : null;
-        if (name) {
-          name = name.replace(/^["']|["']$/g, ''); // strip quotes
-        }
-        recipients.push({ kind, name, email });
-      });
-    };
-
-    parseRecipientHeader(getHeader('to'), 'to');
-    parseRecipientHeader(getHeader('cc'), 'cc');
-    parseRecipientHeader(getHeader('bcc'), 'bcc');
-
-    const ingestable: IngestableEmail = {
-      id: msgId,
-      internetMessageId,
-      fromEmail,
-      toEmail,
-      subject,
-      dateSent,
-      bodyHtml,
-      recipients,
-      attachments: mappedAttachments,
-    };
-
-    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
-  }
-
-  private parseGmailParts(parts: any[]): { html: string; text: string; attachments: any[] } {
-    let html = '';
-    let text = '';
-    const attachments: any[] = [];
-
-    const traverse = (part: any) => {
-      const mimeType = part.mimeType?.toLowerCase();
-      const filename = part.filename;
-      const body = part.body;
-
-      if (filename && body?.attachmentId) {
-        const headers = part.headers ?? [];
-        const contentDisposition =
-          headers.find((h: any) => h.name.toLowerCase() === 'content-disposition')?.value ?? '';
-        const isInline = contentDisposition.toLowerCase().includes('inline');
-        const contentIdHeader = headers.find((h: any) => h.name.toLowerCase() === 'content-id')?.value ?? '';
-        const cid = contentIdHeader ? contentIdHeader.replace(/[<>]/g, '') : null;
-
-        attachments.push({
-          filename,
-          mimeType: part.mimeType,
-          attachmentId: body.attachmentId,
-          size: body.size ?? 0,
-          cid,
-          isInline,
-        });
-      } else if (mimeType === 'text/html' && body?.data) {
-        html += this.decodeBase64Url(body.data);
-      } else if (mimeType === 'text/plain' && body?.data) {
-        text += this.decodeBase64Url(body.data);
-      }
-
-      if (part.parts) {
-        for (const p of part.parts) {
-          traverse(p);
-        }
-      }
-    };
-
-    for (const part of parts) {
-      traverse(part);
-    }
-
-    return { html, text, attachments };
-  }
-
-  private decodeBase64Url(str: string): string {
-    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-    while (base64.length % 4) {
-      base64 += '=';
-    }
-    return Buffer.from(base64, 'base64').toString('utf8');
-  }
-
-  private decodeBase64UrlToBuffer(str: string): Buffer {
-    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-    while (base64.length % 4) {
-      base64 += '=';
-    }
-    return Buffer.from(base64, 'base64');
   }
 }
 ```
@@ -38380,773 +38498,736 @@ export function ref<TTable extends keyof Models, TColumn extends keyof Models[TT
 }
 ```
 
-## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
+## File: apps/backend/src/app/modules/events/controller.ts
 
 ```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { StorageService } from '../../../lib/storage.service';
-import { BaseRepository } from '../../../lib/base.repo';
-import { verifyAuthToken } from '../../../lib/auth-util';
-import { env } from '../../../../env';
-import crypto from 'crypto';
-import { Client } from '@microsoft/microsoft-graph-client';
-import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
-import { MsSyncService } from '../../ms-sync/ms-sync.service';
-import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
-import { GoogleSyncService } from '../../google-sync/google-sync.service';
-import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
-import { attachmentDisposition } from '../../../lib/download-headers';
+import { TRPCError } from '@trpc/server';
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { BaseController } from '../../lib/base.controller';
+import { logger } from '../../logger';
+import { WorkflowsController } from '../workflows/controller';
+import { EventsRepo } from './repositories/events.repo';
 
-function buildRawMime(options: {
-  fromName: string;
-  fromEmail: string;
-  to: string[];
-  cc: string[];
-  bcc: string[];
-  subject: string;
-  html: string;
-  attachments: { filename: string; content: Buffer; contentType: string }[];
-}): Buffer {
-  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
-  const headers: string[] = [];
+const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
-  const safeFromName = options.fromName.replace(/"/g, '\\"');
-  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
-  headers.push(`To: ${options.to.join(', ')}`);
-  if (options.cc.length > 0) {
-    headers.push(`Cc: ${options.cc.join(', ')}`);
-  }
-  if (options.bcc.length > 0) {
-    headers.push(`Bcc: ${options.bcc.join(', ')}`);
+const ipRsvpTimestamps = new Map<string, number[]>();
+const RSVP_RATE_LIMIT_MAX = 5;
+const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+export class EventsController extends BaseController<'events', EventsRepo> {
+  constructor() {
+    super(new EventsRepo());
   }
 
-  const base64Subject = Buffer.from(options.subject).toString('base64');
-  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
-
-  headers.push(`MIME-Version: 1.0`);
-  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-  headers.push('');
-
-  const bodyParts: string[] = [];
-
-  bodyParts.push(`--${boundary}`);
-  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
-  bodyParts.push(`Content-Transfer-Encoding: base64`);
-  bodyParts.push('');
-  bodyParts.push(Buffer.from(options.html).toString('base64'));
-  bodyParts.push('');
-
-  for (const att of options.attachments) {
-    bodyParts.push(`--${boundary}`);
-    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Transfer-Encoding: base64`);
-    bodyParts.push('');
-    bodyParts.push(att.content.toString('base64'));
-    bodyParts.push('');
+  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
+    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
   }
 
-  bodyParts.push(`--${boundary}--`);
+  public async addEvent(payload: any, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo()
+      .db.selectFrom('events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', payload.slug)
+      .executeTakeFirst();
 
-  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
-  return Buffer.from(rawMimeString, 'utf-8');
-}
-
-const storageService = new StorageService();
-
-let _oauthSvc: MsOAuthService | null = null;
-
-function getOAuthService(db: any) {
-  if (!_oauthSvc) {
-    _oauthSvc = new MsOAuthService(db, {
-      clientId: env.msClientId ?? '',
-      clientSecret: env.msClientSecret ?? '',
-      tenantId: env.msTenantId ?? 'common',
-      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-    });
-  }
-  return _oauthSvc;
-}
-
-export async function saveLocalEmail(
-  db: any,
-  tenantId: string,
-  userId: string,
-  fromEmail: string,
-  fromName: string,
-  toList: string[],
-  ccList: string[],
-  bccList: string[],
-  subject: string,
-  html: string,
-  uploadedFiles: any[],
-  previewKey: string,
-) {
-  return db.transaction().execute(async (trx: any) => {
-    // Ensure the Outbox folder row exists. email_folders uses global hardcoded
-    // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
-    // email_folders(id) — not tenant_id — so the existence check must be by id
-    // alone. onConflict guards against a concurrent/global row already present.
-
-    // NOTE: unscoped by design — email_folders uses global hardcoded IDs; FK references id only, not tenant_id
-    const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
-
-    if (!existingOutbox) {
-      await trx
-        .insertInto('email_folders')
-        .values({
-          id: '10',
-          tenant_id: tenantId,
-          name: 'Outbox',
-          createdby_id: userId,
-          updatedby_id: userId,
-          icon: 'clock',
-          sort_order: 10,
-          is_default: false,
-        })
-        .onConflict((oc: any) => oc.column('id').doNothing())
-        .execute();
+    if (existing) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This URL slug is already in use. Please choose a different one.',
+      });
     }
 
-    // 1. Insert into emails table (using Outbox folder: '10')
-    const createdEmail = await trx
-      .insertInto('emails')
-      .values({
-        tenant_id: tenantId,
-        folder_id: '10', // Outbox folder is '10'
-        from_email: fromEmail,
-        to_email: toList.join(', '),
-        subject: subject,
-        preview: previewKey,
-        assigned_to: userId,
-        is_favourite: false,
-        deleted_at: null,
-        status: 'open',
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
+    const row = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      location_address: payload.location_address ?? null,
+      start_time: payload.start_time,
+      end_time: payload.end_time,
+      capacity: payload.capacity ?? null,
+      contact_email: payload.contact_email ?? null,
+      contact_phone: payload.contact_phone ?? null,
+      slug: payload.slug,
+      is_published: payload.is_published ?? false,
+      send_reminder: payload.send_reminder ?? true,
+      send_registration_confirmation: payload.send_registration_confirmation ?? true,
+      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
+      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
+      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
+      // Stringifying it first makes node-postgres send plain text, which Postgres casts
+      // to jsonb correctly.
+      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
+    } as OperationDataType<'events', 'insert'>;
 
-    const emailId = String(createdEmail.id);
+    try {
+      return await this.add(row);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
+  }
 
-    // 2. Insert html into email_bodies
-    await trx
-      .insertInto('email_bodies')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        body_html: html,
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
+  public async getEventBySlug(slug: string) {
+    // NOTE: unscoped by design — public registration page: tenant is unknown until the event is resolved by slug
+    // eslint-disable-next-line local/no-unscoped-db-query
+    return this.getRepo()
+      .db.selectFrom('events')
+      .selectAll()
+      .where('slug', '=', slug)
+      .where('is_published', '=', true)
+      .executeTakeFirst();
+  }
+
+  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
+    const row = await this.getRepo()
+      .db.selectFrom('event_registrations')
+      .select(({ fn }) => [fn.count('id').as('cnt')])
+      .where('tenant_id', '=', tenantId)
+      .where('event_id', '=', eventId)
+      .where('status', '!=', 'cancelled')
+      .executeTakeFirst();
+    return Number(row?.cnt ?? 0);
+  }
+
+  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
+    return this.getRepo()
+      .db.selectFrom('event_ticket_types')
+      .selectAll()
+      .where('event_id', '=', eventId)
+      .where('tenant_id', '=', tenantId)
+      .orderBy('sort_order', 'asc')
       .execute();
+  }
 
-    // 3. Insert files and email_attachments metadata
-    for (let i = 0; i < uploadedFiles.length; i++) {
-      const uFile = uploadedFiles[i];
-      let fileId: string;
+  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
+    if (!slug) return { unique: true };
+    let query = this.getRepo()
+      .db.selectFrom('events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const existing = await query.executeTakeFirst();
+    return { unique: !existing };
+  }
 
-      // Persist (or reuse, via sha256 dedup) the file row, then link the
-      // attachment to it so downloads can resolve the stored blob.
-      const existingFile = await trx
-        .selectFrom('files')
+  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
+    if (payload.slug) {
+      const existing = await this.getRepo()
+        .db.selectFrom('events')
         .select('id')
-        .where('tenant_id', '=', tenantId)
-        .where('sha256_hex', '=', uFile.sha256_hex)
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('slug', '=', payload.slug)
+        .where('id', '!=', id)
         .executeTakeFirst();
 
-      if (existingFile) {
-        fileId = String(existingFile.id);
-      } else {
-        const fileResult = await trx
-          .insertInto('files')
+      if (existing) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This URL slug is already in use. Please choose a different one.',
+        });
+      }
+    }
+
+    const row = {
+      ...payload,
+      // See addEvent() above: `fields` is jsonb but modeled as `string[]`; stringify so
+      // node-postgres sends valid JSON text instead of a Postgres ARRAY literal.
+      ...(payload.fields !== undefined ? { fields: JSON.stringify(payload.fields) as unknown as string[] } : {}),
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'events', 'update'>;
+    let result;
+    try {
+      result = await this.update({ tenant_id: auth.tenant_id, id, row });
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
+
+    // Manage pending reminder jobs when the toggle changes
+    if (payload.send_reminder === false) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'eventId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to clean up pending event reminders');
+      }
+    } else if (payload.send_reminder === true) {
+      try {
+        const event = await this.getRepo()
+          .db.selectFrom('events')
+          .select(['start_time'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', id)
+          .executeTakeFirst();
+
+        if (event) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            const registrations = await this.getRepo()
+              .db.selectFrom('event_registrations')
+              .select(['id', 'person_id'])
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('event_id', '=', id)
+              .where('status', '=', 'registered')
+              .execute();
+
+            for (const reg of registrations) {
+              await this.getRepo()
+                .db.deleteFrom('background_jobs')
+                .where('tenant_id', '=', auth.tenant_id)
+                .where('status', '=', 'pending')
+                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
+                .execute();
+
+              await this.getRepo()
+                .db.insertInto('background_jobs')
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
+                    eventId: String(id),
+                    personId: String(reg.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Failed to re-schedule event reminders');
+      }
+    }
+
+    return result;
+  }
+
+  // Ticket types
+
+  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().addTicketType({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      price_cents: payload.price_cents ?? 0,
+      capacity: payload.capacity ?? null,
+      sort_order: payload.sort_order ?? 0,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
+  }
+
+  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
+  }
+
+  // Registrations
+
+  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
+    // Capacity check across the whole event
+    const event = await this.getRepo()
+      .db.selectFrom('events')
+      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', payload.event_id)
+      .executeTakeFirst();
+
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    if (event.capacity !== null) {
+      const countRow = await this.getRepo()
+        .db.selectFrom('event_registrations')
+        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('event_id', '=', payload.event_id)
+        .where('status', '!=', 'cancelled')
+        .executeTakeFirst();
+      if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+      }
+    }
+
+    // Per-ticket-type capacity check
+    if (payload.ticket_type_id) {
+      const ticketType = await this.getRepo()
+        .db.selectFrom('event_ticket_types')
+        .select(['capacity'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', payload.ticket_type_id)
+        .executeTakeFirst();
+
+      if (ticketType && ticketType.capacity !== null) {
+        const ticketCountRow = await this.getRepo()
+          .db.selectFrom('event_registrations')
+          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('ticket_type_id', '=', payload.ticket_type_id)
+          .where('status', '!=', 'cancelled')
+          .executeTakeFirst();
+        if (Number((ticketCountRow as any)?.cnt || 0) >= ticketType.capacity) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
+        }
+      }
+    }
+
+    const result = await this.getRepo().addRegistration({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      person_id: payload.person_id,
+      ticket_type_id: payload.ticket_type_id ?? null,
+      status: payload.status ?? 'registered',
+      notes: payload.notes ?? null,
+      user_id: auth.user_id,
+    });
+
+    if (result) {
+      // Queue registration confirmation email
+      if (event.send_registration_confirmation !== false) {
+        try {
+          await this.getRepo()
+            .db.insertInto('background_jobs')
+            .values({
+              tenant_id: auth.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'send-event-registration-confirmation',
+                registrationId: String(result.id),
+                eventId: String(payload.event_id),
+                personId: String(payload.person_id),
+              }),
+              run_at: new Date(),
+            })
+            .execute();
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue registration confirmation');
+        }
+      }
+
+      // Queue 24h reminder
+      if (event.send_reminder !== false) {
+        try {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            await this.getRepo()
+              .db.insertInto('background_jobs')
+              .values({
+                tenant_id: auth.tenant_id,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-event-reminder',
+                  registrationId: String(result.id),
+                  eventId: String(payload.event_id),
+                  personId: String(payload.person_id),
+                }),
+                run_at: runAt,
+              })
+              .execute();
+          }
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue event reminder');
+        }
+      }
+
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'assign',
+          entity: 'event_registrations',
+          entity_id: String(result.id),
+          quantity: 1,
+          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration activity');
+      }
+    }
+
+    return result;
+  }
+
+  public async checkIn(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { status: 'attended', checked_in_at: new Date() },
+      user_id: auth.user_id,
+    });
+
+    // Cancel pending reminder — they've already arrived
+    try {
+      await this.getRepo()
+        .db.deleteFrom('background_jobs')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('status', '=', 'pending')
+        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+        .where(sql`payload->>'registrationId'`, '=', String(id))
+        .execute();
+    } catch (err) {
+      logger.error({ err }, 'Failed to cancel event reminder on check-in');
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'event_registrations',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log check-in activity');
+    }
+
+    return result;
+  }
+
+  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
+      tenant_id: auth.tenant_id,
+      id,
+      row: payload,
+      user_id: auth.user_id,
+    });
+
+    // Cancel reminder if status moves away from 'registered'
+    if (payload.status && payload.status !== 'registered') {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to cancel event reminder on status change');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'event_registrations',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: payload.status },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log registration update activity');
+    }
+
+    return result;
+  }
+
+  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
+
+    if (result) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
+      }
+
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'delete',
+          entity: 'event_registrations',
+          entity_id: id,
+          quantity: 1,
+          metadata: { id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration delete activity');
+      }
+    }
+
+    return result;
+  }
+
+  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
+  }
+
+  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
+  }
+
+  public async rsvpPublic(slug: string, payload: Record<string, string>, clientIp: string) {
+    // Rate limiting
+    const now = Date.now();
+    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
+      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
+    }
+    timestamps.push(now);
+    ipRsvpTimestamps.set(clientIp, timestamps);
+
+    const event = await this.getEventBySlug(slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    // Honeypot
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      return { success: true };
+    }
+
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
+    }
+
+    if (new Date(event.end_time) < new Date()) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
+    }
+
+    const tenantId = String(event.tenant_id);
+    const firstName = payload['first_name']?.trim() || null;
+    const lastName = payload['last_name']?.trim() || null;
+    const mobile = payload['mobile']?.trim() || null;
+    const notes = payload['notes']?.trim() || null;
+
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id', 'admin_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        const creatorId = tenantRow?.admin_id;
+
+        if (!householdId || !creatorId) {
+          throw new Error('Tenant configuration is incomplete.');
+        }
+
+        // Check overall capacity
+        if (event.capacity !== null) {
+          const countRow = await trx
+            .selectFrom('event_registrations')
+            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+            .where('tenant_id', '=', tenantId)
+            .where('event_id', '=', String(event.id))
+            .where('status', '!=', 'cancelled')
+            .executeTakeFirst();
+          if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+          }
+        }
+
+        // Find or create person
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (notes) {
+            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
+          }
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', existing.id)
+              .execute();
+          }
+        } else {
+          // `persons.campaign_id` is NOT NULL, so a campaign must be resolved before insert
+          // (there is no "campaign-less" person). `persons` also has no address columns
+          // (street1/city/state/zip/country live on `households`, not `persons`), so those
+          // RSVP fields are intentionally not persisted here.
+          const campaignRow = await trx
+            .selectFrom('campaigns')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .orderBy('created_at', 'asc')
+            .limit(1)
+            .executeTakeFirst();
+
+          if (!campaignRow) {
+            throw new Error('Tenant configuration is incomplete.');
+          }
+          const campaignId = String(campaignRow.id);
+
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: householdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email,
+            mobile,
+            notes,
+          };
+
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
+
+          try {
+            const workflowsCtrl = new WorkflowsController();
+            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
+          }
+        }
+
+        // Check duplicate registration
+        const existingReg = await trx
+          .selectFrom('event_registrations')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('event_id', '=', String(event.id))
+          .where('person_id', '=', personId)
+          .where('status', '!=', 'cancelled')
+          .executeTakeFirst();
+
+        if (existingReg) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
+        }
+
+        // Insert registration
+        const reg = await trx
+          .insertInto('event_registrations')
           .values({
             tenant_id: tenantId,
-            filename: uFile.filename,
-            mime_type: uFile.content_type,
-            size_bytes: uFile.size_bytes,
-            storage_key: uFile.storage_key,
-            sha256_hex: uFile.sha256_hex,
-            uploaded_by: userId,
+            event_id: String(event.id) as any,
+            person_id: personId,
+            ticket_type_id: null,
+            status: 'registered',
+            notes: notes ?? null,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
           })
           .returning('id')
           .executeTakeFirstOrThrow();
-        fileId = String(fileResult.id);
-      }
 
-      await trx
-        .insertInto('email_attachments')
-        .values({
-          tenant_id: tenantId,
-          email_id: emailId,
-          filename: uFile.filename,
-          content_type: uFile.content_type,
-          size_bytes: uFile.size_bytes,
-          cid: uFile.cid,
-          is_inline: uFile.is_inline,
-          pos: i + 1,
-          file_id: fileId,
-          createdby_id: userId,
-          updatedby_id: userId,
-        })
-        .execute();
-    }
-
-    // 4. Insert headers
-    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
-    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-
-    await trx
-      .insertInto('email_headers')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        headers_json: JSON.stringify({ internetMessageId }),
-        raw_headers: rawHeaders,
-        date_sent: new Date(),
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // 5. Insert recipients
-    const recipientRows: any[] = [];
-    toList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'to',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    ccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'cc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    bccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'bcc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-
-    if (recipientRows.length > 0) {
-      await trx.insertInto('email_recipients').values(recipientRows).execute();
-    }
-
-    return createdEmail;
-  });
-}
-
-const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Send composed email
-  fastify.post('/send', async (req: any, reply) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing Authorization header' });
-    }
-    const token = authHeader.split(' ')[1];
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token format' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (_err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
-    }
-
-    if (!payload?.tenant_id || !payload?.user_id) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token payload' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const userId = payload.user_id;
-    const db = (BaseRepository as any)['_db'];
-
-    // Retrieve sender user details
-    const user = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', userId)
-      .executeTakeFirst();
-
-    if (!user) {
-      return reply.status(401).send({ error: 'Unauthorized: User not found' });
-    }
-
-    const fromEmail = user.email;
-    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
-
-    // Parse multipart request parts
-    const parts = req.parts();
-    const fields: any = {};
-    const files: any[] = [];
-
-    for await (const part of parts) {
-      if (part.file) {
-        const buffer = await part.toBuffer();
-        files.push({
-          filename: part.filename,
-          fieldname: part.fieldname,
-          mimetype: part.mimetype,
-          buffer,
-        });
-      } else {
-        fields[part.fieldname] = part.value;
-      }
-    }
-
-    // Parse recipient lists and content fields
-    const toList = fields.to ? JSON.parse(fields.to) : [];
-    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
-    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
-    const subject = fields.subject || '';
-    const html = sanitizeHtml(fields.html || '');
-
-    // Upload attachment files to storage outside transaction
-    const uploadedFiles: Array<{
-      filename: string;
-      content_type: string;
-      size_bytes: number;
-      storage_key: string;
-      sha256_hex: string;
-      cid: string | null;
-      is_inline: boolean;
-    }> = [];
-
-    for (const file of files) {
-      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
-      const fileUUID = crypto.randomUUID();
-      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
-
-      await storageService.upload(storage_key, file.buffer, file.mimetype);
-
-      uploadedFiles.push({
-        filename: file.filename,
-        content_type: file.mimetype,
-        size_bytes: file.buffer.length,
-        storage_key,
-        sha256_hex,
-        cid: null,
-        is_inline: false,
-      });
-    }
-
-    // Check if user has connected Microsoft and/or Google accounts
-    const msToken = await db
-      .selectFrom('ms_oauth_tokens')
-      .select(['user_id', 'ms_email'])
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const googleToken = await db
-      .selectFrom('google_oauth_tokens')
-      .select(['user_id', 'google_email'])
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const hasMsConnected = !!msToken;
-    const hasGoogleConnected = !!googleToken;
-
-    // Fail immediately if no send method is configured
-    if (!hasMsConnected && !hasGoogleConnected) {
-      return reply.status(400).send({
-        status: 'error',
-        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
-      });
-    }
-
-    // Save outbound email to database under Outbox folder '10' initially
-    const fallbackPreview =
-      html
-        .replace(/<[^>]*>/g, '')
-        .substring(0, 100)
-        .trim() || '';
-    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
-    try {
-      emailRow = await saveLocalEmail(
-        db,
-        tenantId,
-        userId,
-        fromEmail,
-        fromName,
-        toList,
-        ccList,
-        bccList,
-        subject,
-        html,
-        uploadedFiles,
-        fallbackPreview,
-      );
-    } catch (err) {
-      fastify.log.error(err, 'Failed to save outbound email to database');
-      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Failed to save email', 500);
-    }
-
-    // Determine send method prioritizing matching address
-    let sendMethod: 'ms' | 'google' = 'ms';
-    if (hasMsConnected && hasGoogleConnected) {
-      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
-        sendMethod = 'google';
-      } else {
-        sendMethod = 'ms';
-      }
-    } else if (hasMsConnected) {
-      sendMethod = 'ms';
-    } else if (hasGoogleConnected) {
-      sendMethod = 'google';
-    }
-
-    // Dispatch the email synchronously
-    try {
-      if (sendMethod === 'ms') {
-        const oauthSvc = getOAuthService(db);
-        let msDraftId: string | null = null;
-        try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-          const client = Client.init({
-            authProvider: (done) => done(null, accessToken),
-          });
-
-          const msDraftMessage: any = {
-            subject: subject,
-            body: {
-              contentType: 'html',
-              content: html,
-            },
-            toRecipients: toList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            ccRecipients: ccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            bccRecipients: bccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-          };
-
-          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
-          msDraftId = createdDraft.id;
-          const graphInternetMessageId = createdDraft.internetMessageId;
-
-          // Update local email preview/dedupe key to `ms:${msDraftId}`
-          await db
-            .updateTable('emails')
-            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          if (graphInternetMessageId) {
-            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-            await db
-              .updateTable('email_headers')
-              .set({
-                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
-                raw_headers: rawHeaders,
-                updated_at: new Date(),
+        // Queue confirmation email
+        if ((event as any).send_registration_confirmation !== false) {
+          try {
+            await trx
+              .insertInto('background_jobs')
+              .values({
+                tenant_id: tenantId,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-event-registration-confirmation',
+                  registrationId: String(reg.id),
+                  eventId: String(event.id),
+                  personId,
+                }),
+                run_at: new Date(),
               })
-              .where('tenant_id', '=', tenantId)
-              .where('email_id', '=', String(emailRow.id))
               .execute();
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue RSVP confirmation');
           }
-
-          // Upload attachments
-          for (const file of files) {
-            await client.api(`/me/messages/${msDraftId}/attachments`).post({
-              '@odata.type': '#microsoft.graph.fileAttachment',
-              name: file.filename,
-              contentType: file.mimetype,
-              contentBytes: file.buffer.toString('base64'),
-            });
-          }
-
-          // Send draft
-          await client.api(`/me/messages/${msDraftId}/send`).post({});
-
-          // Update local email folder to '3' (Sent) on success
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          // Trigger background sync to get folders/Sent items synchronized
-          const syncSvc = new MsSyncService(db, oauthSvc);
-          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
-          });
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (_err) {
-            fastify.log.error(_err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
-          }
-
-          return reply.jsendSuccess(finalEmail);
-        } catch (err) {
-          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
-          // Clean up local email
-          await db
-            .deleteFrom('emails')
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-          return reply.jsendError(
-            err instanceof Error && err.message ? err.message : 'Failed to send email via Microsoft Graph',
-            400,
-          );
         }
-      } else if (sendMethod === 'google') {
-        const oauthSvc = new GoogleOAuthService(db, {
-          clientId: env.googleClientId ?? '',
-          clientSecret: env.googleClientSecret ?? '',
-          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-        });
 
-        try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-
-          const rawMessageBuffer = buildRawMime({
-            fromName,
-            fromEmail,
-            to: toList,
-            cc: ccList,
-            bcc: bccList,
-            subject,
-            html,
-            attachments: files.map((file) => ({
-              filename: file.filename,
-              content: file.buffer,
-              contentType: file.mimetype,
-            })),
-          });
-
-          const rawBase64Url = rawMessageBuffer
-            .toString('base64')
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=+$/, '');
-
-          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              raw: rawBase64Url,
-            }),
-          });
-
-          if (!gmailRes.ok) {
-            const errText = await gmailRes.text();
-            throw new Error(`Gmail API send failed: ${errText}`);
-          }
-
-          const gmailData: any = await gmailRes.json();
-          const googleMsgId = gmailData.id;
-
-          await db
-            .updateTable('emails')
-            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
-          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
-          });
-
+        // Queue 24h reminder
+        if ((event as any).send_reminder !== false) {
           try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (_err) {
-            fastify.log.error(_err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
+            const startMs = new Date(event.start_time).getTime();
+            const nowMs = Date.now();
+            if (startMs > nowMs) {
+              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+              await trx
+                .insertInto('background_jobs')
+                .values({
+                  tenant_id: tenantId,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
+                    eventId: String(event.id),
+                    personId,
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
           }
-
-          return reply.jsendSuccess(finalEmail);
-        } catch (err) {
-          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
-          await db
-            .updateTable('emails')
-            .set({
-              // Revert back to the Drafts folder (folder_id '2' or '4' depending on schema)
-              folder_id: '4',
-              updated_at: new Date(),
-            })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          return reply.jsendError(
-            err instanceof Error && err.message ? err.message : 'Failed to send email via Google. Saved to Drafts.',
-            400,
-          );
         }
-      }
-    } catch (err) {
-      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
-      // Clean up local email
-      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
-      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Unexpected error in send task', 500);
-    }
-  });
+      });
 
-  // Download attachment by ID
-  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (_err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const { id, attachmentId } = req.params;
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachmentId)
-      .where('email_id', '=', id)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Content-Disposition', attachmentDisposition(file.filename));
-      return reply.send(buffer);
-    } catch (_err) {
-      fastify.log.error(_err);
-      return reply.status(500).send({ error: 'Failed to download attachment' });
-    }
-  });
-
-  // Serve inline attachment by CID
-  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (_err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const { id, cid } = req.params;
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('email_id', '=', id)
-      .where('cid', '=', cid)
-      .where('is_inline', '=', true)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Inline attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      // Private: inline attachments are tenant-scoped and token-gated.
-      reply.header('Cache-Control', 'private, max-age=31536000');
-      return reply.send(buffer);
-    } catch (_err) {
-      fastify.log.error(_err);
-      return reply.status(500).send({ error: 'Failed to load inline image' });
-    }
-  });
-
-  done();
-};
-
-export default emailsApiRoute;
+    return { success: true };
+  }
+}
 ```
 
 ## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
@@ -39155,10 +39236,10 @@ export default emailsApiRoute;
 import type { ReferenceExpression, Selectable, SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
 import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
 import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
 import { logger } from '../../../logger';
 
@@ -39624,6 +39705,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 
   public async getDuplicateCount(tenant_id: string): Promise<number> {
     // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -39648,6 +39730,7 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     const pageSize = options?.pageSize ?? 20;
 
     // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -39902,735 +39985,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 }
 ```
 
-## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
-
-```typescript
-import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
-import { sql } from 'kysely';
-
-import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import { HouseholdRepo } from '../../households/repositories/households.repo';
-
-export class PersonsRepo extends BaseRepository<'persons'> {
-  constructor() {
-    super('persons');
-  }
-
-  public async getIdsByFileId(
-    input: { tenant_id: string; file_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<string[]> {
-    if (!input.file_id) return [];
-    const rows = await this.getSelect(trx)
-      .select('id')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.file_id)
-      .execute();
-    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
-  }
-
-  public async clearFileIdForImport(
-    input: { tenant_id: string; import_id: string; user_id: string },
-    trx?: Transaction<Models>,
-  ) {
-    await this.getUpdate(trx)
-      .set({
-        file_id: null,
-        updated_at: sql`now()`,
-      })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.import_id)
-      .executeTakeFirst();
-  }
-
-  public async getByIds(input: { tenant_id: string; ids: string[]; tags?: string[] }, trx?: Transaction<Models>) {
-    const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
-    if (!ids.length) return [];
-
-    const tags = (input.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean);
-
-    let query = this.getSelect(trx)
-      .select(['persons.id', 'persons.first_name', 'persons.last_name', 'persons.email'])
-      .where('persons.tenant_id', '=', input.tenant_id)
-      .where('persons.id', 'in', ids);
-
-    if (tags.length > 0) {
-      query = query
-        .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-        .where(sql`LOWER(tags.name)`, 'in', tags)
-        .distinct();
-    }
-
-    const rows = await query.execute();
-    const map = new Map<string, { id: string; first_name: string; last_name: string; email: string | null }>();
-    for (const row of rows) {
-      const id = row.id != null ? String(row.id) : '';
-      if (!id || map.has(id)) continue;
-      map.set(id, {
-        id,
-        first_name: row.first_name ?? '',
-        last_name: row.last_name ?? '',
-        email: row.email ?? null,
-      });
-    }
-    return Array.from(map.values());
-  }
-
-  public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
-    const row = await this.getSelect()
-      .select(() => [sql<number>`count(*)`.as('total'), sql<Date>`max(created_at)`.as('last_created_at')])
-      .where('tenant_id', '=', input.tenant_id)
-      .where('createdby_id', '=', input.user_id)
-      .executeTakeFirst();
-
-    return {
-      total: Number(row?.total ?? 0),
-      last_created_at: row?.last_created_at ? new Date(row.last_created_at) : null,
-    };
-  }
-
-  public async moveToNewHousehold(input: {
-    tenant_id: string;
-    person_id: string;
-    user_id: string;
-    campaign_id: string;
-  }) {
-    const households = new HouseholdRepo();
-    return this.transaction().execute(async (trx) => {
-      // Reuse existing blank household if available
-      const existingBlank = await households.getBlankHousehold(
-        { tenant_id: input.tenant_id, campaign_id: input.campaign_id },
-        trx,
-      );
-      let targetId = existingBlank?.id as string | undefined;
-
-      if (!targetId) {
-        const newHousehold = await households.add(
-          {
-            row: {
-              tenant_id: input.tenant_id,
-              campaign_id: input.campaign_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            } as OperationDataType<'households', 'insert'>,
-          },
-          trx,
-        );
-        targetId = newHousehold?.id as string | undefined;
-      }
-
-      await this.update(
-        {
-          tenant_id: input.tenant_id,
-          id: input.person_id,
-          row: { household_id: targetId, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
-        },
-        trx,
-      );
-
-      return { household_id: targetId };
-    });
-  }
-
-  public async getAllWithAddress(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'> & { issues?: string[] };
-      tags?: string[];
-      issues?: string[];
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
-    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
-    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
-
-    // Shared where clause builder
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
-      let q = qb
-        .leftJoin('households', 'persons.household_id', 'households.id')
-        .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-        .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-        .leftJoin('companies', 'persons.company_id', 'companies.id')
-        .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
-        .where('households.tenant_id', '=', tenantId)
-        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
-        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
-        .$if(!!options.listId, (qb) =>
-          qb.where('persons.id', 'in', (eb: any) =>
-            eb
-              .selectFrom('map_lists_persons')
-              .select('person_id')
-              .where('list_id', '=', options.listId ?? '')
-              .where('tenant_id', '=', tenantId),
-          ),
-        )
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          return qb.where(
-            sql<boolean>`(
-            LOWER(persons.first_name) LIKE ${text} OR
-            LOWER(persons.last_name) LIKE ${text} OR
-            LOWER(persons.email) LIKE ${text} OR
-            LOWER(persons.mobile) LIKE ${text} OR
-            LOWER(households.city) LIKE ${text} OR
-            LOWER(households.street1) LIKE ${text} OR
-            LOWER(companies.name) LIKE ${text} OR
-            LOWER(tags.name) LIKE ${text}
-          )`,
-          );
-        });
-
-      // Apply dynamic, operator-aware column filters
-      q = this.applyColumnFilter(q, 'persons.first_name', filterModel['first_name'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.last_name', filterModel['last_name'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.email', filterModel['email'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.mobile', filterModel['mobile'] ?? {});
-      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
-      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
-      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
-      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
-      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
-      if (filterModel['tags']?.value && filterModel['issues']?.value) {
-        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
-        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
-        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
-        q = q.where((eb) =>
-          eb.or([
-            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
-            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
-          ]),
-        );
-      } else if (filterModel['tags']?.value) {
-        q = q.where('tags.type', '=', 'tag');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
-      } else if (filterModel['issues']?.value) {
-        q = q.where('tags.type', '=', 'issue');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
-      }
-      q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name'] ?? {});
-
-      // Apply advanced query builder filters if present
-      const columnMapping = {
-        first_name: { col: 'persons.first_name' },
-        last_name: { col: 'persons.last_name' },
-        email: { col: 'persons.email' },
-        mobile: { col: 'persons.mobile' },
-        city: { col: 'households.city' },
-        state: { col: 'households.state' },
-        street1: { col: 'households.street1' },
-        street_num: { col: 'households.street_num::text', isCast: true },
-        zip: { col: 'households.zip' },
-        tag: { col: 'tags.name' },
-        tags: { col: 'tags.name' },
-        issues: { col: 'tags.name' },
-        company_name: { col: 'companies.name' },
-      };
-      const advModel =
-        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
-      q = this.applyAdvancedFilters(q, advModel, columnMapping);
-
-      return q;
-    };
-
-    // Count query
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
-      .execute();
-
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    // Data query
-    const rows = await applyFilters(this.getSelect(trx))
-      .select((eb) => [
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.notes',
-        'persons.household_id',
-        'persons.company_id',
-        'companies.name as company_name',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.apt',
-        eb
-          .case()
-          .when('tenants.placeholder_household_id', '=', eb.ref('persons.household_id'))
-          .then(true)
-          .else(false)
-          .end()
-          .as('household_is_placeholder'),
-        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
-          'tags',
-        ),
-        sql<
-          string[]
-        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
-      ])
-      .groupBy([
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.notes',
-        'persons.household_id',
-        'persons.company_id',
-        'persons.created_at',
-        'persons.updated_at',
-        'persons.tenant_id',
-        'persons.createdby_id',
-        'persons.updatedby_id',
-        'companies.name',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.apt',
-        'tenants.placeholder_household_id',
-      ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce((acc, sort) => {
-          let col = sort.colId;
-          if (typeof col === 'string' && !col.includes('.')) {
-            const personsCols = [
-              'id',
-              'first_name',
-              'last_name',
-              'email',
-              'mobile',
-              'notes',
-              'household_id',
-              'company_id',
-              'created_at',
-              'updated_at',
-              'tenant_id',
-              'createdby_id',
-              'updatedby_id',
-            ];
-            if (personsCols.includes(col)) {
-              col = `persons.${col}`;
-            } else {
-              const hhCols = [
-                'country',
-                'zip',
-                'state',
-                'home_phone',
-                'city',
-                'street1',
-                'street2',
-                'street_num',
-                'apt',
-              ];
-              if (hhCols.includes(col)) {
-                col = `households.${col}`;
-              } else if (col === 'company_name') {
-                col = `companies.name`;
-              } else if (col === 'address') {
-                col = `households.street1`;
-              }
-            }
-          }
-          return acc.orderBy(col, sort.sort);
-        }, qb),
-      )
-      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
-      )
-      .execute();
-
-    return { count, rows };
-  }
-
-  public getByHouseholdId(
-    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getSelectWithColumns(input.options, trx)
-      .where('household_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .execute();
-  }
-
-  public getByCompanyId(
-    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getSelectWithColumns(input.options, trx)
-      .where('company_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .execute();
-  }
-
-  public async countByCompanyId(input: { id: string; tenant_id: string }): Promise<number> {
-    const result = await this.getSelect()
-      .select(({ fn }) => [fn.count<number>('id').as('total')])
-      .where('company_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .executeTakeFirst();
-    return Number(result?.total ?? 0);
-  }
-
-  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
-    return this.getSelect()
-      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .where('persons.tenant_id', '=', tenant_id)
-      .where('tags.type', '=', type)
-      .select('tags.name')
-      .distinct()
-      .execute();
-  }
-
-  public getTags(input: { id: string; tenant_id: string; type?: 'tag' | 'issue' }) {
-    let q = this.getSelect()
-      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .where('persons.id', '=', input.id)
-      .where('persons.tenant_id', '=', input.tenant_id);
-    if (input.type) {
-      q = q.where('tags.type', '=', input.type);
-    }
-    return q.select('tags.name').execute();
-  }
-  public async findByEmail(input: { tenant_id: string; email: string }) {
-    return this.getSelect()
-      .select(['id', 'email'])
-      .where('tenant_id', '=', input.tenant_id)
-      .where(sql`lower(email)`, '=', input.email.trim().toLowerCase())
-      .executeTakeFirst();
-  }
-
-  public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // NOTE: unscoped by design — tenant_id filtered inside subquery
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    return Number(countResult?.total ?? 0);
-  }
-
-  public async getPotentialDuplicates(
-    tenant_id: string,
-    options?: { page?: number; pageSize?: number },
-  ): Promise<{ groups: unknown[]; total: number }> {
-    const page = options?.page ?? 1;
-    const pageSize = options?.pageSize ?? 20;
-
-    // NOTE: unscoped by design — tenant_id filtered inside subquery
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    const total = Number(countResult?.total ?? 0);
-
-    if (total === 0) {
-      return { groups: [], total: 0 };
-    }
-
-    const keysRows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-      .select('potential_duplicates.group_key')
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .groupBy('potential_duplicates.group_key')
-      .having(sql`count(potential_duplicates.id)`, '>', 1)
-      .orderBy(sql`min(potential_duplicates.id)`)
-      .limit(pageSize)
-      .offset((page - 1) * pageSize)
-      .execute();
-
-    const groupKeys = keysRows.map((r) => r.group_key);
-
-    if (groupKeys.length === 0) {
-      return { groups: [], total };
-    }
-
-    const rows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-      .select([
-        'potential_duplicates.group_key',
-        'potential_duplicates.reason',
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.home_phone',
-        'persons.notes',
-        'persons.company_id',
-        'persons.household_id',
-        'persons.created_at',
-      ])
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .where('potential_duplicates.group_key', 'in', groupKeys)
-      .execute();
-
-    const groupsMap = new Map<string, { reason: string; persons: Record<string, unknown>[] }>();
-    for (const row of rows) {
-      const groupKey = row.group_key;
-      if (!groupsMap.has(groupKey)) {
-        groupsMap.set(groupKey, {
-          reason: row.reason,
-          persons: [],
-        });
-      }
-      groupsMap.get(groupKey)?.persons.push({
-        ...row,
-        id: String(row.id),
-      });
-    }
-
-    const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
-      .filter((g): g is NonNullable<typeof g> => !!(g && g.persons.length > 1));
-
-    return { groups: sortedGroups, total };
-  }
-
-  public async mergePersons(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
-    return this.transaction().execute(async (trx) => {
-      const target = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.target_id },
-        trx,
-      )) as Selectable<Models['persons']>;
-      const source = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.source_id },
-        trx,
-      )) as Selectable<Models['persons']>;
-
-      if (!target || !source) {
-        throw new Error('Target or Source person not found');
-      }
-
-      // 1. Merge fields (copy null/empty fields from source to target)
-      const targetUpdate: Record<string, unknown> = {};
-      const fields = [
-        'first_name',
-        'middle_names',
-        'last_name',
-        'email',
-        'email2',
-        'mobile',
-        'home_phone',
-        'notes',
-        'company_id',
-        'file_id',
-      ] as const;
-
-      for (const field of fields) {
-        const targetVal = target[field];
-        const sourceVal = source[field];
-        if (
-          (targetVal == null || String(targetVal).trim() === '') &&
-          sourceVal != null &&
-          String(sourceVal).trim() !== ''
-        ) {
-          targetUpdate[field] = sourceVal;
-        }
-      }
-
-      if (Object.keys(targetUpdate).length > 0) {
-        targetUpdate['updatedby_id'] = input.user_id;
-        targetUpdate['updated_at'] = sql`now()`;
-        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
-      }
-
-      // 2. Transfer tags (map_peoples_tags)
-      const targetTags = await trx
-        .selectFrom('map_peoples_tags')
-        .select('tag_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
-
-      const sourceTags = await trx
-        .selectFrom('map_peoples_tags')
-        .select(['tag_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const st of sourceTags) {
-        const tagIdStr = String(st.tag_id);
-        if (!targetTagIds.has(tagIdStr)) {
-          await trx
-            .insertInto('map_peoples_tags')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              tag_id: st.tag_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_peoples_tags')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 3. Transfer lists (map_lists_persons)
-      const targetLists = await trx
-        .selectFrom('map_lists_persons')
-        .select('list_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
-
-      const sourceLists = await trx
-        .selectFrom('map_lists_persons')
-        .select(['list_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const sl of sourceLists) {
-        if (!targetListIds.has(String(sl.list_id))) {
-          await trx
-            .insertInto('map_lists_persons')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              list_id: sl.list_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_lists_persons')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 4. Transfer teams (map_teams_persons)
-      const targetTeams = await trx
-        .selectFrom('map_teams_persons')
-        .select('team_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetTeamIds = new Set(targetTeams.map((t) => String(t.team_id)));
-
-      const sourceTeams = await trx
-        .selectFrom('map_teams_persons')
-        .select(['team_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const st of sourceTeams) {
-        if (!targetTeamIds.has(String(st.team_id))) {
-          await trx
-            .insertInto('map_teams_persons')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              team_id: st.team_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_teams_persons')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 5. Reassign captaincy if source was captain of any team
-      await trx
-        .updateTable('teams')
-        .set({ team_captain_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
-        .where('tenant_id', '=', input.tenant_id)
-        .where('team_captain_id', '=', input.source_id)
-        .execute();
-      // 6. Delete source person
-      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
-
-      // 7. Clean up empty household if source's household is now empty
-      const sourceHhId = source.household_id;
-      if (sourceHhId && sourceHhId !== target.household_id) {
-        const remainingHhMembers = await trx
-          .selectFrom('persons')
-          .select('id')
-          .where('tenant_id', '=', input.tenant_id)
-          .where('household_id', '=', sourceHhId)
-          .execute();
-        if (remainingHhMembers.length === 0) {
-          // Clean up orphaned household associations before deletion
-          await trx
-            .deleteFrom('map_households_tags')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('household_id', '=', sourceHhId)
-            .execute();
-          await trx
-            .deleteFrom('map_lists_households')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('household_id', '=', sourceHhId)
-            .execute();
-          await trx
-            .deleteFrom('households')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('id', '=', sourceHhId)
-            .execute();
-        }
-      }
-
-      return { success: true };
-    });
-  }
-}
-```
-
 ## File: apps/backend/src/app/modules/zapier/zapier.service.ts
 
 ```typescript
@@ -40781,6 +40135,7 @@ export class ZapierService {
 
   async lookupTenantByApiKey(apiKey: string): Promise<string | null> {
     // NOTE: unscoped by design — resolving which tenant owns this API key; cross-tenant by design
+    // eslint-disable-next-line local/no-unscoped-db-query
     const row = await this.db
       .selectFrom('settings')
       .select('tenant_id')
@@ -40791,6 +40146,778 @@ export class ZapierService {
     return row ? String(row.tenant_id) : null;
   }
 }
+```
+
+## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
+
+```typescript
+import { Client } from '@microsoft/microsoft-graph-client';
+import crypto from 'crypto';
+import type { FastifyPluginCallback } from 'fastify';
+import { env } from '../../../../env';
+import { verifyAuthToken } from '../../../lib/auth-util';
+import { BaseRepository } from '../../../lib/base.repo';
+import { attachmentDisposition } from '../../../lib/download-headers';
+import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+import { StorageService } from '../../../lib/storage.service';
+import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
+import { GoogleSyncService } from '../../google-sync/google-sync.service';
+import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
+import { MsSyncService } from '../../ms-sync/ms-sync.service';
+
+function buildRawMime(options: {
+  fromName: string;
+  fromEmail: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  html: string;
+  attachments: { filename: string; content: Buffer; contentType: string }[];
+}): Buffer {
+  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
+  const headers: string[] = [];
+
+  const safeFromName = options.fromName.replace(/"/g, '\\"');
+  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
+  headers.push(`To: ${options.to.join(', ')}`);
+  if (options.cc.length > 0) {
+    headers.push(`Cc: ${options.cc.join(', ')}`);
+  }
+  if (options.bcc.length > 0) {
+    headers.push(`Bcc: ${options.bcc.join(', ')}`);
+  }
+
+  const base64Subject = Buffer.from(options.subject).toString('base64');
+  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
+
+  headers.push(`MIME-Version: 1.0`);
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  headers.push('');
+
+  const bodyParts: string[] = [];
+
+  bodyParts.push(`--${boundary}`);
+  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
+  bodyParts.push(`Content-Transfer-Encoding: base64`);
+  bodyParts.push('');
+  bodyParts.push(Buffer.from(options.html).toString('base64'));
+  bodyParts.push('');
+
+  for (const att of options.attachments) {
+    bodyParts.push(`--${boundary}`);
+    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Transfer-Encoding: base64`);
+    bodyParts.push('');
+    bodyParts.push(att.content.toString('base64'));
+    bodyParts.push('');
+  }
+
+  bodyParts.push(`--${boundary}--`);
+
+  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
+  return Buffer.from(rawMimeString, 'utf-8');
+}
+
+const storageService = new StorageService();
+
+let _oauthSvc: MsOAuthService | null = null;
+
+function getOAuthService(db: any) {
+  if (!_oauthSvc) {
+    _oauthSvc = new MsOAuthService(db, {
+      clientId: env.msClientId ?? '',
+      clientSecret: env.msClientSecret ?? '',
+      tenantId: env.msTenantId ?? 'common',
+      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+    });
+  }
+  return _oauthSvc;
+}
+
+export async function saveLocalEmail(
+  db: any,
+  tenantId: string,
+  userId: string,
+  fromEmail: string,
+  fromName: string,
+  toList: string[],
+  ccList: string[],
+  bccList: string[],
+  subject: string,
+  html: string,
+  uploadedFiles: any[],
+  previewKey: string,
+) {
+  return db.transaction().execute(async (trx: any) => {
+    // Ensure the Outbox folder row exists. email_folders uses global hardcoded
+    // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
+    // email_folders(id) — not tenant_id — so the existence check must be by id
+    // alone. onConflict guards against a concurrent/global row already present.
+
+    // NOTE: unscoped by design — email_folders uses global hardcoded IDs; FK references id only, not tenant_id
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
+
+    if (!existingOutbox) {
+      await trx
+        .insertInto('email_folders')
+        .values({
+          id: '10',
+          tenant_id: tenantId,
+          name: 'Outbox',
+          createdby_id: userId,
+          updatedby_id: userId,
+          icon: 'clock',
+          sort_order: 10,
+          is_default: false,
+        })
+        .onConflict((oc: any) => oc.column('id').doNothing())
+        .execute();
+    }
+
+    // 1. Insert into emails table (using Outbox folder: '10')
+    const createdEmail = await trx
+      .insertInto('emails')
+      .values({
+        tenant_id: tenantId,
+        folder_id: '10', // Outbox folder is '10'
+        from_email: fromEmail,
+        to_email: toList.join(', '),
+        subject: subject,
+        preview: previewKey,
+        assigned_to: userId,
+        is_favourite: false,
+        deleted_at: null,
+        status: 'open',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    const emailId = String(createdEmail.id);
+
+    // 2. Insert html into email_bodies
+    await trx
+      .insertInto('email_bodies')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        body_html: html,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 3. Insert files and email_attachments metadata
+    for (let i = 0; i < uploadedFiles.length; i++) {
+      const uFile = uploadedFiles[i];
+      let fileId: string;
+
+      // Persist (or reuse, via sha256 dedup) the file row, then link the
+      // attachment to it so downloads can resolve the stored blob.
+      const existingFile = await trx
+        .selectFrom('files')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where('sha256_hex', '=', uFile.sha256_hex)
+        .executeTakeFirst();
+
+      if (existingFile) {
+        fileId = String(existingFile.id);
+      } else {
+        const fileResult = await trx
+          .insertInto('files')
+          .values({
+            tenant_id: tenantId,
+            filename: uFile.filename,
+            mime_type: uFile.content_type,
+            size_bytes: uFile.size_bytes,
+            storage_key: uFile.storage_key,
+            sha256_hex: uFile.sha256_hex,
+            uploaded_by: userId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        fileId = String(fileResult.id);
+      }
+
+      await trx
+        .insertInto('email_attachments')
+        .values({
+          tenant_id: tenantId,
+          email_id: emailId,
+          filename: uFile.filename,
+          content_type: uFile.content_type,
+          size_bytes: uFile.size_bytes,
+          cid: uFile.cid,
+          is_inline: uFile.is_inline,
+          pos: i + 1,
+          file_id: fileId,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+    }
+
+    // 4. Insert headers
+    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
+    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+
+    await trx
+      .insertInto('email_headers')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        headers_json: JSON.stringify({ internetMessageId }),
+        raw_headers: rawHeaders,
+        date_sent: new Date(),
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 5. Insert recipients
+    const recipientRows: any[] = [];
+    toList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'to',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    ccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'cc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    bccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'bcc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+
+    if (recipientRows.length > 0) {
+      await trx.insertInto('email_recipients').values(recipientRows).execute();
+    }
+
+    return createdEmail;
+  });
+}
+
+const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Send composed email
+  fastify.post('/send', async (req: any, reply) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing Authorization header' });
+    }
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token format' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (_err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
+    }
+
+    if (!payload?.tenant_id || !payload?.user_id) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token payload' });
+    }
+
+    const tenantId = payload.tenant_id;
+    const userId = payload.user_id;
+    const db = (BaseRepository as any)['_db'];
+
+    // Retrieve sender user details
+    const user = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', userId)
+      .executeTakeFirst();
+
+    if (!user) {
+      return reply.status(401).send({ error: 'Unauthorized: User not found' });
+    }
+
+    const fromEmail = user.email;
+    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
+
+    // Parse multipart request parts
+    const parts = req.parts();
+    const fields: any = {};
+    const files: any[] = [];
+
+    for await (const part of parts) {
+      if (part.file) {
+        const buffer = await part.toBuffer();
+        files.push({
+          filename: part.filename,
+          fieldname: part.fieldname,
+          mimetype: part.mimetype,
+          buffer,
+        });
+      } else {
+        fields[part.fieldname] = part.value;
+      }
+    }
+
+    // Parse recipient lists and content fields
+    const toList = fields.to ? JSON.parse(fields.to) : [];
+    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
+    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
+    const subject = fields.subject || '';
+    const html = sanitizeHtml(fields.html || '');
+
+    // Upload attachment files to storage outside transaction
+    const uploadedFiles: Array<{
+      filename: string;
+      content_type: string;
+      size_bytes: number;
+      storage_key: string;
+      sha256_hex: string;
+      cid: string | null;
+      is_inline: boolean;
+    }> = [];
+
+    for (const file of files) {
+      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
+      const fileUUID = crypto.randomUUID();
+      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
+
+      await storageService.upload(storage_key, file.buffer, file.mimetype);
+
+      uploadedFiles.push({
+        filename: file.filename,
+        content_type: file.mimetype,
+        size_bytes: file.buffer.length,
+        storage_key,
+        sha256_hex,
+        cid: null,
+        is_inline: false,
+      });
+    }
+
+    // Check if user has connected Microsoft and/or Google accounts
+    const msToken = await db
+      .selectFrom('ms_oauth_tokens')
+      .select(['user_id', 'ms_email'])
+      .where('tenant_id', '=', tenantId)
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const googleToken = await db
+      .selectFrom('google_oauth_tokens')
+      .select(['user_id', 'google_email'])
+      .where('tenant_id', '=', tenantId)
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const hasMsConnected = !!msToken;
+    const hasGoogleConnected = !!googleToken;
+
+    // Fail immediately if no send method is configured
+    if (!hasMsConnected && !hasGoogleConnected) {
+      return reply.status(400).send({
+        status: 'error',
+        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
+      });
+    }
+
+    // Save outbound email to database under Outbox folder '10' initially
+    const fallbackPreview =
+      html
+        .replace(/<[^>]*>/g, '')
+        .substring(0, 100)
+        .trim() || '';
+    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
+    try {
+      emailRow = await saveLocalEmail(
+        db,
+        tenantId,
+        userId,
+        fromEmail,
+        fromName,
+        toList,
+        ccList,
+        bccList,
+        subject,
+        html,
+        uploadedFiles,
+        fallbackPreview,
+      );
+    } catch (err) {
+      fastify.log.error(err, 'Failed to save outbound email to database');
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Failed to save email', 500);
+    }
+
+    // Determine send method prioritizing matching address
+    let sendMethod: 'ms' | 'google' = 'ms';
+    if (hasMsConnected && hasGoogleConnected) {
+      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
+        sendMethod = 'google';
+      } else {
+        sendMethod = 'ms';
+      }
+    } else if (hasMsConnected) {
+      sendMethod = 'ms';
+    } else if (hasGoogleConnected) {
+      sendMethod = 'google';
+    }
+
+    // Dispatch the email synchronously
+    try {
+      if (sendMethod === 'ms') {
+        const oauthSvc = getOAuthService(db);
+        let msDraftId: string | null = null;
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+          const client = Client.init({
+            authProvider: (done) => done(null, accessToken),
+          });
+
+          const msDraftMessage: any = {
+            subject: subject,
+            body: {
+              contentType: 'html',
+              content: html,
+            },
+            toRecipients: toList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            ccRecipients: ccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            bccRecipients: bccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+          };
+
+          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
+          msDraftId = createdDraft.id;
+          const graphInternetMessageId = createdDraft.internetMessageId;
+
+          // Update local email preview/dedupe key to `ms:${msDraftId}`
+          await db
+            .updateTable('emails')
+            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          if (graphInternetMessageId) {
+            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+            await db
+              .updateTable('email_headers')
+              .set({
+                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
+                raw_headers: rawHeaders,
+                updated_at: new Date(),
+              })
+              .where('tenant_id', '=', tenantId)
+              .where('email_id', '=', String(emailRow.id))
+              .execute();
+          }
+
+          // Upload attachments
+          for (const file of files) {
+            await client.api(`/me/messages/${msDraftId}/attachments`).post({
+              '@odata.type': '#microsoft.graph.fileAttachment',
+              name: file.filename,
+              contentType: file.mimetype,
+              contentBytes: file.buffer.toString('base64'),
+            });
+          }
+
+          // Send draft
+          await client.api(`/me/messages/${msDraftId}/send`).post({});
+
+          // Update local email folder to '3' (Sent) on success
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: '3', updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          // Trigger background sync to get folders/Sent items synchronized
+          const syncSvc = new MsSyncService(db, oauthSvc);
+          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (_err) {
+            fastify.log.error(_err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err) {
+          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
+          // Clean up local email
+          await db
+            .deleteFrom('emails')
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Microsoft Graph',
+            400,
+          );
+        }
+      } else if (sendMethod === 'google') {
+        const oauthSvc = new GoogleOAuthService(db, {
+          clientId: env.googleClientId ?? '',
+          clientSecret: env.googleClientSecret ?? '',
+          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+        });
+
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+
+          const rawMessageBuffer = buildRawMime({
+            fromName,
+            fromEmail,
+            to: toList,
+            cc: ccList,
+            bcc: bccList,
+            subject,
+            html,
+            attachments: files.map((file) => ({
+              filename: file.filename,
+              content: file.buffer,
+              contentType: file.mimetype,
+            })),
+          });
+
+          const rawBase64Url = rawMessageBuffer
+            .toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+
+          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              raw: rawBase64Url,
+            }),
+          });
+
+          if (!gmailRes.ok) {
+            const errText = await gmailRes.text();
+            throw new Error(`Gmail API send failed: ${errText}`);
+          }
+
+          const gmailData: any = await gmailRes.json();
+          const googleMsgId = gmailData.id;
+
+          await db
+            .updateTable('emails')
+            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: '3', updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
+          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (_err) {
+            fastify.log.error(_err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err) {
+          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
+          await db
+            .updateTable('emails')
+            .set({
+              // Revert back to the Drafts folder (folder_id '2' or '4' depending on schema)
+              folder_id: '4',
+              updated_at: new Date(),
+            })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Google. Saved to Drafts.',
+            400,
+          );
+        }
+      }
+    } catch (err) {
+      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
+      // Clean up local email
+      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Unexpected error in send task', 500);
+    }
+  });
+
+  // Download attachment by ID
+  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
+    // Authenticate token via header or query string (for direct link downloading)
+    let token = req.query.token;
+    if (!token && req.headers.authorization) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (_err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+    }
+
+    const tenantId = payload.tenant_id;
+    const { id, attachmentId } = req.params;
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachmentId)
+      .where('email_id', '=', id)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      reply.header('Content-Disposition', attachmentDisposition(file.filename));
+      return reply.send(buffer);
+    } catch (_err) {
+      fastify.log.error(_err);
+      return reply.status(500).send({ error: 'Failed to download attachment' });
+    }
+  });
+
+  // Serve inline attachment by CID
+  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
+    // Authenticate token via header or query string (for direct link downloading)
+    let token = req.query.token;
+    if (!token && req.headers.authorization) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (_err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+    }
+
+    const tenantId = payload.tenant_id;
+    const { id, cid } = req.params;
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('email_id', '=', id)
+      .where('cid', '=', cid)
+      .where('is_inline', '=', true)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Inline attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      // Private: inline attachments are tenant-scoped and token-gated.
+      reply.header('Cache-Control', 'private, max-age=31536000');
+      return reply.send(buffer);
+    } catch (_err) {
+      fastify.log.error(_err);
+      return reply.status(500).send({ error: 'Failed to load inline image' });
+    }
+  });
+
+  done();
+};
+
+export default emailsApiRoute;
 ```
 
 ## File: apps/backend/src/app/modules/auth/controller.ts
@@ -42889,6 +43016,7 @@ export class PasskeyController {
     if (!challenge) throw new UnauthorizedError('Authentication challenge expired. Please try again.');
 
     // NOTE: unscoped by design — credential_id lookup happens before tenant is known; passkey row carries tenant_id for post-auth scoping
+    // eslint-disable-next-line local/no-unscoped-db-query
     const passkey = await this.db
       .selectFrom('passkeys')
       .selectAll()

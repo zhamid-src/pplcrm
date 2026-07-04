@@ -1,7 +1,7 @@
 import type { Selectable, Transaction } from 'kysely';
 import { sql } from 'kysely';
-import { BaseRepository } from '../../../lib/base.repo';
 import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { BaseRepository } from '../../../lib/base.repo';
 
 export class CompaniesRepo extends BaseRepository<'companies'> {
   constructor() {
@@ -9,6 +9,8 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
   }
 
   public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // Note: tenant ID is taken in the subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
@@ -32,6 +34,8 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
     const page = options?.page ?? 1;
     const pageSize = options?.pageSize ?? 20;
 
+    // Note: tenant ID is taken in the subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
     const countResult = await this.db
       .selectFrom((qb) =>
         qb
