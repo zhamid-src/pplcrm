@@ -23,6 +23,7 @@ import { AddressType, Persons, Households } from '../../../../../../../libs/comm
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-person-form',
@@ -105,6 +106,8 @@ export class PersonForm implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, UpdatePersonsObj);
   });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
 
   protected id = input<string>();
   protected tags = signal<string[]>([]);
@@ -225,6 +228,10 @@ export class PersonForm implements OnInit {
     } finally {
       end();
     }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.formName() || 'this person');
   }
 
   public save(done?: () => void) {

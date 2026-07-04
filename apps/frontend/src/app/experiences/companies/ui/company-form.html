@@ -17,6 +17,7 @@
       buttonsToShow="two"
       [btn1Text]="isNewMode() ? 'Create company' : 'Save company'"
       [showDelete]="!isNewMode()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
       deleteText="Delete company"
       (save)="save($event)"
       (delete)="deleteCompany()"

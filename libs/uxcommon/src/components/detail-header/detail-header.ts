@@ -32,7 +32,12 @@ import { FormActions } from '../form-actions/form-actions';
               <p class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">{{ eyebrow() }}</p>
             }
             <h1 class="truncate text-xl font-bold">{{ title() }}</h1>
-            @if (subtitle()) {
+            @if (dirtyFieldCount() > 0) {
+              <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">
+                <span class="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true"></span>
+                Unsaved changes · {{ dirtyFieldCount() }} field{{ dirtyFieldCount() === 1 ? '' : 's' }}
+              </p>
+            } @else if (subtitle()) {
               <p class="mt-0.5 text-sm text-base-content/60">{{ subtitle() }}</p>
             }
           </div>
@@ -105,6 +110,9 @@ export class DetailHeader {
   public hasNext = input<boolean>(false);
   public prevLabel = input<string>('Previous record');
   public nextLabel = input<string>('Next record');
+
+  /** When > 0, replaces the subtitle with an amber "Unsaved changes · N fields" line. */
+  public dirtyFieldCount = input<number>(0);
 
   // Delete moved to the overflow menu. Suppressing the third button whenever
   // Delete is offered preserves the layout form-actions previously produced

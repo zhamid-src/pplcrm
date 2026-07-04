@@ -21,6 +21,7 @@
       buttonsToShow="two"
       [btn1Text]="isNew() ? 'Create event' : 'Save event'"
       [showDelete]="!isNew()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
       deleteText="Delete event"
       (save)="save($event)"
       (delete)="deleteEvent()"

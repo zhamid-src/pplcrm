@@ -12,6 +12,7 @@ import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AddTeamObj, AddTeamType, IAuthUser, UpdateTeamType } from '../../../../../../../libs/common/src';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 import { UserService } from '../../../services/user.service';
 import { ListsService } from '../../lists/services/lists-service';
@@ -70,6 +71,8 @@ export class TeamFormComponent implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, AddTeamObj);
   });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -225,6 +228,10 @@ export class TeamFormComponent implements OnInit {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this team');
   }
 
   protected async save(done?: (() => void) | Event) {

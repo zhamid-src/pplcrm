@@ -15,6 +15,7 @@ import { Card as PcCard } from '@uxcommon/components/card/card';
 
 import { UserAdminService } from '../services/useradmin-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-user-edit',
@@ -55,6 +56,8 @@ export class UserEditComponent {
     disabled(p.verified, () => true);
   });
 
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
   protected readonly displayName = computed(() => {
     const user = this.detail();
     if (!user) return '';
@@ -80,6 +83,10 @@ export class UserEditComponent {
         void this.load();
       });
     });
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.displayName() || 'this user');
   }
 
   protected async save(done?: (() => void) | Event) {

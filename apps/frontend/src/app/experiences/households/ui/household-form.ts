@@ -18,6 +18,7 @@ import { Households, AddressType } from '../../../../../../../libs/common/src/li
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-household-form',
@@ -80,6 +81,8 @@ export class HouseholdForm implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, UpdateHouseholdsObj);
   });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
 
   protected readonly addressString = computed(() => {
     const raw = this.payload();
@@ -237,6 +240,10 @@ export class HouseholdForm implements OnInit {
     } finally {
       end();
     }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.addressString() || 'this household');
   }
 
   protected save(done?: () => void) {

@@ -25,6 +25,7 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { ShiftsService } from '../services/shifts-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-shift-form',
@@ -109,6 +110,7 @@ export class ShiftFormComponent implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, AddVolunteerEventObj);
   });
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
   protected readonly isNew = computed(() => !this.id());
   protected readonly loading = this._loading.visible;
 
@@ -333,6 +335,10 @@ export class ShiftFormComponent implements OnInit {
     } catch (err) {
       this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove volunteer');
     }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this volunteer event');
   }
 
   protected async save(done?: (() => void) | Event) {

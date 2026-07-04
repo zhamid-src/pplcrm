@@ -1,5 +1,6 @@
 import type { Routes } from '@angular/router';
 import { roleGuard } from './auth/role-guard';
+import { unsavedChangesGuard } from './services/unsaved-changes-guard';
 
 export const dashboardRoutes: Routes = [
   { path: '', redirectTo: 'summary', pathMatch: 'full' },
@@ -20,6 +21,7 @@ export const dashboardRoutes: Routes = [
       {
         path: 'add',
         loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
       },
       {
         path: ':id',
@@ -28,6 +30,7 @@ export const dashboardRoutes: Routes = [
       {
         path: ':id/edit',
         loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
       },
     ],
   },
@@ -43,6 +46,7 @@ export const dashboardRoutes: Routes = [
       {
         path: 'add',
         loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
       },
       {
         path: ':id',
@@ -51,6 +55,7 @@ export const dashboardRoutes: Routes = [
       {
         path: ':id/edit',
         loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
       },
     ],
   },
@@ -168,13 +173,11 @@ export const dashboardRoutes: Routes = [
       },
       {
         path: 'add',
-        loadComponent: () =>
-          import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
       },
       {
         path: ':id',
-        loadComponent: () =>
-          import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
       },
     ],
   },
@@ -197,18 +200,17 @@ export const dashboardRoutes: Routes = [
           },
           {
             path: 'add',
-            loadComponent: () =>
-              import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
           },
           {
             path: ':id',
-            loadComponent: () =>
-              import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
+            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
           },
           {
             path: ':id/edit',
-            loadComponent: () =>
-              import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
           },
         ],
       },
@@ -217,24 +219,22 @@ export const dashboardRoutes: Routes = [
         children: [
           {
             path: '',
-            loadComponent: () =>
-              import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
+            loadComponent: () => import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
             data: { shouldReuse: true, key: 'eventpagesgridroot' },
           },
           {
             path: 'add',
-            loadComponent: () =>
-              import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
           },
           {
             path: ':id',
-            loadComponent: () =>
-              import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
+            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
           },
           {
             path: ':id/edit',
-            loadComponent: () =>
-              import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
           },
         ],
       },
@@ -296,6 +296,7 @@ export const dashboardRoutes: Routes = [
         path: 'add',
         loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
         data: { mode: 'new' },
+        canDeactivate: [unsavedChangesGuard],
       },
       {
         path: ':id',
@@ -305,6 +306,7 @@ export const dashboardRoutes: Routes = [
         path: ':id/edit',
         loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
         data: { mode: 'edit' },
+        canDeactivate: [unsavedChangesGuard],
       },
     ],
   },
@@ -320,6 +322,7 @@ export const dashboardRoutes: Routes = [
       {
         path: 'add',
         loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
+        canDeactivate: [unsavedChangesGuard],
       },
       {
         path: ':id',
@@ -328,6 +331,7 @@ export const dashboardRoutes: Routes = [
       {
         path: ':id/edit',
         loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
+        canDeactivate: [unsavedChangesGuard],
       },
     ],
   },
@@ -342,6 +346,7 @@ export const dashboardRoutes: Routes = [
       {
         path: 'add',
         loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
+        canDeactivate: [unsavedChangesGuard],
       },
       {
         path: ':id',
@@ -350,6 +355,7 @@ export const dashboardRoutes: Routes = [
       {
         path: ':id/edit',
         loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
+        canDeactivate: [unsavedChangesGuard],
       },
     ],
   },
@@ -431,6 +437,7 @@ export const dashboardRoutes: Routes = [
       {
         path: 'add',
         loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
       },
       {
         path: ':id',
@@ -439,6 +446,7 @@ export const dashboardRoutes: Routes = [
       {
         path: ':id/edit',
         loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
       },
     ],
   },

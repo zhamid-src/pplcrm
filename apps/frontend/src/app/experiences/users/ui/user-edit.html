@@ -19,6 +19,7 @@
     buttonsToShow="two"
     btn1Text="Save user"
     [showDelete]="true"
+    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
     deleteText="Delete user"
     (save)="save($event)"
     (delete)="deleteUser()"

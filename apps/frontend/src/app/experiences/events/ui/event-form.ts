@@ -19,6 +19,7 @@ import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../..
 import { EventsService } from '../../../services/api/events-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { EventsFrontendService } from '../services/events-frontend-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-event-form',
@@ -89,6 +90,7 @@ export class EventFormComponent implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, AddEventObj);
   });
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
   protected readonly isNew = computed(() => !this.id());
   protected readonly loading = this._loading.visible;
   protected readonly newTicket = signal({ name: '', description: '', price_cents: 0, capacity: null as number | null });
@@ -253,6 +255,10 @@ export class EventFormComponent implements OnInit {
 
   protected onSlugInput() {
     this.slugManuallyEdited = true;
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this event');
   }
 
   protected async save(done?: (() => void) | Event) {
