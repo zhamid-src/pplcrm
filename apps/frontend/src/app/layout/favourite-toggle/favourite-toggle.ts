@@ -1,20 +1,26 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { ISidebarItem } from '../sidebar/sidebar-items';
 import { SidebarService } from '../sidebar/sidebar-service';
 
 /**
- * Bookmark button for the navbar: favourites the sidebar item matching the
- * current route. Extracted from the retired URL-segment breadcrumb bar; page
- * orientation is now handled by pc-breadcrumbs inside each page header.
+ * Pin button for the navbar: pins the sidebar item matching the current route
+ * into the PINS section. Extracted from the retired URL-segment breadcrumb bar;
+ * page orientation is now handled by pc-breadcrumbs inside each page header.
+ *
+ * Sidebar pins hold sections (People, Inbox…), not records. On a record page
+ * (/people/amira-hassan) the button dims and both the tooltip and a toast
+ * explain that only main pages can be pinned — the icon stays present (§1
+ * disclosure over suppression) rather than vanishing.
  */
 @Component({
   selector: 'pc-favourite-toggle',
   imports: [Icon],
   template: `
-    @if (canToggleFavourite()) {
+    @if (visible()) {
       <button
         type="button"
         class="btn btn-circle btn-ghost btn-sm tooltip tooltip-bottom"
@@ -22,13 +28,15 @@ import { SidebarService } from '../sidebar/sidebar-service';
         [attr.data-tip]="tooltip()"
         (mouseenter)="hovered.set(true)"
         (mouseleave)="hovered.set(false)"
-        (click)="toggleFavourite()"
+        (click)="onClick()"
       >
         <pc-icon
           [name]="iconName()"
           [size]="5"
-          class="text-base-400 hover:text-primary"
-          [class.text-primary]="favourite()"
+          class="text-base-400 hover:text-primary transition-opacity"
+          [class.text-primary]="favourite() && pinnable()"
+          [class.opacity-40]="!pinnable()"
+          [class.hover:text-base-400]="!pinnable()"
         ></pc-icon>
       </button>
     }
@@ -37,6 +45,7 @@ import { SidebarService } from '../sidebar/sidebar-service';
 export class FavouriteToggle {
   private readonly router = inject(Router);
   private readonly sidebarSvc = inject(SidebarService);
+  private readonly alertSvc = inject(AlertService);
 
   private readonly navigationUrl = computed(() => {
     const navigation = this.router.currentNavigation();
@@ -50,44 +59,51 @@ export class FavouriteToggle {
   private currentItem?: ISidebarItem;
   protected readonly favourite = signal(false);
   protected readonly hovered = signal(false);
-  protected readonly canToggleFavourite = signal(false);
+  protected readonly pinnable = signal(false);
+  protected readonly visible = signal(false);
   protected readonly itemName = signal('');
 
   protected readonly iconName = computed(() => {
+    if (!this.pinnable()) return 'bookmark';
     if (this.favourite()) return this.hovered() ? 'bookmark-slash' : 'bookmark-filled';
     return this.hovered() ? 'bookmark-plus' : 'bookmark';
   });
 
-  protected readonly tooltip = computed(() =>
-    this.favourite()
-      ? `Remove '${this.itemName()}' from sidebar bookmarks`
-      : `Bookmark '${this.itemName()}' in the sidebar`,
-  );
+  protected readonly tooltip = computed(() => {
+    if (!this.pinnable()) return `Only main pages can be pinned — open ${this.itemName()} to pin it`;
+    return this.favourite() ? `Unpin ${this.itemName()} from the sidebar` : `Pin ${this.itemName()} to the sidebar`;
+  });
 
   constructor() {
     effect(() => this.handleNavigationChange(this.navigationUrl()));
   }
 
-  protected toggleFavourite(): void {
-    if (!this.currentItem?.route) {
+  protected onClick(): void {
+    if (!this.pinnable()) {
+      // Record page: narrate the reason instead of silently doing nothing.
+      this.alertSvc.showInfo(`Only main pages can be pinned — open ${this.itemName()} to pin it.`);
       return;
     }
+    if (!this.currentItem?.route) return;
+
     const next = this.sidebarSvc.toggleFavourite(this.currentItem.route);
     this.favourite.set(next);
     this.currentItem.favourite = next;
+    // Narrate both directions (§1).
+    if (next) this.alertSvc.showSuccess(`Pinned ${this.itemName()} to the sidebar.`);
+    else this.alertSvc.showInfo(`Removed ${this.itemName()} from your pins.`);
   }
 
   private handleNavigationChange(url: string): void {
     const item = this.sidebarSvc.findItemForUrl(url);
-    // Sidebar bookmarks hold sections, not records. The service matches by
-    // prefix, so on a record page (/people/123) the star would read as
-    // "bookmark this person" while actually bookmarking People — only offer
-    // the toggle when the URL is the sidebar item's own page.
     const exact = !!item?.route && this.normalizePath(url) === this.normalizePath(item.route);
     this.currentItem = exact ? item : undefined;
     this.favourite.set(exact && !!item?.favourite);
-    this.canToggleFavourite.set(exact);
-    this.itemName.set(exact ? (item?.name ?? '') : '');
+    this.pinnable.set(exact);
+    // Show the (dimmed) control whenever the URL maps to a known section, so a
+    // record page still explains why it can't be pinned; hide only on unknown routes.
+    this.visible.set(!!item?.route);
+    this.itemName.set(item?.name ?? '');
   }
 
   private normalizePath(route: string): string {

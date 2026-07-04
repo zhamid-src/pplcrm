@@ -5308,6 +5308,97 @@ export class ListsRefreshService {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/lists/services/lists-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import {
+  AddListType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  UpdateListType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Service()
+export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
+  protected override readonly endpointName = 'lists';
+
+  public add(row: AddListType) {
+    return (this.api.lists.add.mutate as unknown as (input: any, opts: any) => Promise<any>)(row, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public addMany(rows: AddListType[]) {
+    return Promise.resolve(rows);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.lists.count.query();
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.getAllWithCounts(options);
+  }
+
+  // We don't support archives
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public getAllWithCounts(options?: getAllOptionsType) {
+    return this.api.lists.getAllWithCounts.query(options, { signal: this.ac.signal });
+  }
+
+  public getById(id: string) {
+    return this.api.lists.getById.query(id);
+  }
+
+  public getMembersHouseholds(list_id: string) {
+    return this.api.lists.getMembersHouseholds.query(list_id);
+  }
+
+  public getMembersPersons(list_id: string) {
+    return this.api.lists.getMembersPersons.query(list_id);
+  }
+
+  public async getTags(_id: string) {
+    return [];
+  }
+
+  public update(id: string, data: UpdateListType) {
+    return this.api.lists.update.mutate({ id, data });
+  }
+
+  public refreshList(id: string) {
+    return this.api.lists.refresh.mutate(id);
+  }
+
+  public getListStats(id: string) {
+    return this.api.lists.getListStats.query(id);
+  }
+
+  public getMemberCount(id: string): Promise<number> {
+    return this.api.lists.getMemberCount.query(id);
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.lists.exportCsv.mutate(input);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/lists/ui/list-form.html
 
 ```html
@@ -15278,10 +15369,13 @@ export class VolunteerService extends TRPCService<'volunteer_events'> {
 ## File: apps/frontend/src/app/services/fullscreen.service.ts
 
 ```typescript
-import { signal, Service } from '@angular/core';
+import { inject, signal, Service } from '@angular/core';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 @Service()
 export class FullScreenService {
+  private readonly alertSvc = inject(AlertService);
   private readonly _isFullScreen = signal<boolean>(false);
 
   constructor() {
@@ -15327,6 +15421,7 @@ export class FullScreenService {
       // state will be updated by the fullscreenchange listener
     } catch (e) {
       console.error('Failed to enter fullscreen:', e);
+      this.alertSvc.showError('Could not enter full screen — your browser blocked the request.');
     }
   }
 
@@ -15348,6 +15443,7 @@ export class FullScreenService {
       // state will be updated by the fullscreenchange listener
     } catch (e) {
       console.error('Failed to exit fullscreen:', e);
+      this.alertSvc.showError('Could not exit full screen.');
     }
   }
 
@@ -16163,116 +16259,6 @@ interface ImportMeta {
 }
 ```
 
-## File: apps/frontend/src/index.html
-
-```html
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>People CRM for your campaigns</title>
-    <base href="/" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" type="image/x-icon" href="favicon.ico" />
-  </head>
-
-  <body class="min-h-full grid">
-    <pc-root class="min-h-screen">
-      <div class="flex flex-row">
-        <div class="w-64 animate-pulse flex-col space-y-5 border-gray-200 p-4 shadow dark:border-gray-700">
-          <div class="skeleton mb-4 mt-2 h-6 rounded-md"></div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-          <div class="flex flex-row gap-6">
-            <div class="skeleton avatar h-6 w-6"></div>
-            <div class="skeleton h-6 grow rounded-md"></div>
-          </div>
-        </div>
-        <div class="h-14 grow animate-pulse border-gray-200 shadow dark:border-gray-700">
-          <div class="flex flex-row justify-end gap-4 p-4 align-middle">
-            <div class="avatar skeleton h-6 w-6"></div>
-            <div class="avatar skeleton h-6 w-6"></div>
-            <div class="avatar skeleton h-6 w-6"></div>
-            <div class="avatar skeleton h-8 w-8"></div>
-          </div>
-          <div
-            class="skeleton flex h-10 max-w-screen-md animate-pulse flex-row gap-10 rounded-none border-gray-200 shadow dark:border-gray-700"
-          ></div>
-          <div
-            class="h-10 max-w-screen-md animate-pulse justify-evenly border-gray-200 align-middle shadow dark:border-gray-700"
-          ></div>
-          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
-          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
-          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
-          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
-          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
-          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
-          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
-          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
-          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
-          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
-          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
-        </div>
-      </div>
-    </pc-root>
-  </body>
-</html>
-```
-
 ## File: apps/frontend/src/main.ts
 
 ```typescript
@@ -16283,376 +16269,6 @@ import { AppComponent } from './app/app';
 import { appConfig } from './app/app.config';
 
 bootstrapApplication(AppComponent, appConfig).catch((err) => console.error(err));
-```
-
-## File: apps/frontend/src/styles.css
-
-```css
-@import 'tailwindcss';
-@plugin "daisyui";
-@plugin "@tailwindcss/typography";
-
-/* styles.css */
-@import 'quill/dist/quill.snow.css';
-
-/* Self-hosted app font — bundled from node_modules, no external font CDN */
-@import '@fontsource-variable/inter';
-
-@plugin "daisyui/theme" {
-  name: 'light';
-  default: true;
-  --color-primary: #0ea5e9;
-  --color-secondary: #14e8a6;
-  --color-secondary-content: #1f2937;
-  --color-accent: #0c506e;
-  --color-accent-content: #f0f0f0;
-  --color-neutral: #cbd5e1;
-  --color-neutral-content: #1f2937;
-  --color-base-100: #ffffff;
-  --color-base-200: #f8f8f8ff;
-  --color-base-300: #efeeeeff;
-  --color-info: #38bdf8;
-  --color-success: #2dd4bf;
-  --color-warning: #e5c963;
-  --color-error: #f37373;
-  --color-error-content: #f0f0f0;
-
-  --tooltip-bg: #333333;
-  --tooltip-color: #eeeeee;
-  --color-placeholder: #9ca3af;
-}
-
-.input::placeholder,
-textarea::placeholder,
-label.input input::placeholder,
-label.input textarea::placeholder,
-label.input pc-icon {
-  color: var(--color-placeholder);
-}
-
-/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
-label.input input {
-  flex-grow: 1;
-  width: 100%;
-}
-
-/* Prevent browser autofill from coloring the background, preserving transparency */
-label.input input:-webkit-autofill,
-label.input input:-webkit-autofill:hover,
-label.input input:-webkit-autofill:focus,
-label.input input:-webkit-autofill:active {
-  transition: background-color 5000s ease-in-out 0s;
-  -webkit-text-fill-color: inherit !important;
-}
-
-@plugin "daisyui/theme" {
-  name: 'dark';
-
-  /* Brand / accent */
-  --color-primary: #3ea6ff; /* bright azure */
-  --color-secondary: #20d7a7; /* teal pop (optional) */
-  --color-accent: #3ea6ff;
-  --color-accent-content: #f0f6ff; /* light text on blue */
-
-  /* Text + neutrals */
-  --color-neutral: #0e182b; /* chrome / panels */
-  --color-neutral-content: #c7d1e5; /* default text on dark */
-
-  /* Surfaces */
-  --color-base-100: #0b1220; /* app/page background */
-  --color-base-200: #131e31; /* row alt / subtle surface */
-  --color-base-300: #1a2b45; /* headers / raised surface */
-
-  /* Feedback */
-  --color-info: #3ea6ff;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
-
-  /* Tooltips */
-  --tooltip-bg: #0e1626;
-  --tooltip-color: #e6edf7;
-}
-
-html,
-body {
-  height: 100vh;
-}
-
-body {
-  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  font-weight: 400;
-}
-
-/* Custom scrollbar styles for email components */
-.email-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #d1d5db #f3f4f6;
-}
-
-.email-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.email-scrollbar::-webkit-scrollbar-track {
-  background: #f3f4f6;
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
-}
-
-.bg-image {
-  background-image: url('assets/bg.jpg');
-  background-size: cover; /* scale to cover entire container */
-  background-position: center; /* keep it centered */
-  background-repeat: no-repeat; /* prevent tiling */
-}
-
-/* AG Grid legacy themes removed */
-
-@layer utilities {
-  /* Ensure mentions inside chat bubbles are inline */
-  .chat-bubble [data-mention] {
-    display: inline;
-  }
-
-  /* In composer mirrors, keep mention width identical to textarea text
-     to avoid caret drift. Use underline instead of bold in the mirror. */
-  .composer-mirror [data-mention] {
-    font-weight: inherit !important;
-    text-decoration: underline;
-  }
-
-  @keyframes up {
-    0% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes down {
-    0% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes right {
-    0% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes left {
-    0% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes drop {
-    0% {
-      transform: scale(0.95);
-      opacity: 0;
-    }
-    100% {
-      transform: scale(1);
-      opacity: 1;
-    }
-  }
-  @keyframes flash {
-    0% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-    100% {
-      opacity: 1;
-    }
-  }
-
-  @keyframes exitUp {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitDown {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitRight {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitLeft {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-  }
-
-  .animate-up {
-    animation: up 0.3s ease-in-out both;
-  }
-  .animate-down {
-    animation: down 0.3s ease-in-out both;
-  }
-  .animate-right {
-    animation: right 0.3s ease-in-out both;
-  }
-  .animate-left {
-    animation: left 0.3s ease-in-out both;
-  }
-  .animate-drop {
-    animation: drop 0.3s ease-in-out both;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out;
-  }
-  .animate-exit-up {
-    animation: exitUp 0.3s ease-in-out forwards;
-  }
-  .animate-exit-down {
-    animation: exitDown 0.3s ease-in-out forwards;
-  }
-  .animate-exit-left {
-    animation: exitLeft 0.3s ease-in-out forwards;
-  }
-  .animate-exit-right {
-    animation: exitRight 0.3s ease-in-out forwards;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out 1;
-  }
-}
-
-/* Dark mode overrides for Quill and email prose */
-[data-theme='dark'] .ql-toolbar.ql-snow,
-[data-theme='dark'] .ql-container.ql-snow {
-  border-color: var(--color-base-300) !important;
-  background-color: var(--color-base-100) !important;
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-stroke {
-  stroke: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-fill {
-  fill: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker-options {
-  background-color: var(--color-base-300) !important;
-  border-color: var(--color-base-100) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
-  color: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
-  stroke: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
-  color: var(--color-placeholder) !important;
-}
-[data-theme='dark'] .prose {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .prose h1,
-[data-theme='dark'] .prose h2,
-[data-theme='dark'] .prose h3,
-[data-theme='dark'] .prose h4,
-[data-theme='dark'] .prose h5,
-[data-theme='dark'] .prose h6,
-[data-theme='dark'] .prose strong,
-[data-theme='dark'] .prose b,
-[data-theme='dark'] .prose a {
-  color: var(--color-neutral-content) !important;
-}
-
-/* Ensure closed dropdown contents do not intercept pointer events or hover */
-.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
-  visibility: hidden !important;
-  pointer-events: none !important;
-  opacity: 0 !important;
-}
-
-/* Allow dropdown-hover to work if ever used in the future */
-.dropdown.dropdown-hover:hover .dropdown-content {
-  visibility: visible !important;
-  pointer-events: auto !important;
-  opacity: 1 !important;
-}
-
-/* Ensure tooltip text is consistently normal weight and not bold */
-.tooltip:before,
-.tooltip::before {
-  font-weight: 300 !important;
-}
-
-/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
-.menu details.dropdown {
-  overflow: visible !important;
-}
 ```
 
 ## File: apps/frontend/src/svg.d.ts
@@ -19525,97 +19141,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/lists/services/lists-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import {
-  AddListType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  UpdateListType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Service()
-export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
-  protected override readonly endpointName = 'lists';
-
-  public add(row: AddListType) {
-    return (this.api.lists.add.mutate as unknown as (input: any, opts: any) => Promise<any>)(row, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public addMany(rows: AddListType[]) {
-    return Promise.resolve(rows);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return this.api.lists.count.query();
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.getAllWithCounts(options);
-  }
-
-  // We don't support archives
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public getAllWithCounts(options?: getAllOptionsType) {
-    return this.api.lists.getAllWithCounts.query(options, { signal: this.ac.signal });
-  }
-
-  public getById(id: string) {
-    return this.api.lists.getById.query(id);
-  }
-
-  public getMembersHouseholds(list_id: string) {
-    return this.api.lists.getMembersHouseholds.query(list_id);
-  }
-
-  public getMembersPersons(list_id: string) {
-    return this.api.lists.getMembersPersons.query(list_id);
-  }
-
-  public async getTags(_id: string) {
-    return [];
-  }
-
-  public update(id: string, data: UpdateListType) {
-    return this.api.lists.update.mutate({ id, data });
-  }
-
-  public refreshList(id: string) {
-    return this.api.lists.refresh.mutate(id);
-  }
-
-  public getListStats(id: string) {
-    return this.api.lists.getListStats.query(id);
-  }
-
-  public getMemberCount(id: string): Promise<number> {
-    return this.api.lists.getMemberCount.query(id);
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.lists.exportCsv.mutate(input);
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.ts
 
 ```typescript
@@ -20720,6 +20245,171 @@ export class NewslettersDashboardComponent {
     return new Intl.NumberFormat().format(value);
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  PERSONINHOUSEHOLDTYPE,
+  UpdatePersonsType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
+
+@Service()
+export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
+  protected override readonly endpointName = 'persons';
+
+  public add(row: UpdatePersonsType, options?: any) {
+    return this.api.persons.add.mutate(row, options);
+  }
+
+  public addMany(rows: UpdatePersonsType[]) {
+    return Promise.resolve(rows);
+  }
+
+  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.persons.attachTag.mutate({ id: id, tag_name, type });
+  }
+
+  public count(): Promise<number> {
+    return this.api.persons.count.query();
+  }
+  public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
+    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
+    if (force !== undefined) {
+      return (await this.api.persons.delete.mutate({ id, force }, opts as any)) !== null;
+    }
+    return (await this.api.persons.delete.mutate(id, opts as any)) !== null;
+  }
+
+  public override async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
+    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
+    if (force !== undefined) {
+      return await this.api.persons.deleteMany.mutate({ ids, force }, opts as any);
+    }
+    return await this.api.persons.deleteMany.mutate(ids, opts as any);
+  }
+  public moveEntireHousehold(fromHouseholdId: string, toHouseholdId: string) {
+    return this.api.persons.moveEntireHousehold.mutate({ fromHouseholdId, toHouseholdId });
+  }
+
+  public detachTag(
+    id: string,
+    tag_name: string,
+    type?: 'tag' | 'issue',
+  ): Promise<RouterOutputs['persons']['detachTag']> {
+    return this.api.persons.detachTag.mutate({ id, tag_name, type });
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.getAllWithAddress(options);
+  }
+
+  // We don't support archives
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public async getAllWithAddress(options?: getAllOptionsType) {
+    return this.api.persons.getAllWithAddress.query(options, {
+      signal: this.ac.signal,
+    });
+  }
+
+  public getByHouseholdId(id: string, options?: getAllOptionsType) {
+    return this.api.persons.getByHouseholdId.query({ id: id, options });
+  }
+
+  public getByCompanyId(id: string, options?: getAllOptionsType) {
+    return this.api.persons.getByCompanyId.query({ id: id, options });
+  }
+
+  public countByCompanyId(id: string): Promise<number> {
+    return this.api.persons.countByCompanyId.query({ id });
+  }
+
+  public getById(id: string) {
+    return this.api.persons.getById.query(id);
+  }
+
+  public async getPeopleInHousehold(id: string | null | undefined, options?: getAllOptionsType) {
+    if (!id) {
+      return [];
+    }
+
+    const requiredColumns = ['id', 'first_name', 'middle_names', 'last_name'];
+    const mergedColumns = Array.from(new Set([...(options?.columns ?? []), ...requiredColumns]));
+    const requestOptions = {
+      ...options,
+      columns: mergedColumns,
+    };
+
+    const peopleInHousehold = (await this.getByHouseholdId(id, requestOptions)) as PERSONINHOUSEHOLDTYPE[];
+
+    return peopleInHousehold.map((person) => {
+      return {
+        ...person,
+        full_name: `${person.first_name || ''} ${person.middle_names || ''} ${person.last_name || ''}`.trim(),
+      };
+    });
+  }
+
+  public getActivity(id: string) {
+    return this.api.persons.getActivity.query(id);
+  }
+
+  public async getTags(id: string, type?: 'tag' | 'issue') {
+    const tags = await this.api.persons.getTags.query({ id, type });
+    return tags.map((tag: { name: string }) => tag.name);
+  }
+
+  public import(
+    rows: RouterInputs['persons']['import']['rows'],
+    tags: string[] = [],
+    skipped = 0,
+    fileName?: string | null,
+  ): Promise<RouterOutputs['persons']['import']> {
+    // Opt-out of global error toast; importer UI shows a scoped summary instead
+    return this.api.persons.import.mutate({ rows, tags, skipped, file_name: fileName ?? undefined }, {
+      context: { skipErrorHandler: true },
+    } as any);
+  }
+
+  public async removeHousehold(id: string) {
+    return this.api.persons.removeHousehold.mutate(id);
+  }
+
+  public async update(id: string, data: UpdatePersonsType, options?: any) {
+    return this.api.persons.update.mutate({ id: id, data }, options);
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.persons.exportCsv.mutate(input);
+  }
+
+  public getPotentialDuplicates(
+    options?: RouterInputs['persons']['getPotentialDuplicates'],
+  ): Promise<RouterOutputs['persons']['getPotentialDuplicates']> {
+    return this.api.persons.getPotentialDuplicates.query(options);
+  }
+
+  public getDuplicateCounts(): Promise<RouterOutputs['persons']['getDuplicateCounts']> {
+    return this.api.persons.getDuplicateCounts.query();
+  }
+
+  public mergePersons(target_id: string, source_id: string): Promise<RouterOutputs['persons']['mergePersons']> {
+    return this.api.persons.mergePersons.mutate({ target_id, source_id });
+  }
+}
+
+export type DATA_TYPE = 'persons' | 'households';
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/connection-card.ts
@@ -23360,6 +23050,81 @@ export class TeamsGridComponent {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthUserDetail,
+  IAuthUserRecord,
+  InviteAuthUserType,
+  UpdateAuthUserType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Service()
+export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
+  protected override readonly endpointName = 'authusers';
+
+  public add(row: InviteAuthUserType) {
+    return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public addMany(_rows: InviteAuthUserType[]) {
+    return Promise.resolve([]);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.authusers.count.query();
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal }) as Promise<{
+      rows: Record<string, unknown>[];
+      count: number;
+    }>;
+  }
+
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public getById(id: string) {
+    return this.api.authusers.getById.query(id) as Promise<IAuthUserDetail>;
+  }
+
+  public getTags(_id: string) {
+    return Promise.resolve([]);
+  }
+
+  public update(id: string, data: UpdateAuthUserType) {
+    return this.api.authusers.update.mutate({ id, data }) as Promise<IAuthUserRecord>;
+  }
+
+  public adminTriggerPasswordReset(id: string): Promise<{ success: boolean }> {
+    return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
+  }
+
+  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return Promise.reject(new Error('User export is not available'));
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflows-grid.ts
 
 ```typescript
@@ -23561,9 +23326,6 @@ export class Dashboard {
       name="magnifying-glass"
     ></pc-icon>
 
-    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
-    <pc-favourite-toggle></pc-favourite-toggle>
-
     <pc-swap
       class="hover:text-primary text-base-400 cursor-pointer"
       swapOnIcon="arrows-pointing-out"
@@ -23573,6 +23335,9 @@ export class Dashboard {
       aria-label="Toggle full screen"
       i18n-aria-label="@@navbar.fullscreen.ariaLabel"
     ></pc-swap>
+
+    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
+    <pc-favourite-toggle></pc-favourite-toggle>
 
     <!-- light / dark theme switcher -->
     <pc-swap
@@ -23770,6 +23535,8 @@ export interface ISidebarItem {
   hiddenByFavourite?: boolean;
   icon?: PcIconNameType;
   indicator?: boolean;
+  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
+  justPinned?: boolean;
   name: string;
   parent?: ISidebarItem;
   pathMatchExact?: boolean;
@@ -23975,6 +23742,8 @@ export class SidebarService {
   private readonly drawerStateSubject = signal<DrawerStates>(this.getState());
   private readonly isMobileOpenSubject = signal<boolean>(false);
   private favourites = new Set<string>();
+  /** Route of the item just pinned, so its clone plays the `up` entry once. */
+  private pendingAnimateRoute?: string;
   private readonly itemsSignal = signal<ISidebarItem[]>(SidebarItems);
   private get items() {
     return this.itemsSignal();
@@ -24039,6 +23808,7 @@ export class SidebarService {
 
     if (favourite) {
       this.favourites.add(normalizedRoute);
+      this.pendingAnimateRoute = normalizedRoute;
     } else {
       this.favourites.delete(normalizedRoute);
     }
@@ -24181,7 +23951,12 @@ export class SidebarService {
     const favouriteItems = this.flattenItems(currentItems)
       .filter((item) => item.type !== 'bookmark' && item.parent?.type !== 'bookmark')
       .filter((item) => !!item.route && favouriteRoutes.has(this.normalizeRoute(item.route!)))
-      .map((item) => this.cloneForFavourite(item, favouritesSection));
+      .map((item) => {
+        const clone = this.cloneForFavourite(item, favouritesSection);
+        clone.justPinned =
+          !!this.pendingAnimateRoute && !!item.route && this.normalizeRoute(item.route) === this.pendingAnimateRoute;
+        return clone;
+      });
 
     const updatedSection: ISidebarItem = {
       ...favouritesSection,
@@ -24192,6 +23967,8 @@ export class SidebarService {
     const updatedItems = [...currentItems];
     updatedItems[favouritesSectionIndex] = updatedSection;
     this.itemsSignal.set(updatedItems);
+    // Entry animation is a one-shot; clear so subsequent rebuilds don't replay it.
+    this.pendingAnimateRoute = undefined;
   }
 
   private setState(state: DrawerStates) {
@@ -24511,6 +24288,89 @@ export function getUserErrorMessage(error: unknown, fallback: string): string {
     return error.message;
   }
   return fallback;
+}
+```
+
+## File: apps/frontend/src/app/services/error.service.ts
+
+```typescript
+import { inject, Service } from '@angular/core';
+import { Router } from '@angular/router';
+import { JSendServerError } from '../../../../../libs/common/src';
+import { TRPCClientError } from '@trpc/client';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ApiError } from './api/api-error';
+import { getUserErrorMessage } from './api/user-message';
+
+import { TokenService } from './api/token-service';
+
+@Service()
+export class ErrorService {
+  private readonly alerts = inject(AlertService);
+  private readonly router = inject(Router);
+  private readonly tokenSvc = inject(TokenService);
+
+  private lastRedirect = 0;
+
+  public handle(error: unknown): void {
+    console.error('ErrorService.handle:', error);
+    // Handle JSend server errors produced by the HTTP interceptor
+    if (error instanceof JSendServerError) {
+      if (!this.redirectFromStatus(error.statusCode)) {
+        this.alerts.showError(error.messageText);
+      }
+      return;
+    }
+
+    if (error instanceof TRPCClientError) {
+      const code = error.data?.code;
+      if (!this.redirectFromCode(code)) {
+        this.alerts.showError(error.message);
+      }
+      return;
+    }
+
+    if (error instanceof ApiError) {
+      const original = error.originalError;
+      if (original instanceof TRPCClientError) {
+        const code = original.data?.code;
+        if (!this.redirectFromCode(code)) {
+          this.alerts.showError(error.message);
+        }
+        return;
+      }
+      this.alerts.showError(error.message);
+      return;
+    }
+
+    // Uncaught exceptions land here via GlobalErrorHandler — never show their
+    // raw message (e.g. a TypeError) to the user; the console has the details.
+    this.alerts.showError(getUserErrorMessage(error, 'Something went wrong, please try again'));
+  }
+
+  private redirect(): boolean {
+    const now = Date.now();
+    if (now - this.lastRedirect < 3000) return false;
+    this.lastRedirect = now;
+
+    this.tokenSvc.clearAll();
+    const returnUrl = this.router.url;
+    void this.router.navigate(['/signin'], { queryParams: { returnUrl } });
+    return true;
+  }
+
+  private redirectFromCode(code?: string): boolean {
+    if (code === 'UNAUTHORIZED' && !this.router.url.startsWith('/signin') && !this.router.url.startsWith('/signup')) {
+      this.redirect();
+      return true;
+    }
+    return false;
+  }
+
+  private redirectFromStatus(status?: number): boolean {
+    if (status === 401) return this.redirect();
+    return false;
+  }
 }
 ```
 
@@ -27319,6 +27179,486 @@ export const dashboardRoutes: Routes = [
 ];
 ```
 
+## File: apps/frontend/src/index.html
+
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>People CRM for your campaigns</title>
+    <base href="/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+  </head>
+
+  <body class="min-h-full grid">
+    <pc-root class="min-h-screen">
+      <div class="flex flex-row">
+        <div class="w-64 animate-pulse flex-col space-y-5 border-gray-200 p-4 shadow dark:border-gray-700">
+          <div class="skeleton mb-4 mt-2 h-6 rounded-md"></div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+          <div class="flex flex-row gap-6">
+            <div class="skeleton avatar h-6 w-6"></div>
+            <div class="skeleton h-6 grow rounded-md"></div>
+          </div>
+        </div>
+        <div class="h-14 grow animate-pulse border-gray-200 shadow dark:border-gray-700">
+          <div class="flex flex-row justify-end gap-4 p-4 align-middle">
+            <div class="avatar skeleton h-6 w-6"></div>
+            <div class="avatar skeleton h-6 w-6"></div>
+            <div class="avatar skeleton h-6 w-6"></div>
+            <div class="avatar skeleton h-8 w-8"></div>
+          </div>
+          <div
+            class="skeleton flex h-10 max-w-screen-md animate-pulse flex-row gap-10 rounded-none border-gray-200 shadow dark:border-gray-700"
+          ></div>
+          <div
+            class="h-10 max-w-screen-md animate-pulse justify-evenly border-gray-200 align-middle shadow dark:border-gray-700"
+          ></div>
+          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
+          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
+          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
+          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
+          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
+          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
+          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
+          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
+          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
+          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
+          <div class="h-10 max-w-screen-md animate-pulse border-gray-200 shadow dark:border-gray-700"></div>
+        </div>
+      </div>
+    </pc-root>
+  </body>
+</html>
+```
+
+## File: apps/frontend/src/styles.css
+
+```css
+@import 'tailwindcss';
+@plugin "daisyui";
+@plugin "@tailwindcss/typography";
+
+/* styles.css */
+@import 'quill/dist/quill.snow.css';
+
+/* Self-hosted app font — bundled from node_modules, no external font CDN */
+@import '@fontsource-variable/inter';
+
+@plugin "daisyui/theme" {
+  name: 'light';
+  default: true;
+  --color-primary: #0ea5e9;
+  --color-secondary: #14e8a6;
+  --color-secondary-content: #1f2937;
+  --color-accent: #0c506e;
+  --color-accent-content: #f0f0f0;
+  --color-neutral: #cbd5e1;
+  --color-neutral-content: #1f2937;
+  --color-base-100: #ffffff;
+  --color-base-200: #f8f8f8ff;
+  --color-base-300: #efeeeeff;
+  --color-info: #38bdf8;
+  --color-success: #2dd4bf;
+  --color-warning: #e5c963;
+  --color-error: #f37373;
+  --color-error-content: #f0f0f0;
+
+  --tooltip-bg: #333333;
+  --tooltip-color: #eeeeee;
+  --color-placeholder: #9ca3af;
+}
+
+.input::placeholder,
+textarea::placeholder,
+label.input input::placeholder,
+label.input textarea::placeholder,
+label.input pc-icon {
+  color: var(--color-placeholder);
+}
+
+/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
+label.input input {
+  flex-grow: 1;
+  width: 100%;
+}
+
+/* Prevent browser autofill from coloring the background, preserving transparency */
+label.input input:-webkit-autofill,
+label.input input:-webkit-autofill:hover,
+label.input input:-webkit-autofill:focus,
+label.input input:-webkit-autofill:active {
+  transition: background-color 5000s ease-in-out 0s;
+  -webkit-text-fill-color: inherit !important;
+}
+
+@plugin "daisyui/theme" {
+  name: 'dark';
+
+  /* Brand / accent */
+  --color-primary: #3ea6ff; /* bright azure */
+  --color-secondary: #20d7a7; /* teal pop (optional) */
+  --color-accent: #3ea6ff;
+  --color-accent-content: #f0f6ff; /* light text on blue */
+
+  /* Text + neutrals */
+  --color-neutral: #0e182b; /* chrome / panels */
+  --color-neutral-content: #c7d1e5; /* default text on dark */
+
+  /* Surfaces */
+  --color-base-100: #0b1220; /* app/page background */
+  --color-base-200: #131e31; /* row alt / subtle surface */
+  --color-base-300: #1a2b45; /* headers / raised surface */
+
+  /* Feedback */
+  --color-info: #3ea6ff;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+
+  /* Tooltips */
+  --tooltip-bg: #0e1626;
+  --tooltip-color: #e6edf7;
+}
+
+html,
+body {
+  height: 100vh;
+}
+
+body {
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+}
+
+/* Custom scrollbar styles for email components */
+.email-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db #f3f4f6;
+}
+
+.email-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.email-scrollbar::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+.bg-image {
+  background-image: url('assets/bg.jpg');
+  background-size: cover; /* scale to cover entire container */
+  background-position: center; /* keep it centered */
+  background-repeat: no-repeat; /* prevent tiling */
+}
+
+/* AG Grid legacy themes removed */
+
+@layer utilities {
+  /* Ensure mentions inside chat bubbles are inline */
+  .chat-bubble [data-mention] {
+    display: inline;
+  }
+
+  /* In composer mirrors, keep mention width identical to textarea text
+     to avoid caret drift. Use underline instead of bold in the mirror. */
+  .composer-mirror [data-mention] {
+    font-weight: inherit !important;
+    text-decoration: underline;
+  }
+
+  @keyframes up {
+    0% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes down {
+    0% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes right {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes left {
+    0% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes drop {
+    0% {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes flash {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes exitUp {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitDown {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitRight {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitLeft {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+  }
+
+  .animate-up {
+    animation: up 0.3s ease-in-out both;
+  }
+  .animate-down {
+    animation: down 0.3s ease-in-out both;
+  }
+  .animate-right {
+    animation: right 0.3s ease-in-out both;
+  }
+  .animate-left {
+    animation: left 0.3s ease-in-out both;
+  }
+  .animate-drop {
+    animation: drop 0.3s ease-in-out both;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out;
+  }
+  .animate-exit-up {
+    animation: exitUp 0.3s ease-in-out forwards;
+  }
+  .animate-exit-down {
+    animation: exitDown 0.3s ease-in-out forwards;
+  }
+  .animate-exit-left {
+    animation: exitLeft 0.3s ease-in-out forwards;
+  }
+  .animate-exit-right {
+    animation: exitRight 0.3s ease-in-out forwards;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out 1;
+  }
+}
+
+/* Dark mode overrides for Quill and email prose */
+[data-theme='dark'] .ql-toolbar.ql-snow,
+[data-theme='dark'] .ql-container.ql-snow {
+  border-color: var(--color-base-300) !important;
+  background-color: var(--color-base-100) !important;
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-stroke {
+  stroke: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-fill {
+  fill: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker-options {
+  background-color: var(--color-base-300) !important;
+  border-color: var(--color-base-100) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
+  color: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
+  stroke: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
+  color: var(--color-placeholder) !important;
+}
+[data-theme='dark'] .prose {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .prose h1,
+[data-theme='dark'] .prose h2,
+[data-theme='dark'] .prose h3,
+[data-theme='dark'] .prose h4,
+[data-theme='dark'] .prose h5,
+[data-theme='dark'] .prose h6,
+[data-theme='dark'] .prose strong,
+[data-theme='dark'] .prose b,
+[data-theme='dark'] .prose a {
+  color: var(--color-neutral-content) !important;
+}
+
+/* Ensure closed dropdown contents do not intercept pointer events or hover */
+.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+/* Allow dropdown-hover to work if ever used in the future */
+.dropdown.dropdown-hover:hover .dropdown-content {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+}
+
+/* Ensure tooltip text is consistently normal weight and not bold */
+.tooltip:before,
+.tooltip::before {
+  font-weight: 400 !important;
+}
+
+/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
+.menu details.dropdown {
+  overflow: visible !important;
+}
+```
+
 ## File: apps/frontend/eslint.config.cjs
 
 ```javascript
@@ -28891,6 +29231,200 @@ export class EmailsStore {
     } finally {
       this._isSyncing.set(false);
     }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/services/emails-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import { EmailStatus, JSend, jsend } from '../../../../../../../libs/common/src';
+
+import { HasRow } from '../../../../../../../libs/common/src/lib/emails';
+import { EmailDraftType, EmailType } from '../../../../../../../libs/common/src/lib/models';
+import { environment } from '../../../../environments/environment';
+import { TRPCService } from '../../../services/api/trpc-service';
+import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
+
+@Service()
+export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'email_list'> {
+  public addComment(id: string, author_id: string, comment: string) {
+    return this.api.emails.addComment.mutate({ id, author_id, comment });
+  }
+
+  public assign(id: string, user_id: string | null, assigned_to_name?: string | null) {
+    return this.api.emails.assign.mutate({ id, user_id, assigned_to_name: assigned_to_name ?? undefined });
+  }
+
+  public delete(id: string) {
+    return this.api.emails.delete.mutate(id);
+  }
+
+  public deleteComment(email_id: string, comment_id: string) {
+    return this.api.emails.deleteComment.mutate({ email_id, comment_id });
+  }
+
+  public deleteDraft(id: string) {
+    return this.api.emails.deleteDraft.mutate({ id });
+  }
+
+  public deleteMany(ids: string[]) {
+    return this.api.emails.deleteMany.mutate(ids);
+  }
+
+  public getAllAttachments(id: string, options?: { includeInline: boolean }) {
+    return this.api.emails.getAllAttachments.query({ email_id: id, options });
+  }
+
+  public getAttachmentsByEmailId(id: string) {
+    return this.api.emails.getAttachmentsByEmailId.query(id);
+  }
+
+  public getDraft(id: string) {
+    return this.api.emails.getDraft.query(id) as Promise<EmailDraftType>;
+  }
+
+  public getEmailBody(id: string) {
+    return this.api.emails.getEmailBody.query(id);
+  }
+
+  public getEmailHeader(id: string) {
+    return this.api.emails.getEmailHeader.query(id);
+  }
+
+  public getEmailWithHeaders(id: string) {
+    return this.api.emails.getEmailWithHeaders.query(id);
+  }
+
+  public getActivities(emailId: string) {
+    return this.api.emails.getActivities.query(emailId);
+  }
+
+  // TODO: paging and infinite scrolling
+  public getEmails(folderId: string, limit?: number, offset?: number) {
+    return this.api.emails.getEmails.query({ folderId, limit, offset });
+  }
+
+  public getFolders() {
+    return this.api.emails.getFolders.query();
+  }
+
+  public getFoldersWithCounts() {
+    return this.api.emails.getFoldersWithCounts.query();
+  }
+
+  public hasAttachment(id: string) {
+    return this.api.emails.hasAttachment.query(id);
+  }
+
+  public async hasAttachmentByEmailIds(ids: string[]): Promise<Partial<Record<string, boolean>>> {
+    const rows: HasRow[] = await this.api.emails.hasAttachmentByEmailIds.query(ids);
+    const map: Record<string, boolean> = {};
+    for (const r of rows) map[String(r.email_id)] = !!r.has;
+    return map;
+  }
+
+  public restoreFromTrash(ids: string[]): Promise<number> {
+    return this.api.emails.restoreFromTrash.mutate(ids);
+  }
+
+  public moveToFolder(id: string, folderId: string) {
+    return this.api.emails.moveToFolder.mutate({ id, folderId });
+  }
+
+  public saveDraft(input: DraftPayload) {
+    return this.api.emails.saveDraft.mutate(input);
+  }
+
+  // Fetch/FormData fallback
+  public async sendEmail(input: ComposePayload): Promise<EmailType> {
+    const fd = new FormData();
+    fd.set('to', JSON.stringify(input.to));
+    fd.set('cc', JSON.stringify(input.cc));
+    fd.set('bcc', JSON.stringify(input.bcc));
+    fd.set('subject', input.subject);
+    fd.set('html', input.html);
+    input.attachments.forEach((f) => fd.append('attachments', f, f.name));
+
+    const token = this.tokenService.getAuthToken();
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+    const res = await fetch(`${environment.apiUrl}/api/emails/send`, { method: 'POST', body: fd, headers });
+    const json = (await res.json()) as JSend<EmailType>;
+    return jsend.unwrap(json);
+  }
+
+  public setFavourite(id: string, favourite: boolean) {
+    return this.api.emails.setFavourite.mutate({ id, favourite });
+  }
+
+  public setStatus(id: string, status: EmailStatus) {
+    return this.api.emails.setStatus.mutate({ id, status });
+  }
+
+  public setEmailReadStatus(id: string, isRead: boolean) {
+    return this.api.emails.setEmailReadStatus.mutate({ id, isRead });
+  }
+
+  public async syncEmails(): Promise<{ inserted: number }> {
+    let msResult = { inserted: 0 };
+    let googleResult = { inserted: 0 };
+    let msConnected = false;
+    let googleConnected = false;
+
+    // Check MS connection status
+    try {
+      const msStatus = await this.api.msSync.getConnectionStatus.query();
+      if (msStatus?.connected) {
+        msConnected = true;
+        msResult = await (
+          this.api.msSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
+        )(undefined, { context: { skipErrorHandler: true } });
+      }
+    } catch (e) {
+      console.error('MS sync failed:', e);
+    }
+
+    // Check Google connection status
+    try {
+      const googleStatus = await this.api.googleSync.getConnectionStatus.query();
+      if (googleStatus?.connected) {
+        googleConnected = true;
+        googleResult = await (
+          this.api.googleSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
+        )(undefined, { context: { skipErrorHandler: true } });
+      }
+    } catch (e) {
+      console.error('Google sync failed:', e);
+    }
+
+    if (!msConnected && !googleConnected) {
+      throw new Error('No email accounts connected');
+    }
+
+    return { inserted: msResult.inserted + googleResult.inserted };
+  }
+
+  public getConnectionStatus() {
+    return this.api.msSync.getConnectionStatus.query();
+  }
+
+  public async isAnySyncing(): Promise<boolean> {
+    let isSyncing = false;
+    try {
+      const msStatus = await this.api.msSync.getConnectionStatus.query();
+      if (msStatus?.syncing) isSyncing = true;
+    } catch (_e) {
+      // ignore
+    }
+    try {
+      const googleStatus = await this.api.googleSync.getConnectionStatus.query();
+      if (googleStatus?.syncing) isSyncing = true;
+    } catch (_e) {
+      // ignore
+    }
+    return isSyncing;
   }
 }
 ```
@@ -31410,171 +31944,6 @@ export class NewslettersGridComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  PERSONINHOUSEHOLDTYPE,
-  UpdatePersonsType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
-
-@Service()
-export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
-  protected override readonly endpointName = 'persons';
-
-  public add(row: UpdatePersonsType, options?: any) {
-    return this.api.persons.add.mutate(row, options);
-  }
-
-  public addMany(rows: UpdatePersonsType[]) {
-    return Promise.resolve(rows);
-  }
-
-  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
-    return this.api.persons.attachTag.mutate({ id: id, tag_name, type });
-  }
-
-  public count(): Promise<number> {
-    return this.api.persons.count.query();
-  }
-  public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
-    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
-    if (force !== undefined) {
-      return (await this.api.persons.delete.mutate({ id, force }, opts as any)) !== null;
-    }
-    return (await this.api.persons.delete.mutate(id, opts as any)) !== null;
-  }
-
-  public override async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
-    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
-    if (force !== undefined) {
-      return await this.api.persons.deleteMany.mutate({ ids, force }, opts as any);
-    }
-    return await this.api.persons.deleteMany.mutate(ids, opts as any);
-  }
-  public moveEntireHousehold(fromHouseholdId: string, toHouseholdId: string) {
-    return this.api.persons.moveEntireHousehold.mutate({ fromHouseholdId, toHouseholdId });
-  }
-
-  public detachTag(
-    id: string,
-    tag_name: string,
-    type?: 'tag' | 'issue',
-  ): Promise<RouterOutputs['persons']['detachTag']> {
-    return this.api.persons.detachTag.mutate({ id, tag_name, type });
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.getAllWithAddress(options);
-  }
-
-  // We don't support archives
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public async getAllWithAddress(options?: getAllOptionsType) {
-    return this.api.persons.getAllWithAddress.query(options, {
-      signal: this.ac.signal,
-    });
-  }
-
-  public getByHouseholdId(id: string, options?: getAllOptionsType) {
-    return this.api.persons.getByHouseholdId.query({ id: id, options });
-  }
-
-  public getByCompanyId(id: string, options?: getAllOptionsType) {
-    return this.api.persons.getByCompanyId.query({ id: id, options });
-  }
-
-  public countByCompanyId(id: string): Promise<number> {
-    return this.api.persons.countByCompanyId.query({ id });
-  }
-
-  public getById(id: string) {
-    return this.api.persons.getById.query(id);
-  }
-
-  public async getPeopleInHousehold(id: string | null | undefined, options?: getAllOptionsType) {
-    if (!id) {
-      return [];
-    }
-
-    const requiredColumns = ['id', 'first_name', 'middle_names', 'last_name'];
-    const mergedColumns = Array.from(new Set([...(options?.columns ?? []), ...requiredColumns]));
-    const requestOptions = {
-      ...options,
-      columns: mergedColumns,
-    };
-
-    const peopleInHousehold = (await this.getByHouseholdId(id, requestOptions)) as PERSONINHOUSEHOLDTYPE[];
-
-    return peopleInHousehold.map((person) => {
-      return {
-        ...person,
-        full_name: `${person.first_name || ''} ${person.middle_names || ''} ${person.last_name || ''}`.trim(),
-      };
-    });
-  }
-
-  public getActivity(id: string) {
-    return this.api.persons.getActivity.query(id);
-  }
-
-  public async getTags(id: string, type?: 'tag' | 'issue') {
-    const tags = await this.api.persons.getTags.query({ id, type });
-    return tags.map((tag: { name: string }) => tag.name);
-  }
-
-  public import(
-    rows: RouterInputs['persons']['import']['rows'],
-    tags: string[] = [],
-    skipped = 0,
-    fileName?: string | null,
-  ): Promise<RouterOutputs['persons']['import']> {
-    // Opt-out of global error toast; importer UI shows a scoped summary instead
-    return this.api.persons.import.mutate({ rows, tags, skipped, file_name: fileName ?? undefined }, {
-      context: { skipErrorHandler: true },
-    } as any);
-  }
-
-  public async removeHousehold(id: string) {
-    return this.api.persons.removeHousehold.mutate(id);
-  }
-
-  public async update(id: string, data: UpdatePersonsType, options?: any) {
-    return this.api.persons.update.mutate({ id: id, data }, options);
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.persons.exportCsv.mutate(input);
-  }
-
-  public getPotentialDuplicates(
-    options?: RouterInputs['persons']['getPotentialDuplicates'],
-  ): Promise<RouterOutputs['persons']['getPotentialDuplicates']> {
-    return this.api.persons.getPotentialDuplicates.query(options);
-  }
-
-  public getDuplicateCounts(): Promise<RouterOutputs['persons']['getDuplicateCounts']> {
-    return this.api.persons.getDuplicateCounts.query();
-  }
-
-  public mergePersons(target_id: string, source_id: string): Promise<RouterOutputs['persons']['mergePersons']> {
-    return this.api.persons.mergePersons.mutate({ target_id, source_id });
-  }
-}
-
-export type DATA_TYPE = 'persons' | 'households';
-```
-
 ## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
 
 ```html
@@ -33643,81 +34012,6 @@ export class TaskAddComponent implements OnInit {
 </pc-detail-layout>
 ```
 
-## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  InviteAuthUserType,
-  UpdateAuthUserType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Service()
-export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
-  protected override readonly endpointName = 'authusers';
-
-  public add(row: InviteAuthUserType) {
-    return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public addMany(_rows: InviteAuthUserType[]) {
-    return Promise.resolve([]);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return this.api.authusers.count.query();
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal }) as Promise<{
-      rows: Record<string, unknown>[];
-      count: number;
-    }>;
-  }
-
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public getById(id: string) {
-    return this.api.authusers.getById.query(id) as Promise<IAuthUserDetail>;
-  }
-
-  public getTags(_id: string) {
-    return Promise.resolve([]);
-  }
-
-  public update(id: string, data: UpdateAuthUserType) {
-    return this.api.authusers.update.mutate({ id, data }) as Promise<IAuthUserRecord>;
-  }
-
-  public adminTriggerPasswordReset(id: string): Promise<{ success: boolean }> {
-    return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
-  }
-
-  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return Promise.reject(new Error('User export is not available'));
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/users/ui/user-view.html
 
 ```html
@@ -34448,20 +34742,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { ISidebarItem } from '../sidebar/sidebar-items';
 import { SidebarService } from '../sidebar/sidebar-service';
 
 /**
- * Bookmark button for the navbar: favourites the sidebar item matching the
- * current route. Extracted from the retired URL-segment breadcrumb bar; page
- * orientation is now handled by pc-breadcrumbs inside each page header.
+ * Pin button for the navbar: pins the sidebar item matching the current route
+ * into the PINS section. Extracted from the retired URL-segment breadcrumb bar;
+ * page orientation is now handled by pc-breadcrumbs inside each page header.
+ *
+ * Sidebar pins hold sections (People, Inbox…), not records. On a record page
+ * (/people/amira-hassan) the button dims and both the tooltip and a toast
+ * explain that only main pages can be pinned — the icon stays present (§1
+ * disclosure over suppression) rather than vanishing.
  */
 @Component({
   selector: 'pc-favourite-toggle',
   imports: [Icon],
   template: `
-    @if (canToggleFavourite()) {
+    @if (visible()) {
       <button
         type="button"
         class="btn btn-circle btn-ghost btn-sm tooltip tooltip-bottom"
@@ -34469,13 +34769,15 @@ import { SidebarService } from '../sidebar/sidebar-service';
         [attr.data-tip]="tooltip()"
         (mouseenter)="hovered.set(true)"
         (mouseleave)="hovered.set(false)"
-        (click)="toggleFavourite()"
+        (click)="onClick()"
       >
         <pc-icon
           [name]="iconName()"
           [size]="5"
-          class="text-base-400 hover:text-primary"
-          [class.text-primary]="favourite()"
+          class="text-base-400 hover:text-primary transition-opacity"
+          [class.text-primary]="favourite() && pinnable()"
+          [class.opacity-40]="!pinnable()"
+          [class.hover:text-base-400]="!pinnable()"
         ></pc-icon>
       </button>
     }
@@ -34484,6 +34786,7 @@ import { SidebarService } from '../sidebar/sidebar-service';
 export class FavouriteToggle {
   private readonly router = inject(Router);
   private readonly sidebarSvc = inject(SidebarService);
+  private readonly alertSvc = inject(AlertService);
 
   private readonly navigationUrl = computed(() => {
     const navigation = this.router.currentNavigation();
@@ -34497,44 +34800,51 @@ export class FavouriteToggle {
   private currentItem?: ISidebarItem;
   protected readonly favourite = signal(false);
   protected readonly hovered = signal(false);
-  protected readonly canToggleFavourite = signal(false);
+  protected readonly pinnable = signal(false);
+  protected readonly visible = signal(false);
   protected readonly itemName = signal('');
 
   protected readonly iconName = computed(() => {
+    if (!this.pinnable()) return 'bookmark';
     if (this.favourite()) return this.hovered() ? 'bookmark-slash' : 'bookmark-filled';
     return this.hovered() ? 'bookmark-plus' : 'bookmark';
   });
 
-  protected readonly tooltip = computed(() =>
-    this.favourite()
-      ? `Remove '${this.itemName()}' from sidebar bookmarks`
-      : `Bookmark '${this.itemName()}' in the sidebar`,
-  );
+  protected readonly tooltip = computed(() => {
+    if (!this.pinnable()) return `Only main pages can be pinned — open ${this.itemName()} to pin it`;
+    return this.favourite() ? `Unpin ${this.itemName()} from the sidebar` : `Pin ${this.itemName()} to the sidebar`;
+  });
 
   constructor() {
     effect(() => this.handleNavigationChange(this.navigationUrl()));
   }
 
-  protected toggleFavourite(): void {
-    if (!this.currentItem?.route) {
+  protected onClick(): void {
+    if (!this.pinnable()) {
+      // Record page: narrate the reason instead of silently doing nothing.
+      this.alertSvc.showInfo(`Only main pages can be pinned — open ${this.itemName()} to pin it.`);
       return;
     }
+    if (!this.currentItem?.route) return;
+
     const next = this.sidebarSvc.toggleFavourite(this.currentItem.route);
     this.favourite.set(next);
     this.currentItem.favourite = next;
+    // Narrate both directions (§1).
+    if (next) this.alertSvc.showSuccess(`Pinned ${this.itemName()} to the sidebar.`);
+    else this.alertSvc.showInfo(`Removed ${this.itemName()} from your pins.`);
   }
 
   private handleNavigationChange(url: string): void {
     const item = this.sidebarSvc.findItemForUrl(url);
-    // Sidebar bookmarks hold sections, not records. The service matches by
-    // prefix, so on a record page (/people/123) the star would read as
-    // "bookmark this person" while actually bookmarking People — only offer
-    // the toggle when the URL is the sidebar item's own page.
     const exact = !!item?.route && this.normalizePath(url) === this.normalizePath(item.route);
     this.currentItem = exact ? item : undefined;
     this.favourite.set(exact && !!item?.favourite);
-    this.canToggleFavourite.set(exact);
-    this.itemName.set(exact ? (item?.name ?? '') : '');
+    this.pinnable.set(exact);
+    // Show the (dimmed) control whenever the URL maps to a known section, so a
+    // record page still explains why it can't be pinned; hide only on unknown routes.
+    this.visible.set(!!item?.route);
+    this.itemName.set(item?.name ?? '');
   }
 
   private normalizePath(route: string): string {
@@ -34849,15 +35159,20 @@ export class Navbar implements OnDestroy {
 <ng-template #navLink let-nav>
   <a
     *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="hover:font-bold hover:text-primary flex flex-auto items-center pb-1 pl-2 tracking-widest hover:rounded-lg !cursor-pointer"
+    class="hover:text-primary flex flex-auto items-center pb-1 pl-2 font-light hover:rounded-lg !cursor-pointer"
+    [class.animate-up]="nav.justPinned"
     (click)="this.closeMobile()"
     [routerLink]="nav.route"
-    routerLinkActive="font-bold"
+    routerLinkActive="!font-semibold !text-primary"
     [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
-    [class.font-bold]="pendingRoute() === nav.route"
+    [class.!font-semibold]="pendingRoute() === nav.route"
+    [class.!text-primary]="pendingRoute() === nav.route"
   >
     <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span class="indicator pl-2 group-hover:md:visible text-sm" [class.invisible]="isEffectivelyNarrow()">
+    <span
+      class="indicator pl-2 group-hover:md:visible text-[13px] tracking-[0.03em]"
+      [class.invisible]="isEffectivelyNarrow()"
+    >
       {{ nav.name }} @if (nav.indicator) {
       <span class="indicator-item status status-primary"></span>
       }
@@ -34899,7 +35214,7 @@ export class Navbar implements OnDestroy {
   <div class="flex-none pl-2" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
     @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
     <div
-      class="text-base-400 font-medium flex items-center justify-between pl-2 capitalize text-xs hover:cursor-pointer"
+      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] hover:cursor-pointer"
       (click)="toggleCollapse(item.name)"
     >
       <span [class.text-[10px]]="isEffectivelyNarrow() && !hoveringSidebar()">
@@ -35253,86 +35568,164 @@ const trpcRetryClient = createTRPCClient<TRPCRouter>({
 });
 ```
 
-## File: apps/frontend/src/app/services/error.service.ts
+## File: apps/frontend/src/app/services/api/trpc-service.ts
 
 ```typescript
 import { inject, Service } from '@angular/core';
 import { Router } from '@angular/router';
-import { JSendServerError } from '../../../../../libs/common/src';
-import { TRPCClientError } from '@trpc/client';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ApiError } from './api/api-error';
-import { getUserErrorMessage } from './api/user-message';
+import { GENERIC_SIGNIN_ERROR, getAllOptionsType } from '../../../../../../libs/common/src';
+import { ErrorService } from '../error.service';
+import {
+  TRPCClient,
+  TRPCClientError,
+  TRPCLink,
+  createTRPCClient,
+  httpLink as trpcHttpLink,
+  loggerLink,
+} from '@trpc/client';
+import { observable } from '@trpc/server/observable';
+import superjson from 'superjson';
 
-import { TokenService } from './api/token-service';
+import { get, set } from 'idb-keyval';
+
+import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
+import { environment } from '../../../environments/environment';
+import { TokenService } from './token-service';
+import { refreshLink } from './trpc-refreshlink';
+import { ApiError } from './api-error';
 
 @Service()
-export class ErrorService {
-  private readonly alerts = inject(AlertService);
-  private readonly router = inject(Router);
-  private readonly tokenSvc = inject(TokenService);
+export class TRPCService<T> {
+  protected readonly errorSvc = inject(ErrorService);
 
-  private lastRedirect = 0;
+  protected readonly router = inject(Router);
 
-  public handle(error: unknown): void {
-    console.error('ErrorService.handle:', error);
-    // Handle JSend server errors produced by the HTTP interceptor
-    if (error instanceof JSendServerError) {
-      if (!this.redirectFromStatus(error.statusCode)) {
-        this.alerts.showError(error.messageText);
-      }
-      return;
-    }
+  protected readonly tokenService = inject(TokenService);
 
-    if (error instanceof TRPCClientError) {
-      const code = error.data?.code;
-      if (!this.redirectFromCode(code)) {
-        this.alerts.showError(error.message);
-      }
-      return;
-    }
+  protected ac = new AbortController();
 
-    if (error instanceof ApiError) {
-      const original = error.originalError;
-      if (original instanceof TRPCClientError) {
-        const code = original.data?.code;
-        if (!this.redirectFromCode(code)) {
-          this.alerts.showError(error.message);
-        }
-        return;
-      }
-      this.alerts.showError(error.message);
-      return;
-    }
+  public readonly api: TRPCClient<TRPCRouter>;
 
-    // Uncaught exceptions land here via GlobalErrorHandler — never show their
-    // raw message (e.g. a TypeError) to the user; the console has the details.
-    this.alerts.showError(getUserErrorMessage(error, 'Something went wrong, please try again'));
+  constructor() {
+    this.api = createTRPCClient<TRPCRouter>({
+      links: [
+        loggerLink(),
+        refreshLink(this.tokenService, this.router),
+        errorLink(this.errorSvc),
+        httpUnbatchedLink(this.tokenService, () => this.ac.signal),
+      ],
+    });
   }
 
-  private redirect(): boolean {
-    const now = Date.now();
-    if (now - this.lastRedirect < 3000) return false;
-    this.lastRedirect = now;
-
-    this.tokenSvc.clearAll();
-    const returnUrl = this.router.url;
-    void this.router.navigate(['/signin'], { queryParams: { returnUrl } });
-    return true;
+  public abort() {
+    this.ac.abort();
+    this.ac = new AbortController(); // create a fresh controller so future calls are not auto-aborted
   }
 
-  private redirectFromCode(code?: string): boolean {
-    if (code === 'UNAUTHORIZED' && !this.router.url.startsWith('/signin') && !this.router.url.startsWith('/signup')) {
-      this.redirect();
-      return true;
+  protected async runCachedCall(
+    apiCall: Promise<Partial<T>[]>,
+    apiName: string,
+    options: getAllOptionsType,
+    refresh: boolean,
+  ) {
+    const keyToHash = JSON.stringify({ apiName, ...options });
+    const hashedKey = this.hash(keyToHash);
+    const payload = await get(hashedKey);
+    let data = payload?.expires > Date.now() ? payload.data : null;
+
+    if (refresh || !data || data.length === 0) {
+      data = await apiCall;
+      await set(hashedKey, { expires: this.addDays(1), data });
     }
-    return false;
+
+    return data;
   }
 
-  private redirectFromStatus(status?: number): boolean {
-    if (status === 401) return this.redirect();
-    return false;
+  private addDays(days: number) {
+    const date = new Date(Date.now());
+    date.setDate(date.getDate() + days);
+    return date;
   }
+
+  private hash(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return (hash >>> 0).toString(36);
+  }
+}
+
+function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
+  const GENERIC_INPUT_MSG = 'Please check your input and try again';
+
+  return () =>
+    ({ next, op }) =>
+      observable((observer) => {
+        const unsubscribe = next(op).subscribe({
+          next: (value) => observer.next(value),
+          error: (err) => {
+            const meta = op.context as { skipErrorHandler?: boolean } | undefined;
+            let finalErr: any = err;
+
+            if (err instanceof TRPCClientError) {
+              const code = err.data?.code as string | undefined;
+              const path = op.path ?? '';
+              const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
+
+              let msg = err.message;
+              if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
+                // Server formatter should already do this; this is just a client fallback
+                msg = GENERIC_SIGNIN_ERROR;
+              } else if (code === 'BAD_REQUEST') {
+                const isValidationError = (err.data as { isZodError?: boolean })?.isZodError;
+                if (isValidationError) {
+                  msg = GENERIC_INPUT_MSG;
+                }
+              }
+              finalErr = new ApiError(msg, err);
+            }
+
+            // Aborted requests (component teardown, superseded loads) are not
+            // user-facing failures — never toast them.
+            if (!meta?.skipErrorHandler && !isAbortError(err)) {
+              errorSvc.handle(finalErr);
+            }
+
+            observer.error(finalErr);
+          },
+          complete: () => observer.complete(),
+        });
+        return unsubscribe;
+      });
+}
+
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  if (err instanceof TRPCClientError) {
+    const cause: unknown = err.cause;
+    return cause instanceof DOMException && cause.name === 'AbortError';
+  }
+  return false;
+}
+
+function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSignal) {
+  return trpcHttpLink({
+    url: environment.apiUrl,
+    transformer: superjson,
+    // Combine the per-request signal tRPC provides with the service-level
+    // controller so TRPCService.abort() actually cancels in-flight requests.
+    fetch(input, init) {
+      const signals: AbortSignal[] = [getAbortSignal()];
+      if (init?.signal) signals.push(init.signal);
+      return globalThis.fetch(input, { ...init, signal: AbortSignal.any(signals) });
+    },
+    headers() {
+      const authToken = tokenSvc.getAuthToken();
+      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+    },
+  });
 }
 ```
 
@@ -37132,200 +37525,6 @@ export class SignUpPage {
   </div>
   }
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/emails/services/emails-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import { EmailStatus, JSend, jsend } from '../../../../../../../libs/common/src';
-
-import { HasRow } from '../../../../../../../libs/common/src/lib/emails';
-import { EmailDraftType, EmailType } from '../../../../../../../libs/common/src/lib/models';
-import { environment } from '../../../../environments/environment';
-import { TRPCService } from '../../../services/api/trpc-service';
-import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
-
-@Service()
-export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'email_list'> {
-  public addComment(id: string, author_id: string, comment: string) {
-    return this.api.emails.addComment.mutate({ id, author_id, comment });
-  }
-
-  public assign(id: string, user_id: string | null, assigned_to_name?: string | null) {
-    return this.api.emails.assign.mutate({ id, user_id, assigned_to_name: assigned_to_name ?? undefined });
-  }
-
-  public delete(id: string) {
-    return this.api.emails.delete.mutate(id);
-  }
-
-  public deleteComment(email_id: string, comment_id: string) {
-    return this.api.emails.deleteComment.mutate({ email_id, comment_id });
-  }
-
-  public deleteDraft(id: string) {
-    return this.api.emails.deleteDraft.mutate({ id });
-  }
-
-  public deleteMany(ids: string[]) {
-    return this.api.emails.deleteMany.mutate(ids);
-  }
-
-  public getAllAttachments(id: string, options?: { includeInline: boolean }) {
-    return this.api.emails.getAllAttachments.query({ email_id: id, options });
-  }
-
-  public getAttachmentsByEmailId(id: string) {
-    return this.api.emails.getAttachmentsByEmailId.query(id);
-  }
-
-  public getDraft(id: string) {
-    return this.api.emails.getDraft.query(id) as Promise<EmailDraftType>;
-  }
-
-  public getEmailBody(id: string) {
-    return this.api.emails.getEmailBody.query(id);
-  }
-
-  public getEmailHeader(id: string) {
-    return this.api.emails.getEmailHeader.query(id);
-  }
-
-  public getEmailWithHeaders(id: string) {
-    return this.api.emails.getEmailWithHeaders.query(id);
-  }
-
-  public getActivities(emailId: string) {
-    return this.api.emails.getActivities.query(emailId);
-  }
-
-  // TODO: paging and infinite scrolling
-  public getEmails(folderId: string, limit?: number, offset?: number) {
-    return this.api.emails.getEmails.query({ folderId, limit, offset });
-  }
-
-  public getFolders() {
-    return this.api.emails.getFolders.query();
-  }
-
-  public getFoldersWithCounts() {
-    return this.api.emails.getFoldersWithCounts.query();
-  }
-
-  public hasAttachment(id: string) {
-    return this.api.emails.hasAttachment.query(id);
-  }
-
-  public async hasAttachmentByEmailIds(ids: string[]): Promise<Partial<Record<string, boolean>>> {
-    const rows: HasRow[] = await this.api.emails.hasAttachmentByEmailIds.query(ids);
-    const map: Record<string, boolean> = {};
-    for (const r of rows) map[String(r.email_id)] = !!r.has;
-    return map;
-  }
-
-  public restoreFromTrash(ids: string[]): Promise<number> {
-    return this.api.emails.restoreFromTrash.mutate(ids);
-  }
-
-  public moveToFolder(id: string, folderId: string) {
-    return this.api.emails.moveToFolder.mutate({ id, folderId });
-  }
-
-  public saveDraft(input: DraftPayload) {
-    return this.api.emails.saveDraft.mutate(input);
-  }
-
-  // Fetch/FormData fallback
-  public async sendEmail(input: ComposePayload): Promise<EmailType> {
-    const fd = new FormData();
-    fd.set('to', JSON.stringify(input.to));
-    fd.set('cc', JSON.stringify(input.cc));
-    fd.set('bcc', JSON.stringify(input.bcc));
-    fd.set('subject', input.subject);
-    fd.set('html', input.html);
-    input.attachments.forEach((f) => fd.append('attachments', f, f.name));
-
-    const token = this.tokenService.getAuthToken();
-    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-
-    const res = await fetch(`${environment.apiUrl}/api/emails/send`, { method: 'POST', body: fd, headers });
-    const json = (await res.json()) as JSend<EmailType>;
-    return jsend.unwrap(json);
-  }
-
-  public setFavourite(id: string, favourite: boolean) {
-    return this.api.emails.setFavourite.mutate({ id, favourite });
-  }
-
-  public setStatus(id: string, status: EmailStatus) {
-    return this.api.emails.setStatus.mutate({ id, status });
-  }
-
-  public setEmailReadStatus(id: string, isRead: boolean) {
-    return this.api.emails.setEmailReadStatus.mutate({ id, isRead });
-  }
-
-  public async syncEmails(): Promise<{ inserted: number }> {
-    let msResult = { inserted: 0 };
-    let googleResult = { inserted: 0 };
-    let msConnected = false;
-    let googleConnected = false;
-
-    // Check MS connection status
-    try {
-      const msStatus = await this.api.msSync.getConnectionStatus.query();
-      if (msStatus?.connected) {
-        msConnected = true;
-        msResult = await (
-          this.api.msSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
-        )(undefined, { context: { skipErrorHandler: true } });
-      }
-    } catch (e) {
-      console.error('MS sync failed:', e);
-    }
-
-    // Check Google connection status
-    try {
-      const googleStatus = await this.api.googleSync.getConnectionStatus.query();
-      if (googleStatus?.connected) {
-        googleConnected = true;
-        googleResult = await (
-          this.api.googleSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
-        )(undefined, { context: { skipErrorHandler: true } });
-      }
-    } catch (e) {
-      console.error('Google sync failed:', e);
-    }
-
-    if (!msConnected && !googleConnected) {
-      throw new Error('No email accounts connected');
-    }
-
-    return { inserted: msResult.inserted + googleResult.inserted };
-  }
-
-  public getConnectionStatus() {
-    return this.api.msSync.getConnectionStatus.query();
-  }
-
-  public async isAnySyncing(): Promise<boolean> {
-    let isSyncing = false;
-    try {
-      const msStatus = await this.api.msSync.getConnectionStatus.query();
-      if (msStatus?.syncing) isSyncing = true;
-    } catch (_e) {
-      // ignore
-    }
-    try {
-      const googleStatus = await this.api.googleSync.getConnectionStatus.query();
-      if (googleStatus?.syncing) isSyncing = true;
-    } catch (_e) {
-      // ignore
-    }
-    return isSyncing;
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
@@ -41772,167 +41971,6 @@ export class UsersGridComponent {
 }
 ```
 
-## File: apps/frontend/src/app/services/api/trpc-service.ts
-
-```typescript
-import { inject, Service } from '@angular/core';
-import { Router } from '@angular/router';
-import { GENERIC_SIGNIN_ERROR, getAllOptionsType } from '../../../../../../libs/common/src';
-import { ErrorService } from '../error.service';
-import {
-  TRPCClient,
-  TRPCClientError,
-  TRPCLink,
-  createTRPCClient,
-  httpLink as trpcHttpLink,
-  loggerLink,
-} from '@trpc/client';
-import { observable } from '@trpc/server/observable';
-import superjson from 'superjson';
-
-import { get, set } from 'idb-keyval';
-
-import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
-import { environment } from '../../../environments/environment';
-import { TokenService } from './token-service';
-import { refreshLink } from './trpc-refreshlink';
-import { ApiError } from './api-error';
-
-@Service()
-export class TRPCService<T> {
-  protected readonly errorSvc = inject(ErrorService);
-
-  protected readonly router = inject(Router);
-
-  protected readonly tokenService = inject(TokenService);
-
-  protected ac = new AbortController();
-
-  public readonly api: TRPCClient<TRPCRouter>;
-
-  constructor() {
-    this.api = createTRPCClient<TRPCRouter>({
-      links: [
-        loggerLink(),
-        refreshLink(this.tokenService, this.router),
-        errorLink(this.errorSvc),
-        httpUnbatchedLink(this.tokenService, () => this.ac.signal),
-      ],
-    });
-  }
-
-  public abort() {
-    this.ac.abort();
-    this.ac = new AbortController(); // create a fresh controller so future calls are not auto-aborted
-  }
-
-  protected async runCachedCall(
-    apiCall: Promise<Partial<T>[]>,
-    apiName: string,
-    options: getAllOptionsType,
-    refresh: boolean,
-  ) {
-    const keyToHash = JSON.stringify({ apiName, ...options });
-    const hashedKey = this.hash(keyToHash);
-    const payload = await get(hashedKey);
-    let data = payload?.expires > Date.now() ? payload.data : null;
-
-    if (refresh || !data || data.length === 0) {
-      data = await apiCall;
-      await set(hashedKey, { expires: this.addDays(1), data });
-    }
-
-    return data;
-  }
-
-  private addDays(days: number) {
-    const date = new Date(Date.now());
-    date.setDate(date.getDate() + days);
-    return date;
-  }
-
-  private hash(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash |= 0;
-    }
-    return (hash >>> 0).toString(36);
-  }
-}
-
-function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
-  const GENERIC_INPUT_MSG = 'Please check your input and try again';
-
-  return () =>
-    ({ next, op }) =>
-      observable((observer) => {
-        const unsubscribe = next(op).subscribe({
-          next: (value) => observer.next(value),
-          error: (err) => {
-            const meta = op.context as { skipErrorHandler?: boolean } | undefined;
-            let finalErr: any = err;
-
-            if (err instanceof TRPCClientError) {
-              const code = err.data?.code as string | undefined;
-              const path = op.path ?? '';
-              const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
-
-              let msg = err.message;
-              if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
-                // Server formatter should already do this; this is just a client fallback
-                msg = GENERIC_SIGNIN_ERROR;
-              } else if (code === 'BAD_REQUEST') {
-                const isValidationError = (err.data as { isZodError?: boolean })?.isZodError;
-                if (isValidationError) {
-                  msg = GENERIC_INPUT_MSG;
-                }
-              }
-              finalErr = new ApiError(msg, err);
-            }
-
-            // Aborted requests (component teardown, superseded loads) are not
-            // user-facing failures — never toast them.
-            if (!meta?.skipErrorHandler && !isAbortError(err)) {
-              errorSvc.handle(finalErr);
-            }
-
-            observer.error(finalErr);
-          },
-          complete: () => observer.complete(),
-        });
-        return unsubscribe;
-      });
-}
-
-function isAbortError(err: unknown): boolean {
-  if (err instanceof DOMException && err.name === 'AbortError') return true;
-  if (err instanceof TRPCClientError) {
-    const cause: unknown = err.cause;
-    return cause instanceof DOMException && cause.name === 'AbortError';
-  }
-  return false;
-}
-
-function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSignal) {
-  return trpcHttpLink({
-    url: environment.apiUrl,
-    transformer: superjson,
-    // Combine the per-request signal tRPC provides with the service-level
-    // controller so TRPCService.abort() actually cancels in-flight requests.
-    fetch(input, init) {
-      const signals: AbortSignal[] = [getAbortSignal()];
-      if (init?.signal) signals.push(init.signal);
-      return globalThis.fetch(input, { ...init, signal: AbortSignal.any(signals) });
-    },
-    headers() {
-      const authToken = tokenSvc.getAuthToken();
-      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
-    },
-  });
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-row.ts
 
 ```typescript
@@ -42012,6 +42050,238 @@ export interface GridHost {
   endIndex(): number;
   triggerCellFlash(rowId: string, field: string): void;
 }
+```
+
+## File: apps/frontend/src/app/auth/signin-page/signin-page.html
+
+```html
+<pc-auth-layout>
+  @if (rateLimitSecondsLeft() > 0) {
+  <div class="alert alert-error text-sm mb-4">
+    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
+    <div>
+      <p class="font-semibold" i18n>Too many attempts</p>
+      <p class="text-xs mt-1 flex items-center gap-1">
+        <span i18n>Try again in</span>
+        <span class="countdown font-mono text-lg">
+          @if (rateLimitMins() > 0) {
+          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
+            >{{rateLimitMins()}}</span
+          >
+          m }
+          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
+            >{{rateLimitRemSecs()}}</span
+          >
+          s
+        </span>
+      </p>
+    </div>
+  </div>
+  } @switch (step()) { @case ('email') {
+  <label class="label text-neutral-100">Enter your email to sign in</label>
+  <form (submit)="continueWithEmail($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="at-symbol" />
+        <input
+          type="email"
+          placeholder="Enter your email"
+          [formField]="emailForm.email"
+          aria-label="Email"
+          autocomplete="email"
+        />
+      </label>
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { Continue }
+        </button>
+      </div>
+    </div>
+  </form>
+  <div class="pt-4 text-center">
+    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
+  </div>
+  } @case ('passkey') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-1">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
+      <p class="text-sm text-white">{{ emailData().email }}</p>
+      @if (isLoading()) {
+      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
+      }
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button
+        type="button"
+        class="btn btn-primary w-full"
+        (click)="signInWithPasskey()"
+        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
+      >
+        @if (isLoading()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Sign in with Passkey
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="usePasswordInstead()"
+        [disabled]="isLoading()"
+      >
+        Use password instead
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="goBackToEmail()"
+        [disabled]="isLoading()"
+      >
+        Back
+      </button>
+    </div>
+  </div>
+  } @case ('password') { @if (verificationPending()) {
+  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
+    <div class="flex flex-col gap-2 w-full">
+      <div class="flex items-center gap-2 font-semibold">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <span>Verification Pending</span>
+      </div>
+      <p class="text-xs text-amber-200/80">
+        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
+        inbox.
+      </p>
+      <button
+        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
+        type="button"
+        (click)="resendVerification()"
+        [disabled]="resending() || resendCooldownSeconds() > 0"
+      >
+        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
+        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
+      </button>
+    </div>
+  </div>
+  }
+
+  <div class="flex items-center gap-2 text-sm mb-3">
+    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
+    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
+    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
+      Change
+    </button>
+  </div>
+
+  <label class="label text-neutral-100">Enter your password</label>
+  <form (submit)="signIn($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="lock-closed" />
+        <input
+          type="password"
+          placeholder="Enter your password"
+          [formField]="passwordForm.password"
+          aria-label="Password"
+          autocomplete="current-password"
+        />
+      </label>
+
+      <div class="flex items-center justify-between pt-2">
+        <div class="flex items-center">
+          <input
+            id="remember_me"
+            name="remember_me"
+            type="checkbox"
+            class="checkbox checkbox-primary checkbox-sm"
+            [checked]="persistence()"
+            (change)="togglePersistence($event.target)"
+          />
+          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
+        </div>
+        <div class="text-sm">
+          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
+        </div>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { SIGN IN }
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('2fa') {
+  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
+  <form (submit)="verify2FA($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="shield-exclamation" />
+        <input
+          type="text"
+          placeholder="6-digit code"
+          [formField]="otpForm.code"
+          aria-label="Verification Code"
+          autocomplete="one-time-code"
+        />
+      </label>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { VERIFY }
+        </button>
+      </div>
+
+      <div class="text-center pt-2">
+        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
+          Back to Sign In
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('passkey-setup') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
+      <p class="text-sm text-white">
+        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
+        sign-ins.
+      </p>
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
+        @if (settingUpPasskey()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Set Up Passkey
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
+        Skip for now
+      </button>
+    </div>
+  </div>
+  } }
+
+  <div class="text-neutral-200 text-center text-xs pt-2">
+    <span>
+      Copyright © 2024
+      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
+    </span>
+  </div>
+</pc-auth-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/base-duplicates-manager.ts
@@ -45060,238 +45330,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </ul>
 ```
 
-## File: apps/frontend/src/app/auth/signin-page/signin-page.html
-
-```html
-<pc-auth-layout>
-  @if (rateLimitSecondsLeft() > 0) {
-  <div class="alert alert-error text-sm mb-4">
-    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
-    <div>
-      <p class="font-semibold" i18n>Too many attempts</p>
-      <p class="text-xs mt-1 flex items-center gap-1">
-        <span i18n>Try again in</span>
-        <span class="countdown font-mono text-lg">
-          @if (rateLimitMins() > 0) {
-          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
-            >{{rateLimitMins()}}</span
-          >
-          m }
-          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
-            >{{rateLimitRemSecs()}}</span
-          >
-          s
-        </span>
-      </p>
-    </div>
-  </div>
-  } @switch (step()) { @case ('email') {
-  <label class="label text-neutral-100">Enter your email to sign in</label>
-  <form (submit)="continueWithEmail($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="at-symbol" />
-        <input
-          type="email"
-          placeholder="Enter your email"
-          [formField]="emailForm.email"
-          aria-label="Email"
-          autocomplete="email"
-        />
-      </label>
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { Continue }
-        </button>
-      </div>
-    </div>
-  </form>
-  <div class="pt-4 text-center">
-    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
-  </div>
-  } @case ('passkey') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-1">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
-      <p class="text-sm text-white">{{ emailData().email }}</p>
-      @if (isLoading()) {
-      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
-      }
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button
-        type="button"
-        class="btn btn-primary w-full"
-        (click)="signInWithPasskey()"
-        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
-      >
-        @if (isLoading()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Sign in with Passkey
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="usePasswordInstead()"
-        [disabled]="isLoading()"
-      >
-        Use password instead
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="goBackToEmail()"
-        [disabled]="isLoading()"
-      >
-        Back
-      </button>
-    </div>
-  </div>
-  } @case ('password') { @if (verificationPending()) {
-  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
-    <div class="flex flex-col gap-2 w-full">
-      <div class="flex items-center gap-2 font-semibold">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <span>Verification Pending</span>
-      </div>
-      <p class="text-xs text-amber-200/80">
-        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
-        inbox.
-      </p>
-      <button
-        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
-        type="button"
-        (click)="resendVerification()"
-        [disabled]="resending() || resendCooldownSeconds() > 0"
-      >
-        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
-        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
-      </button>
-    </div>
-  </div>
-  }
-
-  <div class="flex items-center gap-2 text-sm mb-3">
-    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
-    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
-    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
-      Change
-    </button>
-  </div>
-
-  <label class="label text-neutral-100">Enter your password</label>
-  <form (submit)="signIn($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="lock-closed" />
-        <input
-          type="password"
-          placeholder="Enter your password"
-          [formField]="passwordForm.password"
-          aria-label="Password"
-          autocomplete="current-password"
-        />
-      </label>
-
-      <div class="flex items-center justify-between pt-2">
-        <div class="flex items-center">
-          <input
-            id="remember_me"
-            name="remember_me"
-            type="checkbox"
-            class="checkbox checkbox-primary checkbox-sm"
-            [checked]="persistence()"
-            (change)="togglePersistence($event.target)"
-          />
-          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
-        </div>
-        <div class="text-sm">
-          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
-        </div>
-      </div>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { SIGN IN }
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('2fa') {
-  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
-  <form (submit)="verify2FA($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="shield-exclamation" />
-        <input
-          type="text"
-          placeholder="6-digit code"
-          [formField]="otpForm.code"
-          aria-label="Verification Code"
-          autocomplete="one-time-code"
-        />
-      </label>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { VERIFY }
-        </button>
-      </div>
-
-      <div class="text-center pt-2">
-        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
-          Back to Sign In
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('passkey-setup') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
-      <p class="text-sm text-white">
-        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
-        sign-ins.
-      </p>
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
-        @if (settingUpPasskey()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Set Up Passkey
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
-        Skip for now
-      </button>
-    </div>
-  </div>
-  } }
-
-  <div class="text-neutral-200 text-center text-xs pt-2">
-    <span>
-      Copyright © 2024
-      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
-    </span>
-  </div>
-</pc-auth-layout>
-```
-
 ## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
 
 ```typescript
@@ -47829,6 +47867,229 @@ export class DataGridToolbarComponent {
 }
 ```
 
+## File: apps/frontend/src/app/auth/auth-service.ts
+
+```typescript
+import { signal, Service } from '@angular/core';
+import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
+import { TRPCService } from '../services/api/trpc-service';
+import { TRPCError } from '@trpc/server';
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
+
+@Service()
+export class AuthService extends TRPCService<'authusers'> {
+  private user = signal<IAuthUser | null>(null);
+
+  public async getCurrentUser() {
+    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
+    if (user) this.user.set(user);
+    return user;
+  }
+
+  public getUser(): IAuthUser | null {
+    return this.user();
+  }
+
+  public getUserSignal() {
+    return this.user;
+  }
+
+  public init() {
+    return this.getCurrentUser();
+  }
+
+  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
+    const dataBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
+        resolve(result.split(',')[1]!);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const res = (await this.api.auth.uploadAvatar.mutate({
+      dataBase64,
+      mimeType: file.type as any,
+      filename: file.name,
+    })) as { avatar_url: string };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: res.avatar_url,
+      });
+    }
+
+    return res;
+  }
+
+  public async deleteAvatar(): Promise<{ success: boolean }> {
+    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: null,
+      });
+    }
+
+    return res;
+  }
+
+  public async cancelEmailChange() {
+    const response = await this.api.auth.cancelEmailChange.mutate();
+    await this.getCurrentUser();
+    return response;
+  }
+
+  public resetPassword(input: { code: string; password: string }) {
+    // The new-password page owns the error UX for this call.
+    return (this.api.auth.resetPassword.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public sendPasswordResetEmail(input: { email: string }) {
+    // The reset-password page owns the error UX for this call.
+    return (this.api.auth.sendPasswordResetEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public async signIn(
+    input: signInInputType & { rememberMe?: boolean },
+  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
+    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+
+    if (response && 'requires2FA' in response && response.requires2FA) {
+      return { requires2FA: true, email: response.email };
+    }
+
+    const user = await this.updateTokensAndGetCurrentUser(response);
+    if (user?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return { requires2FA: false, user };
+  }
+
+  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
+    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return user;
+  }
+
+  public async signOut() {
+    let apiReturn = null;
+    try {
+      apiReturn = await this.api.auth.signOut.mutate();
+    } catch (error) {
+      console.error('Error during sign out:', error);
+    }
+
+    this.user.set(null);
+    this.tokenService.clearAll();
+    void this.router.navigate(['/signin']);
+
+    return apiReturn;
+  }
+
+  public async signUp(input: signUpInputType) {
+    const token = await this.api.auth.signUp.mutate(input);
+    return this.updateTokensAndGetCurrentUser(token);
+  }
+
+  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
+    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
+  }
+
+  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
+    // Callers toast their own success/failure (and handle rate-limit countdowns).
+    return (this.api.auth.resendVerificationEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ success: boolean }>;
+  }
+
+  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
+    // The sign-in page silently falls back to the password step if this fails —
+    // a global error toast here would be noise.
+    return (this.api.auth.checkEmail.query as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ hasPasskeys: boolean }>;
+  }
+
+  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
+    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
+    let response: any;
+    try {
+      response = await startAuthentication({ optionsJSON: options });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
+      throw err;
+    }
+    const token = await (
+      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
+    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if (user?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return { user, cancelled: false };
+  }
+
+  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
+    const options = await this.api.auth.passkeyRegistrationOptions.query();
+    const response = await startRegistration({ optionsJSON: options as any });
+    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
+      verified: boolean;
+    };
+  }
+
+  public listPasskeys() {
+    return this.api.auth.listPasskeys.query();
+  }
+
+  public deletePasskey(id: string) {
+    return this.api.auth.deletePasskey.mutate({ id });
+  }
+
+  public dismissPasskeyPrompt() {
+    return this.api.auth.dismissPasskeyPrompt.mutate();
+  }
+
+  public updatePasskeyName(id: string, friendlyName: string) {
+    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
+  }
+
+  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
+    if (!token || token instanceof TRPCError) {
+      throw token;
+    }
+    this.tokenService.set(token);
+    return this.getCurrentUser();
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
 
 ```typescript
@@ -50193,229 +50454,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     </div>
   </div>
 </div>
-}
-```
-
-## File: apps/frontend/src/app/auth/auth-service.ts
-
-```typescript
-import { signal, Service } from '@angular/core';
-import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
-import { TRPCService } from '../services/api/trpc-service';
-import { TRPCError } from '@trpc/server';
-import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-
-@Service()
-export class AuthService extends TRPCService<'authusers'> {
-  private user = signal<IAuthUser | null>(null);
-
-  public async getCurrentUser() {
-    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
-    if (user) this.user.set(user);
-    return user;
-  }
-
-  public getUser(): IAuthUser | null {
-    return this.user();
-  }
-
-  public getUserSignal() {
-    return this.user;
-  }
-
-  public init() {
-    return this.getCurrentUser();
-  }
-
-  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
-    const dataBase64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
-        resolve(result.split(',')[1]!);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-
-    const res = (await this.api.auth.uploadAvatar.mutate({
-      dataBase64,
-      mimeType: file.type as any,
-      filename: file.name,
-    })) as { avatar_url: string };
-
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: res.avatar_url,
-      });
-    }
-
-    return res;
-  }
-
-  public async deleteAvatar(): Promise<{ success: boolean }> {
-    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
-
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: null,
-      });
-    }
-
-    return res;
-  }
-
-  public async cancelEmailChange() {
-    const response = await this.api.auth.cancelEmailChange.mutate();
-    await this.getCurrentUser();
-    return response;
-  }
-
-  public resetPassword(input: { code: string; password: string }) {
-    // The new-password page owns the error UX for this call.
-    return (this.api.auth.resetPassword.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public sendPasswordResetEmail(input: { email: string }) {
-    // The reset-password page owns the error UX for this call.
-    return (this.api.auth.sendPasswordResetEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public async signIn(
-    input: signInInputType & { rememberMe?: boolean },
-  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
-    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-
-    if (response && 'requires2FA' in response && response.requires2FA) {
-      return { requires2FA: true, email: response.email };
-    }
-
-    const user = await this.updateTokensAndGetCurrentUser(response);
-    if (user?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return { requires2FA: false, user };
-  }
-
-  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
-    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return user;
-  }
-
-  public async signOut() {
-    let apiReturn = null;
-    try {
-      apiReturn = await this.api.auth.signOut.mutate();
-    } catch (error) {
-      console.error('Error during sign out:', error);
-    }
-
-    this.user.set(null);
-    this.tokenService.clearAll();
-    void this.router.navigate(['/signin']);
-
-    return apiReturn;
-  }
-
-  public async signUp(input: signUpInputType) {
-    const token = await this.api.auth.signUp.mutate(input);
-    return this.updateTokensAndGetCurrentUser(token);
-  }
-
-  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
-    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
-  }
-
-  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
-    // Callers toast their own success/failure (and handle rate-limit countdowns).
-    return (this.api.auth.resendVerificationEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(
-      { email },
-      { context: { skipErrorHandler: true } },
-    ) as Promise<{ success: boolean }>;
-  }
-
-  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
-    // The sign-in page silently falls back to the password step if this fails —
-    // a global error toast here would be noise.
-    return (this.api.auth.checkEmail.query as unknown as (input: any, opts: any) => Promise<any>)(
-      { email },
-      { context: { skipErrorHandler: true } },
-    ) as Promise<{ hasPasskeys: boolean }>;
-  }
-
-  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
-    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
-    let response: any;
-    try {
-      response = await startAuthentication({ optionsJSON: options });
-    } catch (err) {
-      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
-      throw err;
-    }
-    const token = await (
-      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
-    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if (user?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return { user, cancelled: false };
-  }
-
-  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
-    const options = await this.api.auth.passkeyRegistrationOptions.query();
-    const response = await startRegistration({ optionsJSON: options as any });
-    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
-      verified: boolean;
-    };
-  }
-
-  public listPasskeys() {
-    return this.api.auth.listPasskeys.query();
-  }
-
-  public deletePasskey(id: string) {
-    return this.api.auth.deletePasskey.mutate({ id });
-  }
-
-  public dismissPasskeyPrompt() {
-    return this.api.auth.dismissPasskeyPrompt.mutate();
-  }
-
-  public updatePasskeyName(id: string, friendlyName: string) {
-    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
-  }
-
-  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
-    if (!token || token instanceof TRPCError) {
-      throw token;
-    }
-    this.tokenService.set(token);
-    return this.getCurrentUser();
-  }
 }
 ```
 

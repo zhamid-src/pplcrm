@@ -9,6 +9,8 @@ export interface ISidebarItem {
   hiddenByFavourite?: boolean;
   icon?: PcIconNameType;
   indicator?: boolean;
+  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
+  justPinned?: boolean;
   name: string;
   parent?: ISidebarItem;
   pathMatchExact?: boolean;

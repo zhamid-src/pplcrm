@@ -1,7 +1,10 @@
-import { signal, Service } from '@angular/core';
+import { inject, signal, Service } from '@angular/core';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 @Service()
 export class FullScreenService {
+  private readonly alertSvc = inject(AlertService);
   private readonly _isFullScreen = signal<boolean>(false);
 
   constructor() {
@@ -47,6 +50,7 @@ export class FullScreenService {
       // state will be updated by the fullscreenchange listener
     } catch (e) {
       console.error('Failed to enter fullscreen:', e);
+      this.alertSvc.showError('Could not enter full screen — your browser blocked the request.');
     }
   }
 
@@ -68,6 +72,7 @@ export class FullScreenService {
       // state will be updated by the fullscreenchange listener
     } catch (e) {
       console.error('Failed to exit fullscreen:', e);
+      this.alertSvc.showError('Could not exit full screen.');
     }
   }
 
