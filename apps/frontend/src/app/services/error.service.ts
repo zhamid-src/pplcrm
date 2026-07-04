@@ -4,6 +4,7 @@ import { JSendServerError } from '../../../../../libs/common/src';
 import { TRPCClientError } from '@trpc/client';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ApiError } from './api/api-error';
+import { getUserErrorMessage } from './api/user-message';
 
 import { TokenService } from './api/token-service';
 
@@ -46,8 +47,9 @@ export class ErrorService {
       return;
     }
 
-    const msg = error instanceof Error ? error.message : 'An unexpected error occurred';
-    this.alerts.showError(msg);
+    // Uncaught exceptions land here via GlobalErrorHandler — never show their
+    // raw message (e.g. a TypeError) to the user; the console has the details.
+    this.alerts.showError(getUserErrorMessage(error, 'Something went wrong, please try again'));
   }
 
   private redirect(): boolean {

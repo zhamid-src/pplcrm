@@ -19,6 +19,7 @@ import { EventsFrontendService } from '../services/events-frontend-service';
 import { EventsService } from '../../../services/api/events-service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-event-view',
@@ -125,7 +126,7 @@ export class EventViewComponent {
       this.ticketTypes.set(ticketData || []);
       this.registrations.set(regData || []);
     } catch (err) {
-      this.alertSvc.showError('Failed to load event details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the event. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);

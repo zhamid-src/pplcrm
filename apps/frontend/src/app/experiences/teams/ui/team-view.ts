@@ -17,6 +17,7 @@ import { UserService } from '../../../services/user.service';
 import { TasksService } from '../../tasks/services/tasks-service';
 import { TeamsService } from '../services/teams-service';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-team-view',
@@ -118,7 +119,7 @@ export class TeamViewComponent {
       } as any);
       this.teamTasks.set(res?.rows ?? []);
     } catch (err) {
-      this.alertSvc.showError('Failed to load team details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the team. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);

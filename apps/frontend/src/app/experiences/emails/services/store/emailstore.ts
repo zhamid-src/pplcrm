@@ -2,6 +2,7 @@ import { computed, inject, signal, Service, debounced, effect, untracked } from 
 import { Router } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 import { EmailStatus } from '../../../../../../../../libs/common/src';
 
 import { EmailsService } from '../emails-service';
@@ -250,7 +251,7 @@ export class EmailsStore {
           void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });
         }
       } else {
-        this.alerts.showError(`Sync failed: ${msg}`);
+        this.alerts.showError(getUserErrorMessage(e, 'Sync failed. Please try again.'));
       }
       throw e;
     } finally {

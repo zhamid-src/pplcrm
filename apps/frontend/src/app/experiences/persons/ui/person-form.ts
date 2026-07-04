@@ -24,6 +24,7 @@ import { VolunteerService } from '../../../services/api/volunteer-service';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
 import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-person-form',
@@ -290,7 +291,7 @@ export class PersonForm implements OnInit {
       this.alertSvc.showSuccess('Assigned to selected household');
       this.closeAssignDrawer();
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not assign the household. Please try again.'));
     } finally {
       end();
     }
@@ -371,7 +372,9 @@ export class PersonForm implements OnInit {
       this.person.update((p) => (p ? { ...p, household_id: null } : p));
       this.alertSvc.showInfo('The person has been removed from the household. You may select a different household');
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      this.alertSvc.showError(
+        getUserErrorMessage(err, 'Could not remove the person from the household. Please try again.'),
+      );
     } finally {
       end();
     }
@@ -496,7 +499,7 @@ export class PersonForm implements OnInit {
         if (this.isDuplicateEmailError(err)) {
           this.emailError.set('This email address is already used by another person.');
         } else {
-          this.alertSvc.showError(String(err));
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
         }
       })
       .finally(() => end());
@@ -525,7 +528,7 @@ export class PersonForm implements OnInit {
       const res = await this.householdsSvc.getAll(opts);
       this.householdResults.set(res.rows || []);
     } catch (err) {
-      this.alertSvc.showError(String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load households. Please try again.'));
       this.householdResults.set([]);
     } finally {
       this.householdsLoading.set(false);
@@ -610,7 +613,7 @@ export class PersonForm implements OnInit {
         if (this.isDuplicateEmailError(err)) {
           this.emailError.set('This email address is already used by another person.');
         } else {
-          this.alertSvc.showError(String(err));
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not save the person. Please try again.'));
         }
       })
       .finally(() => end());

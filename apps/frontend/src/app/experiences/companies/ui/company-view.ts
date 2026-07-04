@@ -16,6 +16,7 @@ import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-company-view',
@@ -115,7 +116,7 @@ export class CompanyView {
       const count = await this.personsSvc.countByCompanyId(id);
       this.employeeCount.set(count);
     } catch (err) {
-      this.alertSvc.showError('Failed to load company details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the company. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);

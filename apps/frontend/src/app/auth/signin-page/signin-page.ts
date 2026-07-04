@@ -2,11 +2,13 @@ import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '
 import { AbstractControl, ValidatorFn } from '@angular/forms';
 import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { GENERIC_SIGNIN_ERROR } from '../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { TokenService } from '../../services/api/token-service';
+import { getUserErrorMessage } from '../../services/api/user-message';
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
@@ -274,7 +276,7 @@ export class SignInPage implements OnInit, OnDestroy {
       }
     } catch (err) {
       if (!(err instanceof Error && err.name === 'NotAllowedError')) {
-        this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to set up passkey.');
+        this.alertSvc.showError(getUserErrorMessage(err, 'Failed to set up the passkey. Please try again.'));
       }
     } finally {
       this.settingUpPasskey.set(false);
@@ -314,9 +316,7 @@ export class SignInPage implements OnInit, OnDestroy {
       if (retryAfterSec) {
         this.startResendCooldown(retryAfterSec);
       } else {
-        this.alertSvc.showError(
-          err instanceof Error && err.message ? err.message : 'Failed to resend verification email.',
-        );
+        this.alertSvc.showError(getUserErrorMessage(err, 'Could not send the verification email. Please try again.'));
       }
     } finally {
       this.resending.set(false);
@@ -353,7 +353,7 @@ export class SignInPage implements OnInit, OnDestroy {
 
   private handleError(err: unknown, emailVal?: string) {
     const tRPCData = getTRPCData(err);
-    const message = err instanceof Error && err.message ? err.message : String(err);
+    const message = getUserErrorMessage(err, 'Something went wrong, please try again');
     const retryAfterSec =
       (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
       this.parseRetryAfterSec(message);
@@ -367,7 +367,7 @@ export class SignInPage implements OnInit, OnDestroy {
       this.pendingEmail.set(emailVal);
       this.alertSvc.showError(message);
     } else if (emailVal && (code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
-      this.alertSvc.showError('Please check your email address and password and try again.');
+      this.alertSvc.showError(GENERIC_SIGNIN_ERROR);
     } else {
       this.alertSvc.showError(message);
     }

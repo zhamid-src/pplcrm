@@ -22,6 +22,7 @@ import { SystemMetadata } from '@uxcommon/components/system-metadata/system-meta
 import { Tags } from '@experiences/tags/ui/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-household-view',
@@ -149,7 +150,7 @@ export class HouseholdView {
       const count = await this.householdsSvc.getPeopleCount(id);
       this.peopleCount.set(count);
     } catch (err) {
-      this.alertSvc.showError('Failed to load household details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the household. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);

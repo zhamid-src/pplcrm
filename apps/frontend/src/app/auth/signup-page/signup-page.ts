@@ -10,6 +10,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
+import { getUserErrorMessage } from 'apps/frontend/src/app/services/api/user-message';
 
 @Component({
   selector: 'pc-signup',
@@ -81,7 +82,7 @@ export class SignUpPage {
             this.alertSvc.showError('Unable to complete signup.');
           }
         } catch (err) {
-          this.alertSvc.showError(err instanceof Error ? err.message : 'Signup failed.');
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not complete the signup. Please try again.'));
         } finally {
           end();
         }

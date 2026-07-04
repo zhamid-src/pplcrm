@@ -10,6 +10,7 @@ import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { UserService } from '../../../services/user.service';
 import { TasksService } from '../services/tasks-service';
 import { TeamsService } from '../../teams/services/teams-service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-task-add',
@@ -52,11 +53,8 @@ export class TaskAddComponent implements OnInit {
   });
 
   public ngOnInit(): void {
-
     void this.loadOnInit();
-
   }
-
 
   private async loadOnInit(): Promise<void> {
     const end = this._loading.begin();
@@ -87,7 +85,7 @@ export class TaskAddComponent implements OnInit {
         });
       }
     } catch (err) {
-      this.alertSvc.showError('Failed to load teammates or teams list: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load teammates and teams. Please try again.'));
     } finally {
       end();
     }

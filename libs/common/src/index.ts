@@ -9,7 +9,7 @@ export type {
   signUpInputType,
 } from './lib/auth';
 
-export { signInInputObj, signUpInputObj } from './lib/auth';
+export { GENERIC_SIGNIN_ERROR, signInInputObj, signUpInputObj } from './lib/auth';
 
 export type {
   INow,

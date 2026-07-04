@@ -29,6 +29,7 @@ import { SystemMetadata } from '@uxcommon/components/system-metadata/system-meta
 import { Tags } from '@experiences/tags/ui/tags';
 import { PcIconNameType } from '@icons/icons.index';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 interface SocialLinkDef {
   name: string;
@@ -338,7 +339,7 @@ export class PersonView {
         console.error('Failed to load activity log', err);
       }
     } catch (err) {
-      this.alertSvc.showError('Failed to load person details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the person. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);

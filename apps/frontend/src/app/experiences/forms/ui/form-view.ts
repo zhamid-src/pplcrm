@@ -19,6 +19,7 @@ import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs'
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { environment } from '../../../../environments/environment';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-form-view',
@@ -233,7 +234,7 @@ ${
       const subCount = await this.formsSvc.getSubmissionsCount(id);
       this.submissionsCount.set(subCount);
     } catch (err) {
-      this.alertSvc.showError('Failed to load form details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the form. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);
