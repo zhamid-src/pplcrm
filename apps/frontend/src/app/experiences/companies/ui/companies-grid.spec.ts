@@ -1,0 +1,103 @@
+import type { ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
+import { provideRouter } from '@angular/router';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { CompaniesGrid } from './companies-grid';
+import { CompaniesService } from '../services/companies-service';
+
+class MockCompaniesService {
+  import = vi.fn();
+  getAll = vi.fn().mockResolvedValue({ rows: [], count: 0 });
+  abort = vi.fn();
+  refreshCount = signal(0);
+  triggerRefresh = vi.fn();
+}
+
+describe('CompaniesGrid', () => {
+  let component: CompaniesGrid;
+  let fixture: ComponentFixture<CompaniesGrid>;
+  let mockCompaniesSvc: MockCompaniesService;
+
+  beforeEach(async () => {
+    mockCompaniesSvc = new MockCompaniesService();
+
+    await TestBed.configureTestingModule({
+      imports: [CompaniesGrid],
+      providers: [provideRouter([]), { provide: CompaniesService, useValue: mockCompaniesSvc }],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(CompaniesGrid);
+    component = fixture.componentInstance;
+  });
+
+  it('should create and initialize columns', () => {
+    expect(component).toBeTruthy();
+    expect(component['col']).toBeDefined();
+    expect(component['col'].map((c: any) => c.field)).toEqual([
+      'name',
+      'website',
+      'industry',
+      'email',
+      'phone',
+      'description',
+      'created_at',
+    ]);
+  });
+
+  it('should format the created_at column as a localized date', () => {
+    const createdCol = component['col'].find((c: any) => c.field === 'created_at');
+    expect(createdCol?.valueFormatter).toBeDefined();
+
+    const formatted = createdCol?.valueFormatter?.({ value: '2026-01-15T10:00:00Z', data: {} } as any);
+    expect(formatted).toMatch(/2026/);
+  });
+
+  it('should format an empty created_at value as an empty string', () => {
+    const createdCol = component['col'].find((c: any) => c.field === 'created_at');
+    const formatted = createdCol?.valueFormatter?.({ value: null, data: {} } as any);
+    expect(formatted).toBe('');
+  });
+
+  it('should map known CSV headers to company fields via autoMapHeader', () => {
+    expect(component['autoMapHeader']('Company Name')).toBe('name');
+    expect(component['autoMapHeader']('Website')).toBe('website');
+    expect(component['autoMapHeader']('Tel')).toBe('phone');
+    expect(component['autoMapHeader']('Unknown Column')).toBe('');
+  });
+
+  it('should open the import dialog and reset the summary', () => {
+    component['importSummary'].set({ inserted: 1, errors: 0, skipped: 0, failed: false });
+    component['openImportDialog']();
+
+    expect(component['importerOpen']()).toBe(true);
+    expect(component['importSummary']()).toBeNull();
+  });
+
+  it('should queue an import and refresh the grid on success', async () => {
+    mockCompaniesSvc.import.mockResolvedValue({ skipped: 2, file_name: 'companies.csv' });
+    const refreshSpy = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(component, 'grid', {
+      value: () => ({ refresh: refreshSpy }),
+      configurable: true,
+    });
+
+    await component['onImportSubmit']({ rows: [{ name: 'Acme' }], skipped: 2, fileName: 'companies.csv' });
+
+    expect(mockCompaniesSvc.import).toHaveBeenCalledWith([{ name: 'Acme' }], 2, 'companies.csv');
+    expect(component['importSummary']()).toEqual(expect.objectContaining({ skipped: 2, queued: true, failed: false }));
+    expect(component['importerOpen']()).toBe(false);
+    expect(refreshSpy).toHaveBeenCalled();
+  });
+
+  it('should surface an error summary when the import fails', async () => {
+    mockCompaniesSvc.import.mockRejectedValue(new Error('Import service unavailable'));
+
+    await component['onImportSubmit']({ rows: [], skipped: 0, fileName: 'bad.csv' });
+
+    expect(component['importSummary']()).toEqual(
+      expect.objectContaining({ failed: true, message: 'Import service unavailable' }),
+    );
+    expect(component['importerOpen']()).toBe(false);
+  });
+});
