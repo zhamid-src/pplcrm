@@ -35,6 +35,7 @@ Project-specific how-tos live in `.claude/skills/<name>/SKILL.md`. If one exists
 - `pplcrm-tenant-safety` — multi-tenant query scoping and the `local/no-unscoped-db-query` rule
 - `pplcrm-migrations` — writing/applying DB migrations, `schema.sql` baseline
 - `pplcrm-angular-components` — signals, the `form()` helper, loading gate, icons
+- `pplcrm-datagrid` — the house-built `pc-datagrid`: DI contract, columns, inline edit, selection, grid→detail handoff, test traps
 - `pplcrm-design-principles` — the app-wide UI/UX doctrine: three orientation questions, disclosure over suppression, guide-don't-error, semantic tokens, one-idiom-per-job, DaisyUI-first/CSS-over-JS, subtle purposeful motion. **Read before designing or reviewing any UI.**
 - `pplcrm-page-layout-ux` — detail-layout/header/breadcrumbs/record-navigation/activity-log/toasts/dialogs composition
 - `pplcrm-quality-gate` — the exact pre-commit-equivalent lint/build/test pipeline
@@ -86,6 +87,12 @@ These rules are strict and enforced by ESLint. Violations must be fixed, not sup
 - **No implicit `any`** — every function parameter must have an explicit type. Return types must be explicit on all exported and public functions.
 - **Use `unknown` over `any`** for data arriving from outside the module boundary (API responses before Zod parsing, `catch` clause bindings, `JSON.parse` results).
 - **Use `as const`** for literal values that must not widen (e.g., `const STATUS = ['active', 'inactive'] as const`).
+
+### `null` vs `undefined` (applies to new code and code you're editing — no retroactive sweeps)
+
+- **`null` = intentional absence in data** — DB columns, API payloads, Zod schemas. (Kysely/Postgres already give you this.)
+- **`undefined` = absence in code** — optional function params, optional object properties, uninitialized signals. Don't write `foo: string | null` on a type that never touches the DB or the wire.
+- **Checking:** `value == null` (loose equality — the one legitimate use of `==`) catches both and is the idiomatic guard at seams where either could appear.
 
 ### Async & Promises
 
@@ -205,17 +212,6 @@ npx nx build frontend && npx nx build backend
 npx nx test frontend && npx nx test backend
 ```
 
-**Why both are required — they enforce disjoint rule sets, not overlapping ones.** Each `apps/*/eslint.config.cjs` / `libs/*/eslint.config.cjs` is loaded standalone by `nx lint <project>`; it does not automatically inherit the root `eslint.config.cjs` that Husky's `lint-staged` runs (config in root `package.json`). Concretely, as of this writing:
+**Why both are required:** the pre-commit hook (plain `eslint`, root config) and `nx lint <project>` (project-local config) enforce **disjoint rule sets** — the hook catches `no-floating-promises`/`no-misused-promises`, only `nx lint backend` catches the multi-tenant `local/no-unscoped-db-query` rule. A green run of one says nothing about the other. The full mechanism, the known pre-existing failures, and worked before/after fixes for the promise rules live in **`pplcrm-quality-gate`** — read it before your first commit in a session.
 
-- `no-floating-promises` / `no-misused-promises` are declared **only** in the root config, so only the pre-commit `eslint` invocation catches them — `nx lint` doesn't, for any project, spec or not.
-- `local/no-unscoped-db-query` (the multi-tenant safety rule, see `pplcrm-tenant-safety`) is declared **only** in `apps/backend/eslint.config.cjs`, so only `nx lint backend` catches it — plain `eslint` from the repo root does not.
-- `apps/backend/eslint.config.cjs` and `libs/common/eslint.config.cjs` now additionally spread in the root config (so `nx lint backend`/`nx lint common` enforce the union of both rule sets — verified zero new violations when this was done). `apps/frontend/eslint.config.cjs` and `libs/uxcommon/eslint.config.cjs` do **not** yet do this; each has pre-existing violations that would surface if merged the same way (frontend: `@angular-eslint/no-output-native` on 2 files; uxcommon: `@angular-eslint/prefer-inject` on several) — fixing those and merging is a good follow-up, not yet done.
-- `require-await` is named below as a common blocker but is **not currently enforced by any config in this repo** (root or project-level) — treat that bullet as an aspirational/manual-review item until it's actually wired in, not something a green lint run guarantees.
-- Separately, `nx lint backend` currently fails on 2 real, pre-existing `local/no-unscoped-db-query` errors on the `donation_pledges` table (`donations/controller.ts` and `donations/repositories/pledges.repo.ts`) — unscoped queries already in the codebase, not a config issue. Worth a dedicated fix.
-
-Rules most likely to bite you (apply to **all** `.ts`, including specs/mocks):
-
-- **`no-misused-promises`** — don't pass an async/Promise-returning function where a `void`-returning callback is expected (event handlers, `mockImplementation`, array callbacks, Fastify hooks). Give it an explicit `: void` return type and do the async work another way. Prefer a sync mock callback over `async () => {}`.
-- **`no-floating-promises`** — every Promise is `await`-ed, `.catch()`-ed, or explicitly discarded with `void`.
-
-Never suppress a violation with a disable comment unless truly unavoidable — explain why inline when you do. See `pplcrm-quality-gate` for worked examples of each fix, pulled from real commits in this repo's history.
+Never suppress a violation with a disable comment unless truly unavoidable — explain why inline when you do.

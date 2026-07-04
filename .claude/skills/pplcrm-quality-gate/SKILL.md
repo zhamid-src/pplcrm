@@ -1,6 +1,6 @@
 ---
 name: pplcrm-quality-gate
-description: "Explains why `nx lint` passing does NOT mean the pre-commit hook will pass, and how to verify a change the way the hook actually does before committing. USE WHEN preparing to commit, when a commit was rejected by the pre-commit hook after lint looked clean, or when fixing @typescript-eslint/no-floating-promises or no-misused-promises. EXAMPLES: 'before committing', 'pre-commit failing', 'nx lint passed but the hook rejected it', 'no-floating-promises error', 'no-misused-promises on my event handler', 'how do I check this the way the hook does'."
+description: "Explains why `nx lint` passing does NOT mean the pre-commit hook will pass, and how to verify a change the way the hook actually does before committing. USE WHEN preparing to commit, when a commit was rejected by the pre-commit hook after lint looked clean, or when fixing @typescript-eslint/no-floating-promises or no-misused-promises. EXAMPLES: 'before committing', 'nx lint passed but the hook rejected it', 'no-misused-promises on my event handler'."
 ---
 
 # pplcrm Quality Gate
@@ -9,13 +9,13 @@ description: "Explains why `nx lint` passing does NOT mean the pre-commit hook w
 
 **`nx lint <project>` and the pre-commit hook enforce DIFFERENT rules. A green `nx lint` does not mean the hook will pass.** This is not a caching or stale-file problem — the two commands load different ESLint config files.
 
-- The pre-commit hook (`.husky/pre-commit` → `npx lint-staged`) runs plain `eslint` from the **repo root**, so ESLint loads the **root** `eslint.config.cjs`. That file declares the type-aware rules at `eslint.config.cjs:75-76`:
+- The pre-commit hook (`.husky/pre-commit` → `npx lint-staged`) runs plain `eslint` from the **repo root**, so ESLint loads the **root** `eslint.config.cjs`. That file declares the type-aware rules:
   ```
   '@typescript-eslint/no-floating-promises': 'error',
   '@typescript-eslint/no-misused-promises': 'error',
   ```
 - `nx lint <project>` runs the `@nx/eslint:lint` executor, which loads the **project-local** config (e.g. `apps/frontend/eslint.config.cjs`). Whether that enforces the root's promise rules depends on whether the project config spreads the root config in — and the four projects are split:
-  - **backend** and **common**: their configs now start with `...require('../../eslint.config.cjs')` (`apps/backend/eslint.config.cjs:19`, `libs/common/eslint.config.cjs:19`), so `nx lint backend` / `nx lint common` enforce the promise rules **and** their own project rules. For these two, `nx lint` is a superset of the hook.
+  - **backend** and **common**: their configs spread in the root config (`...require('../../eslint.config.cjs')`), so `nx lint backend` / `nx lint common` enforce the promise rules **and** their own project rules. For these two, `nx lint` is a superset of the hook.
   - **frontend** and **uxcommon**: their configs do **not** spread the root, so under `nx lint frontend` / `nx lint uxcommon`, `no-floating-promises` and `no-misused-promises` are **not enforced at all**. This is where the gap still lives. (They aren't merged yet because each has pre-existing violations that would surface: frontend trips `@angular-eslint/no-output-native` in `multiselect-filter.ts`/`singleselect-filter.ts`, uxcommon trips `@angular-eslint/prefer-inject` in several files. Fixing those and spreading the root config there too is the intended follow-up.)
 
 Verified with a throwaway file containing one floating promise:
@@ -28,7 +28,7 @@ Verified with a throwaway file containing one floating promise:
 
 ## Verify the way the hook does (authoritative)
 
-Run plain ESLint from the repo root on exactly the files you changed, with the same flag lint-staged uses (`package.json:15-18`):
+Run plain ESLint from the repo root on exactly the files you changed, with the same flag lint-staged uses (see `lint-staged` in the root `package.json`):
 
 ```bash
 npx eslint <changed-file-1> <changed-file-2> --report-unused-disable-directives-severity=off
@@ -48,8 +48,8 @@ npx prettier --write <changed-files>
 
 `nx lint` and the hook also disagree about `*.spec.ts`, which matters because tests are where floating/misused promises are easiest to introduce:
 
-- Root config turns `no-explicit-any` **off** for specs (`eslint.config.cjs:93-98`) but leaves the two promise rules **on** — verified: plain `eslint` on a spec with a floating promise still errors.
-- The backend tenant rule explicitly ignores specs: `ignores: ['**/*.spec.ts']` (`apps/backend/eslint.config.cjs:46`).
+- Root config turns `no-explicit-any` **off** for specs but leaves the two promise rules **on** — verified: plain `eslint` on a spec with a floating promise still errors.
+- The backend tenant rule explicitly ignores specs: `ignores: ['**/*.spec.ts']` in `apps/backend/eslint.config.cjs`.
 
 Net effect: a frontend/uxcommon `*.spec.ts` can look clean under `nx lint` yet still trip `no-floating-promises` / `no-misused-promises` in the hook. Writing tests is owned by **`pplcrm-testing`** — see it for runner/layout conventions; this skill only covers the lint interaction.
 
@@ -97,7 +97,7 @@ The pattern: give the `void`-returning slot (Angular lifecycle hook, `setInterva
 
 ## Honest note on `require-await`
 
-CLAUDE.md section 6 lists `@typescript-eslint/require-await` as a third type-aware rule that "most often blocks commits." **This session I could not confirm it is enforced.** It is not present in the root or any project `eslint.config.cjs`, and an `async` function with no `await` passed plain `eslint` cleanly (exit 0). There is also no commit in this repo's history fixing it. If you see a `require-await` complaint it is coming from your editor/tsserver settings, not this repo's gate. Do not spend commit-blocking effort on it unless a real `eslint` run flags it. (The fix, if ever enforced, is trivial: drop the unused `async`, or add the missing `await`.)
+`@typescript-eslint/require-await` is **not enforced by any config in this repo** — it is absent from the root and every project `eslint.config.cjs`, and an `async` function with no `await` passes plain `eslint` cleanly. If you see a `require-await` complaint it is coming from your editor/tsserver settings, not this repo's gate. Do not spend commit-blocking effort on it unless a real `eslint` run flags it. (The fix, if ever enforced, is trivial: drop the unused `async`, or add the missing `await`.)
 
 ## Non-goals
 

@@ -1,6 +1,6 @@
 ---
 name: pplcrm-design-principles
-description: "The app-wide UI/UX doctrine for PeopleCRM — beauty as a trust signal, the three orientation questions, disclosure over suppression, guide-don't-error, the consistency contract (semantic tokens, one modal/toast/empty-state idiom, sentence case), DaisyUI-first/CSS-over-JS implementation, and the motion rules for subtle purposeful animation. USE WHEN designing or building ANY new UI (page, dialog, form, grid feature, empty state, error message), adding an animation/transition/hover effect, choosing colors or button labels, writing user-facing copy, reviewing a UI change for polish/consistency, deciding how to surface an error or disabled state, choosing between a DaisyUI component and a custom widget, or when asked to 'make it beautiful/modern/professional/fun'. EXAMPLES: 'add a new page for X', 'what color should this badge be', 'the dark theme looks broken here', 'write the empty state for the donations tab', 'should this button be disabled?', 'how should I word this error', 'animate this icon toggle', 'add a transition when the panel opens', 'flash the row after save', 'review this UI for consistency', 'design the preflight dialog'."
+description: "The app-wide UI/UX doctrine for PeopleCRM — beauty as a trust signal, the three orientation questions, disclosure over suppression, guide-don't-error, the consistency contract (semantic tokens, one modal/toast/empty-state idiom, sentence case), DaisyUI-first/CSS-over-JS implementation, and the motion rules for subtle purposeful animation. USE WHEN designing or building ANY new UI (page, dialog, form, grid feature, empty state, error message), adding an animation/transition/hover effect, choosing colors or button labels, writing user-facing copy, reviewing a UI change for polish/consistency, deciding how to surface an error or disabled state, choosing between a DaisyUI component and a custom widget, or when asked to 'make it beautiful/modern/professional/fun'. EXAMPLES: 'what color should this badge be', 'how should I word this error', 'should this button be disabled?', 'flash the row after save'."
 ---
 
 # PeopleCRM design principles
@@ -53,7 +53,7 @@ work — it must **say so, with numbers**:
 
 - **Filters** are visible, removable chips plus a count sentence — never state hidden inside a
   dropdown. Live example: the datagrid's chips row with "Clear all"
-  (`apps/frontend/src/app/shared/components/datagrid/datagrid.html:41`).
+  (`apps/frontend/src/app/shared/components/datagrid/datagrid.html`).
 - **Disabled controls explain themselves.** A greyed button with no reason is a
   confidence-killer. Either attach a state-aware tooltip that names the unmet condition
   ("Select exactly 2 people to merge — 1 selected") or hide the control if it would mislead.
@@ -82,7 +82,7 @@ user guess is a design defect. In order of preference:
    first problem. A disabled save with no explanation is the classic dead end.
 3. **Offer the exit** — every empty or failed state ends with one concrete action. The canonical
    empty state is icon + plain sentence naming the cause + one action button
-   (`datagrid.html:247-275`: funnel icon, "No results match these filters", "Clear all filters"
+   (see `datagrid.html`: funnel icon, "No results match these filters", "Clear all filters"
    button). Empty tabs use the same pattern with the record's own next step: "Not part of a
    household yet" → **Assign household**. Never an italic grey "No tags assigned" string.
 4. **Fail specifically** — when something truly fails, the toast says what failed in the user's
@@ -103,8 +103,8 @@ same way. These are the assigned idioms; do not invent a parallel one:
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Page frame (record views)    | `pc-detail-layout` (see `pplcrm-page-layout-ux`)                                                                                                                                                                              | hand-rolled headers/shells                                                                    |
 | Blocking decision            | `ConfirmDialogService` (`libs/uxcommon/src/components/confirm-dialog.service.ts`) — `variant: 'danger'` for destructive; it supports styling **cancel as the safe default** ("Keep editing" primary, "Discard changes" plain) | browser `confirm()`, hand-rolled modals                                                       |
-| Fire-and-forget feedback     | `AlertService.showSuccess/showError/showInfo` (`libs/uxcommon/src/components/alerts/alert-service.ts:78-86`)                                                                                                                  | `window.alert`, inline banners                                                                |
-| Empty state                  | icon + sentence naming the cause + one action (`datagrid.html:247-275`)                                                                                                                                                       | italic grey placeholder text                                                                  |
+| Fire-and-forget feedback     | `AlertService.showSuccess/showError/showInfo` (`libs/uxcommon/src/components/alerts/alert-service.ts`)                                                                                                                        | `window.alert`, inline banners                                                                |
+| Empty state                  | icon + sentence naming the cause + one action (`datagrid.html`)                                                                                                                                                               | italic grey placeholder text                                                                  |
 | Async status                 | one indicator per surface via `createLoadingGate()` (`libs/uxcommon/src/loading-gate.ts`) — suppresses flicker under ~300ms; skeleton guard for first load                                                                    | double indicators (progress bar _and_ pulsing overlay), spinners that flash on fast responses |
 | Icon/state toggle            | `pc-swap` (`libs/uxcommon/src/components/swap/swap.ts`) — DaisyUI swap with `rotate` (default) or `flip`                                                                                                                      | JS-driven icon switching, bespoke toggle CSS                                                  |
 | Destructive action placement | demoted to the ⋯ overflow menu, behind the danger confirm                                                                                                                                                                     | Delete at equal rank beside Edit in the header                                                |
@@ -116,7 +116,7 @@ state exactly what they will do, with numbers when acting on a set.
 ## 5. Color: semantic tokens only
 
 The app has two DaisyUI themes defined in `apps/frontend/src/styles.css` — `light`
-(`styles.css:8-30`, primary `#0ea5e9`) and `dark` (`styles.css:55-82`, primary `#3ea6ff`, dark
+(primary `#0ea5e9`) and `dark` (primary `#3ea6ff`, dark
 surfaces `#0b1220`–`#1a2b45`). Every token differs between them, which is exactly why:
 
 - **Only semantic classes**: `text-base-content`, `bg-base-200`, `text-primary`, `btn-error`,
@@ -131,7 +131,7 @@ surfaces `#0b1220`–`#1a2b45`). Every token differs between them, which is exac
 - No `tailwind.config.js` exists or should exist — Tailwind v4 is configured in CSS. New tokens
   are a theme change in `styles.css`, made in **both** theme blocks, not a one-off utility.
 - This applies **inside animations too**: the datagrid's saved-row flash animates
-  `color-mix(in srgb, var(--color-success) 50%, transparent)` (`datagrid.css:28-42`), so the
+  `color-mix(in srgb, var(--color-success) 50%, transparent)` (`datagrid.css`), so the
   flash is theme-correct for free. Never hardcode a hue in a keyframe.
 
 ## 6. Prefer the platform: DaisyUI first, CSS over JavaScript
@@ -142,16 +142,16 @@ The implementation preference ladder, in order:
    `dropdown`, `swap`, `skeleton`, `loading`, `toast`… Check DaisyUI's catalog before building
    _any_ new widget; it ships theme-token styling, states, and accessibility for free.
 2. **Plain CSS** — a transition, a keyframe, a `:hover`/`:focus-visible` rule, a grid/flex
-   layout. Shared keyframes live in the `@layer utilities` block of `styles.css:141-276`;
+   layout. Shared keyframes live in the `@layer utilities` block of `styles.css`;
    component-scoped ones next to the component (`datagrid.css`).
 3. **TypeScript, last** — only when genuine state logic is involved (what to show, when),
    never to move pixels. The datagrid's cell flash is the model split: TS decides _which_
-   cells flashed (`flashedCells` signal, `datagrid.ts:2450-2473`); CSS does all the animating
-   (`td.cell-flash`, `datagrid.css:40-42`).
+   cells flashed (the `flashedCells` signal in `datagrid.ts`); CSS does all the animating
+   (`td.cell-flash` in `datagrid.css`).
 
 This is already the house reality — the frontend has **zero** `@angular/animations` usage and
 no JS animation library; keep it that way. Worked example: `pc-swap`
-(`swap.ts:9-19`) is a complete animated icon toggle in ~10 lines of template — a DaisyUI
+(`swap.ts`) is a complete animated icon toggle in ~10 lines of template — a DaisyUI
 `swap swap-rotate` label, two `pc-icon`s, no animation code at all. It's used in the sidebar,
 navbar, and email compose. That's the bar: if your animated widget needs a `setInterval`, a
 resize observer, or manual style mutation, you're on the wrong rung of the ladder.
@@ -169,17 +169,17 @@ name the state change an animation narrates, cut it.
 **The blessed vocabulary** — reuse before inventing:
 
 - **Enter/exit**: `animate-up/down/left/right`, `animate-drop` (scale-fade), and the matching
-  `animate-exit-*` set — all defined once in `styles.css:141-276`, all **0.3s ease-in-out**.
+  `animate-exit-*` set — all defined once in `styles.css`, all **0.3s ease-in-out**.
   That is the house timing; don't introduce new durations casually.
 - **Success feedback**: the saved-cell flash — `row-saved-flash`, 1.2s ease-out fading from
-  50% success-color to transparent (`datagrid.css:28-42`), triggered after inline save and
+  50% success-color to transparent (`datagrid.css`), triggered after inline save and
   undo/redo. This is the canonical "your change landed" moment; reuse the pattern (semantic
   token, one-shot, fade to nothing) for any new mutation feedback.
 - **Attention**: `animate-flash` (1s opacity pulse, runs once) for drawing the eye to a thing
   that just changed elsewhere on screen.
 - **Toggles**: `pc-swap` rotate/flip (§6).
 - **Spinners**: `animate-spin` only while genuinely working, and only behind a loading gate
-  (e.g. `tool-button.ts:31`) so nothing spins on a sub-300ms response.
+  (e.g. `tool-button.ts`) so nothing spins on a sub-300ms response.
 
 **The rules:**
 
@@ -203,7 +203,7 @@ name the state change an animation narrates, cut it.
 
 ## 8. Typography & hierarchy
 
-- Body type is Roboto 300 (`styles.css:89-92`); headings earn weight (600–700), so **weight is
+- Body type is Roboto 300 (`styles.css`); headings earn weight (600–700), so **weight is
   hierarchy** — don't reach for size or color first.
 - Kickers/eyebrows are small uppercase tracked labels; record names are the big type.
 - Tabular numerals for counts and money so columns don't shimmy.
