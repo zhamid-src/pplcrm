@@ -35,8 +35,8 @@ add your own delete button.
 
 ## Prev/next record navigation: `record-navigation.service.ts`
 
-New pattern (`apps/frontend/src/app/services/record-navigation.service.ts`, untracked on branch
-`fix/lint-warnings`). Two halves:
+New pattern (`apps/frontend/src/app/services/record-navigation.service.ts`, introduced in commit
+`6eb485a8`). Two halves:
 
 1. **The grid captures the filtered id set** on record open. `datagrid.ts:2522-2528` calls
    `selectAllMatching()` then `recordNav.setContext(entityKey, ids, count)`, keyed by the grid's
@@ -71,8 +71,8 @@ deep-linked straight to a record (no grid handoff), `positionLabel` is `null`, t
 hidden, and J/K do nothing. That's intended: no fake "1 of 1".
 
 The `noun` argument is only for aria-labels ("Previous person"); it does not have to match the
-entity key. All 12 view components already use this helper — grep
-`injectRecordNavigation` for live call sites.
+entity key. The detail views already use this helper (8 call sites at last count) — grep
+`injectRecordNavigation` for the current list rather than trusting a count.
 
 ## Breadcrumbs
 
@@ -105,8 +105,9 @@ Verified placement: inside the Activity tab panel on tabbed views
 
 `entity` and `entityId` are `input.required` (`record-activities.ts:19-20`). **`entity` is the DB
 table name, not the route** — `'persons'` (route is `/people`), `'companies'`, `'teams'`,
-`'households'`. `entityId` is `id()` (the required `input` on the view). Match the table name or
-the activity feed loads nothing.
+`'households'`. `entityId` is the record id from the view's required `input` (`id()`, or `id()!`
+where the surrounding template hasn't null-guarded). Match the table name or the activity feed
+loads nothing.
 
 ## AlertService vs confirm-dialog vs neither
 
@@ -158,9 +159,10 @@ Every page must answer three orientation questions:
       via `AlertService` toasts — never `window.alert` or inline banners.
 - [ ] **Semantic DaisyUI tokens only** — `text-base-content`, `bg-primary`, `badge-neutral`, etc.
       No hardcoded Tailwind hues (`text-teal-500`, `text-amber-500`, `bg-[#0a66c2]`) — they break
-      the dark theme. NOTE: some current views still violate this (`company-view.html:88-100`,
-      `person-view.ts:160-188`); the design track lists converting stat-card hues to semantic
-      tokens as pending cleanup — don't copy those as the pattern.
+      the dark theme. NOTE: some current views still violate this — stat-card hues
+      (`company-view.html:88-100`, `person-view.html:172-213`) and social-link brand colors
+      (`person-view.ts:160-188`, e.g. `bg-[#0a66c2]`); the design track lists converting these to
+      semantic tokens as pending cleanup — don't copy them as the pattern.
 - [ ] **Disclosure over suppression** — a disabled control says _why_ (or is hidden if it would be
       misleading); buttons state exactly what they do; no hover-only affordances; no dead/misleading
       affordances (e.g. a bookmark star on a record page that doesn't bookmark the record).

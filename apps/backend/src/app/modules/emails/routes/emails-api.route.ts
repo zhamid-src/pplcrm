@@ -374,12 +374,14 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
     const msToken = await db
       .selectFrom('ms_oauth_tokens')
       .select(['user_id', 'ms_email'])
+      .where('tenant_id', '=', tenantId)
       .where('user_id', '=', userId)
       .executeTakeFirst();
 
     const googleToken = await db
       .selectFrom('google_oauth_tokens')
       .select(['user_id', 'google_email'])
+      .where('tenant_id', '=', tenantId)
       .where('user_id', '=', userId)
       .executeTakeFirst();
 
