@@ -1,6 +1,6 @@
 ---
 name: pplcrm-add-entity
-description: "Orchestrates adding a whole new CRUD record type across every layer of the pplcrm monorepo (Zod schema triad, DB migration, Kysely model, tRPC router, backend registration, frontend experience with list/detail/edit, breadcrumbs, activity log, tests) as one ordered checklist. USE WHEN adding a new CRUD entity/module/experience, scaffolding a new record type end-to-end, or wiring a new table all the way from Postgres to an Angular list+detail page. EXAMPLES: 'add a new Campaigns entity', 'scaffold a Projects module with a list and detail view', 'I need a new record type end to end', 'create a new experience for donors'."
+description: "Orchestrates adding a whole new CRUD record type across every layer of the pplcrm monorepo (Zod schema triad, DB migration, Kysely model, tRPC router, backend registration, frontend experience with list/detail/edit, breadcrumbs, activity log, tests) as one ordered checklist. USE WHEN adding a new CRUD entity/module/experience, scaffolding a new record type end-to-end, or wiring a new table all the way from Postgres to an Angular list+detail page. EXAMPLES: 'add a new Campaigns entity', 'scaffold a Projects module with a list and detail view', 'create a new experience for donors'."
 ---
 
 # Add a new CRUD entity (end-to-end orchestration)
@@ -14,18 +14,17 @@ controller, repository, tRPC router, service, list grid, detail view, and edit f
 
 1. **tRPC routers are NOT registered in `routes.ts`.** `apps/backend/src/app/routes.ts` is
    Fastify **REST-only** (webhooks, OAuth callbacks, file downloads). Your new entity's router is
-   registered in `apps/backend/src/app/modules/trpc.ts:34` (the `trpcRouter` object). Putting it in
+   registered in the `trpcRouter` object in `apps/backend/src/app/modules/trpc.ts`. Putting it in
    `routes.ts` does nothing.
 2. **Four separate `libs/common` files must all be touched** for the type layer — miss one and the
    build breaks in a confusing place: the schema barrel (`lib/schema.ts`), the `z.infer` type
    aliases (`lib/models.ts`), the Kysely `Models` interface + table interface
    (`lib/kysely.models.ts`), and the package barrel `libs/common/src/index.ts` — it uses
    **explicit named re-export blocks**, not `export *`, so your new symbols must be added by name
-   to the `from './lib/schema'` block (ends ~`index.ts:151`) and the `from './lib/models'` block
-   (ends ~`index.ts:76`) or the backend build fails with
-   `No matching export in "libs/common/src/index.ts"`.
-3. **`modules/trpc.ts` — the `trpcRouter({...})` object (`:34-65`) is the registration that
-   matters.** The re-export block below it (`:67-116`) is a convenience convention most routers
+   to the `from './lib/schema'` block and the `from './lib/models'` block
+   or the backend build fails with `No matching export in "libs/common/src/index.ts"`.
+3. **`modules/trpc.ts` — the `trpcRouter({...})` object is the registration that
+   matters.** The re-export block below it is a convenience convention most routers
    follow, but it is not required for the endpoint to work (`ZapierRouter` is registered in the
    object yet absent from the re-exports).
 4. **Every DB query must be tenant-scoped.** `BaseController`/`crud-router` inject `tenant_id`
@@ -39,9 +38,9 @@ controller, repository, tRPC router, service, list grid, detail view, and edit f
 Create `Add<Entity>Obj` and `Update<Entity>Obj` using the shared helpers from `core.schema`
 (`nameSchema`, `descriptionSchema`, `idSchema`). (The full triad adds an `XObj` read-shape, but
 teams-style entities only need Add/Update — see `pplcrm-schemas-validation`.) Real example:
-`libs/common/src/lib/schemas/teams.schema.ts:4` (`AddTeamObj`) and `:13` (`UpdateTeamObj`).
+`AddTeamObj`/`UpdateTeamObj` in `libs/common/src/lib/schemas/teams.schema.ts`.
 Then export it twice: add `export * from './schemas/<entity>.schema';` to
-`libs/common/src/lib/schema.ts:5`, AND add `Add<Entity>Obj`/`Update<Entity>Obj` by name to the
+`libs/common/src/lib/schema.ts`, AND add `Add<Entity>Obj`/`Update<Entity>Obj` by name to the
 `from './lib/schema'` re-export block in `libs/common/src/index.ts` (it's named exports, not
 `export *` — skipping this breaks the backend build).
 → Deep dive on the triad, `.partial()` vs hand-written Update, `core.schema` helpers:
@@ -50,17 +49,17 @@ Then export it twice: add `export * from './schemas/<entity>.schema';` to
 ### 2. Inferred TS types (`libs/common/src/lib/models.ts`)
 
 Add `export type Add<Entity>Type = z.infer<typeof Add<Entity>Obj>;` and the Update variant.
-Real example: `libs/common/src/lib/models.ts:121` (`AddTeamType`) and `:131` (`UpdateTeamType`).
+Real example: `AddTeamType` and `UpdateTeamType` in `libs/common/src/lib/models.ts`.
 Then add both type names to the `from './lib/models'` named re-export block in
 `libs/common/src/index.ts` (same named-exports gotcha as step 1).
 
 ### 3. Kysely model (`libs/common/src/lib/kysely.models.ts`)
 
-The header comment at `:5-6` states the rule: "When adding a new table … Add a model and add it to
+The file's header comment states the rule: "When adding a new table … Add a model and add it to
 the interface Models". Do both: define `interface <Entity> extends RecordType { ... }` (real
-example `interface Teams` at `:242`) and add `<table>: <Entity>;` to the `Models` interface at
-`:31` (see `teams: Teams;` at `:42`). Junction/mapping tables use `extends JunctionRecordType`
-(`interface MapTeamsPersons` at `:249`).
+example: `interface Teams`) and add `<table>: <Entity>;` to the `Models` interface (see
+`teams: Teams;`). Junction/mapping tables use `extends JunctionRecordType`
+(`interface MapTeamsPersons`).
 
 ### 4. Migration (`apps/backend/src/app/_migrations/YYYY-MM-DD-<description>.ts`)
 
@@ -68,38 +67,37 @@ New timestamped file exporting `up(db)` and `down(db)`. For the `up()`/`down()` 
 `apps/backend/src/app/_migrations/2026-06-27-person-opt-in.ts` (uses ``sql`...`.execute(db)``) —
 but note that file is an `ALTER TABLE`; a new entity needs a `CREATE TABLE` including the standard
 `RecordType` base columns (`id`, `tenant_id`, `createdby_id`, `updatedby_id`, `created_at`,
-`updated_at` — see `kysely.models.ts:158-165`, and copy a real table's DDL from
+`updated_at` — see `RecordType` in `kysely.models.ts`, and copy a real table's DDL from
 `_migrations/schema.sql` for defaults/indexes). Never edit an already-applied migration.
 → Naming convention, the `schema.sql` baseline, the runner: `pplcrm-migrations`.
 
 ### 5. Backend module (`apps/backend/src/app/modules/<entity>/`)
 
 - **Repository**: `repositories/<entity>.repo.ts` — `class <Entity>Repo extends BaseRepository<'<table>'>`
-  with `super('<table>')`. Real example: `modules/teams/repositories/teams.repo.ts:9,13`.
+  with `super('<table>')`. Real example: `modules/teams/repositories/teams.repo.ts`.
 - **Controller**: `controller.ts` — `class <Entity>Controller extends BaseController<'<table>', <Entity>Repo>`.
-  Real example: `modules/teams/controller.ts:18` (and `tags/controller.ts:8`).
+  Real example: `modules/teams/controller.ts` (and `tags/controller.ts`).
 - **tRPC router**: `trpc.router.ts`. Two patterns exist:
-  - Explicit procedures (`teams/trpc.router.ts:42` — `getAll`/`getById`/`add`/`update`/`delete`
+  - Explicit procedures (`teams/trpc.router.ts` — `getAll`/`getById`/`add`/`update`/`delete`
     wired to `authProcedure`), OR
   - `createCrudRouter(controller, Add<Entity>Obj, Update<Entity>Obj)` for standard CRUD, then spread
-    it: real example `tags/trpc.router.ts:10-15` using `apps/backend/src/app/lib/crud-router.ts:6`.
-    `crud-router` already injects `tenant_id`/`createdby_id`/`updatedby_id` from `ctx.auth`
-    (`crud-router.ts:21-28`).
+    it: real example `tags/trpc.router.ts` using `apps/backend/src/app/lib/crud-router.ts`.
+    `crud-router` already injects `tenant_id`/`createdby_id`/`updatedby_id` from `ctx.auth`.
     → TRPCError codes, correlationId+Pino sanitization, transactions, transactional outbox:
     `pplcrm-trpc-backend`.
 
 ### 6. Register the router (`apps/backend/src/app/modules/trpc.ts`)
 
-Import it and add `<table>: <Entity>Router,` to the `trpcRouter` object (`:34-65`; see `teams:` at
-`:45`) — this is what makes the endpoint callable and type-safe from the frontend. Optionally also
-add it to the convenience re-export block (`:67-116`; see `:86`) to match most existing routers.
+Import it and add `<table>: <Entity>Router,` to the `trpcRouter` object (see `teams:` there) —
+this is what makes the endpoint callable and type-safe from the frontend. Optionally also
+add it to the convenience re-export block below it to match most existing routers.
 
 ### 7. Frontend service (`apps/frontend/src/app/experiences/<entity>/services/<entity>-service.ts`)
 
 `@Service() class <Entity>Service extends AbstractAPIService<'<table>', Update<Entity>Type>` with
 `endpointName = '<table>'`. Derive row/detail types from `RouterOutputs` rather than re-declaring:
 `export type <Entity>Detail = RouterOutputs['<table>']['getById'];`. Real example:
-`experiences/teams/services/teams-service.ts:13-19`. **`AbstractAPIService` is abstract with ~13
+`experiences/teams/services/teams-service.ts`. **`AbstractAPIService` is abstract with many
 required members** (`add`, `addMany`, `attachTag`, `count`, `detachTag`, `getAll`,
 `getAllArchived`, `getById`, `getTags`, `update`, `exportCsv`, …) — mirror how `teams-service.ts`
 implements each; several are one-line tRPC delegations or no-op stubs.
@@ -109,7 +107,8 @@ implements each; several are one-line tRPC delegations or no-op stubs.
 Mirror teams:
 
 - List grid: `<entity>-grid.ts` (real: `teams/ui/teams-grid.ts` — provides the service via
-  `{ provide: AbstractAPIService, useExisting: <Entity>Service }` at `teams-grid.ts:30`). If the
+  `{ provide: AbstractAPIService, useExisting: <Entity>Service }`) → grid mechanics, columns,
+  inline edit: `pplcrm-datagrid`. If the
   experience needs an icon, verify the name is a real `PcIconNameType` key in
   `libs/uxcommon/src/components/icons/icons.index.ts` before using it — invalid names silently
   render the `unknown` fallback.
@@ -121,22 +120,22 @@ Mirror teams:
 ### 9. Route wiring (`apps/frontend/src/app/dashboard.routes.ts`)
 
 Add a route block with children: `''` → grid, `'add'` → form, `':id'` → view, `':id/edit'` → form.
-Real example: the `people` block at `dashboard.routes.ts:13-34` and `tags` at `:83`. (Top-level
+Real example: the `people` and `tags` blocks in `dashboard.routes.ts`. (Top-level
 `app.routes.ts` only lazy-loads the dashboard shell and auth pages — experiences live in
 `dashboard.routes.ts`.)
 
 ### 10. Breadcrumbs (in the detail view component)
 
 Expose a `computed<PcBreadcrumb[]>` and bind it to `[crumbs]` on `<pc-detail-layout>`. Real example:
-`team-view.ts:59-62` (the `crumbs` computed) bound at `team-view.html:4`.
+the `crumbs` computed in `team-view.ts`, bound in `team-view.html`.
 → Detail-layout composition, record prev/next nav, `AlertService` vs confirm-dialog:
 `pplcrm-page-layout-ux`.
 
 ### 11. Activity log (MANDATORY for any data-modifying entity)
 
 Every detail view must include `<pc-record-activities [entity]="'<table>'" [entityId]="id()!">`.
-Real example: `team-view.html:94`. Import `RecordActivities` from
-`@experiences/activity/ui/record-activities/record-activities` (`team-view.ts:4,26`).
+Real example: `team-view.html`. Import `RecordActivities` from
+`@experiences/activity/ui/record-activities/record-activities` (see `team-view.ts`).
 
 ### 12. Tests (co-located `*.spec.ts`, Vitest)
 
