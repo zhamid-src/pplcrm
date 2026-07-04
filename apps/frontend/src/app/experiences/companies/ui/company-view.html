@@ -8,8 +8,15 @@
   [deleteText]="'Delete company'"
   [btn1Text]="'Edit company'"
   [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
   (save)="editCompany()"
   (delete)="deleteCompany()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
 >
   @if (company()) {
   <!-- Main Content Grid -->

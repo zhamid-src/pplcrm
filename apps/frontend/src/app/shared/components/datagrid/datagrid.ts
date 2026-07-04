@@ -94,6 +94,7 @@ import { EditableCellDirective } from './directives/editable-cell.directive';
 import { HeaderResizeDirective } from './directives/header-resize.directive';
 import { GridStoreService } from './services/grid-store.service';
 import { UndoManager } from './undo-redo-mgr';
+import { RecordNavigationService } from '@frontend/services/record-navigation.service';
 
 @Component({
   selector: 'pc-datagrid',
@@ -184,6 +185,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly editingCtrl = inject(EditingController);
   private readonly fetchCtrl = inject(FetchController);
   private readonly reorder = inject(ReorderController);
+  private readonly recordNav = inject(RecordNavigationService);
   public readonly searchTerm = this.searchSvc.searchSignal;
   private readonly hasEditableColumns = signal(false);
   private readonly headerMinWidths = signal<Record<string, number>>({});
@@ -2493,12 +2495,14 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
     const vr = this.viewRoute();
     if (vr) {
+      this.captureRecordNavContext(vr);
       if (vr.startsWith('/')) {
         void this.router.navigate([vr, targetId]);
       } else {
         void this.router.navigate([vr, targetId], { relativeTo: this.route });
       }
     } else {
+      this.captureRecordNavContext(this.currentListPath());
       void this.navSvc.viewIfAllowed({
         id: targetId,
         lastRowHovered: this.lastRowHovered,
@@ -2506,6 +2510,21 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         navigate: (path) => this.navSvc.navigateIfValid(this.router, this.route, path),
       });
     }
+  }
+
+  /** The grid's own list route, stripped of query/fragment (e.g. "/teams") - used as the record-nav entity key when no explicit viewRoute is set. */
+  private currentListPath(): string {
+    const [pathAndQuery] = this.router.url.split('#');
+    const [path] = (pathAndQuery ?? this.router.url).split('?');
+    return path ?? this.router.url;
+  }
+
+  /** Hands the currently filtered id set to the detail page so it can walk "N of M filtered" with J/K. */
+  private captureRecordNavContext(entityKey: string): void {
+    this.fetchCtrl
+      .selectAllMatching()
+      .then(({ ids, count }) => this.recordNav.setContext(entityKey, ids, count))
+      .catch(() => void 0);
   }
 }
 

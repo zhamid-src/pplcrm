@@ -8,8 +8,15 @@
   [deleteText]="'Delete event'"
   [btn1Text]="'Edit event'"
   [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
   (save)="editEvent()"
   (delete)="deleteEvent()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
 >
   @if (event()) {
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">

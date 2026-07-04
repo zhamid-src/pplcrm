@@ -8,8 +8,15 @@
   [deleteText]="'Delete event'"
   [btn1Text]="'Edit event'"
   [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
   (save)="editEvent()"
   (delete)="deleteEvent()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
 >
   @if (event()) {
   <!-- Main Content Grid -->

@@ -18,6 +18,7 @@ import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { environment } from '../../../../environments/environment';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 
 @Component({
   selector: 'pc-form-view',
@@ -45,6 +46,7 @@ export class FormViewComponent {
   private readonly dialogs = inject(ConfirmDialogService);
 
   readonly id = input.required<string>();
+  protected readonly recordNav = injectRecordNavigation('form', this.id);
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);

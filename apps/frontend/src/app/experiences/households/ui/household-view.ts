@@ -21,6 +21,7 @@ import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs'
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { Tags } from '@experiences/tags/ui/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 
 @Component({
   selector: 'pc-household-view',
@@ -43,6 +44,8 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 })
 export class HouseholdView {
   readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('household', this.id);
 
   private readonly alertSvc = inject(AlertService);
   private readonly userService = inject(UserService);
