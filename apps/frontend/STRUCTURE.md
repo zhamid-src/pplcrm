@@ -353,11 +353,11 @@ apps/
               workflow-form.ts
               workflows-grid.ts
         layout/
-          breadcrumb/
-            breadcrumb.ts
           dashboards/
             dashboard.html
             dashboard.ts
+          favourite-toggle/
+            favourite-toggle.ts
           navbar/
             navbar.html
             navbar.ts
@@ -1463,144 +1463,6 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
     return this.api.companies.mergeCompanies.mutate({ target_id: targetId, source_id: sourceId });
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/companies/ui/company-view.html
-
-```html
-<pc-detail-layout
-  [title]="'Company Details'"
-  [icon]="'briefcase'"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!company()"
-  [showDelete]="true"
-  [deleteText]="'Delete Company'"
-  [btn1Text]="'Edit Company'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editCompany()"
-  (delete)="deleteCompany()"
->
-  @if (company()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Company Details Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Company Card -->
-      <pc-profile-card [avatarText]="initials()">
-        <!-- Name & Industry -->
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ company().name }}</h2>
-        @if (company().industry) {
-        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">{{ company().industry }}</div>
-        } @else {
-        <span class="text-xs text-base-content/40 italic mb-4">No industry assigned</span>
-        }
-
-        <!-- Contact details list -->
-        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
-          <pc-detail-item
-            label="Website"
-            [value]="company().website"
-            icon="globe-americas"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Email Address"
-            [value]="company().email"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Phone Number"
-            [value]="company().phone"
-            icon="identification"
-            [copyable]="true"
-          ></pc-detail-item>
-        </div>
-
-        <!-- Internal Notes (Short summary) -->
-        @if (company().notes) {
-        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1">
-            Internal Notes
-          </span>
-          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-            {{ company().notes }}
-          </p>
-        </div>
-        }
-
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="company().created_at"
-          [createdBy]="getUserName(company().createdby_id)"
-          [updatedAt]="company().updated_at"
-          [updatedBy]="getUserName(company().updatedby_id)"
-        ></pc-system-metadata>
-      </pc-profile-card>
-    </div>
-
-    <!-- Right Column: Stats & Tabs -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Panel -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <pc-stat-card
-          [title]="'Employees'"
-          [value]="employeeCount()"
-          [description]="'Total staff listed'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-teal-500'"
-          [iconColorClass]="'text-teal-500'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Enriched from Google'"
-          [value]="isEnriched() ? 'Yes' : 'No'"
-          [description]="'Google Places sync status'"
-          [icon]="'check-circle'"
-          [valueColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
-          [iconColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Tabs Panel -->
-      <pc-tabs [tabs]="companyTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'companies'" [entityId]="id()"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="employees" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @defer (on viewport) {
-            <pc-people-in-company [companyId]="id()"></pc-people-in-company>
-            } @placeholder {
-            <div class="skeleton w-full h-32"></div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="details" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (company().description) {
-            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2">
-                Company Description
-              </span>
-              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-                {{ company().description }}
-              </p>
-            </div>
-            } @else {
-            <div class="text-center py-10 text-base-content/40 italic">No company description recorded.</div>
-            }
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.html
@@ -2938,313 +2800,6 @@ export class EventsFrontendService extends AbstractAPIService<'events', UpdateEv
 }
 ```
 
-## File: apps/frontend/src/app/experiences/events/ui/event-view.html
-
-```html
-<pc-detail-layout
-  [title]="'Event Details'"
-  [icon]="'calendar'"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!event()"
-  [showDelete]="true"
-  [deleteText]="'Delete Event'"
-  [btn1Text]="'Edit Event'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editEvent()"
-  (delete)="deleteEvent()"
->
-  @if (event()) {
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left: Event Info Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <pc-profile-card iconName="calendar">
-        <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
-        <div class="flex flex-wrap gap-2 mb-4 justify-center">
-          @if (event().is_published) {
-          <span class="badge badge-success font-semibold uppercase text-xs">Published</span>
-          } @else {
-          <span class="badge badge-warning font-semibold uppercase text-xs">Draft</span>
-          } @if (eventPassed()) {
-          <span class="badge badge-neutral font-semibold uppercase text-xs">Past</span>
-          } @else {
-          <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
-          }
-        </div>
-
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          @if (event().description) {
-          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ event().description }}</div>
-          }
-
-          <pc-detail-row icon="map-pin" iconClass="text-error">
-            <span class="text-xs">
-              <strong>Location:</strong> {{ event().location_address || 'No Address Provided' }}
-            </span>
-          </pc-detail-row>
-
-          <pc-detail-row icon="calendar" iconClass="text-info">
-            <div class="text-xs flex flex-col">
-              <span><strong>Start:</strong> {{ event().start_time | date: 'medium' }}</span>
-              <span><strong>End:</strong> {{ event().end_time | date: 'medium' }}</span>
-            </div>
-          </pc-detail-row>
-
-          @if (event().contact_email || event().contact_phone) {
-          <div class="divider my-1"></div>
-          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">Organizer Contact</div>
-          @if (event().contact_email) {
-          <pc-detail-row icon="envelope" iconClass="text-teal-500">
-            <span class="text-xs">{{ event().contact_email }}</span>
-          </pc-detail-row>
-          } @if (event().contact_phone) {
-          <pc-detail-row icon="phone" iconClass="text-purple-500">
-            <span class="text-xs">{{ event().contact_phone }}</span>
-          </pc-detail-row>
-          } } @if (ticketTypes().length > 0) {
-          <div class="divider my-1"></div>
-          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">Ticket Types</div>
-          @for (ticket of ticketTypes(); track ticket.id) {
-          <div class="flex justify-between text-xs px-1">
-            <span class="font-semibold">{{ ticket.name }}</span>
-            <span class="text-base-content/60">
-              {{ ticket.price_cents ? '$' + (ticket.price_cents / 100).toFixed(2) : 'Free' }} @if (ticket.capacity) { ·
-              {{ ticket.capacity }} max }
-            </span>
-          </div>
-          } }
-        </div>
-      </pc-profile-card>
-
-      @if (publicUrl()) {
-      <pc-card title="Public RSVP Link" icon="globe-americas">
-        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copyPublicUrl()">
-          <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
-        </button>
-        <div class="flex gap-2">
-          <input
-            type="text"
-            [value]="publicUrl()"
-            readonly
-            class="input input-bordered input-xs flex-1 font-mono text-[10px]"
-          />
-          <a [href]="publicUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
-            <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
-          </a>
-        </div>
-        @if (!event().is_published) {
-        <div class="alert alert-warning py-2 text-xs flex gap-2 mt-1">
-          <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-          <span>This event is not published yet. Publish it to make the RSVP page live.</span>
-        </div>
-        }
-      </pc-card>
-      }
-    </div>
-
-    <!-- Right: Stats + Tabs -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <pc-stat-card
-          [title]="'Registered'"
-          [value]="activeCount()"
-          [description]="'Active registrations'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Attended'"
-          [value]="attendedCount()"
-          [description]="'Checked in'"
-          [icon]="'check-circle'"
-          [valueColorClass]="'text-teal-500'"
-          [iconColorClass]="'text-teal-500'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Capacity Left'"
-          [value]="remainingCapacity()"
-          [description]="'of ' + (event().capacity ?? 'unlimited') + ' total'"
-          [icon]="'adjustments-horizontal'"
-          [valueColorClass]="'text-orange-500'"
-          [iconColorClass]="'text-orange-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Tabs -->
-      <pc-tabs [tabs]="eventTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="attendees" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <!-- Add Registration -->
-            <pc-card title="Add Registration" icon="user-plus">
-              <div class="flex flex-col sm:flex-row gap-3 items-end">
-                <div class="relative flex-1 space-y-1">
-                  <label class="label text-xs font-semibold text-base-content/65 uppercase">Search People</label>
-                  <div class="relative">
-                    <input
-                      type="text"
-                      class="input input-bordered input-sm w-full pl-9"
-                      placeholder="Search by name or email..."
-                      [ngModel]="personSearch()"
-                      (ngModelChange)="onPersonSearch($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                    <div
-                      class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-base-content/40"
-                    >
-                      <pc-icon name="magnifying-glass" [size]="4"></pc-icon>
-                    </div>
-                  </div>
-                  @if (personSearchResults().length > 0) {
-                  <div
-                    class="absolute z-10 w-full mt-0.5 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
-                  >
-                    @for (p of personSearchResults(); track p.id) {
-                    <div (click)="selectPerson(p)" class="px-3 py-2 hover:bg-base-200 cursor-pointer">
-                      <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
-                      <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
-                    </div>
-                    }
-                  </div>
-                  }
-                </div>
-
-                @if (ticketTypes().length > 0) {
-                <div class="space-y-1 w-40">
-                  <label class="label text-xs font-semibold text-base-content/65 uppercase">Ticket Type</label>
-                  <select
-                    class="select select-bordered select-sm w-full"
-                    [ngModel]="selectedTicketTypeId()"
-                    (ngModelChange)="selectedTicketTypeId.set($event || null)"
-                    [ngModelOptions]="{standalone: true}"
-                  >
-                    <option [value]="null">No ticket</option>
-                    @for (t of ticketTypes(); track t.id) {
-                    <option [value]="t.id">{{ t.name }}</option>
-                    }
-                  </select>
-                </div>
-                }
-
-                <button
-                  type="button"
-                  class="btn btn-primary btn-sm shrink-0"
-                  [disabled]="!selectedPersonId() || addingRegistration()"
-                  (click)="addRegistration()"
-                >
-                  @if (addingRegistration()) {
-                  <span class="loading loading-spinner loading-xs"></span>
-                  } @else {
-                  <pc-icon name="plus" [size]="4"></pc-icon>
-                  } Register
-                </button>
-              </div>
-            </pc-card>
-
-            <!-- Attendees Table -->
-            <div class="flex justify-between items-center">
-              <h4 class="font-semibold text-sm text-base-content/70">Attendee List</h4>
-              @if (registrations().length > 0) {
-              <button type="button" class="btn btn-xs btn-outline gap-1" (click)="exportCsv()">
-                <pc-icon name="arrow-down-tray" [size]="3"></pc-icon> Export CSV
-              </button>
-              }
-            </div>
-
-            @if (registrations().length === 0) {
-            <p class="text-sm text-base-content/40 italic text-center py-8">No registrations yet for this event.</p>
-            } @else {
-            <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
-              <table class="table table-sm w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200 text-base-content/70">
-                    <th>Name</th>
-                    <th>Ticket</th>
-                    <th>Status</th>
-                    <th>Checked In</th>
-                    <th class="text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (reg of registrations(); track reg.id) {
-                  <tr class="hover:bg-base-200/50" [class.opacity-50]="reg.status === 'cancelled'">
-                    <td>
-                      <a [routerLink]="['/people', reg.person_id]" class="link link-primary font-bold">
-                        {{ reg.first_name }} {{ reg.last_name }}
-                      </a>
-                      <div class="text-[10px] text-base-content/50 mt-0.5">{{ reg.email || 'No email' }}</div>
-                    </td>
-                    <td>
-                      @if (reg.ticket_type_name) {
-                      <span class="badge badge-ghost badge-sm">{{ reg.ticket_type_name }}</span>
-                      } @else {
-                      <span class="text-base-content/30">—</span>
-                      }
-                    </td>
-                    <td>
-                      <select
-                        class="select select-bordered select-xs font-medium"
-                        [ngModel]="reg.status"
-                        (ngModelChange)="updateStatus(reg, $event)"
-                        [ngModelOptions]="{standalone: true}"
-                        [class.select-success]="reg.status === 'attended'"
-                        [class.select-warning]="reg.status === 'registered'"
-                        [class.select-error]="reg.status === 'no_show'"
-                      >
-                        <option value="registered">Registered</option>
-                        <option value="attended">Attended</option>
-                        <option value="no_show">No Show</option>
-                        <option value="cancelled">Cancelled</option>
-                      </select>
-                    </td>
-                    <td class="font-mono text-[10px]">
-                      {{ reg.checked_in_at ? (reg.checked_in_at | date: 'shortTime') : '—' }}
-                    </td>
-                    <td>
-                      <div class="flex items-center justify-center gap-1">
-                        @if (reg.status === 'registered') {
-                        <button
-                          type="button"
-                          class="btn btn-ghost btn-xs text-success"
-                          title="Check in"
-                          (click)="checkIn(reg)"
-                        >
-                          <pc-icon name="check-circle" [size]="4"></pc-icon>
-                        </button>
-                        }
-                        <button
-                          type="button"
-                          class="btn btn-ghost btn-xs text-error"
-                          title="Remove"
-                          (click)="deleteRegistration(reg)"
-                        >
-                          <pc-icon name="trash" [size]="4"></pc-icon>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'events'" [entityId]="id()"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
 ## File: apps/frontend/src/app/experiences/exports/ui/exports-page.html
 
 ```html
@@ -3734,214 +3289,6 @@ export class StandardFormsService extends FormsService {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/forms/ui/form-view.html
-
-```html
-<pc-detail-layout
-  [title]="'Web Form Details'"
-  [icon]="'clipboard-document-list'"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!formRecord()"
-  [showDelete]="true"
-  [deleteText]="'Delete Form'"
-  [btn1Text]="'Edit Form'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editForm()"
-  (delete)="deleteForm()"
->
-  @if (formRecord()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Form Info & Embed Code -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Form Details Card -->
-      <pc-profile-card iconName="clipboard-document-list">
-        <!-- Name & Status -->
-        <h2 class="text-xl font-bold text-base-content text-center mb-1">{{ formRecord().name }}</h2>
-        <div class="flex gap-2 mb-4">
-          <span
-            class="badge font-semibold uppercase text-xs"
-            [class.badge-success]="formRecord().status === 'active'"
-            [class.badge-warning]="formRecord().status === 'archived'"
-          >
-            {{ formRecord().status }}
-          </span>
-        </div>
-
-        <!-- Details and settings list -->
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          @if (formRecord().description) {
-          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ formRecord().description }}</div>
-          } @if (formRecord().redirect_url) {
-          <pc-detail-row icon="arrow-top-right-on-square" iconClass="text-indigo-500">
-            <span class="truncate">Redirect: <strong>{{ formRecord().redirect_url }}</strong></span>
-          </pc-detail-row>
-          }
-
-          <pc-detail-row icon="envelope" iconClass="text-teal-500">
-            <span>Send Confirmation:</span>
-            <span pc-row-action class="font-bold">{{ formRecord().send_confirmation !== false ? 'Yes' : 'No' }}</span>
-          </pc-detail-row>
-
-          <pc-detail-row icon="bell" iconClass="text-purple-500">
-            <span>Send Admin Alert:</span>
-            <span pc-row-action class="font-bold">{{ formRecord().send_alert !== false ? 'Yes' : 'No' }}</span>
-          </pc-detail-row>
-        </div>
-
-        <!-- System Metadata -->
-        <div
-          class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
-        >
-          <span
-            >Created by {{ getUserName(formRecord().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span
-          >
-          <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(formRecord().updatedby_id) }}</span>
-        </div>
-      </pc-profile-card>
-
-      <!-- HTML Embed Snippet Card -->
-      <pc-card title="Deploy & Embed">
-        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
-          <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy Code
-        </button>
-
-        <div class="form-control text-xs">
-          <label class="label font-semibold py-1">Public Landing Page URL</label>
-          <div class="flex gap-2">
-            <input
-              type="text"
-              [value]="formUrl()"
-              readonly
-              class="input input-bordered input-xs flex-1 font-mono text-[10px]"
-            />
-            <a [href]="formUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
-              <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
-            </a>
-          </div>
-        </div>
-
-        <div class="form-control text-xs">
-          <label class="label font-semibold py-1">Embed HTML Code</label>
-          <pre
-            class="bg-neutral text-neutral-content p-3 rounded-lg text-[10px] font-mono max-h-40 overflow-y-auto select-all leading-snug"
-          >
-{{ embedSnippet() }}</pre
-          >
-        </div>
-      </pc-card>
-    </div>
-
-    <!-- Right Column: Stats & Tabs -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Panel -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <pc-stat-card
-          [title]="'Submissions'"
-          [value]="submissionsCount()"
-          [description]="'Total lead contacts collected'"
-          [icon]="'envelope'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Fields Included'"
-          [value]="fieldsCount()"
-          [description]="'Active field inputs'"
-          [icon]="'queue-list'"
-          [valueColorClass]="'text-amber-500'"
-          [iconColorClass]="'text-amber-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Tabs Panel -->
-      <!-- Tabs Panel -->
-      <pc-tabs [tabs]="formTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'web_forms'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="targetActions" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-5 text-sm">
-            <div>
-              <h4 class="font-semibold text-base-content mb-1">Add to Lists</h4>
-              @if (targetListsNames().length > 0) {
-              <div class="flex flex-wrap gap-1.5">
-                @for (list of targetListsNames(); track list) {
-                <span class="badge badge-neutral px-3 py-2.5">{{ list }}</span>
-                }
-              </div>
-              } @else {
-              <span class="text-xs text-base-content/40 italic">No specific list assigned.</span>
-              }
-            </div>
-
-            <div>
-              <h4 class="font-semibold text-base-content mb-1">Apply Tags</h4>
-              <div class="flex flex-wrap gap-1.5">
-                @if (formRecord().target_tags?.length > 0) { @for (tag of formRecord().target_tags; track tag) {
-                <span class="badge badge-outline badge-primary px-3 py-2.5">{{ tag }}</span>
-                } }
-                <!-- Automatic system tag -->
-                <span class="badge badge-outline badge-secondary px-3 py-2.5">Source: {{ formRecord().name }}</span>
-                @if (formRecord().form_type === 'donation' || formRecord().form_type === 'recurring_donation') {
-                <span class="badge badge-outline badge-success px-3 py-2.5 flex items-center gap-1">
-                  <pc-icon name="tag" [size]="3"></pc-icon>
-                  donor <span class="text-[10px] opacity-60">(auto)</span>
-                </span>
-                }
-              </div>
-            </div>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="fieldsPreview" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <h4 class="font-semibold text-base-content">Form Input Preview</h4>
-            <div class="rounded-xl border border-base-200 bg-base-200/20 p-4 max-w-sm">
-              @if (selectedFields().includes('first_name')) {
-              <div class="form-control mb-3">
-                <span class="text-[10px] font-semibold uppercase text-base-content/50">First Name</span>
-                <input type="text" class="input input-bordered input-xs" placeholder="First Name" disabled />
-              </div>
-              } @if (selectedFields().includes('last_name')) {
-              <div class="form-control mb-3">
-                <span class="text-[10px] font-semibold uppercase text-base-content/50">Last Name</span>
-                <input type="text" class="input input-bordered input-xs" placeholder="Last Name" disabled />
-              </div>
-              }
-              <div class="form-control mb-3">
-                <span class="text-[10px] font-semibold uppercase text-base-content/50">Email Address *</span>
-                <input type="text" class="input input-bordered input-xs" placeholder="you@example.com" disabled />
-              </div>
-              @if (selectedFields().includes('mobile')) {
-              <div class="form-control mb-3">
-                <span class="text-[10px] font-semibold uppercase text-base-content/50">Mobile / Phone</span>
-                <input type="text" class="input input-bordered input-xs" placeholder="Phone Number" disabled />
-              </div>
-              } @if (selectedFields().includes('notes')) {
-              <div class="form-control mb-3">
-                <span class="text-[10px] font-semibold uppercase text-base-content/50">Notes / Message</span>
-                <textarea
-                  class="textarea textarea-bordered textarea-xs"
-                  placeholder="How can we help?"
-                  disabled
-                ></textarea>
-              </div>
-              }
-            </div>
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
 ## File: apps/frontend/src/app/experiences/households/services/households-service.ts
 
 ```typescript
@@ -4034,238 +3381,6 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return this.api.households.recomputeAddressFingerprints.mutate();
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/households/ui/household-view.html
-
-```html
-<pc-detail-layout
-  [title]="'Household Details'"
-  [icon]="'home'"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!household()"
-  [showActions]="!!(household() && !household()?.is_placeholder)"
-  [showDelete]="true"
-  [deleteText]="'Delete Household'"
-  [btn1Text]="'Edit Household'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editHousehold()"
-  (delete)="deleteHousehold()"
->
-  @if (household(); as h) { @if (h.is_placeholder) {
-  <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
-    <div class="avatar placeholder mb-4">
-      <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
-        <pc-icon name="exclamation-triangle" [size]="8"></pc-icon>
-      </div>
-    </div>
-    <h2 class="text-xl font-bold text-base-content mb-2">No Household Assigned</h2>
-    <p class="text-sm text-base-content/60 mb-6">
-      This is a system placeholder representing individuals who do not currently have a household or address assigned.
-      It is not a real household record and cannot be edited.
-    </p>
-    <a routerLink="/people" class="btn btn-primary btn-sm gap-2">
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Return to People
-    </a>
-  </div>
-  } @else {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Household Card, Map & Segmentation -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Household Card -->
-      <pc-profile-card iconName="home">
-        <!-- Address Title -->
-        <h2 class="text-xl font-bold text-base-content text-center mb-4 leading-tight">{{ addressString() }}</h2>
-
-        <!-- Contact Details List -->
-        <div class="w-full flex flex-col text-sm">
-          <pc-detail-item label="Home Phone" [value]="h.home_phone" icon="phone" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Household Type" [value]="h.type" icon="information-circle"></pc-detail-item>
-        </div>
-
-        <!-- Mapped Districts (GIS) -->
-        @if (h.district || h.precinct || h.ward || h.geocoding_status) {
-        <div
-          class="flex flex-col gap-2 p-3 rounded-lg bg-base-200/50 text-base-content/80 mt-2 border border-base-300/40 w-full"
-        >
-          <div class="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-base-content/50">
-            <pc-icon name="map" [size]="4" class="text-primary"></pc-icon>
-            <span>Electoral Boundaries</span>
-          </div>
-          <div class="flex flex-wrap gap-2 mt-1 text-center text-xs">
-            @if (h.district) {
-            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-              <span class="text-[10px] text-base-content/40 block">District / Riding</span>
-              <span class="font-bold text-base-content">{{ h.district }}</span>
-            </div>
-            } @if (h.ward) {
-            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-              <span class="text-[10px] text-base-content/40 block">Ward</span>
-              <span class="font-bold text-base-content">{{ h.ward }}</span>
-            </div>
-            } @if (h.precinct) {
-            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-              <span class="text-[10px] text-base-content/40 block">Precinct / Polling Div.</span>
-              <span class="font-bold text-base-content">{{ h.precinct }}</span>
-            </div>
-            }
-          </div>
-
-          <!-- Geocoding Status Badge -->
-          <div class="flex justify-between items-center mt-2 pt-2 border-t border-base-300/40 text-xs">
-            <span class="text-base-content/60">Geocoding Status:</span>
-            @if (h.geocoding_status === 'success') {
-            <span class="badge badge-success badge-sm font-medium">Success</span>
-            } @else if (h.geocoding_status === 'pending') {
-            <span class="badge badge-warning badge-sm font-medium gap-1 flex items-center">
-              <span class="loading loading-spinner loading-xs scale-75"></span>
-              Pending
-            </span>
-            } @else if (h.geocoding_status === 'failed') {
-            <span class="badge badge-error badge-sm text-xs">Unresolved</span>
-            } @else {
-            <span class="badge badge-ghost badge-sm font-medium">Skipped</span>
-            }
-          </div>
-        </div>
-        }
-
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="h.created_at"
-          [createdBy]="getUserName(h.createdby_id)"
-          [updatedAt]="h.updated_at"
-          [updatedBy]="getUserName(h.updatedby_id)"
-        ></pc-system-metadata>
-      </pc-profile-card>
-
-      <!-- Google Maps Card -->
-      <pc-card title="Map Location" icon="map">
-        <div class="relative w-full h-64 bg-base-200 flex items-center justify-center rounded-lg overflow-hidden">
-          @if (hasMap()) { @defer (on viewport) {
-          <div #mapContainer id="household-map" class="w-full h-full"></div>
-          } @placeholder {
-          <div class="skeleton w-full h-full"></div>
-          } } @else {
-          <!-- Unverified Map Placeholder -->
-          <div class="p-6 flex flex-col items-center gap-2 text-center text-base-content/40 select-none">
-            <pc-icon name="map-pin" [size]="8" class="text-base-content/20 mb-1"></pc-icon>
-            <h4 class="font-semibold text-sm text-base-content/60">Location Not Verified</h4>
-            <p class="text-xs max-w-[220px] font-light leading-snug">
-              Map pins are only available for addresses geocoded via autocomplete search or when we have verified the
-              address.
-            </p>
-          </div>
-          }
-        </div>
-      </pc-card>
-
-      <!-- Segmentation Card -->
-      <pc-card title="Segmentation">
-        <div class="flex flex-col gap-3">
-          <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
-            @if (tags().length > 0) {
-            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
-            }
-          </div>
-
-          <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
-            @if (issues().length > 0) {
-            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
-            }
-          </div>
-        </div>
-      </pc-card>
-    </div>
-
-    <!-- Right Column: Stats & Tabs Panel -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Dashboard Stats Grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <!-- Stats: People -->
-        <pc-stat-card
-          [title]="'People'"
-          [value]="peopleCount()"
-          [description]="'Household members'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-teal-500'"
-          [iconColorClass]="'text-teal-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Interactions -->
-        <pc-stat-card
-          [title]="'Interactions'"
-          [value]="0"
-          [description]="'Logged contacts'"
-          [icon]="'envelope'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Donations -->
-        <pc-stat-card
-          [title]="'Donations'"
-          [value]="'$0'"
-          [description]="'Financial support'"
-          [icon]="'currency-dollar'"
-          [valueColorClass]="'text-emerald-500'"
-          [iconColorClass]="'text-emerald-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Volunteers -->
-        <pc-stat-card
-          [title]="'Volunteers'"
-          [value]="0"
-          [description]="'Active assignments'"
-          [icon]="'volunteer'"
-          [valueColorClass]="'text-purple-500'"
-          [iconColorClass]="'text-purple-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Multi-Tab Details & History Panel -->
-      <pc-tabs [tabs]="householdTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="members" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <pc-people-in-household [householdId]="id()!"></pc-people-in-household>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'households'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="details" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (h.notes) {
-            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2"
-                >Household Notes</span
-              >
-              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">{{ h.notes }}</p>
-            </div>
-            } @else {
-            <div class="text-center py-10 text-base-content/40 italic">
-              No internal notes recorded for this household
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  } }
-</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/imports/services/imports-service.ts
@@ -7453,615 +6568,6 @@ export function compileBlocksToPlainText(blockList: EmailBlock[]): string {
     </div>
   </aside>
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
-
-```html
-<pc-detail-layout
-  [title]="fullName() || 'Person'"
-  [eyebrow]="'Person'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!person()"
-  [showDelete]="true"
-  [deleteText]="'Delete person'"
-  [btn1Text]="'Edit person'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editPerson()"
-  (delete)="deletePerson()"
->
-  @if (person()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Contact Card & Bio -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Contact Card -->
-      <pc-profile-card [avatarText]="initials()">
-        <!-- Name & Company -->
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ fullName() }}</h2>
-        @if (person().company_name) {
-        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">
-          <pc-icon name="briefcase" [size]="4"></pc-icon>
-          {{ person().company_name }}
-        </div>
-        } @else {
-        <span class="text-sm text-base-content/50 italic mb-4">No company assigned</span>
-        }
-
-        <!-- Social Media Buttons -->
-        <div class="flex justify-center gap-3 w-full border-y border-base-200 py-4 mb-6">
-          @for (link of socialLinks(); track link.name) {
-          <a
-            [attr.href]="link.url || null"
-            [attr.target]="link.url ? '_blank' : null"
-            [attr.data-tip]="link.url ? link.name + ' profile' : link.name + ' URL not set'"
-            class="btn btn-circle btn-sm tooltip"
-            [class]="link.url 
-        ? 'shadow-md hover:scale-110 transition-transform text-white border-none ' + link.color 
-        : 'bg-base-200 text-base-content/30 border-base-300 cursor-not-allowed'"
-          >
-            <pc-icon [name]="link.icon" [size]="4"></pc-icon>
-          </a>
-          }
-        </div>
-
-        <!-- Contact & Address Details List -->
-        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
-          <pc-detail-item
-            label="Primary Email"
-            [value]="person().email"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Secondary Email"
-            [value]="person().email2"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Mobile Phone"
-            [value]="person().mobile"
-            icon="phone"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Home Phone"
-            [value]="person().home_phone"
-            icon="home"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item label="Address" [value]="addressString()" icon="map-pin"></pc-detail-item>
-        </div>
-
-        <!-- Notes Section -->
-        @if (person().notes) {
-        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1"
-            >Internal Notes</span
-          >
-          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-            {{ person().notes }}
-          </p>
-        </div>
-        }
-
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="person().created_at"
-          [createdBy]="getUserName(person().createdby_id)"
-          [updatedAt]="person().updated_at"
-          [updatedBy]="getUserName(person().updatedby_id)"
-        ></pc-system-metadata>
-      </pc-profile-card>
-
-      <!-- Segmentation Card -->
-      <pc-card title="Segmentation">
-        <div class="flex flex-col gap-3">
-          <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
-            @if (tags().length > 0) {
-            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
-            }
-          </div>
-
-          <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
-            @if (issues().length > 0) {
-            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
-            }
-          </div>
-        </div>
-      </pc-card>
-
-      <!-- Sentiment Score Card (frosted glass coming soon overlay) -->
-      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden relative">
-        <div class="p-6 flex flex-col items-center gap-3">
-          <h3 class="text-sm font-bold uppercase tracking-wider text-base-content/70 self-start">Sentiment Score</h3>
-
-          <!-- Placeholder Graphic -->
-          <div
-            class="flex items-center justify-center w-28 h-28 rounded-full border-4 border-dashed border-base-300 relative my-2"
-          >
-            <span class="text-4xl text-base-content/20">😐</span>
-            <span class="text-xs text-base-content/30 mt-1 absolute bottom-4 font-mono">Neutral</span>
-          </div>
-          <div class="text-xs text-base-content/40 text-center font-light leading-relaxed">
-            Aggregates communication email history and tags to automatically gauge contact affinity.
-          </div>
-        </div>
-
-        <!-- Premium Overlay for "Coming Soon" -->
-        <div
-          class="absolute inset-0 bg-base-100/80 backdrop-blur-md flex flex-col justify-center items-center p-4 text-center select-none"
-        >
-          <div class="p-3 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white rounded-2xl shadow-lg mb-2">
-            <pc-icon name="chart-pie" [size]="8"></pc-icon>
-          </div>
-          <h4 class="font-bold text-lg text-base-content">Affinity Analytics</h4>
-          <span class="badge badge-primary badge-sm font-semibold tracking-wider my-1">COMING SOON</span>
-          <p class="text-xs text-base-content/60 max-w-[200px] mt-1 font-light leading-snug">
-            AI-driven sentiment analysis of email conversations is currently in beta.
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Right Column: Stats & Multi-Tab Activity Feed -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Dashboard Stats Grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <!-- Stats: Emails Sent -->
-        <pc-stat-card
-          [title]="'Emails Sent'"
-          [value]="activityData().emails.length"
-          [description]="'Total emails sent'"
-          [icon]="'paper-airplane'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Emails Opened -->
-        <pc-stat-card
-          [title]="'Opened'"
-          [value]="openedNewslettersCount()"
-          [description]="'Opens & clicks'"
-          [icon]="'eye'"
-          [valueColorClass]="'text-emerald-500'"
-          [iconColorClass]="'text-emerald-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Active Lists -->
-        <pc-stat-card
-          [title]="'Active Lists'"
-          [value]="0"
-          [description]="'List subscriptions'"
-          [icon]="'queue-list'"
-          [valueColorClass]="'text-amber-500'"
-          [iconColorClass]="'text-amber-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Volunteer Shifts -->
-        <pc-stat-card
-          [title]="'Volunteered'"
-          [value]="volunteerStats()?.shifts_count || 0"
-          [description]="'Shifts completed'"
-          [icon]="'volunteer'"
-          [valueColorClass]="'text-purple-500'"
-          [iconColorClass]="'text-purple-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Volunteer Hours -->
-        <pc-stat-card
-          [title]="'Total Hours'"
-          [value]="volunteerStats()?.total_hours || 0.0"
-          [description]="'Hours logged'"
-          [icon]="'clock'"
-          [valueColorClass]="'text-pink-500'"
-          [iconColorClass]="'text-pink-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Donations -->
-        <pc-stat-card
-          [title]="'Donations'"
-          [value]="donationStats() ? '$' + donationStats()!.cumulativeAmount.toLocaleString() : '$0'"
-          [description]="'Financial support'"
-          [icon]="'currency-dollar'"
-          [valueColorClass]="'text-emerald-500'"
-          [iconColorClass]="'text-emerald-500'"
-        ></pc-stat-card>
-
-        <!-- Stats: Connections -->
-        <pc-stat-card
-          [title]="'Connections'"
-          [value]="connectionCount()"
-          [description]="'Network connections'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-violet-500'"
-          [iconColorClass]="'text-violet-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Activities, Interactions & History Tabs -->
-      <!-- Activities, Interactions & History Tabs -->
-      <pc-tabs [tabs]="personTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
-            <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="emails" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (activityData().emails.length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No direct email correspondence recorded</div>
-            } @else {
-            <div class="flex flex-col gap-3">
-              @for (mail of activityData().emails; track mail.id) {
-              <a
-                [routerLink]="['/inbox']"
-                [queryParams]="{ email: mail.id }"
-                class="p-4 rounded-xl border border-base-200 hover:border-indigo-300 bg-base-50/20 hover:bg-base-100 transition-all flex flex-col gap-2 no-underline text-current group cursor-pointer hover:shadow-sm"
-              >
-                <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
-                  <span class="font-mono text-base-content/60">
-                    From: <strong class="text-base-content">{{ mail.from_email }}</strong> &rarr; To:
-                    <strong>{{ mail.to_email }}</strong>
-                  </span>
-                  <span class="text-base-content/40">{{ mail.created_at | date:'medium' }}</span>
-                </div>
-                <div class="flex items-center justify-between gap-2">
-                  <h4 class="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">
-                    {{ mail.subject || '(No Subject)' }}
-                  </h4>
-                  <pc-icon
-                    name="arrow-top-right-on-square"
-                    [size]="4"
-                    class="text-base-content/30 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
-                  ></pc-icon>
-                </div>
-                @if (mail.preview) {
-                <p
-                  class="text-xs text-base-content/60 line-clamp-2 leading-relaxed bg-base-200/20 p-2.5 rounded-lg border border-base-200/50"
-                >
-                  {{ mail.preview }}
-                </p>
-                }
-                <div class="flex justify-end mt-1">
-                  <pc-status-badge [type]="getMailStatusType(mail.status)">
-                    {{ mail.status || 'received' }}
-                  </pc-status-badge>
-                </div>
-              </a>
-              }
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (activityData().newsletters.length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No newsletter logs found</div>
-            } @else {
-            <div class="flex flex-col gap-2">
-              @for (ev of activityData().newsletters; track ev.id) {
-              <div
-                class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
-              >
-                <div class="flex items-center gap-3 overflow-hidden">
-                  <!-- Icon mappings for event types -->
-                  <div
-                    class="p-2 rounded-lg flex-shrink-0"
-                    [class.bg-info/10]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
-                    [class.text-info]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
-                    [class.bg-success/10]="ev.event_type === 'open'"
-                    [class.text-success]="ev.event_type === 'open'"
-                    [class.bg-warning/10]="ev.event_type === 'click'"
-                    [class.text-warning]="ev.event_type === 'click'"
-                    [class.bg-error/10]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
-                    [class.text-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
-                  >
-                    @if (ev.event_type === 'open') {
-                    <pc-icon name="eye" [size]="4"></pc-icon>
-                    } @else if (ev.event_type === 'click') {
-                    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-                    } @else if (ev.event_type === 'delivered') {
-                    <pc-icon name="check-circle" [size]="4"></pc-icon>
-                    } @else {
-                    <pc-icon name="information-circle" [size]="4"></pc-icon>
-                    }
-                  </div>
-                  <div class="flex flex-col overflow-hidden">
-                    <span class="font-medium text-base-content truncate"
-                      >{{ ev.newsletter_subject || ev.newsletter_name }}</span
-                    >
-                    @if (ev.url) {
-                    <span class="text-[10px] text-primary truncate hover:underline cursor-pointer"
-                      >Clicked URL: {{ ev.url }}</span
-                    >
-                    }
-                  </div>
-                </div>
-
-                <div class="flex items-center gap-3 flex-shrink-0">
-                  <pc-status-badge [type]="getEmailEventType(ev.event_type)" class="tracking-wider text-[9px]">
-                    {{ ev.event_type }}
-                  </pc-status-badge>
-                  <span class="text-base-content/40 text-[10px]">{{ ev.timestamp | date:'short' }}</span>
-                </div>
-              </div>
-              }
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="volunteer" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (volunteerHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No shift records found for this person</div>
-            } @else {
-            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table table-sm w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200">
-                    <th>Event Name</th>
-                    <th>Date & Time</th>
-                    <th>Status</th>
-                    <th>Hours</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (shift of volunteerHistory(); track shift.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td class="font-semibold">{{ shift.event_name }}</td>
-                    <td>{{ shift.start_time | date:'medium' }}</td>
-                    <td>
-                      <pc-status-badge [type]="getShiftStatusType(shift.status)"> {{ shift.status }} </pc-status-badge>
-                    </td>
-                    <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
-                    <td class="font-light">{{ shift.notes || '--' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="donations" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <!-- Summary card for limits progress -->
-            @if (donationStats()) {
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"
-            >
-              <div class="flex-1 w-full space-y-1">
-                <div class="flex justify-between text-xs font-bold text-base-content/75">
-                  <span>Annual Limit Progress</span>
-                  <span
-                    >${{ donationStats()!.cumulativeAmount.toLocaleString() }} / ${{
-                    donationStats()!.limitAmount.toLocaleString() }}</span
-                  >
-                </div>
-                <progress
-                  class="progress progress-success w-full h-2.5 bg-base-300"
-                  [value]="donationStats()!.cumulativeAmount"
-                  [max]="donationStats()!.limitAmount"
-                ></progress>
-                <p class="text-[10px] text-base-content/50">
-                  Remaining allowable donation this calendar year:
-                  <strong>${{ donationStats()!.remainingAmount.toLocaleString() }}</strong>
-                </p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-primary shrink-0 w-full md:w-auto font-semibold flex items-center justify-center gap-1.5"
-                (click)="openCollectDonation()"
-                [disabled]="donationStats()!.remainingAmount <= 0"
-              >
-                <pc-icon name="plus" [size]="4"></pc-icon>
-                Collect Donation
-              </button>
-            </div>
-            } @if (donationHistory().length === 0) {
-            <div
-              class="text-center py-10 text-base-content/40 italic bg-base-100 rounded-xl border border-dashed border-base-200"
-            >
-              No donations recorded yet for this person.
-            </div>
-            } @else {
-            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl shadow-sm">
-              <table class="table w-full text-xs">
-                <thead>
-                  <tr class="bg-base-50 border-b border-base-200">
-                    <th class="font-bold text-base-content/70">Date</th>
-                    <th class="font-bold text-base-content/70">Amount</th>
-                    <th class="font-bold text-base-content/70">Tax Credit</th>
-                    <th class="font-bold text-base-content/70">Residency Info</th>
-                    <th class="font-bold text-base-content/70">Status</th>
-                    <th class="font-bold text-base-content/70">Transaction ID</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (donation of donationHistory(); track donation.id) {
-                  <tr class="hover:bg-base-200/20 border-b border-base-200">
-                    <td class="font-medium text-base-content/75">{{ donation.created_at | date:'mediumDate' }}</td>
-                    <td class="font-bold text-base-content">${{ (donation.amount / 100).toFixed(2) }}</td>
-                    <td>
-                      <span class="badge badge-success gap-1 font-semibold py-2 px-2.5">
-                        ${{ ((donation.tax_credit_amount || 0) / 100).toFixed(2) }}
-                      </span>
-                    </td>
-                    <td class="text-base-content/65">
-                      {{ donation.residency_province || '--' }} {{ donation.residency_country || '' }}
-                    </td>
-                    <td>
-                      <pc-status-badge
-                        [type]="donation.status === 'succeeded' ? 'success' : donation.status === 'pending' ? 'warning' : 'error'"
-                      >
-                        {{ donation.status }}
-                      </pc-status-badge>
-                    </td>
-                    <td class="font-mono text-[10px] text-base-content/50">
-                      {{ donation.stripe_session_id || 'Manual' }}
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="events" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (eventHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">
-              No event registrations found for this person.
-            </div>
-            } @else {
-            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table table-sm w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200">
-                    <th>Event</th>
-                    <th>Date</th>
-                    <th>Ticket</th>
-                    <th>Status</th>
-                    <th>Checked In</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (reg of eventHistory(); track reg.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td>
-                      <a [routerLink]="['/events/pages', reg.event_id]" class="link link-primary font-bold">
-                        {{ reg.event_name }}
-                      </a>
-                    </td>
-                    <td>{{ reg.start_time | date:'mediumDate' }}</td>
-                    <td class="font-light">{{ reg.ticket_type_name || '—' }}</td>
-                    <td>
-                      <pc-status-badge [type]="getEventStatusType(reg.status)">{{ reg.status }}</pc-status-badge>
-                    </td>
-                    <td class="font-mono">{{ reg.checked_in_at ? (reg.checked_in_at | date:'shortTime') : '—' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="connections" [activeTab]="activeTab()">
-          <pc-person-connections [personId]="id()" (countChange)="connectionCount.set($event)"></pc-person-connections>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="household" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (householdId() && !isPlaceholderHousehold()) { @defer {
-            <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
-            } @placeholder {
-            <div class="skeleton w-full h-32"></div>
-            } } @else {
-            <div class="text-center py-10 text-base-content/40 italic">Contact does not belong to a household</div>
-            }
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-  <!-- Collect Donation Modal -->
-  @if (showDonationModal()) {
-  <div class="modal modal-open z-50">
-    <div class="modal-box rounded-2xl border border-base-200 max-w-md p-6 bg-base-100 shadow-2xl">
-      <div class="flex justify-between items-center border-b border-base-200 pb-3 mb-4">
-        <h3 class="text-lg font-bold flex items-center gap-2">
-          <pc-icon name="currency-dollar" class="text-primary" [size]="5"></pc-icon>
-          Collect Donation
-        </h3>
-        <button type="button" class="btn btn-sm btn-circle btn-ghost" (click)="closeDonationModal()">✕</button>
-      </div>
-
-      <div class="space-y-4">
-        <p class="text-xs text-base-content/60">
-          Enter the donation amount in dollars. Residency validation and limit verification will be performed
-          automatically before redirecting to the payment gateway.
-        </p>
-
-        <!-- Donor Residency Profile -->
-        <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
-          <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
-            >Donor Residency Profile</span
-          >
-          <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
-            <pc-icon name="map-pin" [size]="4"></pc-icon>
-            {{ addressString() }}
-          </div>
-        </div>
-
-        <!-- Donation Amount input -->
-        <div class="flex flex-col gap-1.5">
-          <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
-          <div class="relative">
-            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
-            <input
-              id="donation_input"
-              type="number"
-              min="1"
-              placeholder="250"
-              class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
-              [(ngModel)]="donationAmount"
-            />
-          </div>
-        </div>
-
-        <!-- Error alert -->
-        @if (eligibilityError()) {
-        <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
-          <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
-          <span>{{ eligibilityError() }}</span>
-        </div>
-        }
-      </div>
-
-      <div class="modal-action border-t border-base-200 pt-4 mt-6 flex justify-end gap-3">
-        <button
-          type="button"
-          class="btn btn-ghost text-sm font-semibold"
-          (click)="closeDonationModal()"
-          [disabled]="isCheckingEligibility()"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary min-w-[140px] text-sm font-semibold"
-          (click)="submitDonation()"
-          [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
-        >
-          @if (isCheckingEligibility()) {
-          <span class="loading loading-spinner loading-xs mr-1.5"></span>
-          Verifying... } @else { Verify & Proceed }
-        </button>
-      </div>
-    </div>
-    <div class="modal-backdrop bg-black/40 backdrop-blur-sm" (click)="closeDonationModal()"></div>
-  </div>
-  }
-</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
@@ -11960,321 +10466,6 @@ export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/teams/ui/team-view.html
-
-```html
-<pc-detail-layout
-  [title]="'Team Details'"
-  [icon]="'user-group'"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!team()"
-  [showDelete]="true"
-  [deleteText]="'Delete Team'"
-  [btn1Text]="'Edit Team'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editTeam()"
-  (delete)="deleteTeam()"
->
-  @if (team()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Team Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Team Card -->
-      <pc-profile-card iconName="user-group">
-        <!-- Name -->
-        <h2 class="text-2xl font-bold text-base-content text-center mb-4 leading-tight">{{ team().name }}</h2>
-
-        <!-- Details List -->
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          @if (team().description) {
-          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ team().description }}</div>
-          }
-
-          <pc-detail-row icon="user-circle" iconClass="text-teal-500">
-            <span>Team Captain:</span>
-            <span pc-row-action class="font-bold">{{ captainName() }}</span>
-          </pc-detail-row>
-
-          <pc-detail-row icon="user-circle" iconClass="text-purple-500">
-            <span>Team Lead:</span>
-            <span pc-row-action class="font-bold">{{ leadName() }}</span>
-          </pc-detail-row>
-        </div>
-
-        <!-- System Metadata -->
-        <div
-          class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
-        >
-          <span>Created by {{ getUserName(team().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span>
-          <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(team().updatedby_id) }}</span>
-        </div>
-      </pc-profile-card>
-    </div>
-
-    <!-- Right Column: Stats & Tabs -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Panel -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <pc-stat-card
-          [title]="'Volunteers'"
-          [value]="volunteers().length"
-          [description]="'Teammate members'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-teal-500'"
-          [iconColorClass]="'text-teal-500'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Target Lists'"
-          [value]="team().lists?.length || 0"
-          [description]="'Assigned lists'"
-          [icon]="'queue-list'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Active Tasks'"
-          [value]="activeTasksCount()"
-          [description]="'Tasks assigned'"
-          [icon]="'document-check'"
-          [valueColorClass]="'text-amber-500'"
-          [iconColorClass]="'text-amber-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Tabs Panel -->
-      <pc-tabs [tabs]="teamTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'teams'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="volunteers" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-3">
-            @if (volunteers().length === 0) {
-            <p class="text-sm text-base-content/40 italic">No volunteers assigned to this team.</p>
-            } @else {
-            <ul class="divide-y divide-base-200">
-              @for (volunteer of volunteers(); track volunteer.id) {
-              <li class="flex items-center justify-between py-2.5 text-sm">
-                <div>
-                  <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
-                  @if (volunteer.email) {
-                  <p class="text-xs text-base-content/50">{{ volunteer.email }}</p>
-                  }
-                </div>
-                <a [routerLink]="['/people', volunteer.id]" class="btn btn-xs btn-ghost text-primary">View profile</a>
-              </li>
-              }
-            </ul>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="lists" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-3">
-            @if (!team().lists?.length) {
-            <p class="text-sm text-base-content/40 italic">No target constituent lists assigned.</p>
-            } @else {
-            <ul class="divide-y divide-base-200">
-              @for (list of team().lists; track list.id) {
-              <li class="flex items-center justify-between py-2.5 text-sm">
-                <div>
-                  <p class="font-medium text-base-content">{{ list.name }}</p>
-                  <p class="text-xs text-base-content/50">
-                    {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
-                  </p>
-                </div>
-                <a [routerLink]="['/lists', list.id]" class="btn btn-xs btn-ghost text-primary">Open list</a>
-              </li>
-              }
-            </ul>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="tasks" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (teamTasks().length === 0) {
-            <p class="text-sm text-base-content/40 italic">No tasks currently assigned to this team.</p>
-            } @else {
-            <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
-              <table class="table table-sm table-zebra w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200 text-base-content/70">
-                    <th>Task</th>
-                    <th>Priority</th>
-                    <th>Status</th>
-                    <th>Due Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (task of teamTasks(); track task.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td class="font-semibold">
-                      <a [routerLink]="['/tasks', task.id]" class="link hover:no-underline text-primary">
-                        {{ task.name }}
-                      </a>
-                    </td>
-                    <td>
-                      <pc-status-badge [type]="getPriorityType(task.priority)">
-                        {{ task.priority || 'medium' }}
-                      </pc-status-badge>
-                    </td>
-                    <td>
-                      <pc-status-badge [type]="getStatusType(task.status)">
-                        {{ task.status || 'todo' }}
-                      </pc-status-badge>
-                    </td>
-                    <td>{{ task.due_at ? (task.due_at | date: 'mediumDate') : '—' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-add.html
-
-```html
-<section class="max-w-3xl mx-auto w-full p-6">
-  <pc-detail-header
-    title="Invite User"
-    subtitle="Send an invitation to add a new teammate to this tenant."
-    [form]="form"
-    [isLoading]="submitting()"
-    buttonsToShow="two"
-    btn1Text="Send Invite"
-    (save)="submit($event)"
-  ></pc-detail-header>
-
-  <form class="space-y-4" (submit)="submit($event)" novalidate>
-    <pc-input label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
-
-    <div class="grid gap-4 sm:grid-cols-2">
-      <pc-input label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
-
-      <pc-input label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
-    </div>
-
-    <pc-select label="Role" [formField]="form.role">
-      @if (currentUserRole() !== 'admin') {
-      <option value="owner">Owner</option>
-      }
-      <option value="admin">Admin</option>
-      <option value="user">User</option>
-    </pc-select>
-
-    @if (error()) {
-    <p class="text-sm text-danger">{{ error() }}</p>
-    }
-  </form>
-</section>
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-view.html
-
-```html
-<pc-detail-layout
-  [title]="'User Profile'"
-  [icon]="'user-circle'"
-  [isLoading]="loading()"
-  [error]="error()"
-  [hasRecord]="!initialized() || !!detail()"
-  [showDelete]="true"
-  [deleteText]="'Delete User'"
-  [btn1Text]="'Edit User'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editUser()"
-  (delete)="deleteUser()"
->
-  @if (detail()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: User Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <pc-profile-card [avatarUrl]="avatarUrl()" [iconName]="avatarUrl() ? undefined : 'user-circle'">
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ displayName() }}</h2>
-        <p class="text-sm text-base-content/70 mb-4">{{ detail()?.email }}</p>
-
-        <pc-status-badge [type]="'neutral'" [size]="'lg'" class="mb-6 font-medium capitalize flex gap-2">
-          <pc-icon name="identification" [size]="4"></pc-icon>
-          {{ detail()?.role }}
-        </pc-status-badge>
-
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          <pc-detail-row icon="check-circle" [iconClass]="detail()?.verified ? 'text-success' : 'text-base-content/40'">
-            <span>Verified:</span>
-            <pc-status-badge pc-row-action [type]="detail()?.verified ? 'success' : 'neutral'">
-              {{ detail()?.verified ? 'Yes' : 'No' }}
-            </pc-status-badge>
-          </pc-detail-row>
-        </div>
-
-        <pc-system-metadata
-          [createdAt]="detail()?.created_at"
-          [updatedAt]="detail()?.updated_at"
-          layout="col"
-          dateFormat="medium"
-        ></pc-system-metadata>
-      </pc-profile-card>
-    </div>
-
-    <!-- Right Column: Stats & Metadata & Activity -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Cards Grid -->
-      @if (stats()) {
-      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        @for (card of activityCards(); track card.key) {
-        <pc-stat-card [title]="card.title" [value]="card.value" [description]="card.subtitle">
-          @if (card.asOf) {
-          <span pc-stat-desc class="block">As of {{ formatAsOf(card.asOf) }}</span>
-          }
-        </pc-stat-card>
-        }
-      </div>
-      }
-
-      <!-- Account Metadata -->
-      <!-- Account Metadata -->
-      <pc-card title="Account Metadata">
-        <div class="grid gap-4 sm:grid-cols-2">
-          <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Role" [value]="detail()?.role"></pc-detail-item>
-          <pc-detail-item
-            label="Created"
-            [value]="detail()?.created_at ? (detail()?.created_at | date: 'medium') : null"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Last updated"
-            [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
-          ></pc-detail-item>
-        </div>
-      </pc-card>
-
-      <!-- Activity log track -->
-      <pc-card title="Activity Log">
-        <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-          <pc-record-activities [entity]="'authusers'" [entityId]="id()"></pc-record-activities>
-        </div>
-      </pc-card>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
 ## File: apps/frontend/src/app/experiences/workflows/services/workflows-service.ts
 
 ```typescript
@@ -12371,303 +10562,6 @@ export class WorkflowsService extends AbstractAPIService<'workflows', UpdateWork
     };
   }
 }
-```
-
-## File: apps/frontend/src/app/layout/dashboards/dashboard.html
-
-```html
-<!-- Dashboard layout template combining sidebar, navbar, and routed content -->
-<!-- Sidebar -->
-<div class="drawer drawer-open bg-base-200 h-screen overflow-hidden">
-  <input class="drawer-toggle" />
-  <div class="drawer-side">
-    <pc-sidebar></pc-sidebar>
-  </div>
-
-  <!-- Add the Navbar and router-outlet for the body -->
-
-  <div class="drawer-content flex flex-col h-screen overflow-hidden">
-    <pc-navbar></pc-navbar>
-    @if (isViewer()) {
-    <div
-      class="alert alert-warning border-b px-4 py-2 flex items-center justify-between gap-4 text-xs sm:text-sm shadow-inner"
-    >
-      <div class="flex items-center gap-2">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <span>You are in read-only <strong>Viewer Mode</strong>. Changes cannot be made.</span>
-      </div>
-      <a href="/profile" class="underline transition-colors text-xs font-semibold whitespace-nowrap">Manage Profile</a>
-    </div>
-    }
-    <pc-breadcrumb class="invisible sm:visible"></pc-breadcrumb>
-    <pc-alerts></pc-alerts>
-    <div class="flex-1 border-l-2 border-l-base-300 overflow-y-auto min-h-0" [class.hidden]="isMobileOpen()">
-      <router-outlet></router-outlet>
-    </div>
-  </div>
-</div>
-```
-
-## File: apps/frontend/src/app/layout/dashboards/dashboard.ts
-
-```typescript
-import { Component, computed, inject } from '@angular/core';
-import { RouterModule } from '@angular/router';
-import { Alerts } from '@uxcommon/components/alerts/alerts';
-import { Breadcrumb } from '../breadcrumb/breadcrumb';
-import { Icon } from '@icons/icon';
-import { AuthService } from '../../auth/auth-service';
-
-import { Navbar } from '../navbar/navbar';
-import { Sidebar } from '../sidebar/sidebar';
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-
-@Component({
-  selector: 'pc-dashboard',
-  imports: [Navbar, Sidebar, RouterModule, Breadcrumb, Alerts, Icon],
-  templateUrl: './dashboard.html',
-})
-export class Dashboard {
-  private readonly sidebarSvc = inject(SidebarService);
-  private readonly auth = inject(AuthService);
-
-  protected readonly userSignal = this.auth.getUserSignal();
-  protected readonly isViewer = computed(() => this.userSignal()?.role === 'viewer');
-
-  protected isMobileOpen() {
-    return this.sidebarSvc.isMobileOpen();
-  }
-}
-```
-
-## File: apps/frontend/src/app/layout/navbar/navbar.html
-
-```html
-<!-- Navigation bar template with search, theme toggle, and user actions -->
-<div class="navbar bg-base-100 shadow-lg relative">
-  <div class="flex-1 sm:hidden" (click)="toggleMobile()">
-    <pc-icon name="bars-4"></pc-icon>
-  </div>
-
-  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
-    <!-- Search bar -->
-    <div *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'" class="flex-1 max-w-full">
-      <label class="input input-primary w-full flex items-center gap-2">
-        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
-        <input
-          #searchInput
-          type="text"
-          placeholder="Search"
-          i18n-placeholder="@@navbar.search.placeholder"
-          class="grow w-full"
-          (blur)="onBlurSearchBar()"
-          [value]="searchStr()"
-          (input)="onSearchInput($event)"
-          (keydown.enter)="onSearchEnter()"
-        />
-        <kbd class="kbd kbd-sm hidden sm:block">⌘</kbd>
-        <kbd class="kbd kbd-sm hidden sm:block">K</kbd>
-      </label>
-    </div>
-
-    <!-- Search icon -->
-    <pc-icon
-      class="hover:text-primary text-base-400 cursor-pointer"
-      [class.hidden]="searchBarVisible()"
-      (click)="showSearchBar()"
-      name="magnifying-glass"
-    ></pc-icon>
-
-    <pc-swap
-      class="hover:text-primary text-base-400 cursor-pointer"
-      swapOnIcon="arrows-pointing-out"
-      swapOffIcon="arrows-pointing-in"
-      [checked]="!isFullScreenMode()"
-      (click)="toggleFullScreen()"
-      aria-label="Toggle full screen"
-      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
-    ></pc-swap>
-
-    <!-- light / dark theme switcher -->
-    <pc-swap
-      swapOnIcon="sun"
-      swapOffIcon="moon"
-      [checked]="themeSvc.getTheme() === 'light'"
-      (click)="toggleTheme()"
-      aria-label="Toggle theme"
-      i18n-aria-label="@@navbar.theme.ariaLabel"
-    ></pc-swap>
-
-    <!-- email sending status indicator -->
-    @if (emailActions.sendingCount() > 0) {
-    <div
-      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
-    >
-      <span class="loading loading-spinner loading-xs text-primary"></span>
-      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
-        >Sending ({{ emailActions.sendingCount() }})...</span
-      >
-    </div>
-    }
-
-    <!-- notifications drop down -->
-    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
-      <div
-        tabindex="0"
-        role="button"
-        class="btn btn-ghost btn-circle relative"
-        aria-label="Notifications"
-        i18n-aria-label="@@navbar.notifications.ariaLabel"
-      >
-        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
-        @if (unreadCount() > 0) {
-        <span class="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full" [class.animate-pulse]="isPulsing()"></span>
-        }
-      </div>
-
-      <!-- Notifications list -->
-      <div
-        tabindex="0"
-        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
-      >
-        <div class="card-body p-0">
-          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
-            <h3
-              class="font-semibold text-sm"
-              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
-            >
-              Notifications
-            </h3>
-            @if (unreadCount() > 0) {
-            <button
-              class="text-xs text-primary hover:underline font-medium"
-              (click)="markAllAsRead($event)"
-              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
-            >
-              Mark all read
-            </button>
-            }
-          </div>
-
-          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
-            @if (notifications().length === 0) {
-            <div class="flex flex-col items-center justify-center py-8 text-base-400">
-              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
-              <p
-                class="text-xs font-light"
-                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
-              >
-                All caught up!
-              </p>
-            </div>
-            } @else { @for (notif of notifications(); track notif.id) {
-            <div
-              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
-              [class.bg-primary/5]="!notif.read"
-              (click)="clickNotification(notif)"
-            >
-              <!-- Icon Based on Type -->
-              <div class="flex-shrink-0">
-                <div
-                  class="w-8 h-8 rounded-lg flex items-center justify-center"
-                  [class.bg-info/10]="notif.type === 'info'"
-                  [class.text-info]="notif.type === 'info'"
-                  [class.bg-primary/10]="notif.type === 'email'"
-                  [class.text-primary]="notif.type === 'email'"
-                  [class.bg-warning/10]="notif.type === 'task'"
-                  [class.text-warning]="notif.type === 'task'"
-                >
-                  @if (notif.type === 'email') {
-                  <pc-icon name="envelope"></pc-icon>
-                  } @else if (notif.type === 'task') {
-                  <pc-icon name="clipboard-document-list"></pc-icon>
-                  } @else {
-                  <pc-icon name="information-circle"></pc-icon>
-                  }
-                </div>
-              </div>
-
-              <!-- Message Details -->
-              <div class="flex-1 min-w-0">
-                <div class="flex justify-between items-start gap-1">
-                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
-                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
-                </div>
-                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
-              </div>
-
-              <!-- Unread dot indicator -->
-              @if (!notif.read) {
-              <span
-                class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary animate-ping"
-              ></span>
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
-              }
-            </div>
-            } } @if (isLoadingMore()) {
-            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
-              <span class="loading loading-spinner loading-xs text-primary"></span>
-            </div>
-            }
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- profile drop down -->
-    <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
-        <div
-          class="bg-base-100 border-primary hover:bg-base-300 hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
-        >
-          @if (currentUserAvatar()) {
-          <img
-            [src]="currentUserAvatar()!"
-            alt="User Profile Picture"
-            i18n-alt="@@navbar.profile.avatarAlt"
-            class="w-full h-full object-cover"
-          />
-          } @else {
-          <img alt="User Profile Picture" i18n-alt="@@navbar.profile.avatarAlt" src="assets/logo-sq.svg" class="p-1" />
-          }
-        </div>
-      </div>
-
-      <!-- Menu -->
-      <ul
-        tabindex="0"
-        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow"
-        (click)="closeDropdown()"
-      >
-        <li class="hover:text-primary">
-          <a routerLink="/profile">
-            <pc-icon name="user-circle"></pc-icon>
-            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary">
-          <a routerLink="/settings">
-            <pc-icon name="cog-6-tooth"></pc-icon>
-            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary" (click)="signOut()">
-          <a>
-            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
-            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
-          </a>
-        </li>
-      </ul>
-    </div>
-  </div>
-
-  <!-- Background email sending progress bar -->
-  @if (emailActions.sendingCount() > 0) {
-  <progress
-    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
-  ></progress>
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/layout/theme/theme-service.ts
@@ -15034,97 +12928,143 @@ export class RecordActivities {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
+## File: apps/frontend/src/app/experiences/companies/ui/company-view.html
 
 ```html
-<div class="p-6 max-w-4xl mx-auto">
-  <!-- Loading State -->
-  @if (isLoading()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading company details...</p>
-  </div>
-  } @else {
-  <div class="space-y-6">
-    <pc-detail-header
-      [title]="isNewMode() ? 'Add Company' : 'Company: ' + (company()?.name || '')"
-      [subtitle]="isNewMode() ? 'Create a new company record' : 'View and update company information'"
-      icon="briefcase"
-      [iconSize]="7"
-      [form]="form"
-      [isLoading]="isLoading()"
-      buttonsToShow="two"
-      [btn1Text]="isNewMode() ? 'Create Company' : 'Save Company'"
-      [showDelete]="!isNewMode()"
-      deleteText="Delete Company"
-      (save)="save($event)"
-      (delete)="deleteCompany()"
-    ></pc-detail-header>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Form Section -->
-      <pc-card class="lg:col-span-2">
-        <!-- Name -->
-        <pc-input label="Company Name" placeholder="e.g. Acme Corp" [formField]="form.name"></pc-input>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Website -->
-          <pc-input label="Website" type="url" placeholder="https://example.com" [formField]="form.website"></pc-input>
-
-          <!-- Industry -->
-          <pc-input label="Industry" placeholder="e.g. Technology" [formField]="form.industry"></pc-input>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Email -->
-          <pc-input label="Email" type="email" placeholder="info@example.com" [formField]="form.email"></pc-input>
-
-          <!-- Phone -->
-          <pc-input label="Phone" type="tel" placeholder="+1 555-0100" [formField]="form.phone"></pc-input>
-        </div>
-
-        <!-- Description -->
-        <pc-textarea
-          label="Description"
-          placeholder="Company description..."
-          [formField]="form.description"
-          [rows]="3"
-        ></pc-textarea>
-
-        <!-- Notes -->
-        <pc-textarea
-          label="Internal Notes"
-          placeholder="Any additional notes..."
-          [formField]="form.notes"
-          [rows]="4"
-        ></pc-textarea>
-      </pc-card>
-
-      <!-- Members & Info Panel -->
-      <div class="space-y-6">
-        <!-- Employee List (Only when edit mode) -->
-        @if (!isNewMode() && id()) {
-        <pc-card title="Associated Employees" icon="user-group">
-          @defer (on viewport) {
-          <pc-people-in-company [companyId]="id()!"></pc-people-in-company>
-          } @placeholder {
-          <div class="skeleton w-full h-32"></div>
-          }
-        </pc-card>
+<pc-detail-layout
+  [title]="company()?.name || 'Company'"
+  [eyebrow]="'Company'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!company()"
+  [showDelete]="true"
+  [deleteText]="'Delete company'"
+  [btn1Text]="'Edit company'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editCompany()"
+  (delete)="deleteCompany()"
+>
+  @if (company()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Company Details Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Company Card -->
+      <pc-profile-card [avatarText]="initials()">
+        <!-- Name & Industry -->
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ company().name }}</h2>
+        @if (company().industry) {
+        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">{{ company().industry }}</div>
+        } @else {
+        <span class="text-xs text-base-content/40 italic mb-4">No industry assigned</span>
         }
 
-        <!-- Metadata Card -->
-        @if (!isNewMode()) {
-        <pc-entity-overview
-          [createdAt]="company()?.created_at"
-          [updatedAt]="company()?.updated_at"
-        ></pc-entity-overview>
+        <!-- Contact details list -->
+        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
+          <pc-detail-item
+            label="Website"
+            [value]="company().website"
+            icon="globe-americas"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Email Address"
+            [value]="company().email"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Phone Number"
+            [value]="company().phone"
+            icon="identification"
+            [copyable]="true"
+          ></pc-detail-item>
+        </div>
+
+        <!-- Internal Notes (Short summary) -->
+        @if (company().notes) {
+        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
+          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1">
+            Internal Notes
+          </span>
+          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
+            {{ company().notes }}
+          </p>
+        </div>
         }
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="company().created_at"
+          [createdBy]="getUserName(company().createdby_id)"
+          [updatedAt]="company().updated_at"
+          [updatedBy]="getUserName(company().updatedby_id)"
+        ></pc-system-metadata>
+      </pc-profile-card>
+    </div>
+
+    <!-- Right Column: Stats & Tabs -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats Panel -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <pc-stat-card
+          [title]="'Employees'"
+          [value]="employeeCount()"
+          [description]="'Total staff listed'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-teal-500'"
+          [iconColorClass]="'text-teal-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Enriched from Google'"
+          [value]="isEnriched() ? 'Yes' : 'No'"
+          [description]="'Google Places sync status'"
+          [icon]="'check-circle'"
+          [valueColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
+          [iconColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
+        ></pc-stat-card>
       </div>
+
+      <!-- Tabs Panel -->
+      <pc-tabs [tabs]="companyTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'companies'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="employees" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @defer (on viewport) {
+            <pc-people-in-company [companyId]="id()"></pc-people-in-company>
+            } @placeholder {
+            <div class="skeleton w-full h-32"></div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="details" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (company().description) {
+            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2">
+                Company Description
+              </span>
+              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">
+                {{ company().description }}
+              </p>
+            </div>
+            } @else {
+            <div class="text-center py-10 text-base-content/40 italic">No company description recorded.</div>
+            }
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
     </div>
   </div>
   }
-</div>
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/people-in-company.ts
@@ -17640,6 +15580,314 @@ export class EmailCreateTaskDialog {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/events/ui/event-view.html
+
+```html
+<pc-detail-layout
+  [title]="event()?.name || 'Event'"
+  [eyebrow]="'Event'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!event()"
+  [showDelete]="true"
+  [deleteText]="'Delete event'"
+  [btn1Text]="'Edit event'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editEvent()"
+  (delete)="deleteEvent()"
+>
+  @if (event()) {
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left: Event Info Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <pc-profile-card iconName="calendar">
+        <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
+        <div class="flex flex-wrap gap-2 mb-4 justify-center">
+          @if (event().is_published) {
+          <span class="badge badge-success font-semibold uppercase text-xs">Published</span>
+          } @else {
+          <span class="badge badge-warning font-semibold uppercase text-xs">Draft</span>
+          } @if (eventPassed()) {
+          <span class="badge badge-neutral font-semibold uppercase text-xs">Past</span>
+          } @else {
+          <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
+          }
+        </div>
+
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          @if (event().description) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ event().description }}</div>
+          }
+
+          <pc-detail-row icon="map-pin" iconClass="text-error">
+            <span class="text-xs">
+              <strong>Location:</strong> {{ event().location_address || 'No Address Provided' }}
+            </span>
+          </pc-detail-row>
+
+          <pc-detail-row icon="calendar" iconClass="text-info">
+            <div class="text-xs flex flex-col">
+              <span><strong>Start:</strong> {{ event().start_time | date: 'medium' }}</span>
+              <span><strong>End:</strong> {{ event().end_time | date: 'medium' }}</span>
+            </div>
+          </pc-detail-row>
+
+          @if (event().contact_email || event().contact_phone) {
+          <div class="divider my-1"></div>
+          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">Organizer Contact</div>
+          @if (event().contact_email) {
+          <pc-detail-row icon="envelope" iconClass="text-teal-500">
+            <span class="text-xs">{{ event().contact_email }}</span>
+          </pc-detail-row>
+          } @if (event().contact_phone) {
+          <pc-detail-row icon="phone" iconClass="text-purple-500">
+            <span class="text-xs">{{ event().contact_phone }}</span>
+          </pc-detail-row>
+          } } @if (ticketTypes().length > 0) {
+          <div class="divider my-1"></div>
+          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">Ticket Types</div>
+          @for (ticket of ticketTypes(); track ticket.id) {
+          <div class="flex justify-between text-xs px-1">
+            <span class="font-semibold">{{ ticket.name }}</span>
+            <span class="text-base-content/60">
+              {{ ticket.price_cents ? '$' + (ticket.price_cents / 100).toFixed(2) : 'Free' }} @if (ticket.capacity) { ·
+              {{ ticket.capacity }} max }
+            </span>
+          </div>
+          } }
+        </div>
+      </pc-profile-card>
+
+      @if (publicUrl()) {
+      <pc-card title="Public RSVP Link" icon="globe-americas">
+        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copyPublicUrl()">
+          <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
+        </button>
+        <div class="flex gap-2">
+          <input
+            type="text"
+            [value]="publicUrl()"
+            readonly
+            class="input input-bordered input-xs flex-1 font-mono text-[10px]"
+          />
+          <a [href]="publicUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
+            <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
+          </a>
+        </div>
+        @if (!event().is_published) {
+        <div class="alert alert-warning py-2 text-xs flex gap-2 mt-1">
+          <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+          <span>This event is not published yet. Publish it to make the RSVP page live.</span>
+        </div>
+        }
+      </pc-card>
+      }
+    </div>
+
+    <!-- Right: Stats + Tabs -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <pc-stat-card
+          [title]="'Registered'"
+          [value]="activeCount()"
+          [description]="'Active registrations'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Attended'"
+          [value]="attendedCount()"
+          [description]="'Checked in'"
+          [icon]="'check-circle'"
+          [valueColorClass]="'text-teal-500'"
+          [iconColorClass]="'text-teal-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Capacity Left'"
+          [value]="remainingCapacity()"
+          [description]="'of ' + (event().capacity ?? 'unlimited') + ' total'"
+          [icon]="'adjustments-horizontal'"
+          [valueColorClass]="'text-orange-500'"
+          [iconColorClass]="'text-orange-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Tabs -->
+      <pc-tabs [tabs]="eventTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="attendees" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <!-- Add Registration -->
+            <pc-card title="Add Registration" icon="user-plus">
+              <div class="flex flex-col sm:flex-row gap-3 items-end">
+                <div class="relative flex-1 space-y-1">
+                  <label class="label text-xs font-semibold text-base-content/65 uppercase">Search People</label>
+                  <div class="relative">
+                    <input
+                      type="text"
+                      class="input input-bordered input-sm w-full pl-9"
+                      placeholder="Search by name or email..."
+                      [ngModel]="personSearch()"
+                      (ngModelChange)="onPersonSearch($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                    <div
+                      class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-base-content/40"
+                    >
+                      <pc-icon name="magnifying-glass" [size]="4"></pc-icon>
+                    </div>
+                  </div>
+                  @if (personSearchResults().length > 0) {
+                  <div
+                    class="absolute z-10 w-full mt-0.5 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
+                  >
+                    @for (p of personSearchResults(); track p.id) {
+                    <div (click)="selectPerson(p)" class="px-3 py-2 hover:bg-base-200 cursor-pointer">
+                      <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
+                      <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
+                    </div>
+                    }
+                  </div>
+                  }
+                </div>
+
+                @if (ticketTypes().length > 0) {
+                <div class="space-y-1 w-40">
+                  <label class="label text-xs font-semibold text-base-content/65 uppercase">Ticket Type</label>
+                  <select
+                    class="select select-bordered select-sm w-full"
+                    [ngModel]="selectedTicketTypeId()"
+                    (ngModelChange)="selectedTicketTypeId.set($event || null)"
+                    [ngModelOptions]="{standalone: true}"
+                  >
+                    <option [value]="null">No ticket</option>
+                    @for (t of ticketTypes(); track t.id) {
+                    <option [value]="t.id">{{ t.name }}</option>
+                    }
+                  </select>
+                </div>
+                }
+
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm shrink-0"
+                  [disabled]="!selectedPersonId() || addingRegistration()"
+                  (click)="addRegistration()"
+                >
+                  @if (addingRegistration()) {
+                  <span class="loading loading-spinner loading-xs"></span>
+                  } @else {
+                  <pc-icon name="plus" [size]="4"></pc-icon>
+                  } Register
+                </button>
+              </div>
+            </pc-card>
+
+            <!-- Attendees Table -->
+            <div class="flex justify-between items-center">
+              <h4 class="font-semibold text-sm text-base-content/70">Attendee List</h4>
+              @if (registrations().length > 0) {
+              <button type="button" class="btn btn-xs btn-outline gap-1" (click)="exportCsv()">
+                <pc-icon name="arrow-down-tray" [size]="3"></pc-icon> Export CSV
+              </button>
+              }
+            </div>
+
+            @if (registrations().length === 0) {
+            <p class="text-sm text-base-content/40 italic text-center py-8">No registrations yet for this event.</p>
+            } @else {
+            <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
+              <table class="table table-sm w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200 text-base-content/70">
+                    <th>Name</th>
+                    <th>Ticket</th>
+                    <th>Status</th>
+                    <th>Checked In</th>
+                    <th class="text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (reg of registrations(); track reg.id) {
+                  <tr class="hover:bg-base-200/50" [class.opacity-50]="reg.status === 'cancelled'">
+                    <td>
+                      <a [routerLink]="['/people', reg.person_id]" class="link link-primary font-bold">
+                        {{ reg.first_name }} {{ reg.last_name }}
+                      </a>
+                      <div class="text-[10px] text-base-content/50 mt-0.5">{{ reg.email || 'No email' }}</div>
+                    </td>
+                    <td>
+                      @if (reg.ticket_type_name) {
+                      <span class="badge badge-ghost badge-sm">{{ reg.ticket_type_name }}</span>
+                      } @else {
+                      <span class="text-base-content/30">—</span>
+                      }
+                    </td>
+                    <td>
+                      <select
+                        class="select select-bordered select-xs font-medium"
+                        [ngModel]="reg.status"
+                        (ngModelChange)="updateStatus(reg, $event)"
+                        [ngModelOptions]="{standalone: true}"
+                        [class.select-success]="reg.status === 'attended'"
+                        [class.select-warning]="reg.status === 'registered'"
+                        [class.select-error]="reg.status === 'no_show'"
+                      >
+                        <option value="registered">Registered</option>
+                        <option value="attended">Attended</option>
+                        <option value="no_show">No Show</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </td>
+                    <td class="font-mono text-[10px]">
+                      {{ reg.checked_in_at ? (reg.checked_in_at | date: 'shortTime') : '—' }}
+                    </td>
+                    <td>
+                      <div class="flex items-center justify-center gap-1">
+                        @if (reg.status === 'registered') {
+                        <button
+                          type="button"
+                          class="btn btn-ghost btn-xs text-success"
+                          title="Check in"
+                          (click)="checkIn(reg)"
+                        >
+                          <pc-icon name="check-circle" [size]="4"></pc-icon>
+                        </button>
+                        }
+                        <button
+                          type="button"
+                          class="btn btn-ghost btn-xs text-error"
+                          title="Remove"
+                          (click)="deleteRegistration(reg)"
+                        >
+                          <pc-icon name="trash" [size]="4"></pc-icon>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'events'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
+```
+
 ## File: apps/frontend/src/app/experiences/forms/ui/form-editor.html
 
 ```html
@@ -18146,6 +16394,215 @@ export class EmailCreateTaskDialog {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/forms/ui/form-view.html
+
+```html
+<pc-detail-layout
+  [title]="formRecord()?.name || 'Form'"
+  [eyebrow]="'Form'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!formRecord()"
+  [showDelete]="true"
+  [deleteText]="'Delete form'"
+  [btn1Text]="'Edit form'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editForm()"
+  (delete)="deleteForm()"
+>
+  @if (formRecord()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Form Info & Embed Code -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Form Details Card -->
+      <pc-profile-card iconName="clipboard-document-list">
+        <!-- Name & Status -->
+        <h2 class="text-xl font-bold text-base-content text-center mb-1">{{ formRecord().name }}</h2>
+        <div class="flex gap-2 mb-4">
+          <span
+            class="badge font-semibold uppercase text-xs"
+            [class.badge-success]="formRecord().status === 'active'"
+            [class.badge-warning]="formRecord().status === 'archived'"
+          >
+            {{ formRecord().status }}
+          </span>
+        </div>
+
+        <!-- Details and settings list -->
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          @if (formRecord().description) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ formRecord().description }}</div>
+          } @if (formRecord().redirect_url) {
+          <pc-detail-row icon="arrow-top-right-on-square" iconClass="text-indigo-500">
+            <span class="truncate">Redirect: <strong>{{ formRecord().redirect_url }}</strong></span>
+          </pc-detail-row>
+          }
+
+          <pc-detail-row icon="envelope" iconClass="text-teal-500">
+            <span>Send Confirmation:</span>
+            <span pc-row-action class="font-bold">{{ formRecord().send_confirmation !== false ? 'Yes' : 'No' }}</span>
+          </pc-detail-row>
+
+          <pc-detail-row icon="bell" iconClass="text-purple-500">
+            <span>Send Admin Alert:</span>
+            <span pc-row-action class="font-bold">{{ formRecord().send_alert !== false ? 'Yes' : 'No' }}</span>
+          </pc-detail-row>
+        </div>
+
+        <!-- System Metadata -->
+        <div
+          class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
+        >
+          <span
+            >Created by {{ getUserName(formRecord().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span
+          >
+          <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(formRecord().updatedby_id) }}</span>
+        </div>
+      </pc-profile-card>
+
+      <!-- HTML Embed Snippet Card -->
+      <pc-card title="Deploy & Embed">
+        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
+          <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy Code
+        </button>
+
+        <div class="form-control text-xs">
+          <label class="label font-semibold py-1">Public Landing Page URL</label>
+          <div class="flex gap-2">
+            <input
+              type="text"
+              [value]="formUrl()"
+              readonly
+              class="input input-bordered input-xs flex-1 font-mono text-[10px]"
+            />
+            <a [href]="formUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
+              <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
+            </a>
+          </div>
+        </div>
+
+        <div class="form-control text-xs">
+          <label class="label font-semibold py-1">Embed HTML Code</label>
+          <pre
+            class="bg-neutral text-neutral-content p-3 rounded-lg text-[10px] font-mono max-h-40 overflow-y-auto select-all leading-snug"
+          >
+{{ embedSnippet() }}</pre
+          >
+        </div>
+      </pc-card>
+    </div>
+
+    <!-- Right Column: Stats & Tabs -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats Panel -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <pc-stat-card
+          [title]="'Submissions'"
+          [value]="submissionsCount()"
+          [description]="'Total lead contacts collected'"
+          [icon]="'envelope'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Fields Included'"
+          [value]="fieldsCount()"
+          [description]="'Active field inputs'"
+          [icon]="'queue-list'"
+          [valueColorClass]="'text-amber-500'"
+          [iconColorClass]="'text-amber-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Tabs Panel -->
+      <!-- Tabs Panel -->
+      <pc-tabs [tabs]="formTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'web_forms'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="targetActions" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-5 text-sm">
+            <div>
+              <h4 class="font-semibold text-base-content mb-1">Add to Lists</h4>
+              @if (targetListsNames().length > 0) {
+              <div class="flex flex-wrap gap-1.5">
+                @for (list of targetListsNames(); track list) {
+                <span class="badge badge-neutral px-3 py-2.5">{{ list }}</span>
+                }
+              </div>
+              } @else {
+              <span class="text-xs text-base-content/40 italic">No specific list assigned.</span>
+              }
+            </div>
+
+            <div>
+              <h4 class="font-semibold text-base-content mb-1">Apply Tags</h4>
+              <div class="flex flex-wrap gap-1.5">
+                @if (formRecord().target_tags?.length > 0) { @for (tag of formRecord().target_tags; track tag) {
+                <span class="badge badge-outline badge-primary px-3 py-2.5">{{ tag }}</span>
+                } }
+                <!-- Automatic system tag -->
+                <span class="badge badge-outline badge-secondary px-3 py-2.5">Source: {{ formRecord().name }}</span>
+                @if (formRecord().form_type === 'donation' || formRecord().form_type === 'recurring_donation') {
+                <span class="badge badge-outline badge-success px-3 py-2.5 flex items-center gap-1">
+                  <pc-icon name="tag" [size]="3"></pc-icon>
+                  donor <span class="text-[10px] opacity-60">(auto)</span>
+                </span>
+                }
+              </div>
+            </div>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="fieldsPreview" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <h4 class="font-semibold text-base-content">Form Input Preview</h4>
+            <div class="rounded-xl border border-base-200 bg-base-200/20 p-4 max-w-sm">
+              @if (selectedFields().includes('first_name')) {
+              <div class="form-control mb-3">
+                <span class="text-[10px] font-semibold uppercase text-base-content/50">First Name</span>
+                <input type="text" class="input input-bordered input-xs" placeholder="First Name" disabled />
+              </div>
+              } @if (selectedFields().includes('last_name')) {
+              <div class="form-control mb-3">
+                <span class="text-[10px] font-semibold uppercase text-base-content/50">Last Name</span>
+                <input type="text" class="input input-bordered input-xs" placeholder="Last Name" disabled />
+              </div>
+              }
+              <div class="form-control mb-3">
+                <span class="text-[10px] font-semibold uppercase text-base-content/50">Email Address *</span>
+                <input type="text" class="input input-bordered input-xs" placeholder="you@example.com" disabled />
+              </div>
+              @if (selectedFields().includes('mobile')) {
+              <div class="form-control mb-3">
+                <span class="text-[10px] font-semibold uppercase text-base-content/50">Mobile / Phone</span>
+                <input type="text" class="input input-bordered input-xs" placeholder="Phone Number" disabled />
+              </div>
+              } @if (selectedFields().includes('notes')) {
+              <div class="form-control mb-3">
+                <span class="text-[10px] font-semibold uppercase text-base-content/50">Notes / Message</span>
+                <textarea
+                  class="textarea textarea-bordered textarea-xs"
+                  placeholder="How can we help?"
+                  disabled
+                ></textarea>
+              </div>
+              }
+            </div>
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
+```
+
 ## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.html
 
 ```html
@@ -18570,139 +17027,237 @@ export class EmailCreateTaskDialog {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/households/ui/household-form.html
+## File: apps/frontend/src/app/experiences/households/ui/household-view.html
 
 ```html
-<!-- Template for household edit form -->
-<div class="flex min-h-full flex-col bg-base-100 p-6">
-  <div class="max-w-4xl mx-auto w-full">
-    @if (household()?.is_placeholder) {
-    <div class="alert alert-warning mb-6 shadow rounded-lg flex gap-3">
-      <pc-icon name="exclamation-triangle" class="shrink-0" [size]="5"></pc-icon>
-      <div class="flex flex-col">
-        <span class="font-bold">System Placeholder Household</span>
-        <span class="text-xs font-light"
-          >This household is a permanent placeholder for people with no address and cannot be edited.</span
-        >
+<pc-detail-layout
+  [title]="addressString()"
+  [eyebrow]="'Household'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!household()"
+  [showActions]="!!(household() && !household()?.is_placeholder)"
+  [showDelete]="true"
+  [deleteText]="'Delete household'"
+  [btn1Text]="'Edit household'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editHousehold()"
+  (delete)="deleteHousehold()"
+>
+  @if (household(); as h) { @if (h.is_placeholder) {
+  <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
+    <div class="avatar placeholder mb-4">
+      <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
+        <pc-icon name="exclamation-triangle" [size]="8"></pc-icon>
       </div>
     </div>
-    } @else {
-    <pc-detail-header
-      [title]="id() ? 'Edit Household Details' : 'Add New Household'"
-      icon="home"
-      [form]="form"
-      [isLoading]="isLoading()"
-      [buttonsToShow]="household()?.id ? 'two' : 'three'"
-      [btn1Text]="household()?.id ? 'Save Household' : 'Create Household'"
-      [showDelete]="!isNewMode()"
-      deleteText="Delete Household"
-      (save)="save($event)"
-      (delete)="deleteHousehold()"
-    ></pc-detail-header>
-
-    <progress class="progress w-full mb-6" [class.hidden]="!isLoading()"></progress>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Form Section -->
-      <div class="lg:col-span-2">
-        <form (submit)="$event.preventDefault()">
-          <fieldset [disabled]="isLoading() || (household()?.is_placeholder ?? false)">
-            <div class="flex flex-col gap-6">
-              <!-- Current Address Display -->
-              @if (!household()?.is_placeholder && addressString()) {
-              <div class="flex items-start gap-3 bg-base-200 p-4 rounded-xl border border-base-300 shadow-sm">
-                <pc-icon name="map-pin" class="text-primary shrink-0 mt-0.5" [size]="5"></pc-icon>
-                <div class="flex flex-col">
-                  <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50"
-                    >Current Address</span
-                  >
-                  <span class="text-sm font-medium text-base-content">{{ addressString() }}</span>
-                </div>
-              </div>
-              }
-
-              <!-- Autocomplete Address Search -->
-              <div class="flex flex-col gap-2">
-                <label class="text-sm font-semibold text-base-content/75">Search address</label>
-                <pc-address-autocomplete
-                  (addressSelected)="handleAddressChange($event)"
-                  [disabled]="isLoading() || (household()?.is_placeholder ?? false)"
-                ></pc-address-autocomplete>
-              </div>
-
-              <!-- Collapsible manual entry -->
-              <details class="group">
-                <summary
-                  class="cursor-pointer list-none flex items-center gap-2 text-sm font-medium text-base-content/60 hover:text-base-content select-none py-1"
-                >
-                  <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
-                  Enter address manually
-                </summary>
-                <div class="mt-4 pl-3 border-l-2 border-base-300">
-                  <pc-address-form-group [form]="form"></pc-address-form-group>
-                </div>
-              </details>
-
-              <div class="divider mb-1 uppercase tracking-wider text-xs font-semibold text-base-content/40">
-                Segmentation
-              </div>
-
-              <!-- Tags -->
-              <div class="flex flex-col gap-2">
-                <label class="text-sm font-semibold text-base-content/75">Tags</label>
-                <pc-tags
-                  [tags]="tags"
-                  type="tag"
-                  [enableAutoComplete]="true"
-                  [readonly]="household()?.is_placeholder ?? false"
-                  [canDelete]="!(household()?.is_placeholder ?? false)"
-                  (tagAdded)="tagAdded($event)"
-                  (tagRemoved)="tagRemoved($event)"
-                ></pc-tags>
-              </div>
-
-              <!-- Issues -->
-              <div class="flex flex-col gap-2">
-                <label class="text-sm font-semibold text-base-content/75">Issues of Interest</label>
-                <pc-tags
-                  [tags]="issues"
-                  type="issue"
-                  [enableAutoComplete]="true"
-                  placeholder="Enter issues, separated by comma"
-                  [readonly]="household()?.is_placeholder ?? false"
-                  [canDelete]="!(household()?.is_placeholder ?? false)"
-                  (tagAdded)="issueAdded($event)"
-                  (tagRemoved)="issueRemoved($event)"
-                ></pc-tags>
-              </div>
-
-              <!-- Notes -->
-              <pc-textarea
-                label="Internal Notes"
-                placeholder="Internal notes regarding this household..."
-                [formField]="form.notes"
-                [rows]="3"
-              ></pc-textarea>
-
-              <div class="h-2"></div>
-            </div>
-          </fieldset>
-        </form>
-      </div>
-
-      <!-- Overview Sidebar -->
-      <div>
-        @if (!isNewMode()) {
-        <pc-entity-overview
-          [createdAt]="household()?.created_at"
-          [updatedAt]="household()?.updated_at"
-        ></pc-entity-overview>
-        }
-      </div>
-    </div>
-    }
+    <h2 class="text-xl font-bold text-base-content mb-2">No Household Assigned</h2>
+    <p class="text-sm text-base-content/60 mb-6">
+      This is a system placeholder representing individuals who do not currently have a household or address assigned.
+      It is not a real household record and cannot be edited.
+    </p>
+    <a routerLink="/people" class="btn btn-primary btn-sm gap-2">
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Return to People
+    </a>
   </div>
-</div>
+  } @else {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Household Card, Map & Segmentation -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Household Card -->
+      <pc-profile-card iconName="home">
+        <!-- Address Title -->
+        <h2 class="text-xl font-bold text-base-content text-center mb-4 leading-tight">{{ addressString() }}</h2>
+
+        <!-- Contact Details List -->
+        <div class="w-full flex flex-col text-sm">
+          <pc-detail-item label="Home Phone" [value]="h.home_phone" icon="phone" [copyable]="true"></pc-detail-item>
+          <pc-detail-item label="Household Type" [value]="h.type" icon="information-circle"></pc-detail-item>
+        </div>
+
+        <!-- Mapped Districts (GIS) -->
+        @if (h.district || h.precinct || h.ward || h.geocoding_status) {
+        <div
+          class="flex flex-col gap-2 p-3 rounded-lg bg-base-200/50 text-base-content/80 mt-2 border border-base-300/40 w-full"
+        >
+          <div class="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-base-content/50">
+            <pc-icon name="map" [size]="4" class="text-primary"></pc-icon>
+            <span>Electoral Boundaries</span>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-1 text-center text-xs">
+            @if (h.district) {
+            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+              <span class="text-[10px] text-base-content/40 block">District / Riding</span>
+              <span class="font-bold text-base-content">{{ h.district }}</span>
+            </div>
+            } @if (h.ward) {
+            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+              <span class="text-[10px] text-base-content/40 block">Ward</span>
+              <span class="font-bold text-base-content">{{ h.ward }}</span>
+            </div>
+            } @if (h.precinct) {
+            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+              <span class="text-[10px] text-base-content/40 block">Precinct / Polling Div.</span>
+              <span class="font-bold text-base-content">{{ h.precinct }}</span>
+            </div>
+            }
+          </div>
+
+          <!-- Geocoding Status Badge -->
+          <div class="flex justify-between items-center mt-2 pt-2 border-t border-base-300/40 text-xs">
+            <span class="text-base-content/60">Geocoding Status:</span>
+            @if (h.geocoding_status === 'success') {
+            <span class="badge badge-success badge-sm font-medium">Success</span>
+            } @else if (h.geocoding_status === 'pending') {
+            <span class="badge badge-warning badge-sm font-medium gap-1 flex items-center">
+              <span class="loading loading-spinner loading-xs scale-75"></span>
+              Pending
+            </span>
+            } @else if (h.geocoding_status === 'failed') {
+            <span class="badge badge-error badge-sm text-xs">Unresolved</span>
+            } @else {
+            <span class="badge badge-ghost badge-sm font-medium">Skipped</span>
+            }
+          </div>
+        </div>
+        }
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="h.created_at"
+          [createdBy]="getUserName(h.createdby_id)"
+          [updatedAt]="h.updated_at"
+          [updatedBy]="getUserName(h.updatedby_id)"
+        ></pc-system-metadata>
+      </pc-profile-card>
+
+      <!-- Google Maps Card -->
+      <pc-card title="Map Location" icon="map">
+        <div class="relative w-full h-64 bg-base-200 flex items-center justify-center rounded-lg overflow-hidden">
+          @if (hasMap()) { @defer (on viewport) {
+          <div #mapContainer id="household-map" class="w-full h-full"></div>
+          } @placeholder {
+          <div class="skeleton w-full h-full"></div>
+          } } @else {
+          <!-- Unverified Map Placeholder -->
+          <div class="p-6 flex flex-col items-center gap-2 text-center text-base-content/40 select-none">
+            <pc-icon name="map-pin" [size]="8" class="text-base-content/20 mb-1"></pc-icon>
+            <h4 class="font-semibold text-sm text-base-content/60">Location Not Verified</h4>
+            <p class="text-xs max-w-[220px] font-light leading-snug">
+              Map pins are only available for addresses geocoded via autocomplete search or when we have verified the
+              address.
+            </p>
+          </div>
+          }
+        </div>
+      </pc-card>
+
+      <!-- Segmentation Card -->
+      <pc-card title="Segmentation">
+        <div class="flex flex-col gap-3">
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
+            @if (tags().length > 0) {
+            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
+            }
+          </div>
+
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
+            @if (issues().length > 0) {
+            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
+            }
+          </div>
+        </div>
+      </pc-card>
+    </div>
+
+    <!-- Right Column: Stats & Tabs Panel -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Dashboard Stats Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Stats: People -->
+        <pc-stat-card
+          [title]="'People'"
+          [value]="peopleCount()"
+          [description]="'Household members'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-teal-500'"
+          [iconColorClass]="'text-teal-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Interactions -->
+        <pc-stat-card
+          [title]="'Interactions'"
+          [value]="0"
+          [description]="'Logged contacts'"
+          [icon]="'envelope'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Donations -->
+        <pc-stat-card
+          [title]="'Donations'"
+          [value]="'$0'"
+          [description]="'Financial support'"
+          [icon]="'currency-dollar'"
+          [valueColorClass]="'text-emerald-500'"
+          [iconColorClass]="'text-emerald-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Volunteers -->
+        <pc-stat-card
+          [title]="'Volunteers'"
+          [value]="0"
+          [description]="'Active assignments'"
+          [icon]="'volunteer'"
+          [valueColorClass]="'text-purple-500'"
+          [iconColorClass]="'text-purple-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Multi-Tab Details & History Panel -->
+      <pc-tabs [tabs]="householdTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="members" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <pc-people-in-household [householdId]="id()!"></pc-people-in-household>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'households'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="details" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (h.notes) {
+            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2"
+                >Household Notes</span
+              >
+              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">{{ h.notes }}</p>
+            </div>
+            } @else {
+            <div class="text-center py-10 text-base-content/40 italic">
+              No internal notes recorded for this household
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  } }
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/lists/services/lists-service.ts
@@ -20413,276 +18968,613 @@ export class PeopleInHousehold {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
+## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
 
 ```html
-<!-- Template for person edit/add view -->
-<div class="flex min-h-full flex-col bg-base-100 p-6">
-  <progress class="progress w-full" [class.hidden]="!isLoading()"></progress>
+<pc-detail-layout
+  [title]="fullName() || 'Person'"
+  [eyebrow]="'Person'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!person()"
+  [showDelete]="true"
+  [deleteText]="'Delete person'"
+  [btn1Text]="'Edit person'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editPerson()"
+  (delete)="deletePerson()"
+>
+  @if (person()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Contact Card & Bio -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Contact Card -->
+      <pc-profile-card [avatarText]="initials()">
+        <!-- Name & Company -->
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ fullName() }}</h2>
+        @if (person().company_name) {
+        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">
+          <pc-icon name="briefcase" [size]="4"></pc-icon>
+          {{ person().company_name }}
+        </div>
+        } @else {
+        <span class="text-sm text-base-content/50 italic mb-4">No company assigned</span>
+        }
 
-  <div class="max-w-4xl mx-auto w-full">
-    <!-- Back to profile or list -->
-    <pc-detail-header
-      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
-      [eyebrow]="person()?.id ? 'Editing' : 'New'"
-      [crumbs]="crumbs()"
-      [form]="form"
-      [isLoading]="isLoading()"
-      [buttonsToShow]="buttonsToShow()"
-      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
-      [showDelete]="!!person()?.id"
-      deleteText="Delete person"
-      (save)="save($event)"
-      (delete)="deletePerson()"
-    ></pc-detail-header>
+        <!-- Social Media Buttons -->
+        <div class="flex justify-center gap-3 w-full border-y border-base-200 py-4 mb-6">
+          @for (link of socialLinks(); track link.name) {
+          <a
+            [attr.href]="link.url || null"
+            [attr.target]="link.url ? '_blank' : null"
+            [attr.data-tip]="link.url ? link.name + ' profile' : link.name + ' URL not set'"
+            class="btn btn-circle btn-sm tooltip"
+            [class]="link.url 
+        ? 'shadow-md hover:scale-110 transition-transform text-white border-none ' + link.color 
+        : 'bg-base-200 text-base-content/30 border-base-300 cursor-not-allowed'"
+          >
+            <pc-icon [name]="link.icon" [size]="4"></pc-icon>
+          </a>
+          }
+        </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-      <div class="lg:col-span-2">
-        <form (submit)="save()" novalidate class="flex flex-col gap-5">
-          <fieldset [disabled]="isLoading()" class="flex flex-col gap-5">
-            @if (!person()?.id) {
-            <label class="label text-xs text-base-content/50 -mb-2"
-              >All fields are optional, but try to add as much as possible</label
+        <!-- Contact & Address Details List -->
+        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
+          <pc-detail-item
+            label="Primary Email"
+            [value]="person().email"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Secondary Email"
+            [value]="person().email2"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Mobile Phone"
+            [value]="person().mobile"
+            icon="phone"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Home Phone"
+            [value]="person().home_phone"
+            icon="home"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item label="Address" [value]="addressString()" icon="map-pin"></pc-detail-item>
+        </div>
+
+        <!-- Notes Section -->
+        @if (person().notes) {
+        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
+          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1"
+            >Internal Notes</span
+          >
+          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
+            {{ person().notes }}
+          </p>
+        </div>
+        }
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="person().created_at"
+          [createdBy]="getUserName(person().createdby_id)"
+          [updatedAt]="person().updated_at"
+          [updatedBy]="getUserName(person().updatedby_id)"
+        ></pc-system-metadata>
+      </pc-profile-card>
+
+      <!-- Segmentation Card -->
+      <pc-card title="Segmentation">
+        <div class="flex flex-col gap-3">
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
+            @if (tags().length > 0) {
+            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
+            }
+          </div>
+
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
+            @if (issues().length > 0) {
+            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
+            }
+          </div>
+        </div>
+      </pc-card>
+
+      <!-- Sentiment Score Card (frosted glass coming soon overlay) -->
+      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden relative">
+        <div class="p-6 flex flex-col items-center gap-3">
+          <h3 class="text-sm font-bold uppercase tracking-wider text-base-content/70 self-start">Sentiment Score</h3>
+
+          <!-- Placeholder Graphic -->
+          <div
+            class="flex items-center justify-center w-28 h-28 rounded-full border-4 border-dashed border-base-300 relative my-2"
+          >
+            <span class="text-4xl text-base-content/20">😐</span>
+            <span class="text-xs text-base-content/30 mt-1 absolute bottom-4 font-mono">Neutral</span>
+          </div>
+          <div class="text-xs text-base-content/40 text-center font-light leading-relaxed">
+            Aggregates communication email history and tags to automatically gauge contact affinity.
+          </div>
+        </div>
+
+        <!-- Premium Overlay for "Coming Soon" -->
+        <div
+          class="absolute inset-0 bg-base-100/80 backdrop-blur-md flex flex-col justify-center items-center p-4 text-center select-none"
+        >
+          <div class="p-3 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white rounded-2xl shadow-lg mb-2">
+            <pc-icon name="chart-pie" [size]="8"></pc-icon>
+          </div>
+          <h4 class="font-bold text-lg text-base-content">Affinity Analytics</h4>
+          <span class="badge badge-primary badge-sm font-semibold tracking-wider my-1">COMING SOON</span>
+          <p class="text-xs text-base-content/60 max-w-[200px] mt-1 font-light leading-snug">
+            AI-driven sentiment analysis of email conversations is currently in beta.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Stats & Multi-Tab Activity Feed -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Dashboard Stats Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Stats: Emails Sent -->
+        <pc-stat-card
+          [title]="'Emails Sent'"
+          [value]="activityData().emails.length"
+          [description]="'Total emails sent'"
+          [icon]="'paper-airplane'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Emails Opened -->
+        <pc-stat-card
+          [title]="'Opened'"
+          [value]="openedNewslettersCount()"
+          [description]="'Opens & clicks'"
+          [icon]="'eye'"
+          [valueColorClass]="'text-emerald-500'"
+          [iconColorClass]="'text-emerald-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Active Lists -->
+        <pc-stat-card
+          [title]="'Active Lists'"
+          [value]="0"
+          [description]="'List subscriptions'"
+          [icon]="'queue-list'"
+          [valueColorClass]="'text-amber-500'"
+          [iconColorClass]="'text-amber-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Volunteer Shifts -->
+        <pc-stat-card
+          [title]="'Volunteered'"
+          [value]="volunteerStats()?.shifts_count || 0"
+          [description]="'Shifts completed'"
+          [icon]="'volunteer'"
+          [valueColorClass]="'text-purple-500'"
+          [iconColorClass]="'text-purple-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Volunteer Hours -->
+        <pc-stat-card
+          [title]="'Total Hours'"
+          [value]="volunteerStats()?.total_hours || 0.0"
+          [description]="'Hours logged'"
+          [icon]="'clock'"
+          [valueColorClass]="'text-pink-500'"
+          [iconColorClass]="'text-pink-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Donations -->
+        <pc-stat-card
+          [title]="'Donations'"
+          [value]="donationStats() ? '$' + donationStats()!.cumulativeAmount.toLocaleString() : '$0'"
+          [description]="'Financial support'"
+          [icon]="'currency-dollar'"
+          [valueColorClass]="'text-emerald-500'"
+          [iconColorClass]="'text-emerald-500'"
+        ></pc-stat-card>
+
+        <!-- Stats: Connections -->
+        <pc-stat-card
+          [title]="'Connections'"
+          [value]="connectionCount()"
+          [description]="'Network connections'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-violet-500'"
+          [iconColorClass]="'text-violet-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Activities, Interactions & History Tabs -->
+      <!-- Activities, Interactions & History Tabs -->
+      <pc-tabs [tabs]="personTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+            <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="emails" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (activityData().emails.length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">No direct email correspondence recorded</div>
+            } @else {
+            <div class="flex flex-col gap-3">
+              @for (mail of activityData().emails; track mail.id) {
+              <a
+                [routerLink]="['/inbox']"
+                [queryParams]="{ email: mail.id }"
+                class="p-4 rounded-xl border border-base-200 hover:border-indigo-300 bg-base-50/20 hover:bg-base-100 transition-all flex flex-col gap-2 no-underline text-current group cursor-pointer hover:shadow-sm"
+              >
+                <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
+                  <span class="font-mono text-base-content/60">
+                    From: <strong class="text-base-content">{{ mail.from_email }}</strong> &rarr; To:
+                    <strong>{{ mail.to_email }}</strong>
+                  </span>
+                  <span class="text-base-content/40">{{ mail.created_at | date:'medium' }}</span>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                  <h4 class="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">
+                    {{ mail.subject || '(No Subject)' }}
+                  </h4>
+                  <pc-icon
+                    name="arrow-top-right-on-square"
+                    [size]="4"
+                    class="text-base-content/30 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+                  ></pc-icon>
+                </div>
+                @if (mail.preview) {
+                <p
+                  class="text-xs text-base-content/60 line-clamp-2 leading-relaxed bg-base-200/20 p-2.5 rounded-lg border border-base-200/50"
+                >
+                  {{ mail.preview }}
+                </p>
+                }
+                <div class="flex justify-end mt-1">
+                  <pc-status-badge [type]="getMailStatusType(mail.status)">
+                    {{ mail.status || 'received' }}
+                  </pc-status-badge>
+                </div>
+              </a>
+              }
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (activityData().newsletters.length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">No newsletter logs found</div>
+            } @else {
+            <div class="flex flex-col gap-2">
+              @for (ev of activityData().newsletters; track ev.id) {
+              <div
+                class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
+              >
+                <div class="flex items-center gap-3 overflow-hidden">
+                  <!-- Icon mappings for event types -->
+                  <div
+                    class="p-2 rounded-lg flex-shrink-0"
+                    [class.bg-info/10]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                    [class.text-info]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                    [class.bg-success/10]="ev.event_type === 'open'"
+                    [class.text-success]="ev.event_type === 'open'"
+                    [class.bg-warning/10]="ev.event_type === 'click'"
+                    [class.text-warning]="ev.event_type === 'click'"
+                    [class.bg-error/10]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                    [class.text-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                  >
+                    @if (ev.event_type === 'open') {
+                    <pc-icon name="eye" [size]="4"></pc-icon>
+                    } @else if (ev.event_type === 'click') {
+                    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+                    } @else if (ev.event_type === 'delivered') {
+                    <pc-icon name="check-circle" [size]="4"></pc-icon>
+                    } @else {
+                    <pc-icon name="information-circle" [size]="4"></pc-icon>
+                    }
+                  </div>
+                  <div class="flex flex-col overflow-hidden">
+                    <span class="font-medium text-base-content truncate"
+                      >{{ ev.newsletter_subject || ev.newsletter_name }}</span
+                    >
+                    @if (ev.url) {
+                    <span class="text-[10px] text-primary truncate hover:underline cursor-pointer"
+                      >Clicked URL: {{ ev.url }}</span
+                    >
+                    }
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-3 flex-shrink-0">
+                  <pc-status-badge [type]="getEmailEventType(ev.event_type)" class="tracking-wider text-[9px]">
+                    {{ ev.event_type }}
+                  </pc-status-badge>
+                  <span class="text-base-content/40 text-[10px]">{{ ev.timestamp | date:'short' }}</span>
+                </div>
+              </div>
+              }
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="volunteer" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (volunteerHistory().length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">No shift records found for this person</div>
+            } @else {
+            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
+              <table class="table table-sm w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th>Event Name</th>
+                    <th>Date & Time</th>
+                    <th>Status</th>
+                    <th>Hours</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (shift of volunteerHistory(); track shift.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td class="font-semibold">{{ shift.event_name }}</td>
+                    <td>{{ shift.start_time | date:'medium' }}</td>
+                    <td>
+                      <pc-status-badge [type]="getShiftStatusType(shift.status)"> {{ shift.status }} </pc-status-badge>
+                    </td>
+                    <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
+                    <td class="font-light">{{ shift.notes || '--' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="donations" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <!-- Summary card for limits progress -->
+            @if (donationStats()) {
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"
             >
-            }
-
-            <!-- Name Inputs -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/3"
-                placeholder="First Name"
-                aria-label="First Name"
-                [formField]="form.first_name"
-              ></pc-input>
-              <pc-input
-                class="basis-1/3"
-                placeholder="Middle Name(s)"
-                aria-label="Middle Name(s)"
-                [formField]="form.middle_names"
-              ></pc-input>
-              <pc-input
-                class="basis-1/3"
-                placeholder="Last Name"
-                aria-label="Last Name"
-                [formField]="form.last_name"
-              ></pc-input>
-            </div>
-
-            <!-- Emails -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                type="email"
-                placeholder="Email"
-                aria-label="Email Address"
-                [formField]="form.email"
-                [hasError]="!!emailError()"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                type="email"
-                placeholder="Email 2"
-                aria-label="Secondary Email Address"
-                [formField]="form.email2"
-              ></pc-input>
-            </div>
-            @if (emailError()) {
-            <div class="text-error text-sm pl-1 -mt-2 flex items-center gap-1">
-              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-              {{ emailError() }}
-            </div>
-            }
-
-            <!-- Phones -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                type="tel"
-                placeholder="Mobile Phone"
-                aria-label="Mobile Phone"
-                [formField]="form.mobile"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                type="tel"
-                placeholder="Home Phone"
-                aria-label="Home Phone"
-                [formField]="form.home_phone"
-              ></pc-input>
-            </div>
-
-            <!-- Company Select -->
-            <pc-select placeholder="-- Select Company --" aria-label="Company" [formField]="form.company_id">
-              @for (c of companies(); track c.id) {
-              <option [value]="c.id">{{ c.name }}</option>
-              }
-            </pc-select>
-
-            <!-- Assigned To / Owner Select -->
-            <pc-select placeholder="-- Select Contact Owner --" aria-label="Assigned To" [formField]="form.assigned_to">
-              @for (u of users(); track u.id) {
-              <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-              }
-            </pc-select>
-
-            <!-- Address & Household Assignment -->
-            @if (householdId() && !isPlaceholderHousehold()) {
-            <div class="text-sm pl-1 flex items-center gap-2 bg-base-200/50 p-2.5 rounded-lg border border-base-300/50">
-              <span class="text-base-content/60">Address:</span>
-              <span class="font-medium text-base-content flex-grow">{{ addressString() }}</span>
+              <div class="flex-1 w-full space-y-1">
+                <div class="flex justify-between text-xs font-bold text-base-content/75">
+                  <span>Annual Limit Progress</span>
+                  <span
+                    >${{ donationStats()!.cumulativeAmount.toLocaleString() }} / ${{
+                    donationStats()!.limitAmount.toLocaleString() }}</span
+                  >
+                </div>
+                <progress
+                  class="progress progress-success w-full h-2.5 bg-base-300"
+                  [value]="donationStats()!.cumulativeAmount"
+                  [max]="donationStats()!.limitAmount"
+                ></progress>
+                <p class="text-[10px] text-base-content/50">
+                  Remaining allowable donation this calendar year:
+                  <strong>${{ donationStats()!.remainingAmount.toLocaleString() }}</strong>
+                </p>
+              </div>
               <button
                 type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
-                data-tip="Change Household"
-                (click)="openAssignDrawer()"
+                class="btn btn-sm btn-primary shrink-0 w-full md:w-auto font-semibold flex items-center justify-center gap-1.5"
+                (click)="openCollectDonation()"
+                [disabled]="donationStats()!.remainingAmount <= 0"
               >
-                <pc-icon name="chevron-down" [size]="4"></pc-icon>
+                <pc-icon name="plus" [size]="4"></pc-icon>
+                Collect Donation
               </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
-                data-tip="Go to Household"
-                (click)="navigateToHousehold()"
-              >
-                <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-error tooltip"
-                data-tip="Remove Address"
-                (click)="removeAddress()"
-              >
-                <pc-icon name="trash" [size]="4"></pc-icon>
-              </button>
+            </div>
+            } @if (donationHistory().length === 0) {
+            <div
+              class="text-center py-10 text-base-content/40 italic bg-base-100 rounded-xl border border-dashed border-base-200"
+            >
+              No donations recorded yet for this person.
             </div>
             } @else {
-            <div
-              class="flex items-center justify-between text-sm pl-1 bg-base-200/30 p-2.5 rounded-lg border border-base-200 border-dashed"
-            >
-              <div class="flex items-center gap-2">
-                <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
-                <span class="text-base-content/50 italic">No address assigned</span>
-              </div>
-              <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
-                <pc-icon name="plus" [size]="3"></pc-icon>
-                Assign Household
-              </button>
+            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl shadow-sm">
+              <table class="table w-full text-xs">
+                <thead>
+                  <tr class="bg-base-50 border-b border-base-200">
+                    <th class="font-bold text-base-content/70">Date</th>
+                    <th class="font-bold text-base-content/70">Amount</th>
+                    <th class="font-bold text-base-content/70">Tax Credit</th>
+                    <th class="font-bold text-base-content/70">Residency Info</th>
+                    <th class="font-bold text-base-content/70">Status</th>
+                    <th class="font-bold text-base-content/70">Transaction ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (donation of donationHistory(); track donation.id) {
+                  <tr class="hover:bg-base-200/20 border-b border-base-200">
+                    <td class="font-medium text-base-content/75">{{ donation.created_at | date:'mediumDate' }}</td>
+                    <td class="font-bold text-base-content">${{ (donation.amount / 100).toFixed(2) }}</td>
+                    <td>
+                      <span class="badge badge-success gap-1 font-semibold py-2 px-2.5">
+                        ${{ ((donation.tax_credit_amount || 0) / 100).toFixed(2) }}
+                      </span>
+                    </td>
+                    <td class="text-base-content/65">
+                      {{ donation.residency_province || '--' }} {{ donation.residency_country || '' }}
+                    </td>
+                    <td>
+                      <pc-status-badge
+                        [type]="donation.status === 'succeeded' ? 'success' : donation.status === 'pending' ? 'warning' : 'error'"
+                      >
+                        {{ donation.status }}
+                      </pc-status-badge>
+                    </td>
+                    <td class="font-mono text-[10px] text-base-content/50">
+                      {{ donation.stripe_session_id || 'Manual' }}
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
             </div>
             }
+          </div>
+        </pc-tab-panel>
 
-            <!-- Social Media Profile Links -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
-              Social Media Profiles
+        <pc-tab-panel id="events" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (eventHistory().length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">
+              No event registrations found for this person.
             </div>
-
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                placeholder="LinkedIn URL"
-                aria-label="LinkedIn URL"
-                [formField]="form.linkedin"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                placeholder="Twitter/X URL"
-                aria-label="Twitter/X URL"
-                [formField]="form.twitter"
-              ></pc-input>
+            } @else {
+            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
+              <table class="table table-sm w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th>Event</th>
+                    <th>Date</th>
+                    <th>Ticket</th>
+                    <th>Status</th>
+                    <th>Checked In</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (reg of eventHistory(); track reg.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td>
+                      <a [routerLink]="['/events/pages', reg.event_id]" class="link link-primary font-bold">
+                        {{ reg.event_name }}
+                      </a>
+                    </td>
+                    <td>{{ reg.start_time | date:'mediumDate' }}</td>
+                    <td class="font-light">{{ reg.ticket_type_name || '—' }}</td>
+                    <td>
+                      <pc-status-badge [type]="getEventStatusType(reg.status)">{{ reg.status }}</pc-status-badge>
+                    </td>
+                    <td class="font-mono">{{ reg.checked_in_at ? (reg.checked_in_at | date:'shortTime') : '—' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
             </div>
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                placeholder="Facebook URL"
-                aria-label="Facebook URL"
-                [formField]="form.facebook"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                placeholder="Instagram URL"
-                aria-label="Instagram URL"
-                [formField]="form.instagram"
-              ></pc-input>
-            </div>
+            }
+          </div>
+        </pc-tab-panel>
 
-            <!-- Tags & Segmentation -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
-              Tags & Issues
-            </div>
+        <pc-tab-panel id="connections" [activeTab]="activeTab()">
+          <pc-person-connections [personId]="id()" (countChange)="connectionCount.set($event)"></pc-person-connections>
+        </pc-tab-panel>
 
-            <pc-tags
-              [tags]="tags()"
-              type="tag"
-              [enableAutoComplete]="true"
-              (tagAdded)="tagAdded($event)"
-              (tagRemoved)="tagRemoved($event)"
-            ></pc-tags>
-
-            <pc-tags
-              [tags]="issues()"
-              type="issue"
-              [enableAutoComplete]="true"
-              placeholder="Enter issues, separated by comma"
-              (tagAdded)="issueAdded($event)"
-              (tagRemoved)="issueRemoved($event)"
-            ></pc-tags>
-
-            <!-- Internal Notes -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">Notes</div>
-
-            <pc-textarea
-              placeholder="Internal Notes..."
-              aria-label="Notes"
-              [formField]="form.notes"
-              [rows]="3"
-            ></pc-textarea>
-          </fieldset>
-        </form>
-      </div>
-
-      <!-- Overview Sidebar -->
-      <div>
-        @if (!isNewMode()) {
-        <pc-entity-overview [createdAt]="person()?.created_at" [updatedAt]="person()?.updated_at"></pc-entity-overview>
-        }
-      </div>
+        <pc-tab-panel id="household" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (householdId() && !isPlaceholderHousehold()) { @defer {
+            <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
+            } @placeholder {
+            <div class="skeleton w-full h-32"></div>
+            } } @else {
+            <div class="text-center py-10 text-base-content/40 italic">Contact does not belong to a household</div>
+            }
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
     </div>
   </div>
+  }
+  <!-- Collect Donation Modal -->
+  @if (showDonationModal()) {
+  <div class="modal modal-open z-50">
+    <div class="modal-box rounded-2xl border border-base-200 max-w-md p-6 bg-base-100 shadow-2xl">
+      <div class="flex justify-between items-center border-b border-base-200 pb-3 mb-4">
+        <h3 class="text-lg font-bold flex items-center gap-2">
+          <pc-icon name="currency-dollar" class="text-primary" [size]="5"></pc-icon>
+          Collect Donation
+        </h3>
+        <button type="button" class="btn btn-sm btn-circle btn-ghost" (click)="closeDonationModal()">✕</button>
+      </div>
 
-  <!-- Right-side drawer: Assign to a different household -->
-  <pc-side-drawer
-    [isOpen]="assignDrawerOpen()"
-    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
-    (close)="closeAssignDrawer()"
-  >
-    <div class="flex flex-col gap-3">
-      <input
-        type="text"
-        class="input w-full"
-        placeholder="Search address, city, zip, tag..."
-        aria-label="Search address, city, zip, or tag to assign a household"
-        [value]="householdSearch()"
-        (input)="onHouseholdSearch($event)"
-      />
-      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
-      <div
-        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
-        [class.hidden]="householdsLoading() && householdResults().length === 0"
-      >
-        @for (h of householdResults(); track h.id) {
-        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
-          <div class="text-sm">
-            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
-            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
+      <div class="space-y-4">
+        <p class="text-xs text-base-content/60">
+          Enter the donation amount in dollars. Residency validation and limit verification will be performed
+          automatically before redirecting to the payment gateway.
+        </p>
+
+        <!-- Donor Residency Profile -->
+        <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
+          <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
+            >Donor Residency Profile</span
+          >
+          <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
+            <pc-icon name="map-pin" [size]="4"></pc-icon>
+            {{ addressString() }}
           </div>
-          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
         </div>
-        } @if (!householdsLoading() && householdResults().length === 0) {
-        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
+
+        <!-- Donation Amount input -->
+        <div class="flex flex-col gap-1.5">
+          <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
+          <div class="relative">
+            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
+            <input
+              id="donation_input"
+              type="number"
+              min="1"
+              placeholder="250"
+              class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
+              [(ngModel)]="donationAmount"
+            />
+          </div>
+        </div>
+
+        <!-- Error alert -->
+        @if (eligibilityError()) {
+        <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
+          <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
+          <span>{{ eligibilityError() }}</span>
+        </div>
         }
       </div>
+
+      <div class="modal-action border-t border-base-200 pt-4 mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          class="btn btn-ghost text-sm font-semibold"
+          (click)="closeDonationModal()"
+          [disabled]="isCheckingEligibility()"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary min-w-[140px] text-sm font-semibold"
+          (click)="submitDonation()"
+          [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
+        >
+          @if (isCheckingEligibility()) {
+          <span class="loading loading-spinner loading-xs mr-1.5"></span>
+          Verifying... } @else { Verify & Proceed }
+        </button>
+      </div>
     </div>
-  </pc-side-drawer>
-</div>
+    <div class="modal-backdrop bg-black/40 backdrop-blur-sm" (click)="closeDonationModal()"></div>
+  </div>
+  }
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/account/account-settings.ts
@@ -20846,6 +19738,107 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/settings/ms-sync/ms-sync-settings.html
+
+```html
+<div class="space-y-6">
+  @if (isLoading()) {
+  <div class="flex items-center gap-3 text-base-content/60">
+    <span class="loading loading-spinner loading-sm"></span>
+    <span class="text-sm">Loading connection status…</span>
+  </div>
+  } @else if (status()?.connected) {
+  <!-- Connected state -->
+  <div class="rounded-xl border border-success/30 bg-success/10 px-5 py-4 flex items-start gap-4">
+    <pc-icon name="check-circle" class="text-success mt-0.5 shrink-0" [size]="5"></pc-icon>
+    <div class="flex-1 min-w-0">
+      <p class="font-semibold text-success">Connected</p>
+      <p class="text-sm text-base-content/70 mt-0.5 truncate">{{ status()?.msEmail }}</p>
+      @if (status()?.syncedAt) {
+      <p class="text-xs text-base-content/50 mt-1">Last synced: {{ formatDate(status()!.syncedAt) }}</p>
+      }
+    </div>
+  </div>
+
+  @if (status()?.lastSyncError) {
+  <div class="rounded-xl border border-warning/30 bg-warning/10 px-5 py-4 flex items-start gap-4">
+    <pc-icon name="exclamation-triangle" class="text-warning mt-0.5 shrink-0" [size]="5"></pc-icon>
+    <div class="flex-1 min-w-0">
+      <p class="font-semibold text-warning">Last sync failed</p>
+      <p class="text-sm text-base-content/70 mt-1">
+        Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with
+        this code:
+      </p>
+      <p class="font-mono text-sm font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
+    </div>
+  </div>
+  }
+
+  <div class="flex flex-wrap gap-3">
+    <button id="ms-sync-now-btn" type="button" class="btn btn-primary" [disabled]="isSyncing()" (click)="syncNow()">
+      @if (isSyncing()) {
+      <span class="loading loading-spinner loading-xs mr-2"></span>
+      Syncing… } @else {
+      <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
+      Sync Now }
+    </button>
+
+    <button type="button" class="btn btn-ghost" [disabled]="isSyncing()" (click)="forceFullResync()">
+      <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
+      Force Full Re-sync
+    </button>
+
+    <button
+      id="ms-disconnect-btn"
+      type="button"
+      class="btn btn-ghost text-error hover:bg-error/10"
+      [disabled]="isSyncing()"
+      (click)="disconnect()"
+    >
+      <pc-icon name="x-circle" [size]="4" class="mr-2"></pc-icon>
+      Disconnect
+    </button>
+  </div>
+
+  @if (lastSyncResult()) {
+  <p class="text-sm text-base-content/60">✓ Sync complete — {{ lastSyncResult()!.inserted }} new email(s) imported.</p>
+  } } @else {
+  <!-- Disconnected state -->
+  <div class="rounded-xl border border-base-200 bg-base-50 px-5 py-4">
+    <p class="text-sm text-base-content/70">
+      Connect your Office 365 account to automatically sync incoming emails into your pplcrm inbox.
+    </p>
+  </div>
+
+  <button
+    id="ms-connect-btn"
+    type="button"
+    class="btn btn-primary gap-2"
+    [disabled]="isConnecting()"
+    (click)="connect()"
+  >
+    @if (isConnecting()) {
+    <span class="loading loading-spinner loading-xs"></span>
+    } @else {
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
+      <path fill="#f3f3f3" d="M1 1h10v10H1z" />
+      <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
+      <path fill="#81bc06" d="M12 1h10v10H12z" />
+      <path fill="#05a6f0" d="M1 12h10v10H1z" />
+      <path fill="#ffba08" d="M12 12h10v10H12z" />
+    </svg>
+    } Connect Office 365
+  </button>
+
+  @if (connectError()) {
+  <p class="text-sm text-error flex items-center gap-1.5">
+    <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+    {{ connectError() }}
+  </p>
+  } }
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/security/passkey-settings.html
@@ -21894,653 +20887,6 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
 ];
 ```
 
-## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.html
-
-```html
-<div class="p-6 max-w-5xl mx-auto space-y-6">
-  <!-- Loading State -->
-  @if (error() && !detail() && !isNew()) {
-  <div class="alert alert-error m-4">
-    <span>{{ error() }}</span>
-  </div>
-  } @else if (!isNew() && !detail()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading event details...</p>
-  </div>
-  } @else {
-  <div class="space-y-6">
-    <!-- Header -->
-    <pc-detail-header
-      [title]="isNew() ? 'Create Volunteer Event' : detail()?.name"
-      [subtitle]="isNew() ? 'Schedule a new volunteer opportunity.' : 'Manage volunteer settings and log attendance roster.'"
-      icon="clock"
-      [form]="form"
-      [isLoading]="saving()"
-      [disabled]="slugChecking() || slugUnique() === false"
-      buttonsToShow="two"
-      [btn1Text]="isNew() ? 'Create Event' : 'Save Event'"
-      [showDelete]="!isNew()"
-      deleteText="Delete Event"
-      (save)="save($event)"
-      (delete)="deleteEvent()"
-    ></pc-detail-header>
-
-    <!-- Error alert -->
-    @if (error()) {
-    <div class="alert alert-error shadow-sm py-3 text-sm">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <!-- Event has passed alert -->
-    @if (eventPassed()) {
-    <div class="alert alert-warning shadow-sm py-3 text-sm flex items-center gap-2">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>This event has passed. Roster and details are now archived.</span>
-    </div>
-    }
-
-    <!-- Event details form -->
-    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
-      <!-- Left 2 cols: Main details -->
-      <div class="md:col-span-2 space-y-6">
-        <pc-card title="Event Details">
-          <pc-input
-            id="event-name"
-            label="Event Name *"
-            [formField]="form.name"
-            placeholder="E.g., Weekend Door Knocking Campaign"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="event-slug"
-              label="URL Slug *"
-              [formField]="form.slug"
-              placeholder="e.g. weekend-knocking"
-              [hasError]="slugUnique() === false"
-              (input)="onSlugInput()"
-            >
-              <span pc-prefix class="text-xs text-base-content/50 font-mono">/api/events/view/</span>
-            </pc-input>
-            @if (slugChecking()) {
-            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
-              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
-            </p>
-            } @else if (slugUnique() === true) {
-            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
-            } @else if (slugUnique() === false) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
-            }
-          </div>
-
-          <pc-textarea
-            id="event-desc"
-            label="Description"
-            [formField]="form.description"
-            placeholder="Describe the purpose, tasks, and instructions for volunteers..."
-            [rows]="4"
-          ></pc-textarea>
-
-          <pc-input
-            id="event-location"
-            label="Location Address"
-            [formField]="form.location_address"
-            placeholder="E.g., Central Park Pavilion, or street coordinates"
-          ></pc-input>
-
-          <div class="divider mt-4"></div>
-          <div>
-            <h4 class="font-bold text-md">Collected Fields</h4>
-            <h5>Choose which fields appear on the public signup form.</h5>
-            <pc-fields-selector
-              [selectedFields]="selectedFields()"
-              (fieldsChange)="selectedFields.set($event)"
-            ></pc-fields-selector>
-          </div>
-          <div class="divider"></div>
-
-          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
-            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
-            Organizer Contact Point
-          </h4>
-          <p class="text-xs text-base-content/60">
-            Provide contact info for constituents who have questions about this shift.
-          </p>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <pc-input
-              id="contact-email"
-              label="Contact Email"
-              type="email"
-              [formField]="form.contact_email"
-              placeholder="organizer@example.com"
-            ></pc-input>
-            <pc-input
-              id="contact-phone"
-              label="Contact Phone"
-              [formField]="form.contact_phone"
-              placeholder="E.g., 555-0199"
-            ></pc-input>
-          </div>
-        </pc-card>
-
-        <!-- Roster Management (Only for existing events) -->
-        @if (!isNew()) {
-        <pc-card
-          title="Shift Roster"
-          subtitle="Sign up volunteers and record their attendance and hours."
-          icon="user-group"
-        >
-          <div pc-card-actions class="badge badge-primary gap-1">
-            {{ roster().length }} Signed Up @if (detail()?.capacity) {
-            <span>/ {{ detail()?.capacity }} Max</span>
-            }
-          </div>
-
-          <!-- Search to Add Volunteers -->
-          <div class="relative space-y-1">
-            <label class="label text-xs font-semibold text-base-content/65 uppercase">Add Volunteer to Roster</label>
-            <div class="relative">
-              <input
-                type="text"
-                class="input input-bordered w-full pl-10"
-                placeholder="Search volunteers by name or email..."
-                [ngModel]="volunteerSearch()"
-                (ngModelChange)="volunteerSearch.set($event)"
-                [ngModelOptions]="{standalone: true}"
-              />
-              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-base-content/40">
-                <pc-icon name="magnifying-glass" [size]="5"></pc-icon>
-              </div>
-            </div>
-
-            <!-- Search suggestions -->
-            @if (volunteerSearchResults().length > 0) {
-            <div
-              class="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
-            >
-              @for (p of volunteerSearchResults(); track p.id) {
-              <div
-                (click)="addVolunteer(p)"
-                class="p-3 hover:bg-base-200 cursor-pointer flex items-center justify-between"
-              >
-                <div>
-                  <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
-                  <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
-                </div>
-                <button type="button" class="btn btn-primary btn-xs gap-1">
-                  <pc-icon name="plus" [size]="3"></pc-icon>
-                  Add
-                </button>
-              </div>
-              }
-            </div>
-            }
-          </div>
-
-          <!-- Roster Table -->
-          <div class="overflow-x-auto border border-base-300 rounded-lg">
-            <table class="table w-full text-sm">
-              <thead>
-                <tr class="bg-base-200 text-xs">
-                  <th>Volunteer</th>
-                  <th class="w-40">Status</th>
-                  <th class="w-24">Hours</th>
-                  <th>Notes</th>
-                  <th class="w-20 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-base-200">
-                @if (roster().length === 0) {
-                <tr>
-                  <td colspan="5" class="text-center py-8 text-base-content/60 font-light italic">
-                    No volunteers signed up for this event yet.
-                  </td>
-                </tr>
-                } @for (shift of roster(); track shift.id) {
-                <tr class="hover:bg-base-200/40">
-                  <!-- Contact details -->
-                  <td>
-                    <div>
-                      <a
-                        [routerLink]="['/people', shift.person_id]"
-                        class="font-bold text-primary hover:underline hover:cursor-pointer"
-                      >
-                        {{ shift.first_name }} {{ shift.last_name }}
-                      </a>
-                    </div>
-                    <div class="text-xs text-base-content/60">{{ shift.email || 'No email' }}</div>
-                  </td>
-                  <!-- Shift status dropdown -->
-                  <td>
-                    <select
-                      class="select select-bordered select-sm w-full font-medium"
-                      [ngModel]="shift.status"
-                      (ngModelChange)="updateShiftStatus(shift, $event)"
-                      [ngModelOptions]="{standalone: true}"
-                      [class.select-success]="shift.status === 'attended'"
-                      [class.select-warning]="shift.status === 'signed_up'"
-                      [class.select-error]="shift.status === 'no_show'"
-                    >
-                      <option value="signed_up">Signed Up</option>
-                      <option value="attended">Attended</option>
-                      <option value="no_show">No Show</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </td>
-                  <!-- Hours worked input -->
-                  <td>
-                    <input
-                      type="number"
-                      class="input input-bordered input-sm w-full text-center font-mono"
-                      placeholder="--"
-                      min="0"
-                      max="24"
-                      step="0.5"
-                      [ngModel]="shift.hours_worked"
-                      (ngModelChange)="updateShiftHours(shift, $event)"
-                      [ngModelOptions]="{standalone: true}"
-                      [disabled]="shift.status !== 'attended'"
-                    />
-                  </td>
-                  <!-- Notes -->
-                  <td>
-                    <input
-                      type="text"
-                      class="input input-bordered input-sm w-full"
-                      placeholder="Optional details..."
-                      [ngModel]="shift.notes"
-                      (ngModelChange)="updateShiftNotes(shift, $event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                  </td>
-                  <!-- Actions -->
-                  <td>
-                    <div class="flex items-center justify-center gap-1.5">
-                      <button
-                        type="button"
-                        class="btn btn-ghost btn-xs text-primary"
-                        title="Save shift edits"
-                        (click)="saveShiftDetails(shift)"
-                      >
-                        <pc-icon name="check-circle" [size]="6"></pc-icon>
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-ghost btn-xs text-error"
-                        title="Remove volunteer"
-                        (click)="removeVolunteer(shift)"
-                      >
-                        <pc-icon name="trash" [size]="5"></pc-icon>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        </pc-card>
-        }
-      </div>
-
-      <!-- Right 1 col: Timing, Capacity, Actions -->
-      <div class="space-y-6">
-        @if (!isNew() && detail()?.public_url) {
-        <pc-card
-          title="Public Signup Link"
-          subtitle="Constituents can use this URL to view the event and sign up for this shift."
-          icon="globe-americas"
-        >
-          <div class="flex gap-2 items-center">
-            <input
-              #publicUrlInput
-              readonly
-              type="text"
-              class="input input-bordered input-sm flex-1 font-mono text-xs"
-              [value]="environment.apiUrl + detail()?.public_url"
-            />
-            <button
-              type="button"
-              class="btn btn-primary btn-sm btn-square"
-              title="Copy Link"
-              (click)="copyToClipboard(environment.apiUrl + detail()?.public_url)"
-            >
-              <pc-icon name="document-duplicate" [size]="5"></pc-icon>
-            </button>
-          </div>
-
-          @if (detail()?.is_private) {
-          <div class="alert alert-warning py-2 text-xs flex gap-2 mt-2">
-            <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-            <span>This event is <strong>Private</strong>. Only constituents with this direct link can view it.</span>
-          </div>
-          } @else {
-          <div class="text-xs text-base-content/50 mt-1 flex flex-col gap-1">
-            <span>Public Dashboard Link:</span>
-            <a
-              [href]="environment.apiUrl + detail()?.tenant_public_url"
-              target="_blank"
-              class="link link-primary font-mono text-[10px] break-all"
-            >
-              {{ environment.apiUrl + detail()?.tenant_public_url }}
-            </a>
-          </div>
-          }
-        </pc-card>
-        }
-        <pc-card title="Scheduling">
-          <pc-input
-            id="start-time"
-            label="Start Date & Time *"
-            type="datetime-local"
-            [formField]="form.start_time"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="end-time"
-              label="End Date & Time *"
-              type="datetime-local"
-              [formField]="form.end_time"
-              [hasError]="endBeforeStartError()"
-            ></pc-input>
-            @if (endBeforeStartError()) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
-            }
-          </div>
-
-          <pc-input
-            id="capacity"
-            label="Volunteer Capacity"
-            type="number"
-            [formField]="form.capacity"
-            placeholder="Unlimited"
-          ></pc-input>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Shift Reminder</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send automated reminder emails to signed up volunteers 24 hours before the shift start time.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Signup Confirmation</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send a confirmation email with shift and coordinator details to constituents when they sign up.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                class="toggle toggle-primary mt-1 shrink-0"
-                [formField]="form.send_signup_confirmation"
-              />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Volunteer Alert</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send email alert notifications to the event coordinator or organization admins upon new volunteer
-                  signups.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                class="toggle toggle-primary mt-1 shrink-0"
-                [formField]="form.send_volunteer_alert"
-              />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Private Event</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  If enabled, this event will not be shown on the public upcoming list. Only constituents with the
-                  direct link can sign up.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_private" />
-            </label>
-          </div>
-        </pc-card>
-
-        <!-- Event Summary Panel -->
-        @if (!isNew()) {
-        <pc-entity-overview title="Event Overview" [createdAt]="detail()?.created_at" createdBy="Representative">
-          <div pc-overview-prefix class="space-y-2 mb-2">
-            <div class="flex justify-between">
-              <span>Start:</span>
-              <span class="font-semibold">{{ detail()?.start_time | date:'medium' }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span>End:</span>
-              <span class="font-semibold">{{ detail()?.end_time | date:'medium' }}</span>
-            </div>
-          </div>
-        </pc-entity-overview>
-        }
-      </div>
-    </form>
-
-    @if (!isNew() && publicUrl()) {
-    <pc-public-link-panel
-      [url]="publicUrl()"
-      label="Public Signup Link"
-      subtitle="Share this link so volunteers can sign up for the shift."
-    ></pc-public-link-panel>
-    }
-  </div>
-
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/shifts/ui/shift-view.html
-
-```html
-<pc-detail-layout
-  [title]="'Event Details'"
-  [icon]="'calendar'"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!event()"
-  [showDelete]="true"
-  [deleteText]="'Delete Event'"
-  [btn1Text]="'Edit Event'"
-  [btn1Icon]="'pencil-square'"
-  (save)="editEvent()"
-  (delete)="deleteEvent()"
->
-  @if (event()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Event Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Event Details Card -->
-      <pc-profile-card iconName="clock">
-        <!-- Name & Status -->
-        <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
-        <div class="flex gap-2 mb-4">
-          @if (event().is_private) {
-          <span class="badge badge-warning font-semibold uppercase text-xs">Private</span>
-          } @else {
-          <span class="badge badge-success font-semibold uppercase text-xs">Public</span>
-          } @if (eventPassed()) {
-          <span class="badge badge-neutral font-semibold uppercase text-xs">Passed</span>
-          } @else {
-          <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
-          }
-        </div>
-
-        <!-- Details and Settings List -->
-        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
-          @if (event().description) {
-          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ event().description }}</div>
-          }
-
-          <pc-detail-row icon="map-pin" iconClass="text-error">
-            <span class="text-xs">
-              <strong>Location:</strong> {{ event().location_address || 'No Address Provided' }}
-            </span>
-          </pc-detail-row>
-
-          <pc-detail-row icon="calendar" iconClass="text-info">
-            <div class="text-xs flex flex-col">
-              <span><strong>Start:</strong> {{ event().start_time | date: 'medium' }}</span>
-              <span><strong>End:</strong> {{ event().end_time | date: 'medium' }}</span>
-            </div>
-          </pc-detail-row>
-
-          @if (event().contact_email || event().contact_phone) {
-          <div class="divider my-1"></div>
-          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">
-            Coordinator Contact
-          </div>
-          @if (event().contact_email) {
-          <pc-detail-row icon="envelope" iconClass="text-teal-500">
-            <span>Email:</span>
-            <span pc-row-action class="font-semibold text-xs">{{ event().contact_email }}</span>
-          </pc-detail-row>
-          } @if (event().contact_phone) {
-          <pc-detail-row icon="phone" iconClass="text-purple-500">
-            <span>Phone:</span>
-            <span pc-row-action class="font-semibold text-xs">{{ event().contact_phone }}</span>
-          </pc-detail-row>
-          } }
-        </div>
-      </pc-profile-card>
-
-      <!-- Public Signup Link Card -->
-      @if (event().public_url) {
-      <pc-card title="Public Signup Link" icon="globe-americas">
-        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
-          <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
-        </button>
-
-        <div class="form-control text-xs">
-          <div class="flex gap-2">
-            <input
-              type="text"
-              [value]="publicUrl()"
-              readonly
-              class="input input-bordered input-xs flex-1 font-mono text-[10px]"
-            />
-            <a [href]="publicUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
-              <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
-            </a>
-          </div>
-        </div>
-      </pc-card>
-      }
-    </div>
-
-    <!-- Right Column: Stats & Tabs -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Panel -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <pc-stat-card
-          [title]="'Signed Up'"
-          [value]="roster().length"
-          [description]="'Volunteers scheduled'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Remaining Capacity'"
-          [value]="remainingCapacity()"
-          [description]="'Total capacity: ' + (event().capacity ?? 'Unlimited')"
-          [icon]="'adjustments-horizontal'"
-          [valueColorClass]="'text-teal-500'"
-          [iconColorClass]="'text-teal-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Tabs Panel -->
-      <pc-tabs [tabs]="eventTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="roster" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-3">
-            @if (roster().length === 0) {
-            <p class="text-sm text-base-content/40 italic">No volunteers signed up for this event roster.</p>
-            } @else {
-            <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
-              <table class="table table-sm table-zebra w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200 text-base-content/70">
-                    <th>Volunteer</th>
-                    <th>Status</th>
-                    <th>Hours Worked</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (shift of roster(); track shift.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td class="font-semibold">
-                      <a
-                        [routerLink]="['/people', shift.person_id]"
-                        class="link hover:underline text-primary font-bold"
-                      >
-                        {{ shift.first_name }} {{ shift.last_name }}
-                      </a>
-                      <div class="text-[10px] text-base-content/50 font-normal mt-0.5">
-                        {{ shift.email || 'No email' }}
-                      </div>
-                    </td>
-                    <td>
-                      <pc-status-badge [type]="getStatusType(shift.status)">
-                        {{ shift.status || 'signed_up' }}
-                      </pc-status-badge>
-                    </td>
-                    <td class="font-mono">
-                      {{ shift.hours_worked !== null && shift.hours_worked !== undefined ? shift.hours_worked : '—' }}
-                    </td>
-                    <td class="max-w-xs truncate" [title]="shift.notes || ''">{{ shift.notes || '—' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'volunteer_events'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
 ## File: apps/frontend/src/app/experiences/summary/summary.ts
 
 ```typescript
@@ -23241,215 +21587,190 @@ export class TagsGridComponent {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/teams/ui/team-form.html
+## File: apps/frontend/src/app/experiences/teams/ui/team-view.html
 
 ```html
-@if (error() && !detail() && !isNew()) {
-<div class="p-6 alert alert-error m-4">
-  <span>{{ error() }}</span>
-</div>
-} @else if (!isNew() && !detail()) {
-<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
-  <span class="loading loading-spinner loading-xs"></span>
-  Loading team…
-</div>
-} @else {
-<section class="m-4 space-y-6">
-  <pc-detail-header
-    [title]="isNew() ? 'New Team' : (detail()?.name || 'Team')"
-    subtitle="Teams group volunteers for easier coordination."
-    icon="user-group"
-    [form]="form"
-    [isLoading]="saving()"
-    buttonsToShow="two"
-    [btn1Text]="isNew() ? 'Create Team' : 'Save Team'"
-    [showDelete]="!isNew()"
-    deleteText="Delete Team"
-    (save)="save($event)"
-    (delete)="deleteTeam()"
-  ></pc-detail-header>
+<pc-detail-layout
+  [title]="team()?.name || 'Team'"
+  [eyebrow]="'Team'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!team()"
+  [showDelete]="true"
+  [deleteText]="'Delete team'"
+  [btn1Text]="'Edit team'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editTeam()"
+  (delete)="deleteTeam()"
+>
+  @if (team()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Team Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Team Card -->
+      <pc-profile-card iconName="user-group">
+        <!-- Name -->
+        <h2 class="text-2xl font-bold text-base-content text-center mb-4 leading-tight">{{ team().name }}</h2>
 
-  @if (error()) {
-  <div class="alert alert-error">
-    <span>{{ error() }}</span>
-  </div>
-  }
-
-  <form class="grid gap-6" (submit)="save($event)" novalidate>
-    <pc-card>
-      <div class="grid gap-4 sm:grid-cols-3">
-        <pc-input id="team-name" label="Team Name" [formField]="form.name" placeholder="Community Outreach"></pc-input>
-
-        <pc-select id="team-captain" label="Team Captain (Volunteer)" [formField]="form.team_captain_id">
-          <option value="">No captain</option>
-          @for (person of people(); track person.id) {
-          <option [value]="person.id">{{ person.label }}</option>
+        <!-- Details List -->
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          @if (team().description) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ team().description }}</div>
           }
-        </pc-select>
 
-        <pc-select id="team-lead" label="Team Lead (Organizer)" [formField]="form.team_lead_user_id">
-          <option value="">No lead</option>
-          @for (user of users(); track user.id) {
-          <option [value]="user.id">{{ user.first_name }} {{ user.last_name || '' }}</option>
-          }
-        </pc-select>
-      </div>
+          <pc-detail-row icon="user-circle" iconClass="text-teal-500">
+            <span>Team Captain:</span>
+            <span pc-row-action class="font-bold">{{ captainName() }}</span>
+          </pc-detail-row>
 
-      <pc-textarea
-        id="team-description"
-        label="Description"
-        [rows]="3"
-        [formField]="form.description"
-        placeholder="Describe this team's focus"
-      ></pc-textarea>
-    </pc-card>
-
-    <!-- Volunteers Section -->
-    <pc-card title="Volunteers" subtitle="Select volunteers who belong to this team.">
-      <div pc-card-actions class="text-sm text-base-content/60">
-        Captain: {{ captainLabel(form.team_captain_id().value() || null) }}
-      </div>
-
-      <div class="grid gap-4 sm:grid-cols-2">
-        <div class="space-y-2">
-          <label class="text-sm font-medium text-base-content/80" for="volunteer-select">Select Volunteers</label>
-          <select
-            id="volunteer-select"
-            class="select select-bordered h-40 w-full"
-            (change)="onVolunteersChange($event)"
-            multiple
-          >
-            @for (person of people(); track person.id) {
-            <option [value]="person.id" [selected]="isVolunteerSelected(person.id)">{{ person.label }}</option>
-            }
-          </select>
-          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple volunteers.</p>
+          <pc-detail-row icon="user-circle" iconClass="text-purple-500">
+            <span>Team Lead:</span>
+            <span pc-row-action class="font-bold">{{ leadName() }}</span>
+          </pc-detail-row>
         </div>
-        <div class="space-y-2">
-          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned</h3>
-          <div class="max-h-40 overflow-auto rounded border border-base-200">
+
+        <!-- System Metadata -->
+        <div
+          class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex justify-between leading-normal"
+        >
+          <span>Created by {{ getUserName(team().createdby_id) }} on {{ getCreatedAt() | date: 'M/d/yyyy' }}</span>
+          <span>Updated {{ getUpdatedAt() | date: 'M/d/yyyy' }} by {{ getUserName(team().updatedby_id) }}</span>
+        </div>
+      </pc-profile-card>
+    </div>
+
+    <!-- Right Column: Stats & Tabs -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats Panel -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <pc-stat-card
+          [title]="'Volunteers'"
+          [value]="volunteers().length"
+          [description]="'Teammate members'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-teal-500'"
+          [iconColorClass]="'text-teal-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Target Lists'"
+          [value]="team().lists?.length || 0"
+          [description]="'Assigned lists'"
+          [icon]="'queue-list'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Active Tasks'"
+          [value]="activeTasksCount()"
+          [description]="'Tasks assigned'"
+          [icon]="'document-check'"
+          [valueColorClass]="'text-amber-500'"
+          [iconColorClass]="'text-amber-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Tabs Panel -->
+      <pc-tabs [tabs]="teamTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'teams'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="volunteers" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-3">
             @if (volunteers().length === 0) {
-            <p class="p-3 text-sm text-base-content/60">No volunteers assigned yet.</p>
+            <p class="text-sm text-base-content/40 italic">No volunteers assigned to this team.</p>
             } @else {
             <ul class="divide-y divide-base-200">
               @for (volunteer of volunteers(); track volunteer.id) {
-              <li class="flex items-center justify-between p-3 text-sm">
+              <li class="flex items-center justify-between py-2.5 text-sm">
                 <div>
                   <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
                   @if (volunteer.email) {
-                  <p class="text-xs text-base-content/60">{{ volunteer.email }}</p>
+                  <p class="text-xs text-base-content/50">{{ volunteer.email }}</p>
                   }
                 </div>
+                <a [routerLink]="['/people', volunteer.id]" class="btn btn-xs btn-ghost text-primary">View profile</a>
               </li>
               }
             </ul>
             }
           </div>
-        </div>
-      </div>
-    </pc-card>
+        </pc-tab-panel>
 
-    <!-- Assigned target constituent lists section -->
-    <pc-card
-      title="Target Constituent Lists"
-      subtitle="Assign lists of people or households this team is responsible for contacting."
-    >
-      <div class="grid gap-4 sm:grid-cols-2">
-        <div class="space-y-2">
-          <label class="text-sm font-medium text-base-content/80" for="lists-select">Select Target Lists</label>
-          <select
-            id="lists-select"
-            class="select select-bordered h-40 w-full"
-            (change)="onListsChange($event)"
-            multiple
-          >
-            @for (list of availableLists(); track list.id) {
-            <option [value]="list.id" [selected]="isListSelected(list.id)">{{ list.name }} ({{ list.object }})</option>
-            }
-          </select>
-          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple lists.</p>
-        </div>
-        <div class="space-y-2">
-          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned Target Lists</h3>
-          <div class="max-h-40 overflow-auto rounded border border-base-200">
-            @if (assignedLists().length === 0) {
-            <p class="p-3 text-sm text-base-content/60">No lists assigned yet.</p>
+        <pc-tab-panel id="lists" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-3">
+            @if (!team().lists?.length) {
+            <p class="text-sm text-base-content/40 italic">No target constituent lists assigned.</p>
             } @else {
             <ul class="divide-y divide-base-200">
-              @for (list of assignedLists(); track list.id) {
-              <li class="flex items-center justify-between p-3 text-sm">
+              @for (list of team().lists; track list.id) {
+              <li class="flex items-center justify-between py-2.5 text-sm">
                 <div>
                   <p class="font-medium text-base-content">{{ list.name }}</p>
-                  <p class="text-xs text-base-content/60">
+                  <p class="text-xs text-base-content/50">
                     {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
                   </p>
                 </div>
+                <a [routerLink]="['/lists', list.id]" class="btn btn-xs btn-ghost text-primary">Open list</a>
               </li>
               }
             </ul>
             }
           </div>
-        </div>
-      </div>
-    </pc-card>
+        </pc-tab-panel>
 
-    <!-- Team Tasks Section -->
-    @if (!isNew()) {
-    <pc-card title="Team Tasks" subtitle="Track the tasks and campaign progress assigned to this team.">
-      <a
-        pc-card-actions
-        class="btn btn-xs btn-primary gap-1"
-        [routerLink]="['/tasks/add']"
-        [queryParams]="{ team_id: id }"
-      >
-        <pc-icon name="plus" [size]="3"></pc-icon> Add Task
-      </a>
-
-      <div class="overflow-x-auto rounded border border-base-200">
-        @if (teamTasks().length === 0) {
-        <p class="p-4 text-sm text-base-content/60 italic">No tasks currently assigned to this team.</p>
-        } @else {
-        <table class="table table-zebra w-full text-sm">
-          <thead>
-            <tr>
-              <th>Task</th>
-              <th>Priority</th>
-              <th>Status</th>
-              <th>Due Date</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (task of teamTasks(); track task.id) {
-            <tr>
-              <td class="font-medium">
-                <a [routerLink]="['/tasks', task.id]" class="hover:underline text-primary"> {{ task.name }} </a>
-              </td>
-              <td>
-                <span class="badge badge-sm uppercase font-semibold" [class]="getPriorityClass(task.priority)">
-                  {{ task.priority || 'medium' }}
-                </span>
-              </td>
-              <td>
-                <span class="badge badge-sm uppercase font-semibold" [class]="getStatusClass(task.status)">
-                  {{ task.status || 'todo' }}
-                </span>
-              </td>
-              <td>{{ task.due_at ? (task.due_at | date:'mediumDate') : '—' }}</td>
-              <td>
-                <a [routerLink]="['/tasks', task.id]" class="btn btn-xs btn-ghost text-primary"> View details </a>
-              </td>
-            </tr>
+        <pc-tab-panel id="tasks" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (teamTasks().length === 0) {
+            <p class="text-sm text-base-content/40 italic">No tasks currently assigned to this team.</p>
+            } @else {
+            <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
+              <table class="table table-sm table-zebra w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200 text-base-content/70">
+                    <th>Task</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                    <th>Due Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (task of teamTasks(); track task.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td class="font-semibold">
+                      <a [routerLink]="['/tasks', task.id]" class="link hover:no-underline text-primary">
+                        {{ task.name }}
+                      </a>
+                    </td>
+                    <td>
+                      <pc-status-badge [type]="getPriorityType(task.priority)">
+                        {{ task.priority || 'medium' }}
+                      </pc-status-badge>
+                    </td>
+                    <td>
+                      <pc-status-badge [type]="getStatusType(task.status)">
+                        {{ task.status || 'todo' }}
+                      </pc-status-badge>
+                    </td>
+                    <td>{{ task.due_at ? (task.due_at | date: 'mediumDate') : '—' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
             }
-          </tbody>
-        </table>
-        }
-      </div>
-    </pc-card>
-    }
-  </form>
-</section>
-}
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/teams/ui/teams-grid.ts
@@ -23524,282 +21845,137 @@ export class TeamsGridComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/user-edit.html
+## File: apps/frontend/src/app/experiences/users/ui/user-add.html
 
 ```html
-@if (error() && !detail()) {
-<div class="p-6 alert alert-error m-4">
-  <span>{{ error() }}</span>
-</div>
-} @else if (!detail()) {
-<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
-  <span class="loading loading-spinner loading-xs"></span>
-  Loading user…
-</div>
-} @else {
-<section class="m-4 space-y-6">
+<section class="w-full max-w-3xl p-6">
   <pc-detail-header
-    [title]="displayName()"
-    [subtitle]="detail()?.email"
-    icon="user-circle"
-    [iconSize]="7"
+    title="Invite user"
+    [eyebrow]="'New'"
+    [crumbs]="[{ label: 'Users', route: '/users' }, { label: 'Invite user' }]"
+    subtitle="Send an invitation to add a new teammate to this tenant."
     [form]="form"
-    [isLoading]="saving()"
+    [isLoading]="submitting()"
     buttonsToShow="two"
-    btn1Text="Save User"
-    [showDelete]="true"
-    deleteText="Delete User"
-    (save)="save($event)"
-    (delete)="deleteUser()"
-  >
-    <button
-      pc-actions-prefix
-      class="btn btn-outline btn-accent btn-sm gap-2"
-      type="button"
-      (click)="triggerPasswordReset()"
-      [disabled]="resettingPassword() || saving()"
-    >
-      <pc-icon name="lock-closed"></pc-icon>
-      {{ resettingPassword() ? 'Sending link…' : 'Trigger Password Reset' }}
-    </button>
-  </pc-detail-header>
+    btn1Text="Send invite"
+    (save)="submit($event)"
+  ></pc-detail-header>
 
-  @if (error()) {
-  <div class="alert alert-error">
-    <span>{{ error() }}</span>
-  </div>
-  }
+  <form class="space-y-4" (submit)="submit($event)" novalidate>
+    <pc-input label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
 
-  <pc-card title="Profile">
-    <form class="space-y-4" (submit)="save($event)" novalidate>
-      <div class="grid gap-4 sm:grid-cols-2">
-        <pc-input id="email" label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
+    <div class="grid gap-4 sm:grid-cols-2">
+      <pc-input label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
 
-        <pc-select label="Role" [formField]="form.role">
-          @if (currentUserRole() !== 'admin') {
-          <option value="owner">Owner</option>
-          }
-          <option value="admin">Admin</option>
-          <option value="user">User</option>
-          <option value="viewer">Viewer</option>
-        </pc-select>
+      <pc-input label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
+    </div>
 
-        <pc-input id="first_name" label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
+    <pc-select label="Role" [formField]="form.role">
+      @if (currentUserRole() !== 'admin') {
+      <option value="owner">Owner</option>
+      }
+      <option value="admin">Admin</option>
+      <option value="user">User</option>
+    </pc-select>
 
-        <pc-input id="last_name" label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
-      </div>
-
-      <pc-toggle label="Verified account" [formField]="form.verified"></pc-toggle>
-    </form>
-  </pc-card>
+    @if (error()) {
+    <p class="text-sm text-danger">{{ error() }}</p>
+    }
+  </form>
 </section>
-}
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/user-view.ts
+## File: apps/frontend/src/app/experiences/users/ui/user-view.html
 
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { IAuthUserDetail, IUserStatsSnapshot } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { UserAdminService } from '../services/useradmin-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { UserService } from '../../../services/user.service';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Card as PcCard } from '@uxcommon/components/card/card';
+```html
+<pc-detail-layout
+  [title]="displayName() || 'User'"
+  [eyebrow]="'User'"
+  [crumbs]="crumbs()"
+  [isLoading]="loading()"
+  [error]="error()"
+  [hasRecord]="!initialized() || !!detail()"
+  [showDelete]="true"
+  [deleteText]="'Delete user'"
+  [btn1Text]="'Edit user'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editUser()"
+  (delete)="deleteUser()"
+>
+  @if (detail()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: User Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <pc-profile-card [avatarUrl]="avatarUrl()" [iconName]="avatarUrl() ? undefined : 'user-circle'">
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1 leading-tight">{{ displayName() }}</h2>
+        <p class="text-sm text-base-content/70 mb-4">{{ detail()?.email }}</p>
 
-@Component({
-  selector: 'pc-user-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    StatCard,
-    StatusBadge,
-    ProfileCard,
-    DetailRow,
-    DetailItem,
-    SystemMetadata,
-    PcCard,
-  ],
-  templateUrl: './user-view.html',
-})
-export class UserViewComponent {
-  readonly id = input.required<string>();
+        <pc-status-badge [type]="'neutral'" [size]="'lg'" class="mb-6 font-medium capitalize flex gap-2">
+          <pc-icon name="identification" [size]="4"></pc-icon>
+          {{ detail()?.role }}
+        </pc-status-badge>
 
-  private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly userService = inject(UserService);
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          <pc-detail-row icon="check-circle" [iconClass]="detail()?.verified ? 'text-success' : 'text-base-content/40'">
+            <span>Verified:</span>
+            <pc-status-badge pc-row-action [type]="detail()?.verified ? 'success' : 'neutral'">
+              {{ detail()?.verified ? 'Yes' : 'No' }}
+            </pc-status-badge>
+          </pc-detail-row>
+        </div>
 
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
+        <pc-system-metadata
+          [createdAt]="detail()?.created_at"
+          [updatedAt]="detail()?.updated_at"
+          layout="col"
+          dateFormat="medium"
+        ></pc-system-metadata>
+      </pc-profile-card>
+    </div>
 
-  protected readonly avatarUrl = computed(() => {
-    const user = this.detail();
-    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
-  });
-
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
-  protected readonly currentUserId = computed(() => this.auth.getUser()?.id);
-  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
-
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
-  });
-
-  protected readonly activityCards = computed(() => {
-    const s = this.stats();
-    if (!s) return [];
-    return [
-      {
-        key: 'emails',
-        title: 'Emails Assigned',
-        value: s.emails_assigned.total,
-        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
-        asOf: null,
-      },
-      {
-        key: 'contacts',
-        title: 'Contacts Added',
-        value: s.contacts_added.total,
-        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
-        asOf: s.contacts_added.last_created_at,
-      },
-      {
-        key: 'imports',
-        title: 'Files Imported',
-        value: s.files_imported.count,
-        subtitle: `${s.files_imported.total_rows} people imported`,
-        asOf: s.files_imported.last_activity_at,
-      },
-      {
-        key: 'exports',
-        title: 'Files Exported',
-        value: s.files_exported.count,
-        subtitle: `${s.files_exported.total_rows} rows exported`,
-        asOf: s.files_exported.last_activity_at,
-      },
-    ];
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      untracked(() => {
-        if (!currentId) {
-          this.error.set('Missing user identifier.');
-          return;
+    <!-- Right Column: Stats & Metadata & Activity -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats Cards Grid -->
+      @if (stats()) {
+      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        @for (card of activityCards(); track card.key) {
+        <pc-stat-card [title]="card.title" [value]="card.value" [description]="card.subtitle">
+          @if (card.asOf) {
+          <span pc-stat-desc class="block">As of {{ formatAsOf(card.asOf) }}</span>
+          }
+        </pc-stat-card>
         }
-        void this.load();
-      });
-    });
-  }
-
-  protected editUser() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteUser() {
-    if (!this.id()) return;
-    if (String(this.id()) === String(this.currentUserId())) {
-      this.alerts.showError('You cannot delete yourself.');
-      return;
-    }
-    if (this.currentUserRole() === 'admin' && this.isOwnerBeingEdited()) {
-      this.alerts.showError('Admins cannot delete owner accounts.');
-      return;
-    }
-
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete User',
-      message: 'Are you sure you want to delete this user? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      const success = await this.users.delete(this.id());
-      if (!success) {
-        throw new Error('User deletion is not supported');
+      </div>
       }
-      this.alerts.showSuccess('User deleted');
-      await this.router.navigate(['/users']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
-    } finally {
-      end();
-    }
-  }
 
-  protected formatAsOf(date: Date | null): string {
-    if (!date) return '—';
-    try {
-      const d = typeof date === 'string' ? new Date(date) : date;
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(d);
-    } catch {
-      return date.toString();
-    }
-  }
+      <!-- Account Metadata -->
+      <!-- Account Metadata -->
+      <pc-card title="Account Metadata">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <pc-detail-item label="User ID" [value]="detail()?.id" [copyable]="true"></pc-detail-item>
+          <pc-detail-item label="Role" [value]="detail()?.role"></pc-detail-item>
+          <pc-detail-item
+            label="Created"
+            [value]="detail()?.created_at ? (detail()?.created_at | date: 'medium') : null"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Last updated"
+            [value]="detail()?.updated_at ? (detail()?.updated_at | date: 'medium') : null"
+          ></pc-detail-item>
+        </div>
+      </pc-card>
 
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      const user = await this.users.getById(this.id());
-      this.detail.set(user);
-      this.stats.set(user.stats);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
+      <!-- Activity log track -->
+      <pc-card title="Activity Log">
+        <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+          <pc-record-activities [entity]="'authusers'" [entityId]="id()"></pc-record-activities>
+        </div>
+      </pc-card>
+    </div>
+  </div>
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.html
@@ -24817,301 +22993,405 @@ export class WorkflowsGridComponent {
 }
 ```
 
-## File: apps/frontend/src/app/layout/navbar/navbar.ts
+## File: apps/frontend/src/app/layout/dashboards/dashboard.html
+
+```html
+<!-- Dashboard layout template combining sidebar, navbar, and routed content -->
+<!-- Sidebar -->
+<div class="drawer drawer-open bg-base-200 h-screen overflow-hidden">
+  <input class="drawer-toggle" />
+  <div class="drawer-side">
+    <pc-sidebar></pc-sidebar>
+  </div>
+
+  <!-- Add the Navbar and router-outlet for the body -->
+
+  <div class="drawer-content flex flex-col h-screen overflow-hidden">
+    <pc-navbar></pc-navbar>
+    @if (isViewer()) {
+    <div
+      class="alert alert-warning border-b px-4 py-2 flex items-center justify-between gap-4 text-xs sm:text-sm shadow-inner"
+    >
+      <div class="flex items-center gap-2">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <span>You are in read-only <strong>Viewer Mode</strong>. Changes cannot be made.</span>
+      </div>
+      <a href="/profile" class="underline transition-colors text-xs font-semibold whitespace-nowrap">Manage Profile</a>
+    </div>
+    }
+    <pc-alerts></pc-alerts>
+    <div class="flex-1 border-l-2 border-l-base-300 overflow-y-auto min-h-0" [class.hidden]="isMobileOpen()">
+      <router-outlet></router-outlet>
+    </div>
+  </div>
+</div>
+```
+
+## File: apps/frontend/src/app/layout/dashboards/dashboard.ts
 
 ```typescript
-import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
-import { ReactiveFormsModule } from '@angular/forms';
+import { Component, computed, inject } from '@angular/core';
+import { RouterModule } from '@angular/router';
+import { Alerts } from '@uxcommon/components/alerts/alerts';
 import { Icon } from '@icons/icon';
-import { Swap } from '@uxcommon/components/swap/swap';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-import { Router, RouterLink } from '@angular/router';
+import { AuthService } from '../../auth/auth-service';
 
-import { SearchService } from '../../services/api/search-service';
-import { FullScreenService } from '../../services/fullscreen.service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { Navbar } from '../navbar/navbar';
+import { Sidebar } from '../sidebar/sidebar';
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
-import { UserService } from '@frontend/services/user.service';
-import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
-import { NotificationsService } from '../../services/api/notifications-service';
-
-type NotificationItem = {
-  id: string;
-  title: string;
-  message: string;
-  type: string;
-  read: boolean;
-  link: string | null;
-  created_at: string | Date;
-};
 
 @Component({
-  selector: 'pc-navbar',
-  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink],
-  templateUrl: './navbar.html',
-  host: {
-    '(window:keydown)': 'handleKeyDown($event)',
-  },
+  selector: 'pc-dashboard',
+  imports: [Navbar, Sidebar, RouterModule, Alerts, Icon],
+  templateUrl: './dashboard.html',
 })
-export class Navbar implements OnDestroy {
-  protected readonly emailActions = inject(EmailActionsStore);
+export class Dashboard {
+  private readonly sidebarSvc = inject(SidebarService);
   private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-  private readonly fullscreen = inject(FullScreenService);
-  private readonly searchSvc = inject(SearchService);
-  private readonly sideBarSvc = inject(SidebarService);
-  private readonly notificationsSvc = inject(NotificationsService);
-  private readonly router = inject(Router);
 
-  protected readonly currentUser = this.auth.getUserSignal();
-  protected readonly currentUserAvatar = computed(() => {
-    const user = this.currentUser();
-    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
-  });
-
-  private pollInterval?: ReturnType<typeof setInterval>;
-
-  public readonly notifications = signal<NotificationItem[]>([]);
-  public readonly unreadCount = signal<number>(0);
-  public readonly isLoadingMore = signal<boolean>(false);
-  public readonly hasMore = signal<boolean>(true);
-  public readonly isPulsing = signal<boolean>(false);
+  protected readonly userSignal = this.auth.getUserSignal();
+  protected readonly isViewer = computed(() => this.userSignal()?.role === 'viewer');
 
   protected isMobileOpen() {
-    return this.sideBarSvc.isMobileOpen();
-  }
-  protected readonly searchBarVisible = signal(false);
-
-  protected readonly searchStr = signal('');
-  protected readonly themeSvc = inject(ThemeService);
-
-  public readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
-
-  constructor() {
-    // Move focus to the search bar whenever it becomes visible
-    effect(() => {
-      if (this.searchBarVisible())
-        queueMicrotask(() => {
-          this.searchInputRef()?.nativeElement?.focus();
-        });
-    });
-
-    void this.initNotifications();
-    this.pollInterval = setInterval(() => {
-      void this.refreshCount();
-    }, 60000);
-  }
-
-  public ngOnDestroy() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-    }
-  }
-
-  private async initNotifications() {
-    try {
-      const count = await this.notificationsSvc.getUnreadCount();
-      this.unreadCount.set(count || 0);
-      if (count && count > 0) {
-        this.isPulsing.set(true);
-      }
-      await this.fetchInitial();
-    } catch (err) {
-      console.error('Failed to initialize notifications', err);
-    }
-  }
-
-  protected async fetchInitial() {
-    this.isLoadingMore.set(true);
-    try {
-      const list = await this.notificationsSvc.getLatest({ limit: 5, offset: 0 });
-      this.notifications.set(list || []);
-      this.hasMore.set((list || []).length === 5);
-    } catch (err) {
-      console.error('Failed to fetch initial notifications', err);
-    } finally {
-      this.isLoadingMore.set(false);
-    }
-  }
-
-  protected async refreshCount() {
-    try {
-      const count = await this.notificationsSvc.getUnreadCount();
-      const oldCount = this.unreadCount();
-      this.unreadCount.set(count || 0);
-      if (count > oldCount) {
-        this.isPulsing.set(true);
-        // Notification count increased, fetch first 5 notifications in background
-        await this.fetchInitial();
-      }
-    } catch (err) {
-      console.error('Failed to poll notification count', err);
-    }
-  }
-
-  protected onNotificationOpen() {
-    this.isPulsing.set(false);
-    if (this.notifications().length === 0) {
-      void this.fetchInitial();
-    }
-  }
-
-  protected onScroll(event: Event) {
-    const target = event.target as HTMLElement;
-    const threshold = 20; // px from bottom
-    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < threshold;
-    if (isNearBottom) {
-      void this.loadMore();
-    }
-  }
-
-  protected async loadMore() {
-    if (this.isLoadingMore() || !this.hasMore()) return;
-    this.isLoadingMore.set(true);
-    try {
-      const nextBatch = await this.notificationsSvc.getLatest({
-        limit: 5,
-        offset: this.notifications().length,
-      });
-      if (!nextBatch || nextBatch.length < 5) {
-        this.hasMore.set(false);
-      }
-      if (nextBatch && nextBatch.length > 0) {
-        const existingIds = new Set(this.notifications().map((n) => n.id));
-        const uniqueNext = nextBatch.filter((n: NotificationItem) => !existingIds.has(n.id));
-        if (uniqueNext.length > 0) {
-          this.notifications.set([...this.notifications(), ...uniqueNext]);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load more notifications', err);
-    } finally {
-      this.isLoadingMore.set(false);
-    }
-  }
-
-  protected async clickNotification(notif: NotificationItem) {
-    if (!notif.read) {
-      try {
-        await this.notificationsSvc.markRead(notif.id);
-        this.notifications.update((list) => list.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
-        this.unreadCount.update((c) => Math.max(0, c - 1));
-      } catch (err) {
-        console.error('Failed to mark notification read', err);
-      }
-    }
-    if (notif.link) {
-      void this.router.navigateByUrl(notif.link);
-    }
-    this.closeDropdown();
-  }
-
-  protected async markAllAsRead(event: Event) {
-    event.stopPropagation();
-    try {
-      await this.notificationsSvc.markAllRead();
-      this.notifications.update((list) => list.map((n) => ({ ...n, read: true })));
-      this.unreadCount.set(0);
-    } catch (err) {
-      console.error('Failed to mark all read', err);
-    }
-  }
-
-  protected formatTime(dateStr: string | Date | null | undefined): string {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
-
-  public clearSearch(): void {
-    this.searchStr.set('');
-    this.searchSvc.clearSearch();
-  }
-
-  public handleKeyDown(event: KeyboardEvent): void {
-    const isCtrlOrCmd = event.ctrlKey || event.metaKey;
-    const isK = event?.key?.toLowerCase() === 'k';
-
-    if (isCtrlOrCmd && isK) {
-      event.preventDefault();
-
-      this.showSearchBar();
-    } else if (event.key === 'Escape' && this.searchBarVisible()) {
-      this.clearSearch();
-      this.hideSearchBar();
-    }
-  }
-
-  protected hideSearchBar(): void {
-    this.searchBarVisible.set(false);
-  }
-
-  protected isFullScreenMode(): boolean {
-    return this.fullscreen.isFullScreenMode();
-  }
-
-  protected onBlurSearchBar() {
-    if (!this.searchStr().length) {
-      this.hideSearchBar();
-    }
-  }
-
-  protected onSearchEnter(): void {
-    this.searchSvc.doSearchImmediate(this.searchStr());
-  }
-
-  protected onSearchInput(event: Event) {
-    const input = event.target as HTMLInputElement;
-    this.searchStr.set(input.value);
-    this.search();
-  }
-
-  protected search(): void {
-    this.searchSvc.doSearch(this.searchStr());
-  }
-
-  protected showSearchBar(): void {
-    this.searchBarVisible.set(true);
-  }
-
-  protected signOut(): void {
-    void this.auth.signOut();
-  }
-
-  protected closeDropdown(): void {
-    const activeEl = document.activeElement as HTMLElement | null;
-    if (activeEl) {
-      activeEl.blur();
-    }
-  }
-
-  protected toggleFullScreen(): void {
-    void this.fullscreen.toggleFullScreen();
-  }
-
-  protected toggleMobile(): void {
-    this.sideBarSvc.toggleMobile();
-  }
-
-  protected toggleSearch(): void {
-    this.searchBarVisible.set(!this.searchBarVisible());
-  }
-
-  protected toggleTheme(): void {
-    this.themeSvc.toggleTheme();
+    return this.sidebarSvc.isMobileOpen();
   }
 }
+```
+
+## File: apps/frontend/src/app/layout/favourite-toggle/favourite-toggle.ts
+
+```typescript
+import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
+
+import { Icon } from '@icons/icon';
+import { ISidebarItem } from '../sidebar/sidebar-items';
+import { SidebarService } from '../sidebar/sidebar-service';
+
+/**
+ * Bookmark button for the navbar: favourites the sidebar item matching the
+ * current route. Extracted from the retired URL-segment breadcrumb bar; page
+ * orientation is now handled by pc-breadcrumbs inside each page header.
+ */
+@Component({
+  selector: 'pc-favourite-toggle',
+  imports: [Icon],
+  template: `
+    @if (canToggleFavourite()) {
+      <button
+        type="button"
+        class="btn btn-circle btn-ghost btn-sm tooltip tooltip-bottom"
+        [attr.aria-label]="tooltip()"
+        [attr.data-tip]="tooltip()"
+        (mouseenter)="hovered.set(true)"
+        (mouseleave)="hovered.set(false)"
+        (click)="toggleFavourite()"
+      >
+        <pc-icon
+          [name]="iconName()"
+          [size]="5"
+          class="text-base-400 hover:text-primary"
+          [class.text-primary]="favourite()"
+        ></pc-icon>
+      </button>
+    }
+  `,
+})
+export class FavouriteToggle {
+  private readonly router = inject(Router);
+  private readonly sidebarSvc = inject(SidebarService);
+
+  private readonly navigationUrl = computed(() => {
+    const navigation = this.router.currentNavigation();
+    if (navigation) {
+      const finalUrl = navigation.finalUrl ?? navigation.initialUrl;
+      return finalUrl.toString();
+    }
+    return this.router.url;
+  });
+
+  private currentItem?: ISidebarItem;
+  protected readonly favourite = signal(false);
+  protected readonly hovered = signal(false);
+  protected readonly canToggleFavourite = signal(false);
+  protected readonly itemName = signal('');
+
+  protected readonly iconName = computed(() => {
+    if (this.favourite()) return this.hovered() ? 'bookmark-slash' : 'bookmark-filled';
+    return this.hovered() ? 'bookmark-plus' : 'bookmark';
+  });
+
+  protected readonly tooltip = computed(() =>
+    this.favourite()
+      ? `Remove '${this.itemName()}' from sidebar bookmarks`
+      : `Bookmark '${this.itemName()}' in the sidebar`,
+  );
+
+  constructor() {
+    effect(() => this.handleNavigationChange(this.navigationUrl()));
+  }
+
+  protected toggleFavourite(): void {
+    if (!this.currentItem?.route) {
+      return;
+    }
+    const next = this.sidebarSvc.toggleFavourite(this.currentItem.route);
+    this.favourite.set(next);
+    this.currentItem.favourite = next;
+  }
+
+  private handleNavigationChange(url: string): void {
+    const item = this.sidebarSvc.findItemForUrl(url);
+    // Sidebar bookmarks hold sections, not records. The service matches by
+    // prefix, so on a record page (/people/123) the star would read as
+    // "bookmark this person" while actually bookmarking People — only offer
+    // the toggle when the URL is the sidebar item's own page.
+    const exact = !!item?.route && this.normalizePath(url) === this.normalizePath(item.route);
+    this.currentItem = exact ? item : undefined;
+    this.favourite.set(exact && !!item?.favourite);
+    this.canToggleFavourite.set(exact);
+    this.itemName.set(exact ? (item?.name ?? '') : '');
+  }
+
+  private normalizePath(route: string): string {
+    const path = (route.split('?')[0] ?? '').split('#')[0] ?? '';
+    const trimmed = path.endsWith('/') && path !== '/' ? path.slice(0, -1) : path;
+    return trimmed || '/';
+  }
+}
+```
+
+## File: apps/frontend/src/app/layout/navbar/navbar.html
+
+```html
+<!-- Navigation bar template with search, theme toggle, and user actions -->
+<div class="navbar bg-base-100 shadow-lg relative">
+  <div class="flex-1 sm:hidden" (click)="toggleMobile()">
+    <pc-icon name="bars-4"></pc-icon>
+  </div>
+
+  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
+    <!-- Search bar -->
+    <div *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'" class="flex-1 max-w-full">
+      <label class="input input-primary w-full flex items-center gap-2">
+        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
+        <input
+          #searchInput
+          type="text"
+          placeholder="Search"
+          i18n-placeholder="@@navbar.search.placeholder"
+          class="grow w-full"
+          (blur)="onBlurSearchBar()"
+          [value]="searchStr()"
+          (input)="onSearchInput($event)"
+          (keydown.enter)="onSearchEnter()"
+        />
+        <kbd class="kbd kbd-sm hidden sm:block">⌘</kbd>
+        <kbd class="kbd kbd-sm hidden sm:block">K</kbd>
+      </label>
+    </div>
+
+    <!-- Search icon -->
+    <pc-icon
+      class="hover:text-primary text-base-400 cursor-pointer"
+      [class.hidden]="searchBarVisible()"
+      (click)="showSearchBar()"
+      name="magnifying-glass"
+    ></pc-icon>
+
+    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
+    <pc-favourite-toggle></pc-favourite-toggle>
+
+    <pc-swap
+      class="hover:text-primary text-base-400 cursor-pointer"
+      swapOnIcon="arrows-pointing-out"
+      swapOffIcon="arrows-pointing-in"
+      [checked]="!isFullScreenMode()"
+      (click)="toggleFullScreen()"
+      aria-label="Toggle full screen"
+      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
+    ></pc-swap>
+
+    <!-- light / dark theme switcher -->
+    <pc-swap
+      swapOnIcon="sun"
+      swapOffIcon="moon"
+      [checked]="themeSvc.getTheme() === 'light'"
+      (click)="toggleTheme()"
+      aria-label="Toggle theme"
+      i18n-aria-label="@@navbar.theme.ariaLabel"
+    ></pc-swap>
+
+    <!-- email sending status indicator -->
+    @if (emailActions.sendingCount() > 0) {
+    <div
+      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
+    >
+      <span class="loading loading-spinner loading-xs text-primary"></span>
+      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
+        >Sending ({{ emailActions.sendingCount() }})...</span
+      >
+    </div>
+    }
+
+    <!-- notifications drop down -->
+    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
+      <div
+        tabindex="0"
+        role="button"
+        class="btn btn-ghost btn-circle relative"
+        aria-label="Notifications"
+        i18n-aria-label="@@navbar.notifications.ariaLabel"
+      >
+        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
+        @if (unreadCount() > 0) {
+        <span class="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full" [class.animate-pulse]="isPulsing()"></span>
+        }
+      </div>
+
+      <!-- Notifications list -->
+      <div
+        tabindex="0"
+        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
+      >
+        <div class="card-body p-0">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
+            <h3
+              class="font-semibold text-sm"
+              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
+            >
+              Notifications
+            </h3>
+            @if (unreadCount() > 0) {
+            <button
+              class="text-xs text-primary hover:underline font-medium"
+              (click)="markAllAsRead($event)"
+              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
+            >
+              Mark all read
+            </button>
+            }
+          </div>
+
+          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
+            @if (notifications().length === 0) {
+            <div class="flex flex-col items-center justify-center py-8 text-base-400">
+              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
+              <p
+                class="text-xs font-light"
+                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
+              >
+                All caught up!
+              </p>
+            </div>
+            } @else { @for (notif of notifications(); track notif.id) {
+            <div
+              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
+              [class.bg-primary/5]="!notif.read"
+              (click)="clickNotification(notif)"
+            >
+              <!-- Icon Based on Type -->
+              <div class="flex-shrink-0">
+                <div
+                  class="w-8 h-8 rounded-lg flex items-center justify-center"
+                  [class.bg-info/10]="notif.type === 'info'"
+                  [class.text-info]="notif.type === 'info'"
+                  [class.bg-primary/10]="notif.type === 'email'"
+                  [class.text-primary]="notif.type === 'email'"
+                  [class.bg-warning/10]="notif.type === 'task'"
+                  [class.text-warning]="notif.type === 'task'"
+                >
+                  @if (notif.type === 'email') {
+                  <pc-icon name="envelope"></pc-icon>
+                  } @else if (notif.type === 'task') {
+                  <pc-icon name="clipboard-document-list"></pc-icon>
+                  } @else {
+                  <pc-icon name="information-circle"></pc-icon>
+                  }
+                </div>
+              </div>
+
+              <!-- Message Details -->
+              <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-start gap-1">
+                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
+                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
+                </div>
+                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
+              </div>
+
+              <!-- Unread dot indicator -->
+              @if (!notif.read) {
+              <span
+                class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary animate-ping"
+              ></span>
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
+              }
+            </div>
+            } } @if (isLoadingMore()) {
+            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
+              <span class="loading loading-spinner loading-xs text-primary"></span>
+            </div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- profile drop down -->
+    <div class="dropdown dropdown-end">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
+        <div
+          class="bg-base-100 border-primary hover:bg-base-300 hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
+        >
+          @if (currentUserAvatar()) {
+          <img
+            [src]="currentUserAvatar()!"
+            alt="User Profile Picture"
+            i18n-alt="@@navbar.profile.avatarAlt"
+            class="w-full h-full object-cover"
+          />
+          } @else {
+          <img alt="User Profile Picture" i18n-alt="@@navbar.profile.avatarAlt" src="assets/logo-sq.svg" class="p-1" />
+          }
+        </div>
+      </div>
+
+      <!-- Menu -->
+      <ul
+        tabindex="0"
+        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow"
+        (click)="closeDropdown()"
+      >
+        <li class="hover:text-primary">
+          <a routerLink="/profile">
+            <pc-icon name="user-circle"></pc-icon>
+            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a routerLink="/settings">
+            <pc-icon name="cog-6-tooth"></pc-icon>
+            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary" (click)="signOut()">
+          <a>
+            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
+            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Background email sending progress bar -->
+  @if (emailActions.sendingCount() > 0) {
+  <progress
+    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
+  ></progress>
+  }
+</div>
 ```
 
 ## File: apps/frontend/src/app/services/api/abstract-api.service.ts
@@ -28308,180 +26588,97 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
+## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
 
-```typescript
-import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { PeopleInCompany } from './people-in-company';
-import { CompaniesService } from '../services/companies-service';
-import { UserService } from '../../../services/user.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+```html
+<div class="p-6 max-w-4xl">
+  <!-- Loading State -->
+  @if (isLoading()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Loading company details...</p>
+  </div>
+  } @else {
+  <div class="space-y-6">
+    <pc-detail-header
+      [title]="isNewMode() ? 'New company' : company()?.name || 'Company'"
+      [eyebrow]="isNewMode() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
+      [subtitle]="isNewMode() ? 'Create a new company record' : 'View and update company information'"
+      [form]="form"
+      [isLoading]="isLoading()"
+      buttonsToShow="two"
+      [btn1Text]="isNewMode() ? 'Create company' : 'Save company'"
+      [showDelete]="!isNewMode()"
+      deleteText="Delete company"
+      (save)="save($event)"
+      (delete)="deleteCompany()"
+    ></pc-detail-header>
 
-@Component({
-  selector: 'pc-company-view',
-  imports: [
-    RouterModule,
-    PeopleInCompany,
-    RecordActivities,
-    DetailLayout,
-    StatCard,
-    Tabs,
-    TabPanel,
-    ProfileCard,
-    DetailItem,
-    SystemMetadata,
-  ],
-  templateUrl: './company-view.html',
-})
-export class CompanyView {
-  readonly id = input.required<string>();
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Form Section -->
+      <pc-card class="lg:col-span-2">
+        <!-- Name -->
+        <pc-input label="Company Name" placeholder="e.g. Acme Corp" [formField]="form.name"></pc-input>
 
-  private readonly alertSvc = inject(AlertService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Website -->
+          <pc-input label="Website" type="url" placeholder="https://example.com" [formField]="form.website"></pc-input>
 
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
+          <!-- Industry -->
+          <pc-input label="Industry" placeholder="e.g. Technology" [formField]="form.industry"></pc-input>
+        </div>
 
-  protected readonly company = signal<any | null>(null);
-  protected readonly employeeCount = signal(0);
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Email -->
+          <pc-input label="Email" type="email" placeholder="info@example.com" [formField]="form.email"></pc-input>
 
-  private readonly usersResource = resource({
-    loader: () => this.userService.getUsers(),
-  });
-  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+          <!-- Phone -->
+          <pc-input label="Phone" type="tel" placeholder="+1 555-0100" [formField]="form.phone"></pc-input>
+        </div>
 
-  // Active tab state
-  protected activeTab = signal<string>('activity');
+        <!-- Description -->
+        <pc-textarea
+          label="Description"
+          placeholder="Company description..."
+          [formField]="form.description"
+          [rows]="3"
+        ></pc-textarea>
 
-  protected readonly companyTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'employees', label: `Employees (${this.employeeCount()})`, icon: 'user-group' },
-    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
-  ]);
+        <!-- Notes -->
+        <pc-textarea
+          label="Internal Notes"
+          placeholder="Any additional notes..."
+          [formField]="form.notes"
+          [rows]="4"
+        ></pc-textarea>
+      </pc-card>
 
-  protected readonly initials = computed(() => {
-    const name = this.company()?.name || '';
-    if (!name) return '?';
-    return name
-      .split(' ')
-      .slice(0, 2)
-      .map((w: string) => w[0] ?? '')
-      .join('')
-      .toUpperCase();
-  });
+      <!-- Members & Info Panel -->
+      <div class="space-y-6">
+        <!-- Employee List (Only when edit mode) -->
+        @if (!isNewMode() && id()) {
+        <pc-card title="Associated Employees" icon="user-group">
+          @defer (on viewport) {
+          <pc-people-in-company [companyId]="id()!"></pc-people-in-company>
+          } @placeholder {
+          <div class="skeleton w-full h-32"></div>
+          }
+        </pc-card>
+        }
 
-  protected readonly isEnriched = computed(() => {
-    const rawJson = this.company()?.json;
-    if (!rawJson) return false;
-
-    let json = null;
-
-    try {
-      json = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
-    } catch {
-      return false;
-    }
-    return !!json.google_enriched;
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
+        <!-- Metadata Card -->
+        @if (!isNewMode()) {
+        <pc-entity-overview
+          [createdAt]="company()?.created_at"
+          [updatedAt]="company()?.updated_at"
+        ></pc-entity-overview>
+        }
+      </div>
+    </div>
+  </div>
   }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load company details (triggers Google enrichment job on backend)
-      const data = await this.companiesSvc.getById(id);
-      this.company.set(data);
-
-      // 2. Load employee count via dedicated count endpoint (no row data fetched)
-      const count = await this.personsSvc.countByCompanyId(id);
-      this.employeeCount.set(count);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load company details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editCompany() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteCompany() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Company',
-      message: 'Are you sure you want to delete this company? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.companiesSvc.delete(this.id());
-      this.companiesSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Company deleted');
-      await this.router.navigate(['/companies']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete company';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById().get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-body/email-body.ts
@@ -29354,334 +27551,6 @@ export class EmailBody {
 </section>
 ```
 
-## File: apps/frontend/src/app/experiences/events/ui/event-form.html
-
-```html
-<div class="p-6 max-w-5xl mx-auto space-y-6">
-  @if (error() && !detail() && !isNew()) {
-  <div class="alert alert-error m-4">
-    <span>{{ error() }}</span>
-  </div>
-  } @else if (!isNew() && !detail()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading event details...</p>
-  </div>
-  } @else {
-  <div class="space-y-6">
-    <pc-detail-header
-      [title]="isNew() ? 'Create Event Page' : detail()?.name"
-      [subtitle]="isNew() ? 'Create a public event page for RSVPs and ticketing.' : 'Manage event settings and ticket types.'"
-      icon="calendar"
-      [form]="form"
-      [isLoading]="saving()"
-      [disabled]="slugChecking() || slugUnique() === false"
-      buttonsToShow="two"
-      [btn1Text]="isNew() ? 'Create Event' : 'Save Event'"
-      [showDelete]="!isNew()"
-      deleteText="Delete Event"
-      (save)="save($event)"
-      (delete)="deleteEvent()"
-    ></pc-detail-header>
-
-    @if (error()) {
-    <div class="alert alert-error shadow-sm py-3 text-sm">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
-      <!-- Left 2 cols: Main details -->
-      <div class="md:col-span-2 space-y-6">
-        <pc-card title="Event Details">
-          <pc-input
-            id="event-name"
-            label="Event Name *"
-            [formField]="form.name"
-            placeholder="E.g., Annual Fundraising Dinner"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="event-slug"
-              label="URL Slug *"
-              [formField]="form.slug"
-              placeholder="e.g. annual-fundraising-dinner"
-              [hasError]="slugUnique() === false"
-              (input)="onSlugInput()"
-            >
-              <span pc-prefix class="text-xs text-base-content/50 font-mono">/events/</span>
-            </pc-input>
-            @if (slugChecking()) {
-            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
-              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
-            </p>
-            } @else if (slugUnique() === true) {
-            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
-            } @else if (slugUnique() === false) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
-            }
-          </div>
-
-          <pc-textarea
-            id="event-desc"
-            label="Description"
-            [formField]="form.description"
-            placeholder="Describe the event, agenda, and what attendees can expect..."
-            [rows]="4"
-          ></pc-textarea>
-
-          <pc-input
-            id="event-location"
-            label="Location Address"
-            [formField]="form.location_address"
-            placeholder="E.g., 123 Main St, City Hall Ballroom"
-          ></pc-input>
-
-          <div class="divider mt-4"></div>
-          <div>
-            <h4 class="font-bold text-md">Collected Fields</h4>
-            <h5>Choose which fields appear on the public RSVP form.</h5>
-            <pc-fields-selector
-              [selectedFields]="selectedFields()"
-              (fieldsChange)="selectedFields.set($event)"
-            ></pc-fields-selector>
-          </div>
-
-          <div class="divider"></div>
-
-          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
-            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
-            Organizer Contact
-          </h4>
-          <p class="text-xs text-base-content/60">Contact info for attendees who have questions about this event.</p>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <pc-input
-              id="contact-email"
-              label="Contact Email"
-              type="email"
-              [formField]="form.contact_email"
-              placeholder="organizer@example.com"
-            ></pc-input>
-            <pc-input
-              id="contact-phone"
-              label="Contact Phone"
-              [formField]="form.contact_phone"
-              placeholder="E.g., 555-0199"
-            ></pc-input>
-          </div>
-        </pc-card>
-
-        <!-- Ticket Types (only for existing events) -->
-        @if (!isNew()) {
-        <pc-card
-          title="Ticket Types"
-          subtitle="Define ticket tiers for this event. Leave empty for a free, unticketed RSVP."
-          icon="tag"
-        >
-          <button
-            pc-card-actions
-            type="button"
-            class="btn btn-xs btn-primary gap-1"
-            (click)="startAddTicket()"
-            [disabled]="addingTicket()"
-          >
-            <pc-icon name="plus" [size]="3"></pc-icon> Add Ticket Type
-          </button>
-
-          @if (ticketTypes().length === 0 && !addingTicket()) {
-          <p class="text-sm text-base-content/40 italic">
-            No ticket types defined — this event uses a simple free RSVP.
-          </p>
-          } @else {
-          <div class="overflow-x-auto border border-base-300 rounded-lg">
-            <table class="table table-sm w-full text-xs">
-              <thead>
-                <tr class="bg-base-200 text-base-content/70">
-                  <th>Name</th>
-                  <th>Price</th>
-                  <th>Capacity</th>
-                  <th class="w-16 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-base-200">
-                @for (ticket of ticketTypes(); track ticket.id) {
-                <tr class="hover:bg-base-200/40">
-                  <td>
-                    <div class="font-semibold">{{ ticket.name }}</div>
-                    @if (ticket.description) {
-                    <div class="text-[10px] text-base-content/50 mt-0.5">{{ ticket.description }}</div>
-                    }
-                  </td>
-                  <td class="font-mono">{{ formatPrice(ticket.price_cents) }}</td>
-                  <td>{{ ticket.capacity ?? 'Unlimited' }}</td>
-                  <td>
-                    <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteTicketType(ticket.id)">
-                      <pc-icon name="trash" [size]="4"></pc-icon>
-                    </button>
-                  </td>
-                </tr>
-                } @if (addingTicket()) {
-                <tr class="bg-base-200/30">
-                  <td>
-                    <input
-                      type="text"
-                      class="input input-bordered input-xs w-full"
-                      placeholder="Ticket name *"
-                      [ngModel]="newTicket().name"
-                      (ngModelChange)="setNewTicketName($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      class="input input-bordered input-xs w-20 font-mono"
-                      placeholder="0"
-                      min="0"
-                      step="1"
-                      title="Price in cents (e.g. 2500 = $25.00)"
-                      [ngModel]="newTicket().price_cents"
-                      (ngModelChange)="setNewTicketPrice($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                    <span class="text-[10px] text-base-content/40 ml-1">cents</span>
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      class="input input-bordered input-xs w-20 font-mono"
-                      placeholder="∞"
-                      min="1"
-                      [ngModel]="newTicket().capacity"
-                      (ngModelChange)="setNewTicketCapacity($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                  </td>
-                  <td>
-                    <div class="flex items-center gap-1">
-                      <button type="button" class="btn btn-ghost btn-xs text-success" (click)="saveNewTicket()">
-                        <pc-icon name="check-circle" [size]="4"></pc-icon>
-                      </button>
-                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="cancelAddTicket()">
-                        <pc-icon name="x-mark" [size]="4"></pc-icon>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-          }
-        </pc-card>
-        }
-      </div>
-
-      <!-- Right col: Scheduling, toggles -->
-      <div class="space-y-6">
-        <pc-card title="Scheduling">
-          <pc-input
-            id="start-time"
-            label="Start Date & Time *"
-            type="datetime-local"
-            [formField]="form.start_time"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="end-time"
-              label="End Date & Time *"
-              type="datetime-local"
-              [formField]="form.end_time"
-              [hasError]="endBeforeStartError()"
-            ></pc-input>
-            @if (endBeforeStartError()) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
-            }
-          </div>
-
-          <pc-input
-            id="capacity"
-            label="Total Capacity"
-            type="number"
-            [formField]="form.capacity"
-            placeholder="Unlimited"
-          ></pc-input>
-        </pc-card>
-
-        <pc-card title="Publishing & Notifications">
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Published</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  When enabled, this event page is visible to the public.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_published" />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Registration Confirmation</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send a confirmation email when someone RSVPs for this event.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                class="toggle toggle-primary mt-1 shrink-0"
-                [formField]="form.send_registration_confirmation"
-              />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send 24h Reminder</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send automated reminder emails to registered attendees 24 hours before the event.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
-            </label>
-          </div>
-        </pc-card>
-
-        @if (!isNew()) {
-        <pc-entity-overview
-          title="Event Overview"
-          [createdAt]="detail()?.created_at"
-          createdBy="Representative"
-        ></pc-entity-overview>
-        }
-      </div>
-
-      <!-- Right col: Fields & Public Link -->
-
-      @if (!isNew() && publicUrl()) {
-      <pc-public-link-panel
-        [url]="publicUrl()"
-        label="Public RSVP Link"
-        subtitle="Share this link so people can RSVP for the event."
-      ></pc-public-link-panel>
-      }
-    </form>
-  </div>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/exports/ui/exports-page.ts
 
 ```typescript
@@ -29835,6 +27704,142 @@ export class FormsGridComponent {
     },
   ];
 }
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/household-form.html
+
+```html
+<!-- Template for household edit form -->
+<div class="flex min-h-full flex-col bg-base-100 p-6">
+  <div class="w-full max-w-4xl">
+    @if (household()?.is_placeholder) {
+    <div class="alert alert-warning mb-6 shadow rounded-lg flex gap-3">
+      <pc-icon name="exclamation-triangle" class="shrink-0" [size]="5"></pc-icon>
+      <div class="flex flex-col">
+        <span class="font-bold">System Placeholder Household</span>
+        <span class="text-xs font-light"
+          >This household is a permanent placeholder for people with no address and cannot be edited.</span
+        >
+      </div>
+    </div>
+    } @else {
+    <pc-detail-header
+      [title]="id() ? 'Edit household' : 'New household'"
+      [eyebrow]="id() ? 'Editing' : 'New'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      [buttonsToShow]="household()?.id ? 'two' : 'three'"
+      [btn1Text]="household()?.id ? 'Save household' : 'Create household'"
+      [showDelete]="!isNewMode()"
+      deleteText="Delete household"
+      (save)="save($event)"
+      (delete)="deleteHousehold()"
+    ></pc-detail-header>
+
+    <progress class="progress w-full mb-6" [class.hidden]="!isLoading()"></progress>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Form Section -->
+      <div class="lg:col-span-2">
+        <form (submit)="$event.preventDefault()">
+          <fieldset [disabled]="isLoading() || (household()?.is_placeholder ?? false)">
+            <div class="flex flex-col gap-6">
+              <!-- Current Address Display -->
+              @if (!household()?.is_placeholder && addressString()) {
+              <div class="flex items-start gap-3 bg-base-200 p-4 rounded-xl border border-base-300 shadow-sm">
+                <pc-icon name="map-pin" class="text-primary shrink-0 mt-0.5" [size]="5"></pc-icon>
+                <div class="flex flex-col">
+                  <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50"
+                    >Current Address</span
+                  >
+                  <span class="text-sm font-medium text-base-content">{{ addressString() }}</span>
+                </div>
+              </div>
+              }
+
+              <!-- Autocomplete Address Search -->
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-semibold text-base-content/75">Search address</label>
+                <pc-address-autocomplete
+                  (addressSelected)="handleAddressChange($event)"
+                  [disabled]="isLoading() || (household()?.is_placeholder ?? false)"
+                ></pc-address-autocomplete>
+              </div>
+
+              <!-- Collapsible manual entry -->
+              <details class="group">
+                <summary
+                  class="cursor-pointer list-none flex items-center gap-2 text-sm font-medium text-base-content/60 hover:text-base-content select-none py-1"
+                >
+                  <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
+                  Enter address manually
+                </summary>
+                <div class="mt-4 pl-3 border-l-2 border-base-300">
+                  <pc-address-form-group [form]="form"></pc-address-form-group>
+                </div>
+              </details>
+
+              <div class="divider mb-1 uppercase tracking-wider text-xs font-semibold text-base-content/40">
+                Segmentation
+              </div>
+
+              <!-- Tags -->
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-semibold text-base-content/75">Tags</label>
+                <pc-tags
+                  [tags]="tags"
+                  type="tag"
+                  [enableAutoComplete]="true"
+                  [readonly]="household()?.is_placeholder ?? false"
+                  [canDelete]="!(household()?.is_placeholder ?? false)"
+                  (tagAdded)="tagAdded($event)"
+                  (tagRemoved)="tagRemoved($event)"
+                ></pc-tags>
+              </div>
+
+              <!-- Issues -->
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-semibold text-base-content/75">Issues of Interest</label>
+                <pc-tags
+                  [tags]="issues"
+                  type="issue"
+                  [enableAutoComplete]="true"
+                  placeholder="Enter issues, separated by comma"
+                  [readonly]="household()?.is_placeholder ?? false"
+                  [canDelete]="!(household()?.is_placeholder ?? false)"
+                  (tagAdded)="issueAdded($event)"
+                  (tagRemoved)="issueRemoved($event)"
+                ></pc-tags>
+              </div>
+
+              <!-- Notes -->
+              <pc-textarea
+                label="Internal Notes"
+                placeholder="Internal notes regarding this household..."
+                [formField]="form.notes"
+                [rows]="3"
+              ></pc-textarea>
+
+              <div class="h-2"></div>
+            </div>
+          </fieldset>
+        </form>
+      </div>
+
+      <!-- Overview Sidebar -->
+      <div>
+        @if (!isNewMode()) {
+        <pc-entity-overview
+          [createdAt]="household()?.created_at"
+          [updatedAt]="household()?.updated_at"
+        ></pc-entity-overview>
+        }
+      </div>
+    </div>
+    }
+  </div>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
@@ -30591,6 +28596,278 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
 export type DATA_TYPE = 'persons' | 'households';
 ```
 
+## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
+
+```html
+<!-- Template for person edit/add view -->
+<div class="flex min-h-full flex-col bg-base-100 p-6">
+  <progress class="progress w-full" [class.hidden]="!isLoading()"></progress>
+
+  <div class="w-full max-w-4xl">
+    <!-- Back to profile or list -->
+    <pc-detail-header
+      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
+      [eyebrow]="person()?.id ? 'Editing' : 'New'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      [buttonsToShow]="buttonsToShow()"
+      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
+      [showDelete]="!!person()?.id"
+      deleteText="Delete person"
+      (save)="save($event)"
+      (delete)="deletePerson()"
+    ></pc-detail-header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+      <div class="lg:col-span-2">
+        <form (submit)="save()" novalidate class="flex flex-col gap-5">
+          <fieldset [disabled]="isLoading()" class="flex flex-col gap-5">
+            @if (!person()?.id) {
+            <label class="label text-xs text-base-content/50 -mb-2"
+              >All fields are optional, but try to add as much as possible</label
+            >
+            }
+
+            <!-- Name Inputs -->
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/3"
+                placeholder="First Name"
+                aria-label="First Name"
+                [formField]="form.first_name"
+              ></pc-input>
+              <pc-input
+                class="basis-1/3"
+                placeholder="Middle Name(s)"
+                aria-label="Middle Name(s)"
+                [formField]="form.middle_names"
+              ></pc-input>
+              <pc-input
+                class="basis-1/3"
+                placeholder="Last Name"
+                aria-label="Last Name"
+                [formField]="form.last_name"
+              ></pc-input>
+            </div>
+
+            <!-- Emails -->
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                type="email"
+                placeholder="Email"
+                aria-label="Email Address"
+                [formField]="form.email"
+                [hasError]="!!emailError()"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                type="email"
+                placeholder="Email 2"
+                aria-label="Secondary Email Address"
+                [formField]="form.email2"
+              ></pc-input>
+            </div>
+            @if (emailError()) {
+            <div class="text-error text-sm pl-1 -mt-2 flex items-center gap-1">
+              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+              {{ emailError() }}
+            </div>
+            }
+
+            <!-- Phones -->
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                type="tel"
+                placeholder="Mobile Phone"
+                aria-label="Mobile Phone"
+                [formField]="form.mobile"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                type="tel"
+                placeholder="Home Phone"
+                aria-label="Home Phone"
+                [formField]="form.home_phone"
+              ></pc-input>
+            </div>
+
+            <!-- Company Select -->
+            <pc-select placeholder="-- Select Company --" aria-label="Company" [formField]="form.company_id">
+              @for (c of companies(); track c.id) {
+              <option [value]="c.id">{{ c.name }}</option>
+              }
+            </pc-select>
+
+            <!-- Assigned To / Owner Select -->
+            <pc-select placeholder="-- Select Contact Owner --" aria-label="Assigned To" [formField]="form.assigned_to">
+              @for (u of users(); track u.id) {
+              <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+              }
+            </pc-select>
+
+            <!-- Address & Household Assignment -->
+            @if (householdId() && !isPlaceholderHousehold()) {
+            <div class="text-sm pl-1 flex items-center gap-2 bg-base-200/50 p-2.5 rounded-lg border border-base-300/50">
+              <span class="text-base-content/60">Address:</span>
+              <span class="font-medium text-base-content flex-grow">{{ addressString() }}</span>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
+                data-tip="Change Household"
+                (click)="openAssignDrawer()"
+              >
+                <pc-icon name="chevron-down" [size]="4"></pc-icon>
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
+                data-tip="Go to Household"
+                (click)="navigateToHousehold()"
+              >
+                <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-error tooltip"
+                data-tip="Remove Address"
+                (click)="removeAddress()"
+              >
+                <pc-icon name="trash" [size]="4"></pc-icon>
+              </button>
+            </div>
+            } @else {
+            <div
+              class="flex items-center justify-between text-sm pl-1 bg-base-200/30 p-2.5 rounded-lg border border-base-200 border-dashed"
+            >
+              <div class="flex items-center gap-2">
+                <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
+                <span class="text-base-content/50 italic">No address assigned</span>
+              </div>
+              <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                Assign Household
+              </button>
+            </div>
+            }
+
+            <!-- Social Media Profile Links -->
+            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
+              Social Media Profiles
+            </div>
+
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                placeholder="LinkedIn URL"
+                aria-label="LinkedIn URL"
+                [formField]="form.linkedin"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                placeholder="Twitter/X URL"
+                aria-label="Twitter/X URL"
+                [formField]="form.twitter"
+              ></pc-input>
+            </div>
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                placeholder="Facebook URL"
+                aria-label="Facebook URL"
+                [formField]="form.facebook"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                placeholder="Instagram URL"
+                aria-label="Instagram URL"
+                [formField]="form.instagram"
+              ></pc-input>
+            </div>
+
+            <!-- Tags & Segmentation -->
+            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
+              Tags & Issues
+            </div>
+
+            <pc-tags
+              [tags]="tags()"
+              type="tag"
+              [enableAutoComplete]="true"
+              (tagAdded)="tagAdded($event)"
+              (tagRemoved)="tagRemoved($event)"
+            ></pc-tags>
+
+            <pc-tags
+              [tags]="issues()"
+              type="issue"
+              [enableAutoComplete]="true"
+              placeholder="Enter issues, separated by comma"
+              (tagAdded)="issueAdded($event)"
+              (tagRemoved)="issueRemoved($event)"
+            ></pc-tags>
+
+            <!-- Internal Notes -->
+            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">Notes</div>
+
+            <pc-textarea
+              placeholder="Internal Notes..."
+              aria-label="Notes"
+              [formField]="form.notes"
+              [rows]="3"
+            ></pc-textarea>
+          </fieldset>
+        </form>
+      </div>
+
+      <!-- Overview Sidebar -->
+      <div>
+        @if (!isNewMode()) {
+        <pc-entity-overview [createdAt]="person()?.created_at" [updatedAt]="person()?.updated_at"></pc-entity-overview>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Right-side drawer: Assign to a different household -->
+  <pc-side-drawer
+    [isOpen]="assignDrawerOpen()"
+    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
+    (close)="closeAssignDrawer()"
+  >
+    <div class="flex flex-col gap-3">
+      <input
+        type="text"
+        class="input w-full"
+        placeholder="Search address, city, zip, tag..."
+        aria-label="Search address, city, zip, or tag to assign a household"
+        [value]="householdSearch()"
+        (input)="onHouseholdSearch($event)"
+      />
+      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
+      <div
+        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
+        [class.hidden]="householdsLoading() && householdResults().length === 0"
+      >
+        @for (h of householdResults(); track h.id) {
+        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
+          <div class="text-sm">
+            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
+            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
+          </div>
+          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
+        </div>
+        } @if (!householdsLoading() && householdResults().length === 0) {
+        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
+        }
+      </div>
+    </div>
+  </pc-side-drawer>
+</div>
+```
+
 ## File: apps/frontend/src/app/experiences/profile/profile-page.ts
 
 ```typescript
@@ -31283,107 +29560,6 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/settings/ms-sync/ms-sync-settings.html
-
-```html
-<div class="space-y-6">
-  @if (isLoading()) {
-  <div class="flex items-center gap-3 text-base-content/60">
-    <span class="loading loading-spinner loading-sm"></span>
-    <span class="text-sm">Loading connection status…</span>
-  </div>
-  } @else if (status()?.connected) {
-  <!-- Connected state -->
-  <div class="rounded-xl border border-success/30 bg-success/10 px-5 py-4 flex items-start gap-4">
-    <pc-icon name="check-circle" class="text-success mt-0.5 shrink-0" [size]="5"></pc-icon>
-    <div class="flex-1 min-w-0">
-      <p class="font-semibold text-success">Connected</p>
-      <p class="text-sm text-base-content/70 mt-0.5 truncate">{{ status()?.msEmail }}</p>
-      @if (status()?.syncedAt) {
-      <p class="text-xs text-base-content/50 mt-1">Last synced: {{ formatDate(status()!.syncedAt) }}</p>
-      }
-    </div>
-  </div>
-
-  @if (status()?.lastSyncError) {
-  <div class="rounded-xl border border-warning/30 bg-warning/10 px-5 py-4 flex items-start gap-4">
-    <pc-icon name="exclamation-triangle" class="text-warning mt-0.5 shrink-0" [size]="5"></pc-icon>
-    <div class="flex-1 min-w-0">
-      <p class="font-semibold text-warning">Last sync failed</p>
-      <p class="text-sm text-base-content/70 mt-1">
-        Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with
-        this code:
-      </p>
-      <p class="font-mono text-sm font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
-    </div>
-  </div>
-  }
-
-  <div class="flex flex-wrap gap-3">
-    <button id="ms-sync-now-btn" type="button" class="btn btn-primary" [disabled]="isSyncing()" (click)="syncNow()">
-      @if (isSyncing()) {
-      <span class="loading loading-spinner loading-xs mr-2"></span>
-      Syncing… } @else {
-      <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
-      Sync Now }
-    </button>
-
-    <button type="button" class="btn btn-ghost" [disabled]="isSyncing()" (click)="forceFullResync()">
-      <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
-      Force Full Re-sync
-    </button>
-
-    <button
-      id="ms-disconnect-btn"
-      type="button"
-      class="btn btn-ghost text-error hover:bg-error/10"
-      [disabled]="isSyncing()"
-      (click)="disconnect()"
-    >
-      <pc-icon name="x-circle" [size]="4" class="mr-2"></pc-icon>
-      Disconnect
-    </button>
-  </div>
-
-  @if (lastSyncResult()) {
-  <p class="text-sm text-base-content/60">✓ Sync complete — {{ lastSyncResult()!.inserted }} new email(s) imported.</p>
-  } } @else {
-  <!-- Disconnected state -->
-  <div class="rounded-xl border border-base-200 bg-base-50 px-5 py-4">
-    <p class="text-sm text-base-content/70">
-      Connect your Office 365 account to automatically sync incoming emails into your pplcrm inbox.
-    </p>
-  </div>
-
-  <button
-    id="ms-connect-btn"
-    type="button"
-    class="btn btn-primary gap-2"
-    [disabled]="isConnecting()"
-    (click)="connect()"
-  >
-    @if (isConnecting()) {
-    <span class="loading loading-spinner loading-xs"></span>
-    } @else {
-    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
-      <path fill="#f3f3f3" d="M1 1h10v10H1z" />
-      <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
-      <path fill="#81bc06" d="M12 1h10v10H12z" />
-      <path fill="#05a6f0" d="M1 12h10v10H1z" />
-      <path fill="#ffba08" d="M12 12h10v10H12z" />
-    </svg>
-    } Connect Office 365
-  </button>
-
-  @if (connectError()) {
-  <p class="text-sm text-error flex items-center gap-1.5">
-    <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-    {{ connectError() }}
-  </p>
-  } }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/settings/security/passkey-settings.ts
 
 ```typescript
@@ -31576,6 +29752,655 @@ export class ShiftsService extends AbstractAPIService<'volunteer_events', Update
     return Promise.reject(new Error('Volunteer export is not available'));
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.html
+
+```html
+<div class="p-6 max-w-5xl space-y-6">
+  <!-- Loading State -->
+  @if (error() && !detail() && !isNew()) {
+  <div class="alert alert-error m-4">
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!isNew() && !detail()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Loading event details...</p>
+  </div>
+  } @else {
+  <div class="space-y-6">
+    <!-- Header -->
+    <pc-detail-header
+      [title]="isNew() ? 'New volunteer event' : detail()?.name || 'Volunteer event'"
+      [eyebrow]="isNew() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
+      [subtitle]="isNew() ? 'Schedule a new volunteer opportunity.' : 'Manage volunteer settings and log attendance roster.'"
+      [form]="form"
+      [isLoading]="saving()"
+      [disabled]="slugChecking() || slugUnique() === false"
+      buttonsToShow="two"
+      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
+      [showDelete]="!isNew()"
+      deleteText="Delete event"
+      (save)="save($event)"
+      (delete)="deleteEvent()"
+    ></pc-detail-header>
+
+    <!-- Error alert -->
+    @if (error()) {
+    <div class="alert alert-error shadow-sm py-3 text-sm">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <!-- Event has passed alert -->
+    @if (eventPassed()) {
+    <div class="alert alert-warning shadow-sm py-3 text-sm flex items-center gap-2">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>This event has passed. Roster and details are now archived.</span>
+    </div>
+    }
+
+    <!-- Event details form -->
+    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
+      <!-- Left 2 cols: Main details -->
+      <div class="md:col-span-2 space-y-6">
+        <pc-card title="Event Details">
+          <pc-input
+            id="event-name"
+            label="Event Name *"
+            [formField]="form.name"
+            placeholder="E.g., Weekend Door Knocking Campaign"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="event-slug"
+              label="URL Slug *"
+              [formField]="form.slug"
+              placeholder="e.g. weekend-knocking"
+              [hasError]="slugUnique() === false"
+              (input)="onSlugInput()"
+            >
+              <span pc-prefix class="text-xs text-base-content/50 font-mono">/api/events/view/</span>
+            </pc-input>
+            @if (slugChecking()) {
+            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
+              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
+            </p>
+            } @else if (slugUnique() === true) {
+            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
+            } @else if (slugUnique() === false) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
+            }
+          </div>
+
+          <pc-textarea
+            id="event-desc"
+            label="Description"
+            [formField]="form.description"
+            placeholder="Describe the purpose, tasks, and instructions for volunteers..."
+            [rows]="4"
+          ></pc-textarea>
+
+          <pc-input
+            id="event-location"
+            label="Location Address"
+            [formField]="form.location_address"
+            placeholder="E.g., Central Park Pavilion, or street coordinates"
+          ></pc-input>
+
+          <div class="divider mt-4"></div>
+          <div>
+            <h4 class="font-bold text-md">Collected Fields</h4>
+            <h5>Choose which fields appear on the public signup form.</h5>
+            <pc-fields-selector
+              [selectedFields]="selectedFields()"
+              (fieldsChange)="selectedFields.set($event)"
+            ></pc-fields-selector>
+          </div>
+          <div class="divider"></div>
+
+          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
+            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
+            Organizer Contact Point
+          </h4>
+          <p class="text-xs text-base-content/60">
+            Provide contact info for constituents who have questions about this shift.
+          </p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <pc-input
+              id="contact-email"
+              label="Contact Email"
+              type="email"
+              [formField]="form.contact_email"
+              placeholder="organizer@example.com"
+            ></pc-input>
+            <pc-input
+              id="contact-phone"
+              label="Contact Phone"
+              [formField]="form.contact_phone"
+              placeholder="E.g., 555-0199"
+            ></pc-input>
+          </div>
+        </pc-card>
+
+        <!-- Roster Management (Only for existing events) -->
+        @if (!isNew()) {
+        <pc-card
+          title="Shift Roster"
+          subtitle="Sign up volunteers and record their attendance and hours."
+          icon="user-group"
+        >
+          <div pc-card-actions class="badge badge-primary gap-1">
+            {{ roster().length }} Signed Up @if (detail()?.capacity) {
+            <span>/ {{ detail()?.capacity }} Max</span>
+            }
+          </div>
+
+          <!-- Search to Add Volunteers -->
+          <div class="relative space-y-1">
+            <label class="label text-xs font-semibold text-base-content/65 uppercase">Add Volunteer to Roster</label>
+            <div class="relative">
+              <input
+                type="text"
+                class="input input-bordered w-full pl-10"
+                placeholder="Search volunteers by name or email..."
+                [ngModel]="volunteerSearch()"
+                (ngModelChange)="volunteerSearch.set($event)"
+                [ngModelOptions]="{standalone: true}"
+              />
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-base-content/40">
+                <pc-icon name="magnifying-glass" [size]="5"></pc-icon>
+              </div>
+            </div>
+
+            <!-- Search suggestions -->
+            @if (volunteerSearchResults().length > 0) {
+            <div
+              class="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
+            >
+              @for (p of volunteerSearchResults(); track p.id) {
+              <div
+                (click)="addVolunteer(p)"
+                class="p-3 hover:bg-base-200 cursor-pointer flex items-center justify-between"
+              >
+                <div>
+                  <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
+                  <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
+                </div>
+                <button type="button" class="btn btn-primary btn-xs gap-1">
+                  <pc-icon name="plus" [size]="3"></pc-icon>
+                  Add
+                </button>
+              </div>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Roster Table -->
+          <div class="overflow-x-auto border border-base-300 rounded-lg">
+            <table class="table w-full text-sm">
+              <thead>
+                <tr class="bg-base-200 text-xs">
+                  <th>Volunteer</th>
+                  <th class="w-40">Status</th>
+                  <th class="w-24">Hours</th>
+                  <th>Notes</th>
+                  <th class="w-20 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-base-200">
+                @if (roster().length === 0) {
+                <tr>
+                  <td colspan="5" class="text-center py-8 text-base-content/60 font-light italic">
+                    No volunteers signed up for this event yet.
+                  </td>
+                </tr>
+                } @for (shift of roster(); track shift.id) {
+                <tr class="hover:bg-base-200/40">
+                  <!-- Contact details -->
+                  <td>
+                    <div>
+                      <a
+                        [routerLink]="['/people', shift.person_id]"
+                        class="font-bold text-primary hover:underline hover:cursor-pointer"
+                      >
+                        {{ shift.first_name }} {{ shift.last_name }}
+                      </a>
+                    </div>
+                    <div class="text-xs text-base-content/60">{{ shift.email || 'No email' }}</div>
+                  </td>
+                  <!-- Shift status dropdown -->
+                  <td>
+                    <select
+                      class="select select-bordered select-sm w-full font-medium"
+                      [ngModel]="shift.status"
+                      (ngModelChange)="updateShiftStatus(shift, $event)"
+                      [ngModelOptions]="{standalone: true}"
+                      [class.select-success]="shift.status === 'attended'"
+                      [class.select-warning]="shift.status === 'signed_up'"
+                      [class.select-error]="shift.status === 'no_show'"
+                    >
+                      <option value="signed_up">Signed Up</option>
+                      <option value="attended">Attended</option>
+                      <option value="no_show">No Show</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </td>
+                  <!-- Hours worked input -->
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-sm w-full text-center font-mono"
+                      placeholder="--"
+                      min="0"
+                      max="24"
+                      step="0.5"
+                      [ngModel]="shift.hours_worked"
+                      (ngModelChange)="updateShiftHours(shift, $event)"
+                      [ngModelOptions]="{standalone: true}"
+                      [disabled]="shift.status !== 'attended'"
+                    />
+                  </td>
+                  <!-- Notes -->
+                  <td>
+                    <input
+                      type="text"
+                      class="input input-bordered input-sm w-full"
+                      placeholder="Optional details..."
+                      [ngModel]="shift.notes"
+                      (ngModelChange)="updateShiftNotes(shift, $event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <!-- Actions -->
+                  <td>
+                    <div class="flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs text-primary"
+                        title="Save shift edits"
+                        (click)="saveShiftDetails(shift)"
+                      >
+                        <pc-icon name="check-circle" [size]="6"></pc-icon>
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs text-error"
+                        title="Remove volunteer"
+                        (click)="removeVolunteer(shift)"
+                      >
+                        <pc-icon name="trash" [size]="5"></pc-icon>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </pc-card>
+        }
+      </div>
+
+      <!-- Right 1 col: Timing, Capacity, Actions -->
+      <div class="space-y-6">
+        @if (!isNew() && detail()?.public_url) {
+        <pc-card
+          title="Public Signup Link"
+          subtitle="Constituents can use this URL to view the event and sign up for this shift."
+          icon="globe-americas"
+        >
+          <div class="flex gap-2 items-center">
+            <input
+              #publicUrlInput
+              readonly
+              type="text"
+              class="input input-bordered input-sm flex-1 font-mono text-xs"
+              [value]="environment.apiUrl + detail()?.public_url"
+            />
+            <button
+              type="button"
+              class="btn btn-primary btn-sm btn-square"
+              title="Copy Link"
+              (click)="copyToClipboard(environment.apiUrl + detail()?.public_url)"
+            >
+              <pc-icon name="document-duplicate" [size]="5"></pc-icon>
+            </button>
+          </div>
+
+          @if (detail()?.is_private) {
+          <div class="alert alert-warning py-2 text-xs flex gap-2 mt-2">
+            <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+            <span>This event is <strong>Private</strong>. Only constituents with this direct link can view it.</span>
+          </div>
+          } @else {
+          <div class="text-xs text-base-content/50 mt-1 flex flex-col gap-1">
+            <span>Public Dashboard Link:</span>
+            <a
+              [href]="environment.apiUrl + detail()?.tenant_public_url"
+              target="_blank"
+              class="link link-primary font-mono text-[10px] break-all"
+            >
+              {{ environment.apiUrl + detail()?.tenant_public_url }}
+            </a>
+          </div>
+          }
+        </pc-card>
+        }
+        <pc-card title="Scheduling">
+          <pc-input
+            id="start-time"
+            label="Start Date & Time *"
+            type="datetime-local"
+            [formField]="form.start_time"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="end-time"
+              label="End Date & Time *"
+              type="datetime-local"
+              [formField]="form.end_time"
+              [hasError]="endBeforeStartError()"
+            ></pc-input>
+            @if (endBeforeStartError()) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
+            }
+          </div>
+
+          <pc-input
+            id="capacity"
+            label="Volunteer Capacity"
+            type="number"
+            [formField]="form.capacity"
+            placeholder="Unlimited"
+          ></pc-input>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Shift Reminder</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send automated reminder emails to signed up volunteers 24 hours before the shift start time.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Signup Confirmation</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send a confirmation email with shift and coordinator details to constituents when they sign up.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_signup_confirmation"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Volunteer Alert</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send email alert notifications to the event coordinator or organization admins upon new volunteer
+                  signups.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_volunteer_alert"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Private Event</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  If enabled, this event will not be shown on the public upcoming list. Only constituents with the
+                  direct link can sign up.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_private" />
+            </label>
+          </div>
+        </pc-card>
+
+        <!-- Event Summary Panel -->
+        @if (!isNew()) {
+        <pc-entity-overview title="Event Overview" [createdAt]="detail()?.created_at" createdBy="Representative">
+          <div pc-overview-prefix class="space-y-2 mb-2">
+            <div class="flex justify-between">
+              <span>Start:</span>
+              <span class="font-semibold">{{ detail()?.start_time | date:'medium' }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span>End:</span>
+              <span class="font-semibold">{{ detail()?.end_time | date:'medium' }}</span>
+            </div>
+          </div>
+        </pc-entity-overview>
+        }
+      </div>
+    </form>
+
+    @if (!isNew() && publicUrl()) {
+    <pc-public-link-panel
+      [url]="publicUrl()"
+      label="Public Signup Link"
+      subtitle="Share this link so volunteers can sign up for the shift."
+    ></pc-public-link-panel>
+    }
+  </div>
+
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/shifts/ui/shift-view.html
+
+```html
+<pc-detail-layout
+  [title]="event()?.name || 'Volunteer event'"
+  [eyebrow]="'Volunteer event'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!event()"
+  [showDelete]="true"
+  [deleteText]="'Delete event'"
+  [btn1Text]="'Edit event'"
+  [btn1Icon]="'pencil-square'"
+  (save)="editEvent()"
+  (delete)="deleteEvent()"
+>
+  @if (event()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Event Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Event Details Card -->
+      <pc-profile-card iconName="clock">
+        <!-- Name & Status -->
+        <h2 class="text-xl font-bold text-base-content text-center mb-1 leading-tight">{{ event().name }}</h2>
+        <div class="flex gap-2 mb-4">
+          @if (event().is_private) {
+          <span class="badge badge-warning font-semibold uppercase text-xs">Private</span>
+          } @else {
+          <span class="badge badge-success font-semibold uppercase text-xs">Public</span>
+          } @if (eventPassed()) {
+          <span class="badge badge-neutral font-semibold uppercase text-xs">Passed</span>
+          } @else {
+          <span class="badge badge-info font-semibold uppercase text-xs">Upcoming</span>
+          }
+        </div>
+
+        <!-- Details and Settings List -->
+        <div class="w-full flex flex-col gap-3 text-sm border-t border-base-200 pt-4">
+          @if (event().description) {
+          <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ event().description }}</div>
+          }
+
+          <pc-detail-row icon="map-pin" iconClass="text-error">
+            <span class="text-xs">
+              <strong>Location:</strong> {{ event().location_address || 'No Address Provided' }}
+            </span>
+          </pc-detail-row>
+
+          <pc-detail-row icon="calendar" iconClass="text-info">
+            <div class="text-xs flex flex-col">
+              <span><strong>Start:</strong> {{ event().start_time | date: 'medium' }}</span>
+              <span><strong>End:</strong> {{ event().end_time | date: 'medium' }}</span>
+            </div>
+          </pc-detail-row>
+
+          @if (event().contact_email || event().contact_phone) {
+          <div class="divider my-1"></div>
+          <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">
+            Coordinator Contact
+          </div>
+          @if (event().contact_email) {
+          <pc-detail-row icon="envelope" iconClass="text-teal-500">
+            <span>Email:</span>
+            <span pc-row-action class="font-semibold text-xs">{{ event().contact_email }}</span>
+          </pc-detail-row>
+          } @if (event().contact_phone) {
+          <pc-detail-row icon="phone" iconClass="text-purple-500">
+            <span>Phone:</span>
+            <span pc-row-action class="font-semibold text-xs">{{ event().contact_phone }}</span>
+          </pc-detail-row>
+          } }
+        </div>
+      </pc-profile-card>
+
+      <!-- Public Signup Link Card -->
+      @if (event().public_url) {
+      <pc-card title="Public Signup Link" icon="globe-americas">
+        <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
+          <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
+        </button>
+
+        <div class="form-control text-xs">
+          <div class="flex gap-2">
+            <input
+              type="text"
+              [value]="publicUrl()"
+              readonly
+              class="input input-bordered input-xs flex-1 font-mono text-[10px]"
+            />
+            <a [href]="publicUrl()" target="_blank" class="btn btn-xs btn-outline btn-secondary px-2">
+              <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
+            </a>
+          </div>
+        </div>
+      </pc-card>
+      }
+    </div>
+
+    <!-- Right Column: Stats & Tabs -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats Panel -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <pc-stat-card
+          [title]="'Signed Up'"
+          [value]="roster().length"
+          [description]="'Volunteers scheduled'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-indigo-500'"
+          [iconColorClass]="'text-indigo-500'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Remaining Capacity'"
+          [value]="remainingCapacity()"
+          [description]="'Total capacity: ' + (event().capacity ?? 'Unlimited')"
+          [icon]="'adjustments-horizontal'"
+          [valueColorClass]="'text-teal-500'"
+          [iconColorClass]="'text-teal-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Tabs Panel -->
+      <pc-tabs [tabs]="eventTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="roster" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-3">
+            @if (roster().length === 0) {
+            <p class="text-sm text-base-content/40 italic">No volunteers signed up for this event roster.</p>
+            } @else {
+            <div class="overflow-x-auto rounded-lg border border-base-300 shadow-sm">
+              <table class="table table-sm table-zebra w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200 text-base-content/70">
+                    <th>Volunteer</th>
+                    <th>Status</th>
+                    <th>Hours Worked</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (shift of roster(); track shift.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td class="font-semibold">
+                      <a
+                        [routerLink]="['/people', shift.person_id]"
+                        class="link hover:underline text-primary font-bold"
+                      >
+                        {{ shift.first_name }} {{ shift.last_name }}
+                      </a>
+                      <div class="text-[10px] text-base-content/50 font-normal mt-0.5">
+                        {{ shift.email || 'No email' }}
+                      </div>
+                    </td>
+                    <td>
+                      <pc-status-badge [type]="getStatusType(shift.status)">
+                        {{ shift.status || 'signed_up' }}
+                      </pc-status-badge>
+                    </td>
+                    <td class="font-mono">
+                      {{ shift.hours_worked !== null && shift.hours_worked !== undefined ? shift.hours_worked : '—' }}
+                    </td>
+                    <td class="max-w-xs truncate" [title]="shift.notes || ''">{{ shift.notes || '—' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'volunteer_events'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/add-issue.ts
@@ -32594,210 +31419,215 @@ export class TaskView {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/teams/ui/team-view.ts
+## File: apps/frontend/src/app/experiences/teams/ui/team-form.html
 
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { PcTabOption, TabPanel, Tabs } from '@uxcommon/components/tabs/tabs';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import type { IAuthUser } from '../../../../../../../libs/common/src';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { UserService } from '../../../services/user.service';
-import { TasksService } from '../../tasks/services/tasks-service';
-import { TeamsService } from '../services/teams-service';
+```html
+@if (error() && !detail() && !isNew()) {
+<div class="p-6 alert alert-error m-4">
+  <span>{{ error() }}</span>
+</div>
+} @else if (!isNew() && !detail()) {
+<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
+  <span class="loading loading-spinner loading-xs"></span>
+  Loading team…
+</div>
+} @else {
+<section class="max-w-4xl space-y-6 p-6">
+  <pc-detail-header
+    [title]="isNew() ? 'New team' : (detail()?.name || 'Team')"
+    [eyebrow]="isNew() ? 'New' : 'Editing'"
+    [crumbs]="crumbs()"
+    subtitle="Teams group volunteers for easier coordination."
+    [form]="form"
+    [isLoading]="saving()"
+    buttonsToShow="two"
+    [btn1Text]="isNew() ? 'Create team' : 'Save team'"
+    [showDelete]="!isNew()"
+    deleteText="Delete team"
+    (save)="save($event)"
+    (delete)="deleteTeam()"
+  ></pc-detail-header>
 
-@Component({
-  selector: 'pc-team-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    RecordActivities,
-    DetailLayout,
-    StatCard,
-    Tabs,
-    TabPanel,
-    StatusBadge,
-    ProfileCard,
-    DetailRow,
-  ],
-  templateUrl: './team-view.html',
-})
-export class TeamViewComponent {
-  readonly id = input.required<string>();
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly teamsSvc = inject(TeamsService);
-  private readonly tasksSvc = inject(TasksService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly team = signal<any>(null);
-  protected readonly teamTasks = signal<any[]>([]);
-  protected readonly volunteers = computed(() => this.team()?.volunteers ?? []);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private usersById = new Map<string, IAuthUser>();
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly teamTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'volunteers', label: `Volunteers (${this.volunteers().length})`, icon: 'user-group' },
-    { id: 'lists', label: `Target Lists (${this.team()?.lists?.length || 0})`, icon: 'queue-list' },
-    { id: 'tasks', label: `Team Tasks (${this.teamTasks().length})`, icon: 'document-check' },
-  ]);
-
-  protected readonly captainName = computed(() => {
-    const captainId = this.team()?.team_captain_id;
-    if (!captainId) return '—';
-    const match = this.volunteers().find((v: any) => v.id === captainId);
-    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
-  });
-
-  protected readonly leadName = computed(() => {
-    const leadId = this.team()?.team_lead_user_id;
-    if (!leadId) return '—';
-    const match = this.users().find((u) => String(u.id) === String(leadId));
-    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
-  });
-
-  protected readonly activeTasksCount = computed(() => {
-    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'canceled').length;
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-
-    // Load users
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
+  @if (error()) {
+  <div class="alert alert-error">
+    <span>{{ error() }}</span>
+  </div>
   }
 
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load team detail
-      const data = await this.teamsSvc.getById(id);
-      this.team.set(data);
+  <form class="grid gap-6" (submit)="save($event)" novalidate>
+    <pc-card>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <pc-input id="team-name" label="Team Name" [formField]="form.name" placeholder="Community Outreach"></pc-input>
 
-      // 2. Load associated tasks
-      const res = await this.tasksSvc.getAll({
-        filterModel: { team_id: { value: id } },
-      } as any);
-      this.teamTasks.set(res?.rows ?? []);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load team details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
+        <pc-select id="team-captain" label="Team Captain (Volunteer)" [formField]="form.team_captain_id">
+          <option value="">No captain</option>
+          @for (person of people(); track person.id) {
+          <option [value]="person.id">{{ person.label }}</option>
+          }
+        </pc-select>
+
+        <pc-select id="team-lead" label="Team Lead (Organizer)" [formField]="form.team_lead_user_id">
+          <option value="">No lead</option>
+          @for (user of users(); track user.id) {
+          <option [value]="user.id">{{ user.first_name }} {{ user.last_name || '' }}</option>
+          }
+        </pc-select>
+      </div>
+
+      <pc-textarea
+        id="team-description"
+        label="Description"
+        [rows]="3"
+        [formField]="form.description"
+        placeholder="Describe this team's focus"
+      ></pc-textarea>
+    </pc-card>
+
+    <!-- Volunteers Section -->
+    <pc-card title="Volunteers" subtitle="Select volunteers who belong to this team.">
+      <div pc-card-actions class="text-sm text-base-content/60">
+        Captain: {{ captainLabel(form.team_captain_id().value() || null) }}
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-base-content/80" for="volunteer-select">Select Volunteers</label>
+          <select
+            id="volunteer-select"
+            class="select select-bordered h-40 w-full"
+            (change)="onVolunteersChange($event)"
+            multiple
+          >
+            @for (person of people(); track person.id) {
+            <option [value]="person.id" [selected]="isVolunteerSelected(person.id)">{{ person.label }}</option>
+            }
+          </select>
+          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple volunteers.</p>
+        </div>
+        <div class="space-y-2">
+          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned</h3>
+          <div class="max-h-40 overflow-auto rounded border border-base-200">
+            @if (volunteers().length === 0) {
+            <p class="p-3 text-sm text-base-content/60">No volunteers assigned yet.</p>
+            } @else {
+            <ul class="divide-y divide-base-200">
+              @for (volunteer of volunteers(); track volunteer.id) {
+              <li class="flex items-center justify-between p-3 text-sm">
+                <div>
+                  <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
+                  @if (volunteer.email) {
+                  <p class="text-xs text-base-content/60">{{ volunteer.email }}</p>
+                  }
+                </div>
+              </li>
+              }
+            </ul>
+            }
+          </div>
+        </div>
+      </div>
+    </pc-card>
+
+    <!-- Assigned target constituent lists section -->
+    <pc-card
+      title="Target Constituent Lists"
+      subtitle="Assign lists of people or households this team is responsible for contacting."
+    >
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-base-content/80" for="lists-select">Select Target Lists</label>
+          <select
+            id="lists-select"
+            class="select select-bordered h-40 w-full"
+            (change)="onListsChange($event)"
+            multiple
+          >
+            @for (list of availableLists(); track list.id) {
+            <option [value]="list.id" [selected]="isListSelected(list.id)">{{ list.name }} ({{ list.object }})</option>
+            }
+          </select>
+          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple lists.</p>
+        </div>
+        <div class="space-y-2">
+          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned Target Lists</h3>
+          <div class="max-h-40 overflow-auto rounded border border-base-200">
+            @if (assignedLists().length === 0) {
+            <p class="p-3 text-sm text-base-content/60">No lists assigned yet.</p>
+            } @else {
+            <ul class="divide-y divide-base-200">
+              @for (list of assignedLists(); track list.id) {
+              <li class="flex items-center justify-between p-3 text-sm">
+                <div>
+                  <p class="font-medium text-base-content">{{ list.name }}</p>
+                  <p class="text-xs text-base-content/60">
+                    {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
+                  </p>
+                </div>
+              </li>
+              }
+            </ul>
+            }
+          </div>
+        </div>
+      </div>
+    </pc-card>
+
+    <!-- Team Tasks Section -->
+    @if (!isNew()) {
+    <pc-card title="Team Tasks" subtitle="Track the tasks and campaign progress assigned to this team.">
+      <a
+        pc-card-actions
+        class="btn btn-xs btn-primary gap-1"
+        [routerLink]="['/tasks/add']"
+        [queryParams]="{ team_id: id }"
+      >
+        <pc-icon name="plus" [size]="3"></pc-icon> Add Task
+      </a>
+
+      <div class="overflow-x-auto rounded border border-base-200">
+        @if (teamTasks().length === 0) {
+        <p class="p-4 text-sm text-base-content/60 italic">No tasks currently assigned to this team.</p>
+        } @else {
+        <table class="table table-zebra w-full text-sm">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Priority</th>
+              <th>Status</th>
+              <th>Due Date</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (task of teamTasks(); track task.id) {
+            <tr>
+              <td class="font-medium">
+                <a [routerLink]="['/tasks', task.id]" class="hover:underline text-primary"> {{ task.name }} </a>
+              </td>
+              <td>
+                <span class="badge badge-sm uppercase font-semibold" [class]="getPriorityClass(task.priority)">
+                  {{ task.priority || 'medium' }}
+                </span>
+              </td>
+              <td>
+                <span class="badge badge-sm uppercase font-semibold" [class]="getStatusClass(task.status)">
+                  {{ task.status || 'todo' }}
+                </span>
+              </td>
+              <td>{{ task.due_at ? (task.due_at | date:'mediumDate') : '—' }}</td>
+              <td>
+                <a [routerLink]="['/tasks', task.id]" class="btn btn-xs btn-ghost text-primary"> View details </a>
+              </td>
+            </tr>
+            }
+          </tbody>
+        </table>
+        }
+      </div>
+    </pc-card>
     }
-  }
-
-  protected editTeam() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteTeam() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Team',
-      message: 'Are you sure you want to delete this team? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.teamsSvc.delete(this.id());
-      this.teamsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Team deleted');
-      await this.router.navigate(['/teams']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete team';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected getCreatedAt(): Date | null {
-    const date = this.team()?.created_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUpdatedAt(): Date | null {
-    const date = this.team()?.updated_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-
-  protected getPriorityType(priority: string | null | undefined): any {
-    const p = String(priority || '').toLowerCase();
-    switch (p) {
-      case 'urgent':
-        return 'error';
-      case 'high':
-        return 'warning';
-      case 'medium':
-        return 'info';
-      default:
-        return 'ghost';
-    }
-  }
-
-  protected getStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
-      case 'done':
-        return 'success';
-      case 'in_progress':
-        return 'info';
-      case 'blocked':
-        return 'error';
-      case 'canceled':
-        return 'neutral';
-      default:
-        return 'ghost';
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  </form>
+</section>
 }
 ```
 
@@ -32996,6 +31826,588 @@ export class UserAddComponent implements OnInit {
       last_name: raw.last_name?.trim() ? raw.last_name.trim() : null,
       role: raw.role?.trim() ? raw.role.trim() : null,
     };
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-edit.html
+
+```html
+@if (error() && !detail()) {
+<div class="p-6 alert alert-error m-4">
+  <span>{{ error() }}</span>
+</div>
+} @else if (!detail()) {
+<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
+  <span class="loading loading-spinner loading-xs"></span>
+  Loading user…
+</div>
+} @else {
+<section class="max-w-4xl space-y-6 p-6">
+  <pc-detail-header
+    [title]="displayName()"
+    [eyebrow]="'Editing'"
+    [crumbs]="crumbs()"
+    [subtitle]="detail()?.email"
+    [form]="form"
+    [isLoading]="saving()"
+    buttonsToShow="two"
+    btn1Text="Save user"
+    [showDelete]="true"
+    deleteText="Delete user"
+    (save)="save($event)"
+    (delete)="deleteUser()"
+  >
+    <button
+      pc-actions-prefix
+      class="btn btn-outline btn-accent btn-sm gap-2"
+      type="button"
+      (click)="triggerPasswordReset()"
+      [disabled]="resettingPassword() || saving()"
+    >
+      <pc-icon name="lock-closed"></pc-icon>
+      {{ resettingPassword() ? 'Sending link…' : 'Trigger Password Reset' }}
+    </button>
+  </pc-detail-header>
+
+  @if (error()) {
+  <div class="alert alert-error">
+    <span>{{ error() }}</span>
+  </div>
+  }
+
+  <pc-card title="Profile">
+    <form class="space-y-4" (submit)="save($event)" novalidate>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <pc-input id="email" label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
+
+        <pc-select label="Role" [formField]="form.role">
+          @if (currentUserRole() !== 'admin') {
+          <option value="owner">Owner</option>
+          }
+          <option value="admin">Admin</option>
+          <option value="user">User</option>
+          <option value="viewer">Viewer</option>
+        </pc-select>
+
+        <pc-input id="first_name" label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
+
+        <pc-input id="last_name" label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
+      </div>
+
+      <pc-toggle label="Verified account" [formField]="form.verified"></pc-toggle>
+    </form>
+  </pc-card>
+</section>
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-view.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { IAuthUserDetail, IUserStatsSnapshot } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { UserAdminService } from '../services/useradmin-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { UserService } from '../../../services/user.service';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+
+@Component({
+  selector: 'pc-user-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    StatCard,
+    StatusBadge,
+    ProfileCard,
+    DetailRow,
+    DetailItem,
+    SystemMetadata,
+    PcCard,
+  ],
+  templateUrl: './user-view.html',
+})
+export class UserViewComponent {
+  readonly id = input.required<string>();
+
+  private readonly alerts = inject(AlertService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly userService = inject(UserService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
+
+  protected readonly avatarUrl = computed(() => {
+    const user = this.detail();
+    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
+  });
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
+  protected readonly currentUserId = computed(() => this.auth.getUser()?.id);
+  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
+
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Users', route: '/users' },
+    { label: this.displayName() || 'User' },
+  ]);
+
+  protected readonly activityCards = computed(() => {
+    const s = this.stats();
+    if (!s) return [];
+    return [
+      {
+        key: 'emails',
+        title: 'Emails Assigned',
+        value: s.emails_assigned.total,
+        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
+        asOf: null,
+      },
+      {
+        key: 'contacts',
+        title: 'Contacts Added',
+        value: s.contacts_added.total,
+        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
+        asOf: s.contacts_added.last_created_at,
+      },
+      {
+        key: 'imports',
+        title: 'Files Imported',
+        value: s.files_imported.count,
+        subtitle: `${s.files_imported.total_rows} people imported`,
+        asOf: s.files_imported.last_activity_at,
+      },
+      {
+        key: 'exports',
+        title: 'Files Exported',
+        value: s.files_exported.count,
+        subtitle: `${s.files_exported.total_rows} rows exported`,
+        asOf: s.files_exported.last_activity_at,
+      },
+    ];
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => {
+        if (!currentId) {
+          this.error.set('Missing user identifier.');
+          return;
+        }
+        void this.load();
+      });
+    });
+  }
+
+  protected editUser() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteUser() {
+    if (!this.id()) return;
+    if (String(this.id()) === String(this.currentUserId())) {
+      this.alerts.showError('You cannot delete yourself.');
+      return;
+    }
+    if (this.currentUserRole() === 'admin' && this.isOwnerBeingEdited()) {
+      this.alerts.showError('Admins cannot delete owner accounts.');
+      return;
+    }
+
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete User',
+      message: 'Are you sure you want to delete this user? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      const success = await this.users.delete(this.id());
+      if (!success) {
+        throw new Error('User deletion is not supported');
+      }
+      this.alerts.showSuccess('User deleted');
+      await this.router.navigate(['/users']);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
+    } finally {
+      end();
+    }
+  }
+
+  protected formatAsOf(date: Date | null): string {
+    if (!date) return '—';
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date;
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(d);
+    } catch {
+      return date.toString();
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      const user = await this.users.getById(this.id());
+      this.detail.set(user);
+      this.stats.set(user.stats);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load user';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/layout/navbar/navbar.ts
+
+```typescript
+import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
+import { ReactiveFormsModule } from '@angular/forms';
+import { Icon } from '@icons/icon';
+import { Swap } from '@uxcommon/components/swap/swap';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+import { Router, RouterLink } from '@angular/router';
+
+import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
+import { SearchService } from '../../services/api/search-service';
+import { FullScreenService } from '../../services/fullscreen.service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
+import { UserService } from '@frontend/services/user.service';
+import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
+import { NotificationsService } from '../../services/api/notifications-service';
+
+type NotificationItem = {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  link: string | null;
+  created_at: string | Date;
+};
+
+@Component({
+  selector: 'pc-navbar',
+  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink, FavouriteToggle],
+  templateUrl: './navbar.html',
+  host: {
+    '(window:keydown)': 'handleKeyDown($event)',
+  },
+})
+export class Navbar implements OnDestroy {
+  protected readonly emailActions = inject(EmailActionsStore);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+  private readonly fullscreen = inject(FullScreenService);
+  private readonly searchSvc = inject(SearchService);
+  private readonly sideBarSvc = inject(SidebarService);
+  private readonly notificationsSvc = inject(NotificationsService);
+  private readonly router = inject(Router);
+
+  protected readonly currentUser = this.auth.getUserSignal();
+  protected readonly currentUserAvatar = computed(() => {
+    const user = this.currentUser();
+    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
+  });
+
+  private pollInterval?: ReturnType<typeof setInterval>;
+
+  public readonly notifications = signal<NotificationItem[]>([]);
+  public readonly unreadCount = signal<number>(0);
+  public readonly isLoadingMore = signal<boolean>(false);
+  public readonly hasMore = signal<boolean>(true);
+  public readonly isPulsing = signal<boolean>(false);
+
+  protected isMobileOpen() {
+    return this.sideBarSvc.isMobileOpen();
+  }
+  protected readonly searchBarVisible = signal(false);
+
+  protected readonly searchStr = signal('');
+  protected readonly themeSvc = inject(ThemeService);
+
+  public readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
+
+  constructor() {
+    // Move focus to the search bar whenever it becomes visible
+    effect(() => {
+      if (this.searchBarVisible())
+        queueMicrotask(() => {
+          this.searchInputRef()?.nativeElement?.focus();
+        });
+    });
+
+    void this.initNotifications();
+    this.pollInterval = setInterval(() => {
+      void this.refreshCount();
+    }, 60000);
+  }
+
+  public ngOnDestroy() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+    }
+  }
+
+  private async initNotifications() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      this.unreadCount.set(count || 0);
+      if (count && count > 0) {
+        this.isPulsing.set(true);
+      }
+      await this.fetchInitial();
+    } catch (err) {
+      console.error('Failed to initialize notifications', err);
+    }
+  }
+
+  protected async fetchInitial() {
+    this.isLoadingMore.set(true);
+    try {
+      const list = await this.notificationsSvc.getLatest({ limit: 5, offset: 0 });
+      this.notifications.set(list || []);
+      this.hasMore.set((list || []).length === 5);
+    } catch (err) {
+      console.error('Failed to fetch initial notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
+    }
+  }
+
+  protected async refreshCount() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      const oldCount = this.unreadCount();
+      this.unreadCount.set(count || 0);
+      if (count > oldCount) {
+        this.isPulsing.set(true);
+        // Notification count increased, fetch first 5 notifications in background
+        await this.fetchInitial();
+      }
+    } catch (err) {
+      console.error('Failed to poll notification count', err);
+    }
+  }
+
+  protected onNotificationOpen() {
+    this.isPulsing.set(false);
+    if (this.notifications().length === 0) {
+      void this.fetchInitial();
+    }
+  }
+
+  protected onScroll(event: Event) {
+    const target = event.target as HTMLElement;
+    const threshold = 20; // px from bottom
+    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < threshold;
+    if (isNearBottom) {
+      void this.loadMore();
+    }
+  }
+
+  protected async loadMore() {
+    if (this.isLoadingMore() || !this.hasMore()) return;
+    this.isLoadingMore.set(true);
+    try {
+      const nextBatch = await this.notificationsSvc.getLatest({
+        limit: 5,
+        offset: this.notifications().length,
+      });
+      if (!nextBatch || nextBatch.length < 5) {
+        this.hasMore.set(false);
+      }
+      if (nextBatch && nextBatch.length > 0) {
+        const existingIds = new Set(this.notifications().map((n) => n.id));
+        const uniqueNext = nextBatch.filter((n: NotificationItem) => !existingIds.has(n.id));
+        if (uniqueNext.length > 0) {
+          this.notifications.set([...this.notifications(), ...uniqueNext]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load more notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
+    }
+  }
+
+  protected async clickNotification(notif: NotificationItem) {
+    if (!notif.read) {
+      try {
+        await this.notificationsSvc.markRead(notif.id);
+        this.notifications.update((list) => list.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
+        this.unreadCount.update((c) => Math.max(0, c - 1));
+      } catch (err) {
+        console.error('Failed to mark notification read', err);
+      }
+    }
+    if (notif.link) {
+      void this.router.navigateByUrl(notif.link);
+    }
+    this.closeDropdown();
+  }
+
+  protected async markAllAsRead(event: Event) {
+    event.stopPropagation();
+    try {
+      await this.notificationsSvc.markAllRead();
+      this.notifications.update((list) => list.map((n) => ({ ...n, read: true })));
+      this.unreadCount.set(0);
+    } catch (err) {
+      console.error('Failed to mark all read', err);
+    }
+  }
+
+  protected formatTime(dateStr: string | Date | null | undefined): string {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  public clearSearch(): void {
+    this.searchStr.set('');
+    this.searchSvc.clearSearch();
+  }
+
+  public handleKeyDown(event: KeyboardEvent): void {
+    const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+    const isK = event?.key?.toLowerCase() === 'k';
+
+    if (isCtrlOrCmd && isK) {
+      event.preventDefault();
+
+      this.showSearchBar();
+    } else if (event.key === 'Escape' && this.searchBarVisible()) {
+      this.clearSearch();
+      this.hideSearchBar();
+    }
+  }
+
+  protected hideSearchBar(): void {
+    this.searchBarVisible.set(false);
+  }
+
+  protected isFullScreenMode(): boolean {
+    return this.fullscreen.isFullScreenMode();
+  }
+
+  protected onBlurSearchBar() {
+    if (!this.searchStr().length) {
+      this.hideSearchBar();
+    }
+  }
+
+  protected onSearchEnter(): void {
+    this.searchSvc.doSearchImmediate(this.searchStr());
+  }
+
+  protected onSearchInput(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.searchStr.set(input.value);
+    this.search();
+  }
+
+  protected search(): void {
+    this.searchSvc.doSearch(this.searchStr());
+  }
+
+  protected showSearchBar(): void {
+    this.searchBarVisible.set(true);
+  }
+
+  protected signOut(): void {
+    void this.auth.signOut();
+  }
+
+  protected closeDropdown(): void {
+    const activeEl = document.activeElement as HTMLElement | null;
+    if (activeEl) {
+      activeEl.blur();
+    }
+  }
+
+  protected toggleFullScreen(): void {
+    void this.fullscreen.toggleFullScreen();
+  }
+
+  protected toggleMobile(): void {
+    this.sideBarSvc.toggleMobile();
+  }
+
+  protected toggleSearch(): void {
+    this.searchBarVisible.set(!this.searchBarVisible());
+  }
+
+  protected toggleTheme(): void {
+    this.themeSvc.toggleTheme();
   }
 }
 ```
@@ -33296,19 +32708,27 @@ const SIDEBAR_FAVOURITES_KEY = 'pc-sidebar-favourites';
   [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
   [class.w-18]="isEffectivelyNarrow() && !this.isMobileOpen()"
 >
-  <div
+  <a
     [class.hidden]="isEffectivelyNarrow()"
-    class="mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
+    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1 group-hover:md:block"
+    routerLink="/summary"
+    aria-label="Go to dashboard"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabel"
+    (click)="this.closeMobile()"
   >
     <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
-  </div>
+  </a>
 
-  <div
+  <a
     [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
-    class="avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
+    class="avatar mx-2 mb-5 mt-3 w-10 cursor-pointer rounded-full p-0 group-hover:md:hidden"
+    routerLink="/summary"
+    aria-label="Go to dashboard"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
+    (click)="this.closeMobile()"
   >
     <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
-  </div>
+  </a>
 
   @for (item of items(); track item.name) {
   <div class="flex-none pl-2" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
@@ -36218,6 +35638,188 @@ export class ActivityFeed implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
+
+```typescript
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { PeopleInCompany } from './people-in-company';
+import { CompaniesService } from '../services/companies-service';
+import { UserService } from '../../../services/user.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+
+@Component({
+  selector: 'pc-company-view',
+  imports: [
+    RouterModule,
+    PeopleInCompany,
+    RecordActivities,
+    DetailLayout,
+    StatCard,
+    Tabs,
+    TabPanel,
+    ProfileCard,
+    DetailItem,
+    SystemMetadata,
+  ],
+  templateUrl: './company-view.html',
+})
+export class CompanyView {
+  readonly id = input.required<string>();
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly companiesSvc = inject(CompaniesService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+
+  protected readonly company = signal<any | null>(null);
+  protected readonly employeeCount = signal(0);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Companies', route: '/companies' },
+    { label: this.company()?.name || 'Company' },
+  ]);
+
+  private readonly usersResource = resource({
+    loader: () => this.userService.getUsers(),
+  });
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly companyTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'employees', label: `Employees (${this.employeeCount()})`, icon: 'user-group' },
+    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
+  ]);
+
+  protected readonly initials = computed(() => {
+    const name = this.company()?.name || '';
+    if (!name) return '?';
+    return name
+      .split(' ')
+      .slice(0, 2)
+      .map((w: string) => w[0] ?? '')
+      .join('')
+      .toUpperCase();
+  });
+
+  protected readonly isEnriched = computed(() => {
+    const rawJson = this.company()?.json;
+    if (!rawJson) return false;
+
+    let json = null;
+
+    try {
+      json = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
+    } catch {
+      return false;
+    }
+    return !!json.google_enriched;
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load company details (triggers Google enrichment job on backend)
+      const data = await this.companiesSvc.getById(id);
+      this.company.set(data);
+
+      // 2. Load employee count via dedicated count endpoint (no row data fetched)
+      const count = await this.personsSvc.countByCompanyId(id);
+      this.employeeCount.set(count);
+    } catch (err) {
+      this.alertSvc.showError('Failed to load company details: ' + String(err));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editCompany() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteCompany() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Company',
+      message: 'Are you sure you want to delete this company? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.companiesSvc.delete(this.id());
+      this.companiesSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Company deleted');
+      await this.router.navigate(['/companies']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete company';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/emails/services/emails-service.ts
 
 ```typescript
@@ -36687,304 +36289,333 @@ export class EmailHeader {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/events/ui/event-view.ts
+## File: apps/frontend/src/app/experiences/events/ui/event-form.html
 
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { FormsModule } from '@angular/forms';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { environment } from '../../../../environments/environment';
-import { EventsFrontendService } from '../services/events-frontend-service';
-import { EventsService } from '../../../services/api/events-service';
-import { PersonsService } from '../../persons/services/persons-service';
+```html
+<div class="p-6 max-w-5xl space-y-6">
+  @if (error() && !detail() && !isNew()) {
+  <div class="alert alert-error m-4">
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!isNew() && !detail()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Loading event details...</p>
+  </div>
+  } @else {
+  <div class="space-y-6">
+    <pc-detail-header
+      [title]="isNew() ? 'New event' : detail()?.name || 'Event'"
+      [eyebrow]="isNew() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
+      [subtitle]="isNew() ? 'Create a public event page for RSVPs and ticketing.' : 'Manage event settings and ticket types.'"
+      [form]="form"
+      [isLoading]="saving()"
+      [disabled]="slugChecking() || slugUnique() === false"
+      buttonsToShow="two"
+      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
+      [showDelete]="!isNew()"
+      deleteText="Delete event"
+      (save)="save($event)"
+      (delete)="deleteEvent()"
+    ></pc-detail-header>
 
-@Component({
-  selector: 'pc-event-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    FormsModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    Tabs,
-    TabPanel,
-    StatCard,
-    ProfileCard,
-    DetailRow,
-    PcCard,
-  ],
-  templateUrl: './event-view.html',
-  providers: [EventsService],
-})
-export class EventViewComponent {
-  readonly id = input.required<string>();
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly eventsFrontendSvc = inject(EventsFrontendService);
-  private readonly eventsSvc = inject(EventsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-
-  protected readonly event = signal<any | null>(null);
-  protected readonly ticketTypes = signal<any[]>([]);
-  protected readonly registrations = signal<any[]>([]);
-
-  // Person search for adding registrations
-  protected readonly personSearch = signal('');
-  protected readonly personSearchResults = signal<any[]>([]);
-  protected readonly selectedPersonId = signal<string | null>(null);
-  protected readonly selectedTicketTypeId = signal<string | null>(null);
-  protected readonly addingRegistration = signal(false);
-  protected readonly searchTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  protected activeTab = signal<string>('attendees');
-
-  protected readonly eventTabs = computed<PcTabOption[]>(() => [
-    {
-      id: 'attendees',
-      label: `Attendees (${this.registrations().filter((r) => r.status !== 'cancelled').length})`,
-      icon: 'user-group',
-    },
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-  ]);
-
-  protected readonly eventPassed = computed(() => {
-    const end = this.event()?.end_time;
-    if (!end) return false;
-    return new Date(end) < new Date();
-  });
-
-  protected readonly activeCount = computed(() => this.registrations().filter((r) => r.status !== 'cancelled').length);
-
-  protected readonly attendedCount = computed(() => this.registrations().filter((r) => r.status === 'attended').length);
-
-  protected readonly publicUrl = computed(() => {
-    const slug = this.event()?.slug;
-    if (!slug) return '';
-    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
-  });
-
-  protected readonly remainingCapacity = computed(() => {
-    const ev = this.event();
-    if (!ev || ev.capacity === null || ev.capacity === undefined) return 'Unlimited';
-    return Math.max(0, ev.capacity - this.activeCount());
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      const [eventData, ticketData, regData] = await Promise.all([
-        this.eventsFrontendSvc.getById(id),
-        this.eventsSvc.getTicketTypes(id),
-        this.eventsSvc.getRegistrations(id),
-      ]);
-      this.event.set(eventData);
-      this.ticketTypes.set(ticketData || []);
-      this.registrations.set(regData || []);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load event details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
+    @if (error()) {
+    <div class="alert alert-error shadow-sm py-3 text-sm">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
     }
+
+    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
+      <!-- Left 2 cols: Main details -->
+      <div class="md:col-span-2 space-y-6">
+        <pc-card title="Event Details">
+          <pc-input
+            id="event-name"
+            label="Event Name *"
+            [formField]="form.name"
+            placeholder="E.g., Annual Fundraising Dinner"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="event-slug"
+              label="URL Slug *"
+              [formField]="form.slug"
+              placeholder="e.g. annual-fundraising-dinner"
+              [hasError]="slugUnique() === false"
+              (input)="onSlugInput()"
+            >
+              <span pc-prefix class="text-xs text-base-content/50 font-mono">/events/</span>
+            </pc-input>
+            @if (slugChecking()) {
+            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
+              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
+            </p>
+            } @else if (slugUnique() === true) {
+            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
+            } @else if (slugUnique() === false) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
+            }
+          </div>
+
+          <pc-textarea
+            id="event-desc"
+            label="Description"
+            [formField]="form.description"
+            placeholder="Describe the event, agenda, and what attendees can expect..."
+            [rows]="4"
+          ></pc-textarea>
+
+          <pc-input
+            id="event-location"
+            label="Location Address"
+            [formField]="form.location_address"
+            placeholder="E.g., 123 Main St, City Hall Ballroom"
+          ></pc-input>
+
+          <div class="divider mt-4"></div>
+          <div>
+            <h4 class="font-bold text-md">Collected Fields</h4>
+            <h5>Choose which fields appear on the public RSVP form.</h5>
+            <pc-fields-selector
+              [selectedFields]="selectedFields()"
+              (fieldsChange)="selectedFields.set($event)"
+            ></pc-fields-selector>
+          </div>
+
+          <div class="divider"></div>
+
+          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
+            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
+            Organizer Contact
+          </h4>
+          <p class="text-xs text-base-content/60">Contact info for attendees who have questions about this event.</p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <pc-input
+              id="contact-email"
+              label="Contact Email"
+              type="email"
+              [formField]="form.contact_email"
+              placeholder="organizer@example.com"
+            ></pc-input>
+            <pc-input
+              id="contact-phone"
+              label="Contact Phone"
+              [formField]="form.contact_phone"
+              placeholder="E.g., 555-0199"
+            ></pc-input>
+          </div>
+        </pc-card>
+
+        <!-- Ticket Types (only for existing events) -->
+        @if (!isNew()) {
+        <pc-card
+          title="Ticket Types"
+          subtitle="Define ticket tiers for this event. Leave empty for a free, unticketed RSVP."
+          icon="tag"
+        >
+          <button
+            pc-card-actions
+            type="button"
+            class="btn btn-xs btn-primary gap-1"
+            (click)="startAddTicket()"
+            [disabled]="addingTicket()"
+          >
+            <pc-icon name="plus" [size]="3"></pc-icon> Add Ticket Type
+          </button>
+
+          @if (ticketTypes().length === 0 && !addingTicket()) {
+          <p class="text-sm text-base-content/40 italic">
+            No ticket types defined — this event uses a simple free RSVP.
+          </p>
+          } @else {
+          <div class="overflow-x-auto border border-base-300 rounded-lg">
+            <table class="table table-sm w-full text-xs">
+              <thead>
+                <tr class="bg-base-200 text-base-content/70">
+                  <th>Name</th>
+                  <th>Price</th>
+                  <th>Capacity</th>
+                  <th class="w-16 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-base-200">
+                @for (ticket of ticketTypes(); track ticket.id) {
+                <tr class="hover:bg-base-200/40">
+                  <td>
+                    <div class="font-semibold">{{ ticket.name }}</div>
+                    @if (ticket.description) {
+                    <div class="text-[10px] text-base-content/50 mt-0.5">{{ ticket.description }}</div>
+                    }
+                  </td>
+                  <td class="font-mono">{{ formatPrice(ticket.price_cents) }}</td>
+                  <td>{{ ticket.capacity ?? 'Unlimited' }}</td>
+                  <td>
+                    <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteTicketType(ticket.id)">
+                      <pc-icon name="trash" [size]="4"></pc-icon>
+                    </button>
+                  </td>
+                </tr>
+                } @if (addingTicket()) {
+                <tr class="bg-base-200/30">
+                  <td>
+                    <input
+                      type="text"
+                      class="input input-bordered input-xs w-full"
+                      placeholder="Ticket name *"
+                      [ngModel]="newTicket().name"
+                      (ngModelChange)="setNewTicketName($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-20 font-mono"
+                      placeholder="0"
+                      min="0"
+                      step="1"
+                      title="Price in cents (e.g. 2500 = $25.00)"
+                      [ngModel]="newTicket().price_cents"
+                      (ngModelChange)="setNewTicketPrice($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                    <span class="text-[10px] text-base-content/40 ml-1">cents</span>
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-20 font-mono"
+                      placeholder="∞"
+                      min="1"
+                      [ngModel]="newTicket().capacity"
+                      (ngModelChange)="setNewTicketCapacity($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <td>
+                    <div class="flex items-center gap-1">
+                      <button type="button" class="btn btn-ghost btn-xs text-success" (click)="saveNewTicket()">
+                        <pc-icon name="check-circle" [size]="4"></pc-icon>
+                      </button>
+                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="cancelAddTicket()">
+                        <pc-icon name="x-mark" [size]="4"></pc-icon>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          }
+        </pc-card>
+        }
+      </div>
+
+      <!-- Right col: Scheduling, toggles -->
+      <div class="space-y-6">
+        <pc-card title="Scheduling">
+          <pc-input
+            id="start-time"
+            label="Start Date & Time *"
+            type="datetime-local"
+            [formField]="form.start_time"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="end-time"
+              label="End Date & Time *"
+              type="datetime-local"
+              [formField]="form.end_time"
+              [hasError]="endBeforeStartError()"
+            ></pc-input>
+            @if (endBeforeStartError()) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
+            }
+          </div>
+
+          <pc-input
+            id="capacity"
+            label="Total Capacity"
+            type="number"
+            [formField]="form.capacity"
+            placeholder="Unlimited"
+          ></pc-input>
+        </pc-card>
+
+        <pc-card title="Publishing & Notifications">
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Published</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  When enabled, this event page is visible to the public.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_published" />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Registration Confirmation</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send a confirmation email when someone RSVPs for this event.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_registration_confirmation"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send 24h Reminder</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send automated reminder emails to registered attendees 24 hours before the event.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
+            </label>
+          </div>
+        </pc-card>
+
+        @if (!isNew()) {
+        <pc-entity-overview
+          title="Event Overview"
+          [createdAt]="detail()?.created_at"
+          createdBy="Representative"
+        ></pc-entity-overview>
+        }
+      </div>
+
+      <!-- Right col: Fields & Public Link -->
+
+      @if (!isNew() && publicUrl()) {
+      <pc-public-link-panel
+        [url]="publicUrl()"
+        label="Public RSVP Link"
+        subtitle="Share this link so people can RSVP for the event."
+      ></pc-public-link-panel>
+      }
+    </form>
+  </div>
   }
-
-  protected copyPublicUrl() {
-    const url = this.publicUrl();
-    if (!url) return;
-    navigator.clipboard.writeText(url).then(
-      () => this.alertSvc.showSuccess('Public RSVP link copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
-
-  protected editEvent() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteEvent() {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Event Page',
-      message: 'Are you sure you want to delete this event? All registrations will also be deleted.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-
-    const end = this._loading.begin();
-    try {
-      await this.eventsFrontendSvc.delete(this.id());
-      this.eventsFrontendSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Event deleted');
-      await this.router.navigate(['/events/pages']);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Unable to delete event');
-    } finally {
-      end();
-    }
-  }
-
-  // Person search
-  protected async onPersonSearch(query: string) {
-    this.personSearch.set(query);
-    this.selectedPersonId.set(null);
-    if (!query.trim()) {
-      this.personSearchResults.set([]);
-      return;
-    }
-    try {
-      const res = await this.personsSvc.getAll({ searchStr: query.toLowerCase().trim(), startRow: 0, endRow: 10 });
-      this.personSearchResults.set(res?.rows || []);
-    } catch {
-      this.personSearchResults.set([]);
-    }
-  }
-
-  protected selectPerson(person: any) {
-    this.selectedPersonId.set(String(person.id));
-    this.personSearch.set(`${person.first_name} ${person.last_name}`.trim());
-    this.personSearchResults.set([]);
-  }
-
-  protected async addRegistration() {
-    const personId = this.selectedPersonId();
-    if (!personId) {
-      this.alertSvc.showError('Please select a person to register.');
-      return;
-    }
-    this.addingRegistration.set(true);
-    try {
-      await this.eventsSvc.addRegistration({
-        event_id: this.id(),
-        person_id: personId,
-        ticket_type_id: this.selectedTicketTypeId() || null,
-      });
-      this.alertSvc.showSuccess('Registration added');
-      this.personSearch.set('');
-      this.selectedPersonId.set(null);
-      this.selectedTicketTypeId.set(null);
-      this.personSearchResults.set([]);
-      const regs = await this.eventsSvc.getRegistrations(this.id());
-      this.registrations.set(regs || []);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to add registration');
-    } finally {
-      this.addingRegistration.set(false);
-    }
-  }
-
-  protected async checkIn(reg: any) {
-    try {
-      await this.eventsSvc.checkIn(String(reg.id));
-      this.alertSvc.showSuccess(`${reg.first_name} checked in`);
-      const regs = await this.eventsSvc.getRegistrations(this.id());
-      this.registrations.set(regs || []);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to check in');
-    }
-  }
-
-  protected async updateStatus(reg: any, status: string) {
-    try {
-      await this.eventsSvc.updateRegistration(String(reg.id), { status: status as any });
-      const regs = await this.eventsSvc.getRegistrations(this.id());
-      this.registrations.set(regs || []);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to update status');
-    }
-  }
-
-  protected async deleteRegistration(reg: any) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Remove Registration',
-      message: `Remove ${reg.first_name} ${reg.last_name} from this event?`,
-      variant: 'danger',
-      confirmText: 'Remove',
-    });
-    if (!confirmed) return;
-    try {
-      await this.eventsSvc.deleteRegistration(String(reg.id));
-      this.alertSvc.showSuccess('Registration removed');
-      const regs = await this.eventsSvc.getRegistrations(this.id());
-      this.registrations.set(regs || []);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to remove registration');
-    }
-  }
-
-  protected exportCsv() {
-    const regs = this.registrations().filter((r) => r.status !== 'cancelled');
-    const headers = ['First Name', 'Last Name', 'Email', 'Mobile', 'Ticket Type', 'Price', 'Status', 'Checked In At'];
-    const rows = regs.map((r) => [
-      r.first_name ?? '',
-      r.last_name ?? '',
-      r.email ?? '',
-      r.mobile ?? '',
-      r.ticket_type_name ?? '',
-      r.ticket_price_cents != null ? `$${(r.ticket_price_cents / 100).toFixed(2)}` : 'Free',
-      r.status ?? '',
-      r.checked_in_at ? new Date(r.checked_in_at).toLocaleString() : '',
-    ]);
-
-    const csv = [headers, ...rows]
-      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${this.event()?.slug || 'event'}-attendees.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  protected getStatusType(status: string | null | undefined): any {
-    switch (String(status || '').toLowerCase()) {
-      case 'attended':
-        return 'success';
-      case 'registered':
-        return 'warning';
-      case 'no_show':
-        return 'error';
-      case 'cancelled':
-        return 'neutral';
-      default:
-        return 'ghost';
-    }
-  }
-
-  protected ticketTypeLabel(id: string | null): string {
-    if (!id) return '';
-    const t = this.ticketTypes().find((tt) => tt.id === id);
-    return t ? t.name : '';
-  }
-}
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
@@ -37681,309 +37312,6 @@ ${
     } finally {
       end();
     }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
-
-```typescript
-import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { FormsService } from '../services/forms-service';
-import { ListsService } from '../../lists/services/lists-service';
-import { UserService } from '../../../services/user.service';
-import type { IAuthUser } from '@common';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { environment } from '../../../../environments/environment';
-
-@Component({
-  selector: 'pc-form-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    PcCard,
-    Tabs,
-    TabPanel,
-    StatCard,
-    ProfileCard,
-    DetailRow,
-  ],
-  templateUrl: './form-view.html',
-})
-export class FormViewComponent {
-  private readonly alertSvc = inject(AlertService);
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  readonly id = input.required<string>();
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly formRecord = signal<any | null>(null);
-  protected readonly submissionsCount = signal(0);
-  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private readonly router = inject(Router);
-  private usersById = new Map<string, IAuthUser>();
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly formTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'targetActions', label: 'Target Lists & Actions', icon: 'queue-list' },
-    { id: 'fieldsPreview', label: 'Fields & Layout', icon: 'information-circle' },
-  ]);
-
-  protected readonly selectedFields = computed(() => {
-    const record = this.formRecord();
-    if (!record) return [];
-    if (record.fields) {
-      return Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
-    }
-    return ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-  });
-
-  protected readonly fieldsCount = computed(() => {
-    const fields = this.selectedFields();
-    // Email is always required and present
-    const standardFieldsCount = fields.filter((f: string) => f !== 'email').length;
-    return standardFieldsCount + 1;
-  });
-
-  protected readonly targetListsNames = computed(() => {
-    const record = this.formRecord();
-    if (!record || !record.target_lists) return [];
-    const listIds: string[] = Array.isArray(record.target_lists)
-      ? record.target_lists
-      : JSON.parse(record.target_lists || '[]');
-
-    return listIds.map((id) => this.availableLists().find((l) => l.id === id)?.name).filter(Boolean) as string[];
-  });
-
-  protected readonly embedSnippet = computed(() => {
-    const record = this.formRecord();
-    if (!record || !this.id()) return '';
-    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
-    const fields = this.selectedFields();
-    const isDonation = record.form_type === 'donation';
-    const isRecurring = record.form_type === 'recurring_donation';
-    const isAnyDonation = isDonation || isRecurring;
-
-    const addressFields = isAnyDonation
-      ? `
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
-    <input type="text" name="street1" placeholder="123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
-      <input type="text" name="city" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal *</label>
-      <input type="text" name="zip" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-  </div>
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
-      <input type="text" name="state" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country *</label>
-      <input type="text" name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-  </div>`
-      : '';
-
-    const amountField = isDonation
-      ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($) *</label>
-    <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : isRecurring
-        ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
-    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
-  </div>`
-        : '';
-
-    const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
-
-    return `<!-- PeopleCRM Embeddable Form -->
-<form action="${apiOrigin}/api/forms/submit/${this.id()}" method="POST" style="max-width: 400px; font-family: sans-serif;">
-  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
-${
-  fields.includes('first_name') || isAnyDonation
-    ? `  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isAnyDonation ? ' *' : ''}</label>
-    <input type="text" name="first_name" placeholder="First Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-    : ''
-}${
-      fields.includes('last_name') || isAnyDonation
-        ? `\n  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isAnyDonation ? ' *' : ''}</label>
-    <input type="text" name="last_name" placeholder="Last Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-        : ''
-    }
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
-    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>${
-    !isAnyDonation && fields.includes('mobile')
-      ? `\n  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
-    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : ''
-  }${
-    !isAnyDonation && fields.includes('notes')
-      ? `\n  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
-    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
-  </div>`
-      : ''
-  }${addressFields}${amountField}
-  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
-</form>`;
-  });
-
-  protected readonly formUrl = computed(() => {
-    if (!this.id()) return '';
-    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${this.id()}`;
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-
-    // Load users
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load Form details
-      const record = await this.formsSvc.getById(id);
-      this.formRecord.set(record);
-
-      // 2. Load available Lists to resolve list names
-      const result = await this.listsSvc.getAll({ limit: 100 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows.map((row: any) => ({
-          id: String(row.id),
-          name: String(row.name),
-        })),
-      );
-
-      // 3. Load submissions count
-      const subCount = await this.formsSvc.getSubmissionsCount(id);
-      this.submissionsCount.set(subCount);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load form details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editForm() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteForm() {
-    if (!this.id()) return;
-    const backRoute: string = this.route.snapshot.data['backRoute'] ?? '/forms';
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Web Form',
-      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.formsSvc.delete(this.id());
-      this.formsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Web form deleted');
-      await this.router.navigate([backRoute]);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete web form';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copySnippet(): void {
-    const code = this.embedSnippet();
-    if (!code) return;
-    navigator.clipboard.writeText(code).then(
-      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
-
-  protected getCreatedAt(): Date | null {
-    const date = this.formRecord()?.created_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUpdatedAt(): Date | null {
-    const date = this.formRecord()?.updated_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
   }
 }
 
@@ -39107,497 +38435,6 @@ export class PersonConnections implements OnInit {
       this.alertSvc.showError('Failed to remove connection');
     }
   }
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-view.ts
-
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { FormsModule } from '@angular/forms';
-import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { PeopleInHousehold } from './people-in-household';
-import { UserService } from '../../../services/user.service';
-import { HouseholdsService } from '../../households/services/households-service';
-import { PersonsService } from '../services/persons-service';
-import { VolunteerService } from '../../../services/api/volunteer-service';
-import { DonationsService } from '../../../services/api/donations-service';
-import { EventsService } from '../../../services/api/events-service';
-import { ConnectionsService } from '../../../services/api/connections-service';
-import { PersonConnections } from './person-connections';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Tags } from '@experiences/tags/ui/tags';
-import { PcIconNameType } from '@icons/icons.index';
-
-interface SocialLinkDef {
-  name: string;
-  url: string | null | undefined;
-  icon: PcIconNameType;
-  color: string;
-}
-
-@Component({
-  selector: 'pc-person-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    FormsModule,
-    PeopleInHousehold,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    PcCard,
-    Tabs,
-    TabPanel,
-    StatusBadge,
-    StatCard,
-    ProfileCard,
-    DetailItem,
-    SystemMetadata,
-    Tags,
-    PersonConnections,
-  ],
-  templateUrl: './person-view.html',
-})
-export class PersonView {
-  readonly id = input.required<string>();
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly userService = inject(UserService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly personsSvc = inject(PersonsService);
-  protected readonly donationsSvc = inject(DonationsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly volunteerSvc = inject(VolunteerService);
-  private readonly eventsSvc = inject(EventsService);
-  private readonly connectionsSvc = inject(ConnectionsService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-
-  protected readonly person = signal<any | null>(null);
-
-  private readonly usersResource = resource({
-    loader: () => this.userService.getUsers(),
-  });
-  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
-
-  // Analytics & Lists
-  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
-  protected readonly volunteerHistory = signal<any[]>([]);
-  protected readonly donationStats = signal<{
-    cumulativeAmount: number;
-    limitAmount: number;
-    remainingAmount: number;
-  } | null>(null);
-  protected readonly donationHistory = signal<any[]>([]);
-  protected readonly eventHistory = signal<any[]>([]);
-  protected readonly eventStats = signal<{ events_count: number } | null>(null);
-  protected readonly connectionCount = signal(0);
-  protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
-  protected readonly openedNewslettersCount = computed(() => {
-    return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
-      .length;
-  });
-  protected readonly tags = signal<string[]>([]);
-  protected readonly issues = signal<string[]>([]);
-
-  // Donation Dialog State
-  protected readonly isCheckingEligibility = signal(false);
-  protected readonly donationAmount = signal<number | null>(null);
-  protected readonly showDonationModal = signal(false);
-  protected readonly eligibilityError = signal<string | null>(null);
-
-  // Address
-  protected readonly householdId = computed(() => this.person()?.household_id ?? null);
-  protected readonly householdResource = resource({
-    params: () => this.householdId(),
-    loader: async ({ params: householdId }) => {
-      if (!householdId) return null;
-      try {
-        return await this.householdsSvc.getById(householdId);
-      } catch {
-        return null;
-      }
-    },
-  });
-
-  protected readonly addressString = computed(() => {
-    const hh = this.householdResource.value() as Households | null | undefined;
-    if (!hh || hh.is_placeholder) return 'No Address Assigned';
-    return this.getFormattedAddress(hh);
-  });
-  protected readonly isPlaceholderHousehold = computed(() => {
-    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
-  });
-
-  // Contact initials and full name computation
-  protected readonly initials = computed(() => {
-    const first = this.person()?.first_name || '';
-    const last = this.person()?.last_name || '';
-    if (!first && !last) return '?';
-    return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
-  });
-
-  protected readonly fullName = computed(() => {
-    const p = this.person();
-    if (!p) return '';
-    return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
-  });
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'People', route: '/people' },
-    { label: this.fullName() || 'Person' },
-  ]);
-
-  // Social icons
-  public socialLinks = computed<SocialLinkDef[]>(() => {
-    const p = this.person();
-    return [
-      {
-        name: 'LinkedIn',
-        url: p.linkedin,
-        icon: 'linkedin',
-        color: 'bg-[#0a66c2]', // LinkedIn Blue
-      },
-      {
-        name: 'X',
-        url: p.twitter,
-        icon: 'x',
-        color: 'bg-black', // X Black
-      },
-      {
-        name: 'Facebook',
-        url: p.facebook,
-        icon: 'facebook',
-        color: 'bg-[#1877f2]', // Facebook Blue
-      },
-      {
-        name: 'Instagram',
-        url: p.instagram,
-        icon: 'instagram',
-        color: 'bg-[#e1306c]', // Instagram Pink/Red
-      },
-    ];
-  });
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly personTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'emails', label: 'Conversations', icon: 'envelope', badge: this.activityData()?.emails?.length },
-    { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
-    { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
-    { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
-    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length },
-    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
-    { id: 'household', label: 'Household', icon: 'home' },
-  ]);
-
-  protected getMailStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'sent' || s === 'delivered') return 'success';
-    if (s === 'opened') return 'info';
-    if (s === 'read') return 'neutral';
-    return 'ghost';
-  }
-
-  protected getEmailEventType(eventType: string | null | undefined): any {
-    const et = String(eventType || '').toLowerCase();
-    if (et === 'open') return 'success';
-    if (et === 'click') return 'warning';
-    if (et === 'delivered' || et === 'processed') return 'info';
-    if (['bounce', 'dropped', 'spamreport', 'unsubscribe'].includes(et)) return 'error';
-    return 'ghost';
-  }
-
-  protected getShiftStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'attended') return 'success';
-    if (s === 'signed_up') return 'warning';
-    if (s === 'no_show') return 'error';
-    return 'ghost';
-  }
-
-  protected getEventStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'attended') return 'success';
-    if (s === 'registered') return 'warning';
-    if (s === 'no_show') return 'error';
-    if (s === 'cancelled') return 'neutral';
-    return 'ghost';
-  }
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load person details
-      const personData = await this.personsSvc.getById(id);
-      this.person.set(personData);
-
-      // 2. Load tags and issues
-      const tagList = await this.personsSvc.getTags(id, 'tag');
-      this.tags.set(tagList);
-      const issueList = await this.personsSvc.getTags(id, 'issue');
-      this.issues.set(issueList);
-
-      // 3. Load volunteer stats and history
-      try {
-        const stats = await this.volunteerSvc.getVolunteerStats(id);
-        this.volunteerStats.set(stats);
-        const history = await this.volunteerSvc.getHistoryForPerson(id);
-        this.volunteerHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load volunteer details', err);
-      }
-
-      // 4. Load donations stats and history
-      try {
-        const stats = await this.donationsSvc.getStats(id);
-        this.donationStats.set(stats);
-        const history = await this.donationsSvc.getHistory(id);
-        this.donationHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load donations history', err);
-      }
-
-      // 5. Load event history
-      try {
-        const stats = await this.eventsSvc.getStatsForPerson(id);
-        this.eventStats.set(stats);
-        const history = await this.eventsSvc.getHistoryForPerson(id);
-        this.eventHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load event history', err);
-      }
-
-      // 6. Load connection count (tab badge — full list loads lazily inside the tab)
-      try {
-        const count = await this.connectionsSvc.countForPerson(id);
-        this.connectionCount.set(count);
-      } catch (err) {
-        console.error('Failed to load connection count', err);
-      }
-
-      // Check query params for Stripe Checkout success redirects
-      const params = this.route.snapshot.queryParams;
-      if (params['checkout_success'] === 'true' && params['session_id']) {
-        try {
-          await this.donationsSvc.confirmDonation(params['session_id']);
-          this.alertSvc.showSuccess('Donation processed successfully! Thank you for your support.');
-          // Reload donation stats/history after confirmation
-          const stats = await this.donationsSvc.getStats(id);
-          this.donationStats.set(stats);
-          const history = await this.donationsSvc.getHistory(id);
-          this.donationHistory.set(history || []);
-          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
-        } catch (err) {
-          console.error('Failed to confirm stripe checkout session:', err);
-          this.alertSvc.showError('Finalizing payment verification...');
-        }
-      } else if (params['mock_donation_success'] === 'true' && params['session_id']) {
-        try {
-          const amt = Number(params['amount'] || 0);
-          await this.donationsSvc.confirmMockDonation({
-            personId: id,
-            amountCents: amt * 100,
-            sessionId: params['session_id'],
-            province: params['province'] || '',
-            country: params['country'] || '',
-          });
-          this.alertSvc.showSuccess('[MOCK] Donation recorded successfully!');
-          const stats = await this.donationsSvc.getStats(id);
-          this.donationStats.set(stats);
-          const history = await this.donationsSvc.getHistory(id);
-          this.donationHistory.set(history || []);
-          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
-        } catch (err) {
-          console.error('Failed to record mock donation:', err);
-        }
-      }
-
-      // 5. Load interactions (emails + newsletters)
-      try {
-        const activity = await this.personsSvc.getActivity(id);
-        this.activityData.set(activity || { emails: [], newsletters: [] });
-      } catch (err) {
-        console.error('Failed to load activity log', err);
-      }
-    } catch (err) {
-      this.alertSvc.showError('Failed to load person details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected openCollectDonation() {
-    this.donationAmount.set(null);
-    this.eligibilityError.set(null);
-    this.showDonationModal.set(true);
-  }
-
-  protected closeDonationModal() {
-    this.showDonationModal.set(false);
-  }
-
-  protected async submitDonation() {
-    const amt = this.donationAmount();
-    if (amt === null || amt <= 0) {
-      this.alertSvc.showError('Please specify a valid donation amount.');
-      return;
-    }
-
-    this.isCheckingEligibility.set(true);
-    this.eligibilityError.set(null);
-
-    const hh = this.householdResource.value() as Households | null | undefined;
-    const address = {
-      country: hh?.country || 'CA',
-      state: hh?.state || 'ON',
-    };
-
-    try {
-      const eligibility = await this.donationsSvc.checkEligibility({
-        personId: this.id(),
-        amountCents: amt * 100,
-        address,
-      });
-
-      if (!eligibility.eligible) {
-        this.eligibilityError.set(eligibility.reason || 'Donor is ineligible to donate.');
-        this.isCheckingEligibility.set(false);
-        return;
-      }
-
-      this.closeDonationModal();
-      this.alertSvc.showSuccess('Redirecting to Stripe Checkout...');
-
-      // Redirect
-      const session = await this.donationsSvc.createCheckout({
-        personId: this.id(),
-        amountCents: amt * 100,
-        address,
-      });
-
-      if (session && session.url) {
-        window.location.href = session.url;
-      } else {
-        this.alertSvc.showError('Failed to initialize payment gateway.');
-      }
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Verification check failed.');
-    } finally {
-      this.isCheckingEligibility.set(false);
-    }
-  }
-
-  protected editPerson() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deletePerson() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Person',
-      message: 'Are you sure you want to delete this person? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.personsSvc.delete(this.id());
-      this.personsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Person deleted');
-      await this.router.navigate(['/people']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete person';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById().get(String(id))?.first_name ?? '?';
-  }
-
-  protected navigateToHousehold() {
-    const household_id = this.householdId();
-    if (household_id) {
-      void this.router.navigate(['households', household_id]);
-    }
-  }
-
-  private getFormattedAddress(address: AddressType): string {
-    const parts: string[] = [];
-    const streetParts = [
-      address.apt ? `Apt ${address.apt}` : null,
-      address.street_num,
-      address.street1,
-      address.street2,
-    ].filter(Boolean);
-
-    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
-
-    if (streetParts.length) parts.push(streetParts.join(' ').trim());
-    if (locationParts.length) parts.push(locationParts.join(', ').trim());
-
-    const formatted = parts.join(', ').trim();
-    return formatted || 'No Address Assigned';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -40814,442 +39651,179 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.ts
+## File: apps/frontend/src/app/experiences/settings/ms-sync/ms-sync-settings.ts
 
 ```typescript
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
+import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
-import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
-
-import {
-  AddVolunteerEventObj,
-  AddVolunteerEventType,
-  UpdateVolunteerEventType,
-} from '../../../../../../../libs/common/src';
-import { environment } from '../../../../environments/environment';
-import { VolunteerService } from '../../../services/api/volunteer-service';
+import { TRPCService } from '../../../services/api/trpc-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { ShiftsService } from '../services/shifts-service';
 
 @Component({
-  selector: 'pc-shift-form',
-  imports: [
-    DatePipe,
-    FormsModule,
-    FormField,
-    PcInput,
-    PcTextarea,
-    RouterModule,
-    Icon,
-    PcDetailHeader,
-    PcEntityOverview,
-    PcCard,
-    FieldsSelector,
-    PublicLinkPanel,
-  ],
-  templateUrl: './shift-form.html',
-  providers: [VolunteerService],
+  selector: 'pc-ms-sync-settings',
+  imports: [Icon],
+  templateUrl: './ms-sync-settings.html',
 })
-export class ShiftFormComponent implements OnInit {
-  private readonly _loading = createLoadingGate();
-  private readonly alerts = inject(AlertService);
+export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly route = inject(ActivatedRoute);
   private readonly dialogs = inject(ConfirmDialogService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly router = inject(Router);
-  private readonly volunteerEventsSvc = inject(ShiftsService);
-  private readonly volunteerSvc = inject(VolunteerService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
-
-  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
-  protected readonly publicUrl = computed(() => {
-    const slug = this.payload().slug;
-    if (!slug || this.isNew()) return '';
-    return `${environment.apiUrl}/api/events/view/${slug}`;
-  });
-
-  protected readonly allVolunteers = signal<any[]>([]);
-  protected readonly detail = signal<any>(null);
-  protected readonly payload = signal({
-    name: '',
-    slug: '',
-    description: '',
-    location_address: '',
-    start_time: '',
-    end_time: '',
-    capacity: null as number | null,
-    contact_email: '',
-    contact_phone: '',
-    is_private: false,
-    send_reminder: true,
-    send_signup_confirmation: true,
-    send_volunteer_alert: true,
-  });
-  protected readonly endBeforeStartError = computed(() => {
-    const { start_time, end_time } = this.payload();
-    if (!start_time || !end_time) return false;
-    return new Date(end_time) <= new Date(start_time);
-  });
-  protected readonly environment = environment;
-  protected readonly error = signal<string | null>(null);
-  protected readonly eventPassed = computed(() => {
-    const end = this.payload().end_time;
-    if (!end) return false;
-    return new Date(end) < new Date();
-  });
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddVolunteerEventObj);
-  });
-  protected readonly isNew = computed(() => !this.id());
-  protected readonly loading = this._loading.visible;
-
-  // Roster state
-  protected readonly roster = signal<any[]>([]);
-  protected readonly saving = signal(false);
-  protected readonly slugChecking = signal(false);
-  protected readonly slugUnique = signal<boolean | null>(null);
-  protected readonly volunteerSearch = signal('');
-
-  // Filter out volunteers that are already signed up
-  protected readonly volunteerSearchResults = computed(() => {
-    const search = this.volunteerSearch().toLowerCase().trim();
-    if (!search) return [];
-
-    const rosterIds = new Set(this.roster().map((r) => String(r.person_id)));
-    return this.allVolunteers().filter((v) => {
-      if (rosterIds.has(String(v.id))) return false;
-      const fullName = `${v.first_name || ''} ${v.last_name || ''}`.toLowerCase();
-      const email = (v.email || '').toLowerCase();
-      return fullName.includes(search) || email.includes(search);
-    });
-  });
-
-  protected slugManuallyEdited = false;
-
-  public readonly id = input<string>();
-
-  constructor() {
-    const nameSignal = computed(() => this.payload().name);
-    effect(() => {
-      const name = nameSignal();
-      if (this.isNew() && !this.slugManuallyEdited) {
-        const suggested = this.slugify(name);
-        if (untracked(this.payload).slug !== suggested) {
-          this.payload.update((p) => ({
-            ...p,
-            slug: suggested,
-          }));
-        }
-      }
-    });
-
-    const slugSignal = computed(() => this.payload().slug);
-    effect(() => {
-      const slug = slugSignal();
-      if (this.slugTimeoutId) {
-        clearTimeout(this.slugTimeoutId);
-        this.slugTimeoutId = null;
-      }
-
-      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
-        this.slugUnique.set(null);
-        this.slugChecking.set(false);
-        return;
-      }
-
-      this.slugChecking.set(true);
-      this.slugTimeoutId = setTimeout(() => {
-        void (async () => {
-          try {
-            const res = await this.volunteerEventsSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
-            if (untracked(slugSignal) === slug) {
-              this.slugUnique.set(res.unique);
-            }
-          } catch (err) {
-            console.error('Failed to check slug uniqueness', err);
-          } finally {
-            if (untracked(slugSignal) === slug) {
-              this.slugChecking.set(false);
-            }
-          }
-        })();
-      }, 300);
-    });
-  }
+  protected readonly status = signal<{
+    connected: boolean;
+    msEmail: string | null;
+    syncedAt: Date | string | null;
+    syncing?: boolean;
+    lastSyncError?: string | null;
+    lastSyncErrorAt?: Date | string | null;
+  } | null>(null);
+  protected readonly isLoading = signal(true);
+  protected readonly isConnecting = signal(false);
+  protected readonly isSyncing = signal(false);
+  protected readonly connectError = signal<string | null>(null);
+  protected readonly lastSyncResult = signal<{ inserted: number } | null>(null);
+  private pollingTimer: ReturnType<typeof setInterval> | null = null;
 
   public ngOnInit(): void {
-    const end = this._loading.begin();
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    // Handle OAuth redirect result (ms_connected or ms_error query params)
+    const params = this.route.snapshot.queryParamMap;
+    if (params.has('ms_connected')) {
+      this.alertSvc.showSuccess('Office 365 account connected successfully!');
+    } else if (params.has('ms_error')) {
+      this.connectError.set(params.get('ms_error'));
+    }
+
+    await this.loadStatus();
+  }
+
+  protected async connect() {
+    this.isConnecting.set(true);
+    this.connectError.set(null);
     try {
-      void Promise.all([this.loadVolunteers(), this.loadEvent()]).finally(() => end());
+      const returnTo = window.location.pathname + window.location.search;
+      const result = await this.api.msSync.getAuthUrl.query({ returnTo });
+      window.location.href = result.url;
     } catch {
-      end();
+      this.connectError.set('Failed to initiate Microsoft sign-in. Please try again.');
+      this.isConnecting.set(false);
     }
   }
 
-  // Roster Management
-  protected async addVolunteer(person: any) {
+  protected async syncNow() {
+    this.isSyncing.set(true);
+    this.lastSyncResult.set(null);
     try {
-      await this.volunteerSvc.signupVolunteer({
-        event_id: this.id()!,
-        person_id: String(person.id),
-        status: 'signed_up',
-      });
-      this.volunteerSearch.set('');
-      this.alerts.showSuccess(`${person.first_name} added to roster`);
-      await this.loadRoster();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add volunteer');
+      await this.api.msSync.syncNow.mutate();
+      await this.loadStatus();
+    } catch {
+      this.alertSvc.showError('Sync failed. Please try reconnecting your account.');
+      this.isSyncing.set(false);
     }
   }
 
-  protected copyToClipboard(url: string) {
-    navigator.clipboard
-      .writeText(url)
-      .then(() => this.alerts.showSuccess('Link copied to clipboard'))
-      .catch((err) => console.error('Failed to copy', err));
-  }
-
-  protected async deleteEvent() {
-    if (!this.id()) return;
+  protected async forceFullResync() {
     const confirmed = await this.dialogs.confirm({
-      title: 'Delete Event',
-      message: 'Are you sure you want to delete this event? This will also delete all signed up shifts.',
-      variant: 'danger',
-      confirmText: 'Delete',
+      title: 'Force Full Re-sync',
+      message: 'This will reset the sync position and re-download all emails from scratch. Continue?',
+      variant: 'warning',
+      confirmText: 'Re-sync',
     });
     if (!confirmed) return;
 
-    this.saving.set(true);
+    this.isSyncing.set(true);
+    this.lastSyncResult.set(null);
     try {
-      await this.volunteerEventsSvc.delete(this.id()!);
-      this.volunteerEventsSvc.triggerRefresh();
-      this.alerts.showSuccess('Event deleted');
-      await this.router.navigate(['/events/shifts']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
-    } finally {
-      this.saving.set(false);
+      await this.api.msSync.resetSync.mutate();
+      await this.api.msSync.syncNow.mutate();
+      await this.loadStatus();
+    } catch {
+      this.alertSvc.showError('Failed to start re-sync. Please try again.');
+      this.isSyncing.set(false);
     }
   }
 
-  protected async loadEvent() {
-    if (this.isNew()) {
-      const state = window.history.state;
-      if (state && state.cloneData) {
-        const event = state.cloneData;
-        this.payload.set({
-          name: event.name ? `${event.name} (Copy)` : '',
-          slug: event.slug ? `${event.slug}-copy` : '',
-          description: event.description ?? '',
-          location_address: event.location_address ?? '',
-          start_time: this.toDatetimeLocalString(event.start_time),
-          end_time: this.toDatetimeLocalString(event.end_time),
-          capacity: event.capacity ?? null,
-          contact_email: event.contact_email ?? '',
-          contact_phone: event.contact_phone ?? '',
-          is_private: !!event.is_private,
-          send_reminder: event.send_reminder !== false,
-          send_signup_confirmation: event.send_signup_confirmation !== false,
-          send_volunteer_alert: event.send_volunteer_alert !== false,
-        });
-      }
-      return;
-    }
-
-    try {
-      const event = await this.volunteerEventsSvc.getById(this.id()!);
-      this.detail.set(event);
-      this.payload.set({
-        name: event.name ?? '',
-        slug: event.slug ?? '',
-        description: event.description ?? '',
-        location_address: event.location_address ?? '',
-        start_time: this.toDatetimeLocalString(event.start_time),
-        end_time: this.toDatetimeLocalString(event.end_time),
-        capacity: event.capacity ?? null,
-        contact_email: event.contact_email ?? '',
-        contact_phone: event.contact_phone ?? '',
-        is_private: !!event.is_private,
-        send_reminder: event.send_reminder !== false,
-        send_signup_confirmation: event.send_signup_confirmation !== false,
-        send_volunteer_alert: event.send_volunteer_alert !== false,
-      });
-
-      if (Array.isArray((event as any).fields) && (event as any).fields.length > 0) {
-        this.selectedFields.set((event as any).fields);
-      }
-
-      await this.loadRoster();
-    } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
-      this.alerts.showError(this.error()!);
-    }
-  }
-
-  protected async loadRoster() {
-    if (!this.id()) return;
-    try {
-      const roster = await this.volunteerSvc.getShiftsForEvent(this.id()!);
-      this.roster.set(roster || []);
-    } catch (err) {
-      console.error('Failed to load event roster', err);
-    }
-  }
-
-  protected async loadVolunteers() {
-    try {
-      const res = await this.personsSvc.getAll({ limit: 1000, tags: ['volunteer'] });
-      this.allVolunteers.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to load volunteers', err);
-    }
-  }
-
-  protected onSlugInput() {
-    this.slugManuallyEdited = true;
-  }
-
-  protected async removeVolunteer(shift: any) {
+  protected async disconnect() {
     const confirmed = await this.dialogs.confirm({
-      title: 'Remove Volunteer',
-      message: 'Remove this person from the event roster?',
-      variant: 'danger',
-      confirmText: 'Remove',
+      title: 'Disconnect Office 365',
+      message: 'Are you sure you want to disconnect your Office 365 account?',
+      variant: 'warning',
+      confirmText: 'Disconnect',
     });
     if (!confirmed) return;
+
+    const removeLocal = await this.dialogs.confirm({
+      title: 'Delete Synced Emails',
+      message: 'Would you also like to delete all locally stored emails that were synced from this account?',
+      variant: 'danger',
+      confirmText: 'Delete Emails',
+      cancelText: 'Keep Emails',
+    });
     try {
-      await this.volunteerSvc.deleteShift(shift.id);
-      this.alerts.showSuccess('Volunteer removed');
-      await this.loadRoster();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove volunteer');
+      await this.api.msSync.disconnect.mutate({ removeLocalEmails: removeLocal });
+      this.status.set({ connected: false, msEmail: null, syncedAt: null });
+      this.lastSyncResult.set(null);
+      this.alertSvc.showSuccess('Office 365 account disconnected.');
+    } catch {
+      this.alertSvc.showError('Failed to disconnect. Please try again.');
     }
   }
 
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-    this.form().markAsTouched();
-    if (this.form().invalid()) return;
+  protected formatDate(date: Date | string | null) {
+    if (!date) return 'Never';
+    return new Date(date).toLocaleString();
+  }
 
-    if (this.endBeforeStartError()) {
-      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
-      return;
-    }
-
-    if (this.slugUnique() === false) {
-      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
-      return;
-    }
-
-    this.saving.set(true);
-    this.error.set(null);
-
-    const raw = this.payload();
-    const data = {
-      name: raw.name.trim(),
-      slug: raw.slug.trim(),
-      description: raw.description?.trim() || null,
-      location_address: raw.location_address?.trim() || null,
-      start_time: new Date(raw.start_time),
-      end_time: new Date(raw.end_time),
-      capacity: raw.capacity ? Number(raw.capacity) : null,
-      contact_email: raw.contact_email?.trim() || null,
-      contact_phone: raw.contact_phone?.trim() || null,
-      is_private: !!raw.is_private,
-      send_reminder: !!raw.send_reminder,
-      send_signup_confirmation: !!raw.send_signup_confirmation,
-      send_volunteer_alert: !!raw.send_volunteer_alert,
-      fields: this.selectedFields(),
-    };
-
+  private async loadStatus() {
     try {
-      if (this.isNew()) {
-        const res = await this.volunteerEventsSvc.add(data as AddVolunteerEventType);
-        this.volunteerEventsSvc.triggerRefresh();
-        this.alerts.showSuccess('Event created successfully');
-        await this.router.navigate(['/events/shifts', res.id]);
+      const s = await this.api.msSync.getConnectionStatus.query();
+      this.status.set(s);
+      if (s?.syncing) {
+        this.isSyncing.set(true);
+        this.startPollingStatus();
       } else {
-        await this.volunteerEventsSvc.update(this.id()!, data as UpdateVolunteerEventType);
-        this.volunteerEventsSvc.triggerRefresh();
-        this.alerts.showSuccess('Event updated successfully');
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/events/shifts', this.id()]);
-        }
+        this.isSyncing.set(false);
+        this.stopPollingStatus();
       }
     } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
-      this.alerts.showError(this.error()!);
+      console.error('Failed to load connection status:', err);
+      this.isSyncing.set(false);
     } finally {
-      this.saving.set(false);
+      this.isLoading.set(false);
     }
   }
 
-  protected async saveShiftDetails(shift: any) {
+  private startPollingStatus() {
+    if (this.pollingTimer) return;
+    this.pollingTimer = setInterval(() => void this.pollStep(), 4000);
+    this.destroyRef.onDestroy(() => this.stopPollingStatus());
+  }
+
+  private async pollStep(): Promise<void> {
     try {
-      await this.volunteerSvc.updateShift(shift.id, {
-        status: shift.status,
-        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
-        notes: shift.notes || null,
-      });
-      this.alerts.showSuccess('Shift details saved');
-      await this.loadRoster();
+      const s = await this.api.msSync.getConnectionStatus.query();
+      this.status.set(s);
+      if (!s?.syncing) {
+        this.isSyncing.set(false);
+        this.stopPollingStatus();
+        this.alertSvc.showSuccess('Office 365 mailbox sync completed.');
+      }
     } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to save shift details');
+      console.error('Error polling sync status:', err);
+      this.stopPollingStatus();
     }
   }
 
-  protected slugify(text: string): string {
-    return text
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-  }
-
-  protected toDatetimeLocalString(val: any): string {
-    if (!val) return '';
-    const date = new Date(val);
-    if (Number.isNaN(date.getTime())) return '';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
-
-  protected updateShiftHours(shift: any, hours: any) {
-    shift.hours_worked = hours ? Number(hours) : null;
-  }
-
-  protected updateShiftNotes(shift: any, notes: any) {
-    shift.notes = notes || null;
-  }
-
-  protected async updateShiftStatus(shift: any, status: any) {
-    try {
-      await this.volunteerSvc.updateShift(shift.id, {
-        status,
-        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
-        notes: shift.notes || null,
-      });
-      this.alerts.showSuccess('Shift status updated');
-      await this.loadRoster();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update shift');
+  private stopPollingStatus() {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
     }
   }
 }
@@ -41341,189 +39915,152 @@ export class ShiftsGridComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/user-edit.ts
+## File: apps/frontend/src/app/experiences/teams/ui/team-view.ts
 
 ```typescript
+import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, required, email, disabled } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { PcTabOption, TabPanel, Tabs } from '@uxcommon/components/tabs/tabs';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import type { IAuthUser } from '../../../../../../../libs/common/src';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-import { Toggle as PcToggle } from '@uxcommon/components/toggle/toggle';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-
-import { UserAdminService } from '../services/useradmin-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { UserService } from '../../../services/user.service';
+import { TasksService } from '../../tasks/services/tasks-service';
+import { TeamsService } from '../services/teams-service';
 
 @Component({
-  selector: 'pc-user-edit',
-  imports: [PcInput, PcSelect, PcToggle, RouterModule, Icon, PcDetailHeader, PcCard],
-  templateUrl: './user-edit.html',
+  selector: 'pc-team-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    RecordActivities,
+    DetailLayout,
+    StatCard,
+    Tabs,
+    TabPanel,
+    StatusBadge,
+    ProfileCard,
+    DetailRow,
+  ],
+  templateUrl: './team-view.html',
 })
-export class UserEditComponent {
+export class TeamViewComponent {
   readonly id = input.required<string>();
 
-  private readonly alerts = inject(AlertService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly teamsSvc = inject(TeamsService);
+  private readonly tasksSvc = inject(TasksService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
   private readonly dialogs = inject(ConfirmDialogService);
 
   private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly team = signal<any>(null);
+  protected readonly teamTasks = signal<any[]>([]);
+  protected readonly volunteers = computed(() => this.team()?.volunteers ?? []);
+  protected readonly users = signal<IAuthUser[]>([]);
+  private usersById = new Map<string, IAuthUser>();
 
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
-  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Teams', route: '/teams' },
+    { label: this.team()?.name || 'Team' },
+  ]);
 
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-    role: '',
-    verified: false,
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly teamTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'volunteers', label: `Volunteers (${this.volunteers().length})`, icon: 'user-group' },
+    { id: 'lists', label: `Target Lists (${this.team()?.lists?.length || 0})`, icon: 'queue-list' },
+    { id: 'tasks', label: `Team Tasks (${this.teamTasks().length})`, icon: 'document-check' },
+  ]);
+
+  protected readonly captainName = computed(() => {
+    const captainId = this.team()?.team_captain_id;
+    if (!captainId) return '—';
+    const match = this.volunteers().find((v: any) => v.id === captainId);
+    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
   });
 
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-    disabled(p.role, () => this.currentUserRole() === 'admin' && this.isOwnerBeingEdited());
-    disabled(p.verified, () => true);
+  protected readonly leadName = computed(() => {
+    const leadId = this.team()?.team_lead_user_id;
+    if (!leadId) return '—';
+    const match = this.users().find((u) => String(u.id) === String(leadId));
+    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
   });
 
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
+  protected readonly activeTasksCount = computed(() => {
+    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'canceled').length;
   });
 
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => {
-        if (!currentId) {
-          this.error.set('Missing user identifier.');
-          return;
-        }
-        void this.load();
-      });
+      void untracked(() => this.loadAllData(currentId));
     });
+
+    // Load users
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
   }
 
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid() || !this.id()) {
-      return;
-    }
-
-    const payload = this.buildPayload();
-
-    this.saving.set(true);
-    this.error.set(null);
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
     try {
-      await this.users.update(this.id(), payload);
-      this.alerts.showSuccess('User updated');
-      this.users.triggerRefresh();
-      await this.load();
-      this.form().reset();
-      if (typeof done === 'function') {
-        done();
-      }
+      // 1. Load team detail
+      const data = await this.teamsSvc.getById(id);
+      this.team.set(data);
+
+      // 2. Load associated tasks
+      const res = await this.tasksSvc.getAll({
+        filterModel: { team_id: { value: id } },
+      } as any);
+      this.teamTasks.set(res?.rows ?? []);
     } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to update user';
-      this.error.set(message);
-      this.alerts.showError(message);
+      this.alertSvc.showError('Failed to load team details: ' + String(err));
     } finally {
-      this.saving.set(false);
+      end();
+      this.initialized.set(true);
     }
   }
 
-  protected resetForm() {
-    const user = this.detail();
-    if (!user) return;
-    this.setForm(user);
-    this.form().reset();
+  protected editTeam() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
-  protected readonly resettingPassword = signal(false);
-
-  protected async triggerPasswordReset() {
-    if (!this.id()) return;
-    this.resettingPassword.set(true);
-    try {
-      await this.users.adminTriggerPasswordReset(this.id());
-      this.alerts.showSuccess('Password reset email sent to user');
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to trigger password reset';
-      this.alerts.showError(message);
-    } finally {
-      this.resettingPassword.set(false);
-    }
-  }
-
-  protected async deleteUser() {
+  protected async deleteTeam() {
     if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
-      title: 'Delete User',
-      message: 'Are you sure you want to delete this user? This action cannot be undone.',
+      title: 'Delete Team',
+      message: 'Are you sure you want to delete this team? This action cannot be undone.',
       variant: 'danger',
       confirmText: 'Delete',
     });
     if (!confirmed) return;
-    this.saving.set(true);
-    try {
-      const success = await this.users.delete(this.id());
-      if (!success) {
-        throw new Error('User deletion is not supported');
-      }
-      this.alerts.showSuccess('User deleted');
-      await this.router.navigate(['/users']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  private async load() {
     const end = this._loading.begin();
-    this.error.set(null);
     try {
-      const user = await this.users.getById(this.id());
-      this.detail.set(user);
-      this.setForm(user);
-      this.form().reset();
+      await this.teamsSvc.delete(this.id());
+      this.teamsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Team deleted');
+      await this.router.navigate(['/teams']);
     } catch (err) {
       const message =
         err instanceof Error && err.message
@@ -41533,37 +40070,56 @@ export class UserEditComponent {
               typeof err['data']['message'] === 'string' &&
               err['data']['message']
             ? err['data']['message']
-            : 'Failed to load user';
-      this.error.set(message);
-      this.alerts.showError(message);
+            : 'Unable to delete team';
+      this.alertSvc.showError(message);
     } finally {
       end();
     }
   }
 
-  private setForm(user: IAuthUserDetail) {
-    this.payload.set({
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name ?? '',
-      role: user.role ?? '',
-      verified: Boolean(user.verified),
-    });
+  protected getCreatedAt(): Date | null {
+    const date = this.team()?.created_at;
+    return date ? new Date(date) : null;
   }
 
-  private buildPayload(): UpdateAuthUserType {
-    const raw = this.payload();
-    const normalize = (value: string | null | undefined) => {
-      const trimmed = value?.trim() ?? '';
-      return trimmed.length ? trimmed : null;
-    };
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: normalize(raw.last_name),
-      role: normalize(raw.role),
-      verified: Boolean(raw.verified),
-    } as UpdateAuthUserType;
+  protected getUpdatedAt(): Date | null {
+    const date = this.team()?.updated_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+
+  protected getPriorityType(priority: string | null | undefined): any {
+    const p = String(priority || '').toLowerCase();
+    switch (p) {
+      case 'urgent':
+        return 'error';
+      case 'high':
+        return 'warning';
+      case 'medium':
+        return 'info';
+      default:
+        return 'ghost';
+    }
+  }
+
+  protected getStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    switch (s) {
+      case 'done':
+        return 'success';
+      case 'in_progress':
+        return 'info';
+      case 'blocked':
+        return 'error';
+      case 'canceled':
+        return 'neutral';
+      default:
+        return 'ghost';
+    }
   }
 }
 
@@ -42379,104 +40935,6 @@ export class WorkflowFormComponent implements OnInit {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/layout/breadcrumb/breadcrumb.ts
-
-```typescript
-import { Component, computed, effect, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
-
-import { Icon } from '@icons/icon';
-import { ISidebarItem } from '../sidebar/sidebar-items';
-import { SidebarService } from '../sidebar/sidebar-service';
-
-@Component({
-  selector: 'pc-breadcrumb',
-  imports: [Icon],
-  template: `
-    <div class="breadcrumbs mt-auto pl-2 text-sm font-light text-gray-500">
-      <ul>
-        <li i18n>home</li>
-        @for (crumb of crumbs; track crumb) {
-          <li>
-            <span class="cursor-pointer" (click)="navigate(crumb)">{{ crumb }}</span>
-          </li>
-        }
-        <li>
-          <pc-icon
-            [name]="getIcon()"
-            [size]="4"
-            class="cursor-pointer hover:text-primary"
-            [class.text-primary]="favourite()"
-            [class.opacity-40]="!canToggleFavourite()"
-            (mouseenter)="hovered.set(true)"
-            (mouseleave)="hovered.set(false)"
-            (click)="toggleFavourite()"
-          ></pc-icon>
-        </li>
-      </ul>
-    </div>
-  `,
-})
-export class Breadcrumb {
-  private readonly router = inject(Router);
-
-  private readonly sidebarSvc = inject(SidebarService);
-
-  private readonly navigationUrl = computed(() => {
-    const navigation = this.router.currentNavigation();
-    if (navigation) {
-      const finalUrl = navigation.finalUrl ?? navigation.initialUrl;
-      return finalUrl.toString();
-    }
-
-    return this.router.url;
-  });
-
-  private currentItem?: ISidebarItem;
-  protected favourite = signal(false);
-  protected hovered = signal(false);
-
-  protected crumbs: string[] = [];
-
-  constructor() {
-    effect(() => this.handleNavigationChange(this.navigationUrl()));
-  }
-
-  public navigate(destination: string) {
-    const route = this.sidebarSvc.getRoute(destination);
-    if (route) {
-      void this.router.navigateByUrl(route);
-    }
-  }
-
-  public toggleFavourite() {
-    if (!this.currentItem?.route) {
-      return;
-    }
-
-    const next = this.sidebarSvc.toggleFavourite(this.currentItem.route);
-    this.favourite.set(next);
-    this.currentItem.favourite = next;
-  }
-
-  protected canToggleFavourite() {
-    return !!this.currentItem?.route;
-  }
-
-  protected getIcon() {
-    if (this.favourite()) return this.hovered() ? 'bookmark-slash' : 'bookmark-filled';
-    else return this.hovered() ? 'bookmark-plus' : 'bookmark';
-  }
-
-  private handleNavigationChange(url: string) {
-    const cleanUrl = url.split('?')[0]!.split('#')[0]!;
-    this.crumbs = cleanUrl.split('/').slice(1).filter(Boolean);
-    this.currentItem = this.sidebarSvc.findItemForUrl(url);
-    this.favourite.set(!!this.currentItem?.favourite);
-  }
 }
 ```
 
@@ -43351,391 +41809,341 @@ export class EmailFolderList implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/events/ui/event-form.ts
+## File: apps/frontend/src/app/experiences/events/ui/event-view.ts
 
 ```typescript
-import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
-import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
-import { environment } from '../../../../environments/environment';
-
-import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../../libs/common/src';
-import { EventsService } from '../../../services/api/events-service';
+import { Icon } from '@icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { environment } from '../../../../environments/environment';
 import { EventsFrontendService } from '../services/events-frontend-service';
+import { EventsService } from '../../../services/api/events-service';
+import { PersonsService } from '../../persons/services/persons-service';
 
 @Component({
-  selector: 'pc-event-form',
+  selector: 'pc-event-view',
   imports: [
-    FormsModule,
-    FormField,
-    PcInput,
-    PcTextarea,
+    DatePipe,
     RouterModule,
+    FormsModule,
     Icon,
-    PcDetailHeader,
-    PcEntityOverview,
+    RecordActivities,
+    DetailLayout,
+    Tabs,
+    TabPanel,
+    StatCard,
+    ProfileCard,
+    DetailRow,
     PcCard,
-    FieldsSelector,
-    PublicLinkPanel,
   ],
-  templateUrl: './event-form.html',
+  templateUrl: './event-view.html',
   providers: [EventsService],
 })
-export class EventFormComponent implements OnInit {
-  private readonly _loading = createLoadingGate();
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
+export class EventViewComponent {
+  readonly id = input.required<string>();
+
+  private readonly alertSvc = inject(AlertService);
   private readonly eventsFrontendSvc = inject(EventsFrontendService);
   private readonly eventsSvc = inject(EventsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
 
-  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
 
-  protected readonly addingTicket = signal(false);
-  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+  protected readonly event = signal<any | null>(null);
+  protected readonly ticketTypes = signal<any[]>([]);
+  protected readonly registrations = signal<any[]>([]);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Events', route: '/events/pages' },
+    { label: this.event()?.name || 'Event' },
+  ]);
+
+  // Person search for adding registrations
+  protected readonly personSearch = signal('');
+  protected readonly personSearchResults = signal<any[]>([]);
+  protected readonly selectedPersonId = signal<string | null>(null);
+  protected readonly selectedTicketTypeId = signal<string | null>(null);
+  protected readonly addingRegistration = signal(false);
+  protected readonly searchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  protected activeTab = signal<string>('attendees');
+
+  protected readonly eventTabs = computed<PcTabOption[]>(() => [
+    {
+      id: 'attendees',
+      label: `Attendees (${this.registrations().filter((r) => r.status !== 'cancelled').length})`,
+      icon: 'user-group',
+    },
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+  ]);
+
+  protected readonly eventPassed = computed(() => {
+    const end = this.event()?.end_time;
+    if (!end) return false;
+    return new Date(end) < new Date();
+  });
+
+  protected readonly activeCount = computed(() => this.registrations().filter((r) => r.status !== 'cancelled').length);
+
+  protected readonly attendedCount = computed(() => this.registrations().filter((r) => r.status === 'attended').length);
+
   protected readonly publicUrl = computed(() => {
-    const slug = this.payload().slug;
-    if (!slug || this.isNew()) return '';
+    const slug = this.event()?.slug;
+    if (!slug) return '';
     return `${environment.apiUrl}/api/event-pages/view/${slug}`;
   });
-  protected readonly detail = signal<any>(null);
-  protected readonly payload = signal({
-    name: '',
-    slug: '',
-    description: '',
-    location_address: '',
-    start_time: '',
-    end_time: '',
-    capacity: null as number | null,
-    contact_email: '',
-    contact_phone: '',
-    is_published: false,
-    send_reminder: true,
-    send_registration_confirmation: true,
+
+  protected readonly remainingCapacity = computed(() => {
+    const ev = this.event();
+    if (!ev || ev.capacity === null || ev.capacity === undefined) return 'Unlimited';
+    return Math.max(0, ev.capacity - this.activeCount());
   });
-  protected readonly endBeforeStartError = computed(() => {
-    const { start_time, end_time } = this.payload();
-    if (!start_time || !end_time) return false;
-    return new Date(end_time) <= new Date(start_time);
-  });
-  protected readonly error = signal<string | null>(null);
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddEventObj);
-  });
-  protected readonly isNew = computed(() => !this.id());
-  protected readonly loading = this._loading.visible;
-  protected readonly newTicket = signal({ name: '', description: '', price_cents: 0, capacity: null as number | null });
-  protected readonly saving = signal(false);
-  protected readonly slugChecking = signal(false);
-  protected readonly slugUnique = signal<boolean | null>(null);
-
-  // Ticket types
-  protected readonly ticketTypes = signal<any[]>([]);
-
-  protected slugManuallyEdited = false;
-
-  protected setNewTicketName(v: string) {
-    this.newTicket.update((t) => ({ ...t, name: v }));
-  }
-  protected setNewTicketPrice(v: string) {
-    this.newTicket.update((t) => ({ ...t, price_cents: +v }));
-  }
-  protected setNewTicketCapacity(v: string) {
-    this.newTicket.update((t) => ({ ...t, capacity: v ? +v : null }));
-  }
-
-  public readonly id = input<string>();
 
   constructor() {
-    const nameSignal = computed(() => this.payload().name);
     effect(() => {
-      const name = nameSignal();
-      if (this.isNew() && !this.slugManuallyEdited) {
-        const suggested = this.slugify(name);
-        if (untracked(this.payload).slug !== suggested) {
-          this.payload.update((p) => ({ ...p, slug: suggested }));
-        }
-      }
-    });
-
-    const slugSignal = computed(() => this.payload().slug);
-    effect(() => {
-      const slug = slugSignal();
-      if (this.slugTimeoutId) {
-        clearTimeout(this.slugTimeoutId);
-        this.slugTimeoutId = null;
-      }
-      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
-        this.slugUnique.set(null);
-        this.slugChecking.set(false);
-        return;
-      }
-      this.slugChecking.set(true);
-      this.slugTimeoutId = setTimeout(() => {
-        void (async () => {
-          try {
-            const res = await this.eventsFrontendSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
-            if (untracked(slugSignal) === slug) {
-              this.slugUnique.set(res.unique);
-            }
-          } catch (err) {
-            console.error('Failed to check slug uniqueness', err);
-          } finally {
-            if (untracked(slugSignal) === slug) {
-              this.slugChecking.set(false);
-            }
-          }
-        })();
-      }, 300);
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
     });
   }
 
-  public ngOnInit(): void {
+  protected async loadAllData(id: string) {
     const end = this._loading.begin();
-    void this.loadEvent().finally(() => end());
+    try {
+      const [eventData, ticketData, regData] = await Promise.all([
+        this.eventsFrontendSvc.getById(id),
+        this.eventsSvc.getTicketTypes(id),
+        this.eventsSvc.getRegistrations(id),
+      ]);
+      this.event.set(eventData);
+      this.ticketTypes.set(ticketData || []);
+      this.registrations.set(regData || []);
+    } catch (err) {
+      this.alertSvc.showError('Failed to load event details: ' + String(err));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
   }
 
-  protected cancelAddTicket() {
-    this.addingTicket.set(false);
+  protected copyPublicUrl() {
+    const url = this.publicUrl();
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(
+      () => this.alertSvc.showSuccess('Public RSVP link copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected editEvent() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteEvent() {
-    if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete Event Page',
-      message: 'Are you sure you want to delete this event page? All registrations will also be deleted.',
+      message: 'Are you sure you want to delete this event? All registrations will also be deleted.',
       variant: 'danger',
       confirmText: 'Delete',
     });
     if (!confirmed) return;
 
-    this.saving.set(true);
+    const end = this._loading.begin();
     try {
-      await this.eventsFrontendSvc.delete(this.id()!);
+      await this.eventsFrontendSvc.delete(this.id());
       this.eventsFrontendSvc.triggerRefresh();
-      this.alerts.showSuccess('Event deleted');
+      this.alertSvc.showSuccess('Event deleted');
       await this.router.navigate(['/events/pages']);
     } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Unable to delete event');
     } finally {
-      this.saving.set(false);
+      end();
     }
   }
 
-  protected async deleteTicketType(id: string) {
+  // Person search
+  protected async onPersonSearch(query: string) {
+    this.personSearch.set(query);
+    this.selectedPersonId.set(null);
+    if (!query.trim()) {
+      this.personSearchResults.set([]);
+      return;
+    }
+    try {
+      const res = await this.personsSvc.getAll({ searchStr: query.toLowerCase().trim(), startRow: 0, endRow: 10 });
+      this.personSearchResults.set(res?.rows || []);
+    } catch {
+      this.personSearchResults.set([]);
+    }
+  }
+
+  protected selectPerson(person: any) {
+    this.selectedPersonId.set(String(person.id));
+    this.personSearch.set(`${person.first_name} ${person.last_name}`.trim());
+    this.personSearchResults.set([]);
+  }
+
+  protected async addRegistration() {
+    const personId = this.selectedPersonId();
+    if (!personId) {
+      this.alertSvc.showError('Please select a person to register.');
+      return;
+    }
+    this.addingRegistration.set(true);
+    try {
+      await this.eventsSvc.addRegistration({
+        event_id: this.id(),
+        person_id: personId,
+        ticket_type_id: this.selectedTicketTypeId() || null,
+      });
+      this.alertSvc.showSuccess('Registration added');
+      this.personSearch.set('');
+      this.selectedPersonId.set(null);
+      this.selectedTicketTypeId.set(null);
+      this.personSearchResults.set([]);
+      const regs = await this.eventsSvc.getRegistrations(this.id());
+      this.registrations.set(regs || []);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to add registration');
+    } finally {
+      this.addingRegistration.set(false);
+    }
+  }
+
+  protected async checkIn(reg: any) {
+    try {
+      await this.eventsSvc.checkIn(String(reg.id));
+      this.alertSvc.showSuccess(`${reg.first_name} checked in`);
+      const regs = await this.eventsSvc.getRegistrations(this.id());
+      this.registrations.set(regs || []);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to check in');
+    }
+  }
+
+  protected async updateStatus(reg: any, status: string) {
+    try {
+      await this.eventsSvc.updateRegistration(String(reg.id), { status: status as any });
+      const regs = await this.eventsSvc.getRegistrations(this.id());
+      this.registrations.set(regs || []);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to update status');
+    }
+  }
+
+  protected async deleteRegistration(reg: any) {
     const confirmed = await this.dialogs.confirm({
-      title: 'Delete Ticket Type',
-      message: 'Delete this ticket type?',
+      title: 'Remove Registration',
+      message: `Remove ${reg.first_name} ${reg.last_name} from this event?`,
       variant: 'danger',
-      confirmText: 'Delete',
+      confirmText: 'Remove',
     });
     if (!confirmed) return;
     try {
-      await this.eventsSvc.deleteTicketType(id);
-      this.alerts.showSuccess('Ticket type deleted');
-      await this.loadTicketTypes();
+      await this.eventsSvc.deleteRegistration(String(reg.id));
+      this.alertSvc.showSuccess('Registration removed');
+      const regs = await this.eventsSvc.getRegistrations(this.id());
+      this.registrations.set(regs || []);
     } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete ticket type');
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to remove registration');
     }
   }
 
-  protected formatPrice(cents: number): string {
-    if (!cents) return 'Free';
-    return `$${(cents / 100).toFixed(2)}`;
+  protected exportCsv() {
+    const regs = this.registrations().filter((r) => r.status !== 'cancelled');
+    const headers = ['First Name', 'Last Name', 'Email', 'Mobile', 'Ticket Type', 'Price', 'Status', 'Checked In At'];
+    const rows = regs.map((r) => [
+      r.first_name ?? '',
+      r.last_name ?? '',
+      r.email ?? '',
+      r.mobile ?? '',
+      r.ticket_type_name ?? '',
+      r.ticket_price_cents != null ? `$${(r.ticket_price_cents / 100).toFixed(2)}` : 'Free',
+      r.status ?? '',
+      r.checked_in_at ? new Date(r.checked_in_at).toLocaleString() : '',
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${this.event()?.slug || 'event'}-attendees.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
-  protected async loadEvent() {
-    if (this.isNew()) return;
-
-    try {
-      const event = (await this.eventsFrontendSvc.getById(this.id()!)) as any;
-      this.detail.set(event);
-      this.payload.set({
-        name: event.name ?? '',
-        slug: event.slug ?? '',
-        description: event.description ?? '',
-        location_address: event.location_address ?? '',
-        start_time: this.toDatetimeLocalString(event.start_time),
-        end_time: this.toDatetimeLocalString(event.end_time),
-        capacity: event.capacity ?? null,
-        contact_email: event.contact_email ?? '',
-        contact_phone: event.contact_phone ?? '',
-        is_published: !!event.is_published,
-        send_reminder: event.send_reminder !== false,
-        send_registration_confirmation: event.send_registration_confirmation !== false,
-      });
-      if (Array.isArray(event.fields) && event.fields.length > 0) {
-        this.selectedFields.set(event.fields);
-      }
-      await this.loadTicketTypes();
-    } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
-      this.alerts.showError(this.error()!);
+  protected getStatusType(status: string | null | undefined): any {
+    switch (String(status || '').toLowerCase()) {
+      case 'attended':
+        return 'success';
+      case 'registered':
+        return 'warning';
+      case 'no_show':
+        return 'error';
+      case 'cancelled':
+        return 'neutral';
+      default:
+        return 'ghost';
     }
   }
 
-  protected async loadTicketTypes() {
-    if (!this.id()) return;
-    try {
-      const types = await this.eventsSvc.getTicketTypes(this.id()!);
-      this.ticketTypes.set(types || []);
-    } catch (err) {
-      console.error('Failed to load ticket types', err);
-    }
-  }
-
-  protected onSlugInput() {
-    this.slugManuallyEdited = true;
-  }
-
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) done.preventDefault();
-    this.form().markAsTouched();
-    if (this.form().invalid()) return;
-
-    if (this.endBeforeStartError()) {
-      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
-      return;
-    }
-
-    if (this.slugUnique() === false) {
-      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
-      return;
-    }
-
-    this.saving.set(true);
-    this.error.set(null);
-
-    const raw = this.payload();
-    const data = {
-      name: raw.name.trim(),
-      slug: raw.slug.trim(),
-      description: raw.description?.trim() || null,
-      location_address: raw.location_address?.trim() || null,
-      start_time: new Date(raw.start_time),
-      end_time: new Date(raw.end_time),
-      capacity: raw.capacity ? Number(raw.capacity) : null,
-      contact_email: raw.contact_email?.trim() || null,
-      contact_phone: raw.contact_phone?.trim() || null,
-      is_published: !!raw.is_published,
-      send_reminder: !!raw.send_reminder,
-      send_registration_confirmation: !!raw.send_registration_confirmation,
-      fields: this.selectedFields(),
-    };
-
-    try {
-      if (this.isNew()) {
-        const res = await this.eventsFrontendSvc.add(data as AddEventType);
-        this.eventsFrontendSvc.triggerRefresh();
-        this.alerts.showSuccess('Event created successfully');
-        await this.router.navigate(['/events/pages', (res as any).id]);
-      } else {
-        await this.eventsFrontendSvc.update(this.id()!, data as UpdateEventType);
-        this.eventsFrontendSvc.triggerRefresh();
-        this.alerts.showSuccess('Event updated successfully');
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/events/pages', this.id()]);
-        }
-      }
-    } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
-      this.alerts.showError(this.error()!);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async saveNewTicket() {
-    const t = this.newTicket();
-    if (!t.name.trim()) {
-      this.alerts.showError('Ticket type name is required');
-      return;
-    }
-    try {
-      await this.eventsSvc.addTicketType({
-        event_id: this.id()!,
-        name: t.name.trim(),
-        description: t.description?.trim() || null,
-        price_cents: Number(t.price_cents) || 0,
-        capacity: t.capacity ? Number(t.capacity) : null,
-      });
-      this.addingTicket.set(false);
-      this.alerts.showSuccess('Ticket type added');
-      await this.loadTicketTypes();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add ticket type');
-    }
-  }
-
-  protected slugify(text: string): string {
-    return text
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-  }
-
-  // Ticket type management
-  protected startAddTicket() {
-    this.newTicket.set({ name: '', description: '', price_cents: 0, capacity: null });
-    this.addingTicket.set(true);
-  }
-
-  protected toDatetimeLocalString(val: any): string {
-    if (!val) return '';
-    const date = new Date(val);
-    if (Number.isNaN(date.getTime())) return '';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  protected ticketTypeLabel(id: string | null): string {
+    if (!id) return '';
+    const t = this.ticketTypes().find((tt) => tt.id === id);
+    return t ? t.name : '';
   }
 }
 ```
 
-## File: apps/frontend/src/app/experiences/households/ui/household-view.ts
+## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
 
 ```typescript
-import { Component, ElementRef, viewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { Loader } from '@googlemaps/js-api-loader';
-import type { IAuthUser } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
+import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { PeopleInHousehold } from '../../persons/ui/people-in-household';
+import { FormsService } from '../services/forms-service';
+import { ListsService } from '../../lists/services/lists-service';
 import { UserService } from '../../../services/user.service';
-import { HouseholdsService } from '../services/households-service';
-import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { IAuthUser } from '@common';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '@experiences/persons/services/persons-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Tags } from '@experiences/tags/ui/tags';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { environment } from '../../../../environments/environment';
 
 @Component({
-  selector: 'pc-household-view',
+  selector: 'pc-form-view',
   imports: [
+    DatePipe,
     RouterModule,
-    PeopleInHousehold,
     Icon,
     RecordActivities,
     DetailLayout,
@@ -43744,69 +42152,167 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
     TabPanel,
     StatCard,
     ProfileCard,
-    DetailItem,
-    SystemMetadata,
-    Tags,
+    DetailRow,
   ],
-  templateUrl: './household-view.html',
+  templateUrl: './form-view.html',
 })
-export class HouseholdView {
-  readonly id = input.required<string>();
-
+export class FormViewComponent {
   private readonly alertSvc = inject(AlertService);
-  private readonly userService = inject(UserService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly personsSvc = inject(PersonsService);
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly loader = inject(Loader);
-  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  readonly id = input.required<string>();
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);
-  protected readonly household = signal<Households | null>(null);
+  protected readonly formRecord = signal<any | null>(null);
+  protected readonly submissionsCount = signal(0);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Forms', route: '/forms' },
+    { label: this.formRecord()?.name || 'Form' },
+  ]);
+  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
   protected readonly users = signal<IAuthUser[]>([]);
+  private readonly router = inject(Router);
   private usersById = new Map<string, IAuthUser>();
-
-  // Segmentation
-  protected readonly tags = signal<string[]>([]);
-  protected readonly issues = signal<string[]>([]);
-  protected readonly peopleCount = signal(0);
-
-  // Address
-  protected readonly addressString = computed(() => {
-    const raw = this.household();
-    if (!raw) return 'No Address Assigned';
-    if (raw.is_placeholder) return 'People with no addresses';
-    if (raw.formatted_address) return raw.formatted_address;
-
-    const parts: string[] = [];
-    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
-
-    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
-
-    if (streetParts.length) parts.push(streetParts.join(' ').trim());
-    if (locationParts.length) parts.push(locationParts.join(', ').trim());
-
-    return parts.join(', ').trim() || 'No Address Assigned';
-  });
-
-  protected readonly hasMap = computed(() => {
-    const h = this.household();
-    return !!(h && h.lat && h.lng && !h.is_placeholder);
-  });
-
-  private mapInitialized = false;
-  private readonly mapContainer = viewChild<ElementRef>('mapContainer');
 
   // Active tab state
   protected activeTab = signal<string>('activity');
 
-  protected readonly householdTabs = computed<PcTabOption[]>(() => [
+  protected readonly formTabs = computed<PcTabOption[]>(() => [
     { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'members', label: `Household Members (${this.peopleCount()})`, icon: 'user-group' },
-    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
+    { id: 'targetActions', label: 'Target Lists & Actions', icon: 'queue-list' },
+    { id: 'fieldsPreview', label: 'Fields & Layout', icon: 'information-circle' },
   ]);
+
+  protected readonly selectedFields = computed(() => {
+    const record = this.formRecord();
+    if (!record) return [];
+    if (record.fields) {
+      return Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
+    }
+    return ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+  });
+
+  protected readonly fieldsCount = computed(() => {
+    const fields = this.selectedFields();
+    // Email is always required and present
+    const standardFieldsCount = fields.filter((f: string) => f !== 'email').length;
+    return standardFieldsCount + 1;
+  });
+
+  protected readonly targetListsNames = computed(() => {
+    const record = this.formRecord();
+    if (!record || !record.target_lists) return [];
+    const listIds: string[] = Array.isArray(record.target_lists)
+      ? record.target_lists
+      : JSON.parse(record.target_lists || '[]');
+
+    return listIds.map((id) => this.availableLists().find((l) => l.id === id)?.name).filter(Boolean) as string[];
+  });
+
+  protected readonly embedSnippet = computed(() => {
+    const record = this.formRecord();
+    if (!record || !this.id()) return '';
+    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
+    const fields = this.selectedFields();
+    const isDonation = record.form_type === 'donation';
+    const isRecurring = record.form_type === 'recurring_donation';
+    const isAnyDonation = isDonation || isRecurring;
+
+    const addressFields = isAnyDonation
+      ? `
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
+    <input type="text" name="street1" placeholder="123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
+      <input type="text" name="city" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal *</label>
+      <input type="text" name="zip" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+  </div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
+      <input type="text" name="state" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country *</label>
+      <input type="text" name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+  </div>`
+      : '';
+
+    const amountField = isDonation
+      ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($) *</label>
+    <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : isRecurring
+        ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
+    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
+  </div>`
+        : '';
+
+    const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
+
+    return `<!-- PeopleCRM Embeddable Form -->
+<form action="${apiOrigin}/api/forms/submit/${this.id()}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
+${
+  fields.includes('first_name') || isAnyDonation
+    ? `  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isAnyDonation ? ' *' : ''}</label>
+    <input type="text" name="first_name" placeholder="First Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+    : ''
+}${
+      fields.includes('last_name') || isAnyDonation
+        ? `\n  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isAnyDonation ? ' *' : ''}</label>
+    <input type="text" name="last_name" placeholder="Last Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+        : ''
+    }
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
+    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>${
+    !isAnyDonation && fields.includes('mobile')
+      ? `\n  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
+    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    !isAnyDonation && fields.includes('notes')
+      ? `\n  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
+    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
+  </div>`
+      : ''
+  }${addressFields}${amountField}
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
+</form>`;
+  });
+
+  protected readonly formUrl = computed(() => {
+    if (!this.id()) return '';
+    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${this.id()}`;
+  });
 
   constructor() {
     effect(() => {
@@ -43814,16 +42320,7 @@ export class HouseholdView {
       void untracked(() => this.loadAllData(currentId));
     });
 
-    effect(() => {
-      const elRef = this.mapContainer();
-      if (elRef) {
-        void this.initMap(elRef.nativeElement);
-      } else {
-        this.mapInitialized = false;
-      }
-    });
-
-    // Load users for addedby/updatedby display names
+    // Load users
     this.userService
       .getUsers()
       .then((u) => {
@@ -43836,76 +42333,51 @@ export class HouseholdView {
   protected async loadAllData(id: string) {
     const end = this._loading.begin();
     try {
-      // 1. Load household details
-      const householdData = (await this.householdsSvc.getById(id)) as Households;
-      this.household.set(householdData);
+      // 1. Load Form details
+      const record = await this.formsSvc.getById(id);
+      this.formRecord.set(record);
 
-      // 2. Load tags and issues
-      const tagList = await this.householdsSvc.getTags(id, 'tag');
-      this.tags.set(tagList);
-      const issueList = await this.householdsSvc.getTags(id, 'issue');
-      this.issues.set(issueList);
+      // 2. Load available Lists to resolve list names
+      const result = await this.listsSvc.getAll({ limit: 100 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows.map((row: any) => ({
+          id: String(row.id),
+          name: String(row.name),
+        })),
+      );
 
-      // 3. Load people in household count
-      const count = await this.householdsSvc.getPeopleCount(id);
-      this.peopleCount.set(count);
+      // 3. Load submissions count
+      const subCount = await this.formsSvc.getSubmissionsCount(id);
+      this.submissionsCount.set(subCount);
     } catch (err) {
-      this.alertSvc.showError('Failed to load household details: ' + String(err));
+      this.alertSvc.showError('Failed to load form details: ' + String(err));
     } finally {
       end();
       this.initialized.set(true);
     }
   }
 
-  protected editHousehold() {
+  protected editForm() {
     void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
-  protected async deleteHousehold() {
+  protected async deleteForm() {
     if (!this.id()) return;
+    const backRoute: string = this.route.snapshot.data['backRoute'] ?? '/forms';
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Web Form',
+      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
     const end = this._loading.begin();
     try {
-      // Fetch people belonging to this household
-      const people = (await this.personsSvc.getByHouseholdId(this.id(), { columns: ['id'] })) as Array<{ id: string }>;
-      const personIds = people.map((p) => p.id);
-      const peopleCount = personIds.length;
-
-      if (peopleCount > 0) {
-        // Show the 3-option warning dialog
-        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-          title: 'Households have people',
-          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-          variant: 'warning',
-          choices: [
-            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-          ],
-          cancelText: 'Cancel',
-        });
-
-        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
-
-        if (choice === 'keep-people') {
-          for (const pid of personIds) {
-            await this.personsSvc.removeHousehold(pid);
-          }
-        } else if (choice === 'delete-people') {
-          await this.personsSvc.deleteMany(personIds);
-        }
-      } else {
-        const confirmed = await this.dialogSvc.confirm({
-          title: 'Delete Household',
-          message: 'Are you sure you want to delete this household? This action cannot be undone.',
-          variant: 'danger',
-          confirmText: 'Delete',
-        });
-        if (!confirmed) return;
-      }
-
-      await this.householdsSvc.delete(this.id());
-      this.householdsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Household deleted');
-      await this.router.navigate(['/households']);
+      await this.formsSvc.delete(this.id());
+      this.formsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Web form deleted');
+      await this.router.navigate([backRoute]);
     } catch (err) {
       const message =
         err instanceof Error && err.message
@@ -43915,52 +42387,30 @@ export class HouseholdView {
               typeof err['data']['message'] === 'string' &&
               err['data']['message']
             ? err['data']['message']
-            : 'Unable to delete household';
+            : 'Unable to delete web form';
       this.alertSvc.showError(message);
     } finally {
       end();
     }
   }
 
-  private async initMap(mapEl: HTMLElement) {
-    const h = this.household();
-    if (!h || !h.lat || !h.lng || h.is_placeholder || this.mapInitialized) return;
-
-    try {
-      await this.loader.importLibrary('maps');
-      const { AdvancedMarkerElement } = (await this.loader.importLibrary('marker')) as any;
-      const center = { lat: Number(h.lat), lng: Number(h.lng) };
-      const map = new google.maps.Map(mapEl, {
-        center,
-        zoom: 15,
-        disableDefaultUI: false,
-        zoomControl: true,
-        streetViewControl: false,
-        mapTypeControl: false,
-        mapId: 'DEMO_MAP_ID',
-      });
-
-      new AdvancedMarkerElement({
-        position: center,
-        map,
-        title: this.addressString(),
-      });
-      this.mapInitialized = true;
-    } catch (err) {
-      console.error('Failed to load Google Map:', err);
-    }
+  protected copySnippet(): void {
+    const code = this.embedSnippet();
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(
+      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
   }
 
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
+  protected getCreatedAt(): Date | null {
+    const date = this.formRecord()?.created_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUpdatedAt(): Date | null {
+    const date = this.formRecord()?.updated_at;
+    return date ? new Date(date) : null;
   }
 
   protected getUserName(id: string | null | undefined): string {
@@ -44153,268 +42603,242 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/ms-sync/ms-sync-settings.ts
+## File: apps/frontend/src/app/experiences/persons/ui/person-view.ts
 
 ```typescript
-import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { TRPCService } from '../../../services/api/trpc-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-
-@Component({
-  selector: 'pc-ms-sync-settings',
-  imports: [Icon],
-  templateUrl: './ms-sync-settings.html',
-})
-export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly destroyRef = inject(DestroyRef);
-
-  protected readonly status = signal<{
-    connected: boolean;
-    msEmail: string | null;
-    syncedAt: Date | string | null;
-    syncing?: boolean;
-    lastSyncError?: string | null;
-    lastSyncErrorAt?: Date | string | null;
-  } | null>(null);
-  protected readonly isLoading = signal(true);
-  protected readonly isConnecting = signal(false);
-  protected readonly isSyncing = signal(false);
-  protected readonly connectError = signal<string | null>(null);
-  protected readonly lastSyncResult = signal<{ inserted: number } | null>(null);
-  private pollingTimer: ReturnType<typeof setInterval> | null = null;
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    // Handle OAuth redirect result (ms_connected or ms_error query params)
-    const params = this.route.snapshot.queryParamMap;
-    if (params.has('ms_connected')) {
-      this.alertSvc.showSuccess('Office 365 account connected successfully!');
-    } else if (params.has('ms_error')) {
-      this.connectError.set(params.get('ms_error'));
-    }
-
-    await this.loadStatus();
-  }
-
-  protected async connect() {
-    this.isConnecting.set(true);
-    this.connectError.set(null);
-    try {
-      const returnTo = window.location.pathname + window.location.search;
-      const result = await this.api.msSync.getAuthUrl.query({ returnTo });
-      window.location.href = result.url;
-    } catch {
-      this.connectError.set('Failed to initiate Microsoft sign-in. Please try again.');
-      this.isConnecting.set(false);
-    }
-  }
-
-  protected async syncNow() {
-    this.isSyncing.set(true);
-    this.lastSyncResult.set(null);
-    try {
-      await this.api.msSync.syncNow.mutate();
-      await this.loadStatus();
-    } catch {
-      this.alertSvc.showError('Sync failed. Please try reconnecting your account.');
-      this.isSyncing.set(false);
-    }
-  }
-
-  protected async forceFullResync() {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Force Full Re-sync',
-      message: 'This will reset the sync position and re-download all emails from scratch. Continue?',
-      variant: 'warning',
-      confirmText: 'Re-sync',
-    });
-    if (!confirmed) return;
-
-    this.isSyncing.set(true);
-    this.lastSyncResult.set(null);
-    try {
-      await this.api.msSync.resetSync.mutate();
-      await this.api.msSync.syncNow.mutate();
-      await this.loadStatus();
-    } catch {
-      this.alertSvc.showError('Failed to start re-sync. Please try again.');
-      this.isSyncing.set(false);
-    }
-  }
-
-  protected async disconnect() {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Disconnect Office 365',
-      message: 'Are you sure you want to disconnect your Office 365 account?',
-      variant: 'warning',
-      confirmText: 'Disconnect',
-    });
-    if (!confirmed) return;
-
-    const removeLocal = await this.dialogs.confirm({
-      title: 'Delete Synced Emails',
-      message: 'Would you also like to delete all locally stored emails that were synced from this account?',
-      variant: 'danger',
-      confirmText: 'Delete Emails',
-      cancelText: 'Keep Emails',
-    });
-    try {
-      await this.api.msSync.disconnect.mutate({ removeLocalEmails: removeLocal });
-      this.status.set({ connected: false, msEmail: null, syncedAt: null });
-      this.lastSyncResult.set(null);
-      this.alertSvc.showSuccess('Office 365 account disconnected.');
-    } catch {
-      this.alertSvc.showError('Failed to disconnect. Please try again.');
-    }
-  }
-
-  protected formatDate(date: Date | string | null) {
-    if (!date) return 'Never';
-    return new Date(date).toLocaleString();
-  }
-
-  private async loadStatus() {
-    try {
-      const s = await this.api.msSync.getConnectionStatus.query();
-      this.status.set(s);
-      if (s?.syncing) {
-        this.isSyncing.set(true);
-        this.startPollingStatus();
-      } else {
-        this.isSyncing.set(false);
-        this.stopPollingStatus();
-      }
-    } catch (err) {
-      console.error('Failed to load connection status:', err);
-      this.isSyncing.set(false);
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
-
-  private startPollingStatus() {
-    if (this.pollingTimer) return;
-    this.pollingTimer = setInterval(() => void this.pollStep(), 4000);
-    this.destroyRef.onDestroy(() => this.stopPollingStatus());
-  }
-
-  private async pollStep(): Promise<void> {
-    try {
-      const s = await this.api.msSync.getConnectionStatus.query();
-      this.status.set(s);
-      if (!s?.syncing) {
-        this.isSyncing.set(false);
-        this.stopPollingStatus();
-        this.alertSvc.showSuccess('Office 365 mailbox sync completed.');
-      }
-    } catch (err) {
-      console.error('Error polling sync status:', err);
-      this.stopPollingStatus();
-    }
-  }
-
-  private stopPollingStatus() {
-    if (this.pollingTimer) {
-      clearInterval(this.pollingTimer);
-      this.pollingTimer = null;
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/shifts/ui/shift-view.ts
-
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
+import { Icon } from '@uxcommon/components/icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { ShiftsService } from '../services/shifts-service';
+import { PeopleInHousehold } from './people-in-household';
+import { UserService } from '../../../services/user.service';
+import { HouseholdsService } from '../../households/services/households-service';
+import { PersonsService } from '../services/persons-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
-import { environment } from '../../../../environments/environment';
+import { DonationsService } from '../../../services/api/donations-service';
+import { EventsService } from '../../../services/api/events-service';
+import { ConnectionsService } from '../../../services/api/connections-service';
+import { PersonConnections } from './person-connections';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { createLoadingGate } from '@uxcommon/loading-gate';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Tags } from '@experiences/tags/ui/tags';
+import { PcIconNameType } from '@icons/icons.index';
+
+interface SocialLinkDef {
+  name: string;
+  url: string | null | undefined;
+  icon: PcIconNameType;
+  color: string;
+}
 
 @Component({
-  selector: 'pc-shift-view',
+  selector: 'pc-person-view',
   imports: [
     DatePipe,
     RouterModule,
+    FormsModule,
+    PeopleInHousehold,
     Icon,
     RecordActivities,
     DetailLayout,
+    PcCard,
     Tabs,
     TabPanel,
     StatusBadge,
     StatCard,
     ProfileCard,
-    DetailRow,
-    PcCard,
+    DetailItem,
+    SystemMetadata,
+    Tags,
+    PersonConnections,
   ],
-  templateUrl: './shift-view.html',
-  providers: [VolunteerService],
+  templateUrl: './person-view.html',
 })
-export class ShiftViewComponent {
+export class PersonView {
   readonly id = input.required<string>();
 
   private readonly alertSvc = inject(AlertService);
-  private readonly volunteerEventsSvc = inject(ShiftsService);
-  private readonly volunteerSvc = inject(VolunteerService);
+  private readonly userService = inject(UserService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  protected readonly donationsSvc = inject(DonationsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
+  private readonly volunteerSvc = inject(VolunteerService);
+  private readonly eventsSvc = inject(EventsService);
+  private readonly connectionsSvc = inject(ConnectionsService);
+
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);
-  protected readonly event = signal<any | null>(null);
-  protected readonly roster = signal<any[]>([]);
 
-  // Active tab state
-  protected activeTab = signal<string>('roster');
+  protected readonly person = signal<any | null>(null);
 
-  protected readonly eventTabs = computed<PcTabOption[]>(() => [
-    { id: 'roster', label: `Volunteer Roster (${this.roster().length})`, icon: 'user-group' },
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+  private readonly usersResource = resource({
+    loader: () => this.userService.getUsers(),
+  });
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+
+  // Analytics & Lists
+  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
+  protected readonly volunteerHistory = signal<any[]>([]);
+  protected readonly donationStats = signal<{
+    cumulativeAmount: number;
+    limitAmount: number;
+    remainingAmount: number;
+  } | null>(null);
+  protected readonly donationHistory = signal<any[]>([]);
+  protected readonly eventHistory = signal<any[]>([]);
+  protected readonly eventStats = signal<{ events_count: number } | null>(null);
+  protected readonly connectionCount = signal(0);
+  protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
+  protected readonly openedNewslettersCount = computed(() => {
+    return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
+      .length;
+  });
+  protected readonly tags = signal<string[]>([]);
+  protected readonly issues = signal<string[]>([]);
+
+  // Donation Dialog State
+  protected readonly isCheckingEligibility = signal(false);
+  protected readonly donationAmount = signal<number | null>(null);
+  protected readonly showDonationModal = signal(false);
+  protected readonly eligibilityError = signal<string | null>(null);
+
+  // Address
+  protected readonly householdId = computed(() => this.person()?.household_id ?? null);
+  protected readonly householdResource = resource({
+    params: () => this.householdId(),
+    loader: async ({ params: householdId }) => {
+      if (!householdId) return null;
+      try {
+        return await this.householdsSvc.getById(householdId);
+      } catch {
+        return null;
+      }
+    },
+  });
+
+  protected readonly addressString = computed(() => {
+    const hh = this.householdResource.value() as Households | null | undefined;
+    if (!hh || hh.is_placeholder) return 'No Address Assigned';
+    return this.getFormattedAddress(hh);
+  });
+  protected readonly isPlaceholderHousehold = computed(() => {
+    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
+  });
+
+  // Contact initials and full name computation
+  protected readonly initials = computed(() => {
+    const first = this.person()?.first_name || '';
+    const last = this.person()?.last_name || '';
+    if (!first && !last) return '?';
+    return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
+  });
+
+  protected readonly fullName = computed(() => {
+    const p = this.person();
+    if (!p) return '';
+    return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'People', route: '/people' },
+    { label: this.fullName() || 'Person' },
   ]);
 
-  protected readonly eventPassed = computed(() => {
-    const end = this.event()?.end_time;
-    if (!end) return false;
-    return new Date(end) < new Date();
+  // Social icons
+  public socialLinks = computed<SocialLinkDef[]>(() => {
+    const p = this.person();
+    return [
+      {
+        name: 'LinkedIn',
+        url: p.linkedin,
+        icon: 'linkedin',
+        color: 'bg-[#0a66c2]', // LinkedIn Blue
+      },
+      {
+        name: 'X',
+        url: p.twitter,
+        icon: 'x',
+        color: 'bg-black', // X Black
+      },
+      {
+        name: 'Facebook',
+        url: p.facebook,
+        icon: 'facebook',
+        color: 'bg-[#1877f2]', // Facebook Blue
+      },
+      {
+        name: 'Instagram',
+        url: p.instagram,
+        icon: 'instagram',
+        color: 'bg-[#e1306c]', // Instagram Pink/Red
+      },
+    ];
   });
 
-  protected readonly remainingCapacity = computed(() => {
-    const detail = this.event();
-    if (!detail || detail.capacity === null || detail.capacity === undefined) {
-      return 'Unlimited';
-    }
-    const count = this.roster().length;
-    return Math.max(0, detail.capacity - count);
-  });
+  // Active tab state
+  protected activeTab = signal<string>('activity');
 
-  protected readonly publicUrl = computed(() => {
-    const detail = this.event();
-    if (!detail || !detail.public_url) return '';
-    return environment.apiUrl + detail.public_url;
-  });
+  protected readonly personTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'emails', label: 'Conversations', icon: 'envelope', badge: this.activityData()?.emails?.length },
+    { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
+    { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
+    { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
+    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length },
+    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
+    { id: 'household', label: 'Household', icon: 'home' },
+  ]);
+
+  protected getMailStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'sent' || s === 'delivered') return 'success';
+    if (s === 'opened') return 'info';
+    if (s === 'read') return 'neutral';
+    return 'ghost';
+  }
+
+  protected getEmailEventType(eventType: string | null | undefined): any {
+    const et = String(eventType || '').toLowerCase();
+    if (et === 'open') return 'success';
+    if (et === 'click') return 'warning';
+    if (et === 'delivered' || et === 'processed') return 'info';
+    if (['bounce', 'dropped', 'spamreport', 'unsubscribe'].includes(et)) return 'error';
+    return 'ghost';
+  }
+
+  protected getShiftStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'attended') return 'success';
+    if (s === 'signed_up') return 'warning';
+    if (s === 'no_show') return 'error';
+    return 'ghost';
+  }
+
+  protected getEventStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'attended') return 'success';
+    if (s === 'registered') return 'warning';
+    if (s === 'no_show') return 'error';
+    if (s === 'cancelled') return 'neutral';
+    return 'ghost';
+  }
 
   constructor() {
     effect(() => {
@@ -44426,23 +42850,471 @@ export class ShiftViewComponent {
   protected async loadAllData(id: string) {
     const end = this._loading.begin();
     try {
-      // 1. Load Event details
-      const detail = await this.volunteerEventsSvc.getById(id);
-      this.event.set(detail);
+      // 1. Load person details
+      const personData = await this.personsSvc.getById(id);
+      this.person.set(personData);
 
-      // 2. Load associated shifts/roster
-      const rosterData = await this.volunteerSvc.getShiftsForEvent(id);
-      this.roster.set(rosterData || []);
+      // 2. Load tags and issues
+      const tagList = await this.personsSvc.getTags(id, 'tag');
+      this.tags.set(tagList);
+      const issueList = await this.personsSvc.getTags(id, 'issue');
+      this.issues.set(issueList);
+
+      // 3. Load volunteer stats and history
+      try {
+        const stats = await this.volunteerSvc.getVolunteerStats(id);
+        this.volunteerStats.set(stats);
+        const history = await this.volunteerSvc.getHistoryForPerson(id);
+        this.volunteerHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load volunteer details', err);
+      }
+
+      // 4. Load donations stats and history
+      try {
+        const stats = await this.donationsSvc.getStats(id);
+        this.donationStats.set(stats);
+        const history = await this.donationsSvc.getHistory(id);
+        this.donationHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load donations history', err);
+      }
+
+      // 5. Load event history
+      try {
+        const stats = await this.eventsSvc.getStatsForPerson(id);
+        this.eventStats.set(stats);
+        const history = await this.eventsSvc.getHistoryForPerson(id);
+        this.eventHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load event history', err);
+      }
+
+      // 6. Load connection count (tab badge — full list loads lazily inside the tab)
+      try {
+        const count = await this.connectionsSvc.countForPerson(id);
+        this.connectionCount.set(count);
+      } catch (err) {
+        console.error('Failed to load connection count', err);
+      }
+
+      // Check query params for Stripe Checkout success redirects
+      const params = this.route.snapshot.queryParams;
+      if (params['checkout_success'] === 'true' && params['session_id']) {
+        try {
+          await this.donationsSvc.confirmDonation(params['session_id']);
+          this.alertSvc.showSuccess('Donation processed successfully! Thank you for your support.');
+          // Reload donation stats/history after confirmation
+          const stats = await this.donationsSvc.getStats(id);
+          this.donationStats.set(stats);
+          const history = await this.donationsSvc.getHistory(id);
+          this.donationHistory.set(history || []);
+          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        } catch (err) {
+          console.error('Failed to confirm stripe checkout session:', err);
+          this.alertSvc.showError('Finalizing payment verification...');
+        }
+      } else if (params['mock_donation_success'] === 'true' && params['session_id']) {
+        try {
+          const amt = Number(params['amount'] || 0);
+          await this.donationsSvc.confirmMockDonation({
+            personId: id,
+            amountCents: amt * 100,
+            sessionId: params['session_id'],
+            province: params['province'] || '',
+            country: params['country'] || '',
+          });
+          this.alertSvc.showSuccess('[MOCK] Donation recorded successfully!');
+          const stats = await this.donationsSvc.getStats(id);
+          this.donationStats.set(stats);
+          const history = await this.donationsSvc.getHistory(id);
+          this.donationHistory.set(history || []);
+          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        } catch (err) {
+          console.error('Failed to record mock donation:', err);
+        }
+      }
+
+      // 5. Load interactions (emails + newsletters)
+      try {
+        const activity = await this.personsSvc.getActivity(id);
+        this.activityData.set(activity || { emails: [], newsletters: [] });
+      } catch (err) {
+        console.error('Failed to load activity log', err);
+      }
     } catch (err) {
-      this.alertSvc.showError('Failed to load event details: ' + String(err));
+      this.alertSvc.showError('Failed to load person details: ' + String(err));
     } finally {
       end();
       this.initialized.set(true);
     }
   }
 
-  protected editEvent() {
+  protected openCollectDonation() {
+    this.donationAmount.set(null);
+    this.eligibilityError.set(null);
+    this.showDonationModal.set(true);
+  }
+
+  protected closeDonationModal() {
+    this.showDonationModal.set(false);
+  }
+
+  protected async submitDonation() {
+    const amt = this.donationAmount();
+    if (amt === null || amt <= 0) {
+      this.alertSvc.showError('Please specify a valid donation amount.');
+      return;
+    }
+
+    this.isCheckingEligibility.set(true);
+    this.eligibilityError.set(null);
+
+    const hh = this.householdResource.value() as Households | null | undefined;
+    const address = {
+      country: hh?.country || 'CA',
+      state: hh?.state || 'ON',
+    };
+
+    try {
+      const eligibility = await this.donationsSvc.checkEligibility({
+        personId: this.id(),
+        amountCents: amt * 100,
+        address,
+      });
+
+      if (!eligibility.eligible) {
+        this.eligibilityError.set(eligibility.reason || 'Donor is ineligible to donate.');
+        this.isCheckingEligibility.set(false);
+        return;
+      }
+
+      this.closeDonationModal();
+      this.alertSvc.showSuccess('Redirecting to Stripe Checkout...');
+
+      // Redirect
+      const session = await this.donationsSvc.createCheckout({
+        personId: this.id(),
+        amountCents: amt * 100,
+        address,
+      });
+
+      if (session && session.url) {
+        window.location.href = session.url;
+      } else {
+        this.alertSvc.showError('Failed to initialize payment gateway.');
+      }
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Verification check failed.');
+    } finally {
+      this.isCheckingEligibility.set(false);
+    }
+  }
+
+  protected editPerson() {
     void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deletePerson() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Person',
+      message: 'Are you sure you want to delete this person? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.personsSvc.delete(this.id());
+      this.personsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Person deleted');
+      await this.router.navigate(['/people']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete person';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
+  }
+
+  protected navigateToHousehold() {
+    const household_id = this.householdId();
+    if (household_id) {
+      void this.router.navigate(['households', household_id]);
+    }
+  }
+
+  private getFormattedAddress(address: AddressType): string {
+    const parts: string[] = [];
+    const streetParts = [
+      address.apt ? `Apt ${address.apt}` : null,
+      address.street_num,
+      address.street1,
+      address.street2,
+    ].filter(Boolean);
+
+    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
+
+    if (streetParts.length) parts.push(streetParts.join(' ').trim());
+    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+
+    const formatted = parts.join(', ').trim();
+    return formatted || 'No Address Assigned';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
+import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
+
+import {
+  AddVolunteerEventObj,
+  AddVolunteerEventType,
+  UpdateVolunteerEventType,
+} from '../../../../../../../libs/common/src';
+import { environment } from '../../../../environments/environment';
+import { VolunteerService } from '../../../services/api/volunteer-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ShiftsService } from '../services/shifts-service';
+
+@Component({
+  selector: 'pc-shift-form',
+  imports: [
+    DatePipe,
+    FormsModule,
+    FormField,
+    PcInput,
+    PcTextarea,
+    RouterModule,
+    Icon,
+    PcDetailHeader,
+    PcEntityOverview,
+    PcCard,
+    FieldsSelector,
+    PublicLinkPanel,
+  ],
+  templateUrl: './shift-form.html',
+  providers: [VolunteerService],
+})
+export class ShiftFormComponent implements OnInit {
+  private readonly _loading = createLoadingGate();
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly router = inject(Router);
+  private readonly volunteerEventsSvc = inject(ShiftsService);
+  private readonly volunteerSvc = inject(VolunteerService);
+
+  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+  protected readonly publicUrl = computed(() => {
+    const slug = this.payload().slug;
+    if (!slug || this.isNew()) return '';
+    return `${environment.apiUrl}/api/events/view/${slug}`;
+  });
+
+  protected readonly allVolunteers = signal<any[]>([]);
+  protected readonly detail = signal<any>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const shifts: PcBreadcrumb = { label: 'Shifts', route: '/events/shifts' };
+    const id = this.id();
+    if (id) {
+      return [
+        shifts,
+        { label: this.detail()?.name || 'Volunteer event', route: ['/events/shifts', id] },
+        { label: 'Edit' },
+      ];
+    }
+    return [shifts, { label: 'New volunteer event' }];
+  });
+
+  protected readonly payload = signal({
+    name: '',
+    slug: '',
+    description: '',
+    location_address: '',
+    start_time: '',
+    end_time: '',
+    capacity: null as number | null,
+    contact_email: '',
+    contact_phone: '',
+    is_private: false,
+    send_reminder: true,
+    send_signup_confirmation: true,
+    send_volunteer_alert: true,
+  });
+  protected readonly endBeforeStartError = computed(() => {
+    const { start_time, end_time } = this.payload();
+    if (!start_time || !end_time) return false;
+    return new Date(end_time) <= new Date(start_time);
+  });
+  protected readonly environment = environment;
+  protected readonly error = signal<string | null>(null);
+  protected readonly eventPassed = computed(() => {
+    const end = this.payload().end_time;
+    if (!end) return false;
+    return new Date(end) < new Date();
+  });
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddVolunteerEventObj);
+  });
+  protected readonly isNew = computed(() => !this.id());
+  protected readonly loading = this._loading.visible;
+
+  // Roster state
+  protected readonly roster = signal<any[]>([]);
+  protected readonly saving = signal(false);
+  protected readonly slugChecking = signal(false);
+  protected readonly slugUnique = signal<boolean | null>(null);
+  protected readonly volunteerSearch = signal('');
+
+  // Filter out volunteers that are already signed up
+  protected readonly volunteerSearchResults = computed(() => {
+    const search = this.volunteerSearch().toLowerCase().trim();
+    if (!search) return [];
+
+    const rosterIds = new Set(this.roster().map((r) => String(r.person_id)));
+    return this.allVolunteers().filter((v) => {
+      if (rosterIds.has(String(v.id))) return false;
+      const fullName = `${v.first_name || ''} ${v.last_name || ''}`.toLowerCase();
+      const email = (v.email || '').toLowerCase();
+      return fullName.includes(search) || email.includes(search);
+    });
+  });
+
+  protected slugManuallyEdited = false;
+
+  public readonly id = input<string>();
+
+  constructor() {
+    const nameSignal = computed(() => this.payload().name);
+    effect(() => {
+      const name = nameSignal();
+      if (this.isNew() && !this.slugManuallyEdited) {
+        const suggested = this.slugify(name);
+        if (untracked(this.payload).slug !== suggested) {
+          this.payload.update((p) => ({
+            ...p,
+            slug: suggested,
+          }));
+        }
+      }
+    });
+
+    const slugSignal = computed(() => this.payload().slug);
+    effect(() => {
+      const slug = slugSignal();
+      if (this.slugTimeoutId) {
+        clearTimeout(this.slugTimeoutId);
+        this.slugTimeoutId = null;
+      }
+
+      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+        this.slugUnique.set(null);
+        this.slugChecking.set(false);
+        return;
+      }
+
+      this.slugChecking.set(true);
+      this.slugTimeoutId = setTimeout(() => {
+        void (async () => {
+          try {
+            const res = await this.volunteerEventsSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
+            if (untracked(slugSignal) === slug) {
+              this.slugUnique.set(res.unique);
+            }
+          } catch (err) {
+            console.error('Failed to check slug uniqueness', err);
+          } finally {
+            if (untracked(slugSignal) === slug) {
+              this.slugChecking.set(false);
+            }
+          }
+        })();
+      }, 300);
+    });
+  }
+
+  public ngOnInit(): void {
+    const end = this._loading.begin();
+    try {
+      void Promise.all([this.loadVolunteers(), this.loadEvent()]).finally(() => end());
+    } catch {
+      end();
+    }
+  }
+
+  // Roster Management
+  protected async addVolunteer(person: any) {
+    try {
+      await this.volunteerSvc.signupVolunteer({
+        event_id: this.id()!,
+        person_id: String(person.id),
+        status: 'signed_up',
+      });
+      this.volunteerSearch.set('');
+      this.alerts.showSuccess(`${person.first_name} added to roster`);
+      await this.loadRoster();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add volunteer');
+    }
+  }
+
+  protected copyToClipboard(url: string) {
+    navigator.clipboard
+      .writeText(url)
+      .then(() => this.alerts.showSuccess('Link copied to clipboard'))
+      .catch((err) => console.error('Failed to copy', err));
   }
 
   protected async deleteEvent() {
@@ -44454,56 +43326,227 @@ export class ShiftViewComponent {
       confirmText: 'Delete',
     });
     if (!confirmed) return;
-    const end = this._loading.begin();
+
+    this.saving.set(true);
     try {
-      await this.volunteerEventsSvc.delete(this.id());
+      await this.volunteerEventsSvc.delete(this.id()!);
       this.volunteerEventsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Event deleted');
+      this.alerts.showSuccess('Event deleted');
       await this.router.navigate(['/events/shifts']);
     } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete event';
-      this.alertSvc.showError(message);
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
     } finally {
-      end();
+      this.saving.set(false);
     }
   }
 
-  protected copySnippet(): void {
-    const url = this.publicUrl();
-    if (!url) return;
-    navigator.clipboard.writeText(url).then(
-      () => this.alertSvc.showSuccess('Public signup link copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
+  protected async loadEvent() {
+    if (this.isNew()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const event = state.cloneData;
+        this.payload.set({
+          name: event.name ? `${event.name} (Copy)` : '',
+          slug: event.slug ? `${event.slug}-copy` : '',
+          description: event.description ?? '',
+          location_address: event.location_address ?? '',
+          start_time: this.toDatetimeLocalString(event.start_time),
+          end_time: this.toDatetimeLocalString(event.end_time),
+          capacity: event.capacity ?? null,
+          contact_email: event.contact_email ?? '',
+          contact_phone: event.contact_phone ?? '',
+          is_private: !!event.is_private,
+          send_reminder: event.send_reminder !== false,
+          send_signup_confirmation: event.send_signup_confirmation !== false,
+          send_volunteer_alert: event.send_volunteer_alert !== false,
+        });
+      }
+      return;
+    }
 
-  protected getStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
-      case 'attended':
-        return 'success';
-      case 'signed_up':
-        return 'warning';
-      case 'no_show':
-        return 'error';
-      case 'cancelled':
-        return 'neutral';
-      default:
-        return 'ghost';
+    try {
+      const event = await this.volunteerEventsSvc.getById(this.id()!);
+      this.detail.set(event);
+      this.payload.set({
+        name: event.name ?? '',
+        slug: event.slug ?? '',
+        description: event.description ?? '',
+        location_address: event.location_address ?? '',
+        start_time: this.toDatetimeLocalString(event.start_time),
+        end_time: this.toDatetimeLocalString(event.end_time),
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? '',
+        contact_phone: event.contact_phone ?? '',
+        is_private: !!event.is_private,
+        send_reminder: event.send_reminder !== false,
+        send_signup_confirmation: event.send_signup_confirmation !== false,
+        send_volunteer_alert: event.send_volunteer_alert !== false,
+      });
+
+      if (Array.isArray((event as any).fields) && (event as any).fields.length > 0) {
+        this.selectedFields.set((event as any).fields);
+      }
+
+      await this.loadRoster();
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
+      this.alerts.showError(this.error()!);
     }
   }
-}
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  protected async loadRoster() {
+    if (!this.id()) return;
+    try {
+      const roster = await this.volunteerSvc.getShiftsForEvent(this.id()!);
+      this.roster.set(roster || []);
+    } catch (err) {
+      console.error('Failed to load event roster', err);
+    }
+  }
+
+  protected async loadVolunteers() {
+    try {
+      const res = await this.personsSvc.getAll({ limit: 1000, tags: ['volunteer'] });
+      this.allVolunteers.set(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to load volunteers', err);
+    }
+  }
+
+  protected onSlugInput() {
+    this.slugManuallyEdited = true;
+  }
+
+  protected async removeVolunteer(shift: any) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Volunteer',
+      message: 'Remove this person from the event roster?',
+      variant: 'danger',
+      confirmText: 'Remove',
+    });
+    if (!confirmed) return;
+    try {
+      await this.volunteerSvc.deleteShift(shift.id);
+      this.alerts.showSuccess('Volunteer removed');
+      await this.loadRoster();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove volunteer');
+    }
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+
+    if (this.endBeforeStartError()) {
+      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
+      return;
+    }
+
+    if (this.slugUnique() === false) {
+      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
+      return;
+    }
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    const raw = this.payload();
+    const data = {
+      name: raw.name.trim(),
+      slug: raw.slug.trim(),
+      description: raw.description?.trim() || null,
+      location_address: raw.location_address?.trim() || null,
+      start_time: new Date(raw.start_time),
+      end_time: new Date(raw.end_time),
+      capacity: raw.capacity ? Number(raw.capacity) : null,
+      contact_email: raw.contact_email?.trim() || null,
+      contact_phone: raw.contact_phone?.trim() || null,
+      is_private: !!raw.is_private,
+      send_reminder: !!raw.send_reminder,
+      send_signup_confirmation: !!raw.send_signup_confirmation,
+      send_volunteer_alert: !!raw.send_volunteer_alert,
+      fields: this.selectedFields(),
+    };
+
+    try {
+      if (this.isNew()) {
+        const res = await this.volunteerEventsSvc.add(data as AddVolunteerEventType);
+        this.volunteerEventsSvc.triggerRefresh();
+        this.alerts.showSuccess('Event created successfully');
+        await this.router.navigate(['/events/shifts', res.id]);
+      } else {
+        await this.volunteerEventsSvc.update(this.id()!, data as UpdateVolunteerEventType);
+        this.volunteerEventsSvc.triggerRefresh();
+        this.alerts.showSuccess('Event updated successfully');
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/events/shifts', this.id()]);
+        }
+      }
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
+      this.alerts.showError(this.error()!);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async saveShiftDetails(shift: any) {
+    try {
+      await this.volunteerSvc.updateShift(shift.id, {
+        status: shift.status,
+        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
+        notes: shift.notes || null,
+      });
+      this.alerts.showSuccess('Shift details saved');
+      await this.loadRoster();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to save shift details');
+    }
+  }
+
+  protected slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+  }
+
+  protected toDatetimeLocalString(val: any): string {
+    if (!val) return '';
+    const date = new Date(val);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  protected updateShiftHours(shift: any, hours: any) {
+    shift.hours_worked = hours ? Number(hours) : null;
+  }
+
+  protected updateShiftNotes(shift: any, notes: any) {
+    shift.notes = notes || null;
+  }
+
+  protected async updateShiftStatus(shift: any, status: any) {
+    try {
+      await this.volunteerSvc.updateShift(shift.id, {
+        status,
+        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
+        notes: shift.notes || null,
+      });
+      this.alerts.showSuccess('Shift status updated');
+      await this.loadRoster();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update shift');
+    }
+  }
 }
 ```
 
@@ -44639,226 +43682,91 @@ const STATUS_LABEL: Record<string, string> = {
 };
 ```
 
-## File: apps/frontend/src/app/experiences/teams/ui/team-form.ts
+## File: apps/frontend/src/app/experiences/users/ui/user-edit.ts
 
 ```typescript
-import { Component, computed, effect, inject, input, OnInit, signal, untracked } from '@angular/core';
-import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { form, required, email, disabled } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
+import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
 import { Icon } from '@uxcommon/components/icons/icon';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AddTeamObj, AddTeamType, IAuthUser, UpdateTeamType } from '../../../../../../../libs/common/src';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Toggle as PcToggle } from '@uxcommon/components/toggle/toggle';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { Card as PcCard } from '@uxcommon/components/card/card';
 
-import { UserService } from '../../../services/user.service';
-import { ListsService } from '../../lists/services/lists-service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { TasksService } from '../../tasks/services/tasks-service';
-import { TeamDetail, TeamsService } from '../services/teams-service';
-
-interface PersonOption {
-  email: string | null;
-  id: string;
-  label: string;
-}
-
-import { DatePipe } from '@angular/common';
+import { UserAdminService } from '../services/useradmin-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 @Component({
-  selector: 'pc-team-form',
-  imports: [FormField, RouterModule, Icon, DatePipe, PcDetailHeader, PcInput, PcTextarea, PcSelect, PcCard],
-  templateUrl: './team-form.html',
+  selector: 'pc-user-edit',
+  imports: [PcInput, PcSelect, PcToggle, RouterModule, Icon, PcDetailHeader, PcCard],
+  templateUrl: './user-edit.html',
 })
-export class TeamFormComponent implements OnInit {
-  readonly id = input<string>();
+export class UserEditComponent {
+  readonly id = input.required<string>();
 
   private readonly alerts = inject(AlertService);
-  private readonly persons = inject(PersonsService);
   private readonly router = inject(Router);
-  private readonly teams = inject(TeamsService);
-  private readonly lists = inject(ListsService);
-  private readonly userService = inject(UserService);
-  private readonly tasksSvc = inject(TasksService);
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
   private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly isNew = computed(() => !this.id());
-
-  protected readonly detail = signal<TeamDetail | null>(null);
-  protected readonly error = signal<string | null>(null);
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    team_captain_id: '',
-    team_lead_user_id: '',
-    volunteer_ids: [] as string[],
-    list_ids: [] as string[],
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddTeamObj);
-  });
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
-  protected signalPeople = signal<PersonOption[]>([]);
-  protected readonly people = computed(() => this.signalPeople());
-  protected readonly users = signal<IAuthUser[]>([]);
-  protected readonly availableLists = signal<any[]>([]);
-  protected readonly assignedLists = signal<any[]>([]);
-  protected readonly teamTasks = signal<any[]>([]);
   protected readonly saving = signal(false);
-  protected readonly volunteers = computed(() => this.detail()?.volunteers ?? []);
+  protected readonly error = signal<string | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
+  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
+
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: '',
+    verified: false,
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+    disabled(p.role, () => this.currentUserRole() === 'admin' && this.isOwnerBeingEdited());
+    disabled(p.verified, () => true);
+  });
+
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Users', route: '/users' },
+    { label: this.displayName() || 'User', route: ['/users', this.id()] },
+    { label: 'Edit' },
+  ]);
 
   constructor() {
     effect(() => {
-      const options = this.people();
-      if (options.length === 0) return;
-
-      const current = untracked(this.payload);
-      let nextCaptain = current.team_captain_id;
-      let changed = false;
-
-      if (nextCaptain && !options.some((p) => p.id === nextCaptain)) {
-        nextCaptain = '';
-        changed = true;
-      }
-
-      const currentVolunteers = current.volunteer_ids ?? [];
-      const validIds = currentVolunteers.filter((id) => options.some((p) => p.id === id));
-      if (validIds.length !== currentVolunteers.length) {
-        changed = true;
-      }
-
-      if (changed) {
-        this.payload.update((p) => ({
-          ...p,
-          team_captain_id: nextCaptain,
-          volunteer_ids: validIds,
-        }));
-      }
-    });
-  }
-
-  public ngOnInit(): void {
-    void this.initialize();
-  }
-  private async initialize(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      await Promise.all([this.loadPeople(), this.loadUsers(), this.loadLists(), this.loadTeam()]);
-
-      if (this.isNew()) {
-        const state = window.history.state;
-        if (state && state.cloneData) {
-          const sourceTeamId = state.cloneData.id;
-          if (sourceTeamId) {
-            try {
-              const teamDetail = await this.teams.getById(sourceTeamId);
-              this.payload.set({
-                name: teamDetail.name ? `${teamDetail.name} (Copy)` : '',
-                description: teamDetail.description ?? '',
-                team_captain_id: teamDetail.team_captain_id ?? '',
-                team_lead_user_id: teamDetail.team_lead_user_id ?? '',
-                volunteer_ids: teamDetail.volunteers?.map((v) => v.id) ?? [],
-                list_ids: teamDetail.list_ids ?? [],
-              });
-              this.assignedLists.set(teamDetail.lists ?? []);
-            } catch (err) {
-              console.error('Failed to load source team details for cloning', err);
-              const data = state.cloneData;
-              this.payload.set({
-                name: data.name ? `${data.name} (Copy)` : '',
-                description: data.description ?? '',
-                team_captain_id: data.team_captain_id ?? '',
-                team_lead_user_id: data.team_lead_user_id ?? '',
-                volunteer_ids: [],
-                list_ids: [],
-              });
-            }
-          }
+      const currentId = this.id();
+      untracked(() => {
+        if (!currentId) {
+          this.error.set('Missing user identifier.');
+          return;
         }
-      }
-    } finally {
-      end();
-    }
-  }
-
-  protected captainLabel(captainId: string | null) {
-    if (!captainId) return '—';
-    const person = this.people().find((p) => p.id === captainId);
-    return person?.label ?? '—';
-  }
-
-  protected isVolunteerSelected(id: string): boolean {
-    return this.payload().volunteer_ids?.includes(id) ?? false;
-  }
-
-  protected onVolunteersChange(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
-
-    this.payload.update((p) => ({
-      ...p,
-      volunteer_ids: selectedOptions,
-    }));
-    this.form.volunteer_ids().markAsDirty();
-  }
-
-  protected isListSelected(id: string): boolean {
-    return this.payload().list_ids?.includes(id) ?? false;
-  }
-
-  protected onListsChange(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
-
-    this.payload.update((p) => ({
-      ...p,
-      list_ids: selectedOptions,
-    }));
-    this.form.list_ids().markAsDirty();
-
-    const matching = this.availableLists().filter((l) => selectedOptions.includes(l.id));
-    this.assignedLists.set(matching);
-  }
-
-  protected async deleteTeam() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Team',
-      message: 'Are you sure you want to delete this team? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
+        void this.load();
+      });
     });
-    if (!confirmed) return;
-    this.saving.set(true);
-    try {
-      await this.teams.delete(this.id()!);
-      this.teams.triggerRefresh();
-      this.alerts.showSuccess('Team deleted');
-      await this.router.navigate(['/teams']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete team';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
   }
 
   protected async save(done?: (() => void) | Event) {
@@ -44867,61 +43775,23 @@ export class TeamFormComponent implements OnInit {
     }
 
     this.form().markAsTouched();
-    if (this.form().invalid()) {
+    if (this.form().invalid() || !this.id()) {
       return;
     }
 
-    const raw = this.payload();
+    const payload = this.buildPayload();
 
     this.saving.set(true);
     this.error.set(null);
-
     try {
-      let result: TeamDetail;
-      if (this.isNew()) {
-        const payload: AddTeamType = {
-          name: raw.name?.trim() ?? '',
-          description: raw.description?.trim()?.length ? raw.description.trim() : null,
-          team_captain_id: raw.team_captain_id || undefined,
-          team_lead_user_id: raw.team_lead_user_id || undefined,
-          volunteer_ids: raw.volunteer_ids ?? [],
-          list_ids: raw.list_ids ?? [],
-        };
-        result = await this.teams.add(payload);
-        this.teams.triggerRefresh();
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/teams']);
-        }
-      } else if (this.id()) {
-        const payload: UpdateTeamType = {
-          name: raw.name?.trim() ?? null,
-          description: raw.description?.trim()?.length ? raw.description.trim() : null,
-          team_captain_id: raw.team_captain_id || null,
-          team_lead_user_id: raw.team_lead_user_id || null,
-          volunteer_ids: raw.volunteer_ids ?? [],
-          list_ids: raw.list_ids ?? [],
-        };
-        result = await this.teams.update(this.id()!, payload);
-        this.teams.triggerRefresh();
-        this.detail.set(result);
-        this.setForm(result);
-        this.form().reset();
-        this.alerts.showSuccess('Team updated');
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/teams', this.id()]);
-        }
-        return;
-      } else {
-        throw new Error('Missing team identifier');
-      }
-      this.detail.set(result);
-      this.setForm(result);
+      await this.users.update(this.id(), payload);
+      this.alerts.showSuccess('User updated');
+      this.users.triggerRefresh();
+      await this.load();
       this.form().reset();
-      this.alerts.showSuccess(this.isNew() ? 'Team created' : 'Team updated');
+      if (typeof done === 'function') {
+        done();
+      }
     } catch (err) {
       const message =
         err instanceof Error && err.message
@@ -44931,7 +43801,7 @@ export class TeamFormComponent implements OnInit {
               typeof err['data']['message'] === 'string' &&
               err['data']['message']
             ? err['data']['message']
-            : 'Unable to save team';
+            : 'Unable to update user';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -44939,60 +43809,21 @@ export class TeamFormComponent implements OnInit {
     }
   }
 
-  private async loadPeople() {
-    try {
-      const res = await this.persons.getAll({ limit: 500, tags: ['volunteer'] });
-      const items = (res?.rows ?? []).map((person: any) => ({
-        id: String(person.id ?? ''),
-        label: `${person.first_name ?? ''} ${person.last_name ?? ''}`.trim() || person.email || 'Unknown',
-        email: person.email ?? null,
-      }));
-      this.signalPeople.set(items);
-    } catch (err) {
-      console.error('Failed to load volunteers list', err);
-      this.signalPeople.set([]);
-    }
+  protected resetForm() {
+    const user = this.detail();
+    if (!user) return;
+    this.setForm(user);
+    this.form().reset();
   }
 
-  private async loadUsers() {
-    try {
-      const us = await this.userService.getUsers();
-      this.users.set(us || []);
-    } catch (err) {
-      console.error('Failed to load teammates list', err);
-      this.users.set([]);
-    }
-  }
+  protected readonly resettingPassword = signal(false);
 
-  private async loadLists() {
+  protected async triggerPasswordReset() {
+    if (!this.id()) return;
+    this.resettingPassword.set(true);
     try {
-      const res = await this.lists.getAll({ limit: 1000 });
-      this.availableLists.set(res?.rows ?? []);
-    } catch (err) {
-      console.error('Failed to load lists', err);
-      this.availableLists.set([]);
-    }
-  }
-
-  private async loadTeam() {
-    if (this.isNew()) {
-      this.detail.set(null);
-      this.setForm(null);
-      return;
-    }
-    if (!this.id()) {
-      this.error.set('Missing team identifier');
-      return;
-    }
-
-    try {
-      const team = await this.teams.getById(this.id()!);
-      this.detail.set(team);
-      this.setForm(team);
-      const res = await this.tasksSvc.getAll({
-        filterModel: { team_id: { value: this.id() } },
-      } as any);
-      this.teamTasks.set(res?.rows ?? []);
+      await this.users.adminTriggerPasswordReset(this.id());
+      this.alerts.showSuccess('Password reset email sent to user');
     } catch (err) {
       const message =
         err instanceof Error && err.message
@@ -45002,52 +43833,85 @@ export class TeamFormComponent implements OnInit {
               typeof err['data']['message'] === 'string' &&
               err['data']['message']
             ? err['data']['message']
-            : 'Failed to load team';
+            : 'Unable to trigger password reset';
+      this.alerts.showError(message);
+    } finally {
+      this.resettingPassword.set(false);
+    }
+  }
+
+  protected async deleteUser() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete User',
+      message: 'Are you sure you want to delete this user? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.saving.set(true);
+    try {
+      const success = await this.users.delete(this.id());
+      if (!success) {
+        throw new Error('User deletion is not supported');
+      }
+      this.alerts.showSuccess('User deleted');
+      await this.router.navigate(['/users']);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      const user = await this.users.getById(this.id());
+      this.detail.set(user);
+      this.setForm(user);
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load user';
       this.error.set(message);
       this.alerts.showError(message);
+    } finally {
+      end();
     }
   }
 
-  private setForm(team: TeamDetail | null) {
+  private setForm(user: IAuthUserDetail) {
     this.payload.set({
-      name: team?.name ?? '',
-      description: team?.description ?? '',
-      team_captain_id: team?.team_captain_id ?? '',
-      team_lead_user_id: team?.team_lead_user_id ?? '',
-      volunteer_ids: team?.volunteers?.map((v) => v.id) ?? [],
-      list_ids: team?.list_ids ?? [],
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name ?? '',
+      role: user.role ?? '',
+      verified: Boolean(user.verified),
     });
-    this.assignedLists.set(team?.lists ?? []);
   }
 
-  protected getPriorityClass(priority: string | null | undefined): string {
-    const p = String(priority || '').toLowerCase();
-    switch (p) {
-      case 'urgent':
-        return 'badge-error text-error-content';
-      case 'high':
-        return 'badge-warning text-warning-content';
-      case 'medium':
-        return 'badge-info text-info-content';
-      default:
-        return 'badge-ghost';
-    }
-  }
-
-  protected getStatusClass(status: string | null | undefined): string {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
-      case 'done':
-        return 'badge-success text-success-content';
-      case 'in_progress':
-        return 'badge-info text-info-content';
-      case 'blocked':
-        return 'badge-error text-error-content';
-      case 'canceled':
-        return 'badge-neutral text-neutral-content';
-      default:
-        return 'badge-ghost';
-    }
+  private buildPayload(): UpdateAuthUserType {
+    const raw = this.payload();
+    const normalize = (value: string | null | undefined) => {
+      const trimmed = value?.trim() ?? '';
+      return trimmed.length ? trimmed : null;
+    };
+    return {
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: normalize(raw.last_name),
+      role: normalize(raw.role),
+      verified: Boolean(raw.verified),
+    } as UpdateAuthUserType;
   }
 }
 
@@ -45418,202 +44282,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </ul>
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
-
-```typescript
-import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
-import { Router, RouterModule } from '@angular/router';
-import { form, validateStandardSchema } from '@angular/forms/signals';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { CompanyInputObj } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { CompaniesService } from '../services/companies-service';
-import { PeopleInCompany } from './people-in-company';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-
-@Component({
-  selector: 'pc-company-form',
-  imports: [PcInput, PcTextarea, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview, PcCard],
-  templateUrl: './company-form.html',
-})
-export class CompanyForm implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly company = signal<any | null>(null);
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    website: '',
-    industry: '',
-    email: '',
-    phone: '',
-    notes: '',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, CompanyInputObj);
-  });
-  protected id = input<string>();
-  protected isLoading = this._loading.visible;
-
-  public mode = input<'new' | 'edit'>('edit');
-  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadCompany();
-    if (this.isNewMode()) {
-      const state = window.history.state;
-      if (state && state.cloneData) {
-        const data = state.cloneData;
-        this.payload.set({
-          name: data.name ? `${data.name} (Copy)` : '',
-          description: data.description ?? '',
-          website: data.website ?? '',
-          industry: data.industry ?? '',
-          email: data.email ?? '',
-          phone: data.phone ?? '',
-          notes: data.notes ?? '',
-        });
-      }
-    }
-  }
-
-  private async loadCompany() {
-    if (!this.id()) return;
-    const end = this._loading.begin();
-    try {
-      const data = await this.companiesSvc.getById(this.id()!);
-      this.company.set(data);
-      if (data) {
-        this.payload.set({
-          name: data.name ?? '',
-          description: data.description ?? '',
-          website: data.website ?? '',
-          industry: data.industry ?? '',
-          email: data.email ?? '',
-          phone: data.phone ?? '',
-          notes: data.notes ?? '',
-        });
-        this.form().reset();
-      }
-    } catch (err) {
-      console.error('Failed to load company details:', err);
-    } finally {
-      end();
-    }
-  }
-
-  protected async deleteCompany() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Company',
-      message: 'Are you sure you want to delete this company? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.companiesSvc.delete(this.id()!);
-      this.companiesSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Company deleted');
-      await this.router.navigate(['/companies']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete company';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-    const raw = this.payload();
-    if (this.id()) {
-      const end = this._loading.begin();
-      this.companiesSvc
-        .update(this.id()!, raw)
-        .then(() => {
-          this.companiesSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Company updated successfully');
-          if (typeof done === 'function') {
-            done();
-          } else {
-            void this.router.navigate(['/companies', this.id()]);
-          }
-        })
-        .catch((err: any) => {
-          const message =
-            err instanceof Error && err.message
-              ? err.message
-              : isRecord(err) &&
-                  isRecord(err['data']) &&
-                  typeof err['data']['message'] === 'string' &&
-                  err['data']['message']
-                ? err['data']['message']
-                : 'Unable to save company';
-          this.alertSvc.showError(message);
-        })
-        .finally(() => end());
-    } else {
-      const end = this._loading.begin();
-      this.companiesSvc
-        .add(raw)
-        .then(() => {
-          this.companiesSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Company added successfully');
-          if (typeof done === 'function') {
-            done();
-          } else {
-            void this.router.navigate(['/companies']);
-          }
-        })
-        .catch((err: any) => {
-          const message =
-            err instanceof Error && err.message
-              ? err.message
-              : isRecord(err) &&
-                  isRecord(err['data']) &&
-                  typeof err['data']['message'] === 'string' &&
-                  err['data']['message']
-                ? err['data']['message']
-                : 'Unable to save company';
-          this.alertSvc.showError(message);
-        })
-        .finally(() => end());
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/duplicates/base-duplicates-manager.ts
 
 ```typescript
@@ -45781,6 +44449,371 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
 }
 ```
 
+## File: apps/frontend/src/app/experiences/events/ui/event-form.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
+import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
+import { environment } from '../../../../environments/environment';
+
+import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../../libs/common/src';
+import { EventsService } from '../../../services/api/events-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { EventsFrontendService } from '../services/events-frontend-service';
+
+@Component({
+  selector: 'pc-event-form',
+  imports: [
+    FormsModule,
+    FormField,
+    PcInput,
+    PcTextarea,
+    RouterModule,
+    Icon,
+    PcDetailHeader,
+    PcEntityOverview,
+    PcCard,
+    FieldsSelector,
+    PublicLinkPanel,
+  ],
+  templateUrl: './event-form.html',
+  providers: [EventsService],
+})
+export class EventFormComponent implements OnInit {
+  private readonly _loading = createLoadingGate();
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly eventsFrontendSvc = inject(EventsFrontendService);
+  private readonly eventsSvc = inject(EventsService);
+  private readonly router = inject(Router);
+
+  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  protected readonly addingTicket = signal(false);
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+  protected readonly publicUrl = computed(() => {
+    const slug = this.payload().slug;
+    if (!slug || this.isNew()) return '';
+    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
+  });
+  protected readonly detail = signal<any>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const events: PcBreadcrumb = { label: 'Events', route: '/events/pages' };
+    const id = this.id();
+    if (id) {
+      return [events, { label: this.detail()?.name || 'Event', route: ['/events/pages', id] }, { label: 'Edit' }];
+    }
+    return [events, { label: 'New event' }];
+  });
+
+  protected readonly payload = signal({
+    name: '',
+    slug: '',
+    description: '',
+    location_address: '',
+    start_time: '',
+    end_time: '',
+    capacity: null as number | null,
+    contact_email: '',
+    contact_phone: '',
+    is_published: false,
+    send_reminder: true,
+    send_registration_confirmation: true,
+  });
+  protected readonly endBeforeStartError = computed(() => {
+    const { start_time, end_time } = this.payload();
+    if (!start_time || !end_time) return false;
+    return new Date(end_time) <= new Date(start_time);
+  });
+  protected readonly error = signal<string | null>(null);
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddEventObj);
+  });
+  protected readonly isNew = computed(() => !this.id());
+  protected readonly loading = this._loading.visible;
+  protected readonly newTicket = signal({ name: '', description: '', price_cents: 0, capacity: null as number | null });
+  protected readonly saving = signal(false);
+  protected readonly slugChecking = signal(false);
+  protected readonly slugUnique = signal<boolean | null>(null);
+
+  // Ticket types
+  protected readonly ticketTypes = signal<any[]>([]);
+
+  protected slugManuallyEdited = false;
+
+  protected setNewTicketName(v: string) {
+    this.newTicket.update((t) => ({ ...t, name: v }));
+  }
+  protected setNewTicketPrice(v: string) {
+    this.newTicket.update((t) => ({ ...t, price_cents: +v }));
+  }
+  protected setNewTicketCapacity(v: string) {
+    this.newTicket.update((t) => ({ ...t, capacity: v ? +v : null }));
+  }
+
+  public readonly id = input<string>();
+
+  constructor() {
+    const nameSignal = computed(() => this.payload().name);
+    effect(() => {
+      const name = nameSignal();
+      if (this.isNew() && !this.slugManuallyEdited) {
+        const suggested = this.slugify(name);
+        if (untracked(this.payload).slug !== suggested) {
+          this.payload.update((p) => ({ ...p, slug: suggested }));
+        }
+      }
+    });
+
+    const slugSignal = computed(() => this.payload().slug);
+    effect(() => {
+      const slug = slugSignal();
+      if (this.slugTimeoutId) {
+        clearTimeout(this.slugTimeoutId);
+        this.slugTimeoutId = null;
+      }
+      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+        this.slugUnique.set(null);
+        this.slugChecking.set(false);
+        return;
+      }
+      this.slugChecking.set(true);
+      this.slugTimeoutId = setTimeout(() => {
+        void (async () => {
+          try {
+            const res = await this.eventsFrontendSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
+            if (untracked(slugSignal) === slug) {
+              this.slugUnique.set(res.unique);
+            }
+          } catch (err) {
+            console.error('Failed to check slug uniqueness', err);
+          } finally {
+            if (untracked(slugSignal) === slug) {
+              this.slugChecking.set(false);
+            }
+          }
+        })();
+      }, 300);
+    });
+  }
+
+  public ngOnInit(): void {
+    const end = this._loading.begin();
+    void this.loadEvent().finally(() => end());
+  }
+
+  protected cancelAddTicket() {
+    this.addingTicket.set(false);
+  }
+
+  protected async deleteEvent() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Event Page',
+      message: 'Are you sure you want to delete this event page? All registrations will also be deleted.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    this.saving.set(true);
+    try {
+      await this.eventsFrontendSvc.delete(this.id()!);
+      this.eventsFrontendSvc.triggerRefresh();
+      this.alerts.showSuccess('Event deleted');
+      await this.router.navigate(['/events/pages']);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async deleteTicketType(id: string) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Ticket Type',
+      message: 'Delete this ticket type?',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    try {
+      await this.eventsSvc.deleteTicketType(id);
+      this.alerts.showSuccess('Ticket type deleted');
+      await this.loadTicketTypes();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete ticket type');
+    }
+  }
+
+  protected formatPrice(cents: number): string {
+    if (!cents) return 'Free';
+    return `$${(cents / 100).toFixed(2)}`;
+  }
+
+  protected async loadEvent() {
+    if (this.isNew()) return;
+
+    try {
+      const event = (await this.eventsFrontendSvc.getById(this.id()!)) as any;
+      this.detail.set(event);
+      this.payload.set({
+        name: event.name ?? '',
+        slug: event.slug ?? '',
+        description: event.description ?? '',
+        location_address: event.location_address ?? '',
+        start_time: this.toDatetimeLocalString(event.start_time),
+        end_time: this.toDatetimeLocalString(event.end_time),
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? '',
+        contact_phone: event.contact_phone ?? '',
+        is_published: !!event.is_published,
+        send_reminder: event.send_reminder !== false,
+        send_registration_confirmation: event.send_registration_confirmation !== false,
+      });
+      if (Array.isArray(event.fields) && event.fields.length > 0) {
+        this.selectedFields.set(event.fields);
+      }
+      await this.loadTicketTypes();
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
+      this.alerts.showError(this.error()!);
+    }
+  }
+
+  protected async loadTicketTypes() {
+    if (!this.id()) return;
+    try {
+      const types = await this.eventsSvc.getTicketTypes(this.id()!);
+      this.ticketTypes.set(types || []);
+    } catch (err) {
+      console.error('Failed to load ticket types', err);
+    }
+  }
+
+  protected onSlugInput() {
+    this.slugManuallyEdited = true;
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) done.preventDefault();
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+
+    if (this.endBeforeStartError()) {
+      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
+      return;
+    }
+
+    if (this.slugUnique() === false) {
+      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
+      return;
+    }
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    const raw = this.payload();
+    const data = {
+      name: raw.name.trim(),
+      slug: raw.slug.trim(),
+      description: raw.description?.trim() || null,
+      location_address: raw.location_address?.trim() || null,
+      start_time: new Date(raw.start_time),
+      end_time: new Date(raw.end_time),
+      capacity: raw.capacity ? Number(raw.capacity) : null,
+      contact_email: raw.contact_email?.trim() || null,
+      contact_phone: raw.contact_phone?.trim() || null,
+      is_published: !!raw.is_published,
+      send_reminder: !!raw.send_reminder,
+      send_registration_confirmation: !!raw.send_registration_confirmation,
+      fields: this.selectedFields(),
+    };
+
+    try {
+      if (this.isNew()) {
+        const res = await this.eventsFrontendSvc.add(data as AddEventType);
+        this.eventsFrontendSvc.triggerRefresh();
+        this.alerts.showSuccess('Event created successfully');
+        await this.router.navigate(['/events/pages', (res as any).id]);
+      } else {
+        await this.eventsFrontendSvc.update(this.id()!, data as UpdateEventType);
+        this.eventsFrontendSvc.triggerRefresh();
+        this.alerts.showSuccess('Event updated successfully');
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/events/pages', this.id()]);
+        }
+      }
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
+      this.alerts.showError(this.error()!);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async saveNewTicket() {
+    const t = this.newTicket();
+    if (!t.name.trim()) {
+      this.alerts.showError('Ticket type name is required');
+      return;
+    }
+    try {
+      await this.eventsSvc.addTicketType({
+        event_id: this.id()!,
+        name: t.name.trim(),
+        description: t.description?.trim() || null,
+        price_cents: Number(t.price_cents) || 0,
+        capacity: t.capacity ? Number(t.capacity) : null,
+      });
+      this.addingTicket.set(false);
+      this.alerts.showSuccess('Ticket type added');
+      await this.loadTicketTypes();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add ticket type');
+    }
+  }
+
+  protected slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+  }
+
+  // Ticket type management
+  protected startAddTicket() {
+    this.newTicket.set({ name: '', description: '', price_cents: 0, capacity: null });
+    this.addingTicket.set(true);
+  }
+
+  protected toDatetimeLocalString(val: any): string {
+    if (!val) return '';
+    const date = new Date(val);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/events/ui/events-grid.ts
 
 ```typescript
@@ -45927,6 +44960,281 @@ export class FundraisingGridComponent {
       valueFormatter: (p: any) => (p.value ? new Date(p.value).toLocaleDateString() : ''),
     },
   ];
+}
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/household-view.ts
+
+```typescript
+import { Component, ElementRef, viewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { Loader } from '@googlemaps/js-api-loader';
+import type { IAuthUser } from '@common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { PeopleInHousehold } from '../../persons/ui/people-in-household';
+import { UserService } from '../../../services/user.service';
+import { HouseholdsService } from '../services/households-service';
+import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Tags } from '@experiences/tags/ui/tags';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+@Component({
+  selector: 'pc-household-view',
+  imports: [
+    RouterModule,
+    PeopleInHousehold,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    PcCard,
+    Tabs,
+    TabPanel,
+    StatCard,
+    ProfileCard,
+    DetailItem,
+    SystemMetadata,
+    Tags,
+  ],
+  templateUrl: './household-view.html',
+})
+export class HouseholdView {
+  readonly id = input.required<string>();
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly userService = inject(UserService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly loader = inject(Loader);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly household = signal<Households | null>(null);
+  protected readonly users = signal<IAuthUser[]>([]);
+  private usersById = new Map<string, IAuthUser>();
+
+  // Segmentation
+  protected readonly tags = signal<string[]>([]);
+  protected readonly issues = signal<string[]>([]);
+  protected readonly peopleCount = signal(0);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Households', route: '/households' },
+    { label: this.addressString() },
+  ]);
+
+  // Address
+  protected readonly addressString = computed(() => {
+    const raw = this.household();
+    if (!raw) return 'No Address Assigned';
+    if (raw.is_placeholder) return 'People with no addresses';
+    if (raw.formatted_address) return raw.formatted_address;
+
+    const parts: string[] = [];
+    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
+
+    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
+
+    if (streetParts.length) parts.push(streetParts.join(' ').trim());
+    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+
+    return parts.join(', ').trim() || 'No Address Assigned';
+  });
+
+  protected readonly hasMap = computed(() => {
+    const h = this.household();
+    return !!(h && h.lat && h.lng && !h.is_placeholder);
+  });
+
+  private mapInitialized = false;
+  private readonly mapContainer = viewChild<ElementRef>('mapContainer');
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly householdTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'members', label: `Household Members (${this.peopleCount()})`, icon: 'user-group' },
+    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
+  ]);
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+
+    effect(() => {
+      const elRef = this.mapContainer();
+      if (elRef) {
+        void this.initMap(elRef.nativeElement);
+      } else {
+        this.mapInitialized = false;
+      }
+    });
+
+    // Load users for addedby/updatedby display names
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load household details
+      const householdData = (await this.householdsSvc.getById(id)) as Households;
+      this.household.set(householdData);
+
+      // 2. Load tags and issues
+      const tagList = await this.householdsSvc.getTags(id, 'tag');
+      this.tags.set(tagList);
+      const issueList = await this.householdsSvc.getTags(id, 'issue');
+      this.issues.set(issueList);
+
+      // 3. Load people in household count
+      const count = await this.householdsSvc.getPeopleCount(id);
+      this.peopleCount.set(count);
+    } catch (err) {
+      this.alertSvc.showError('Failed to load household details: ' + String(err));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editHousehold() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteHousehold() {
+    if (!this.id()) return;
+    const end = this._loading.begin();
+    try {
+      // Fetch people belonging to this household
+      const people = (await this.personsSvc.getByHouseholdId(this.id(), { columns: ['id'] })) as Array<{ id: string }>;
+      const personIds = people.map((p) => p.id);
+      const peopleCount = personIds.length;
+
+      if (peopleCount > 0) {
+        // Show the 3-option warning dialog
+        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+          title: 'Households have people',
+          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+          variant: 'warning',
+          choices: [
+            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+          ],
+          cancelText: 'Cancel',
+        });
+
+        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
+
+        if (choice === 'keep-people') {
+          for (const pid of personIds) {
+            await this.personsSvc.removeHousehold(pid);
+          }
+        } else if (choice === 'delete-people') {
+          await this.personsSvc.deleteMany(personIds);
+        }
+      } else {
+        const confirmed = await this.dialogSvc.confirm({
+          title: 'Delete Household',
+          message: 'Are you sure you want to delete this household? This action cannot be undone.',
+          variant: 'danger',
+          confirmText: 'Delete',
+        });
+        if (!confirmed) return;
+      }
+
+      await this.householdsSvc.delete(this.id());
+      this.householdsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Household deleted');
+      await this.router.navigate(['/households']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete household';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  private async initMap(mapEl: HTMLElement) {
+    const h = this.household();
+    if (!h || !h.lat || !h.lng || h.is_placeholder || this.mapInitialized) return;
+
+    try {
+      await this.loader.importLibrary('maps');
+      const { AdvancedMarkerElement } = (await this.loader.importLibrary('marker')) as any;
+      const center = { lat: Number(h.lat), lng: Number(h.lng) };
+      const map = new google.maps.Map(mapEl, {
+        center,
+        zoom: 15,
+        disableDefaultUI: false,
+        zoomControl: true,
+        streetViewControl: false,
+        mapTypeControl: false,
+        mapId: 'DEMO_MAP_ID',
+      });
+
+      new AdvancedMarkerElement({
+        position: center,
+        map,
+        title: this.addressString(),
+      });
+      this.mapInitialized = true;
+    } catch (err) {
+      console.error('Failed to load Google Map:', err);
+    }
+  }
+
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -46761,6 +46069,615 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/shifts/ui/shift-view.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { ShiftsService } from '../services/shifts-service';
+import { VolunteerService } from '../../../services/api/volunteer-service';
+import { environment } from '../../../../environments/environment';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+@Component({
+  selector: 'pc-shift-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    Tabs,
+    TabPanel,
+    StatusBadge,
+    StatCard,
+    ProfileCard,
+    DetailRow,
+    PcCard,
+  ],
+  templateUrl: './shift-view.html',
+  providers: [VolunteerService],
+})
+export class ShiftViewComponent {
+  readonly id = input.required<string>();
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly volunteerEventsSvc = inject(ShiftsService);
+  private readonly volunteerSvc = inject(VolunteerService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly event = signal<any | null>(null);
+  protected readonly roster = signal<any[]>([]);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Shifts', route: '/events/shifts' },
+    { label: this.event()?.name || 'Volunteer event' },
+  ]);
+
+  // Active tab state
+  protected activeTab = signal<string>('roster');
+
+  protected readonly eventTabs = computed<PcTabOption[]>(() => [
+    { id: 'roster', label: `Volunteer Roster (${this.roster().length})`, icon: 'user-group' },
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+  ]);
+
+  protected readonly eventPassed = computed(() => {
+    const end = this.event()?.end_time;
+    if (!end) return false;
+    return new Date(end) < new Date();
+  });
+
+  protected readonly remainingCapacity = computed(() => {
+    const detail = this.event();
+    if (!detail || detail.capacity === null || detail.capacity === undefined) {
+      return 'Unlimited';
+    }
+    const count = this.roster().length;
+    return Math.max(0, detail.capacity - count);
+  });
+
+  protected readonly publicUrl = computed(() => {
+    const detail = this.event();
+    if (!detail || !detail.public_url) return '';
+    return environment.apiUrl + detail.public_url;
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load Event details
+      const detail = await this.volunteerEventsSvc.getById(id);
+      this.event.set(detail);
+
+      // 2. Load associated shifts/roster
+      const rosterData = await this.volunteerSvc.getShiftsForEvent(id);
+      this.roster.set(rosterData || []);
+    } catch (err) {
+      this.alertSvc.showError('Failed to load event details: ' + String(err));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editEvent() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteEvent() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Event',
+      message: 'Are you sure you want to delete this event? This will also delete all signed up shifts.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.volunteerEventsSvc.delete(this.id());
+      this.volunteerEventsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Event deleted');
+      await this.router.navigate(['/events/shifts']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete event';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copySnippet(): void {
+    const url = this.publicUrl();
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(
+      () => this.alertSvc.showSuccess('Public signup link copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected getStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    switch (s) {
+      case 'attended':
+        return 'success';
+      case 'signed_up':
+        return 'warning';
+      case 'no_show':
+        return 'error';
+      case 'cancelled':
+        return 'neutral';
+      default:
+        return 'ghost';
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/teams/ui/team-form.ts
+
+```typescript
+import { Component, computed, effect, inject, input, OnInit, signal, untracked } from '@angular/core';
+import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AddTeamObj, AddTeamType, IAuthUser, UpdateTeamType } from '../../../../../../../libs/common/src';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+import { UserService } from '../../../services/user.service';
+import { ListsService } from '../../lists/services/lists-service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { TasksService } from '../../tasks/services/tasks-service';
+import { TeamDetail, TeamsService } from '../services/teams-service';
+
+interface PersonOption {
+  email: string | null;
+  id: string;
+  label: string;
+}
+
+import { DatePipe } from '@angular/common';
+
+@Component({
+  selector: 'pc-team-form',
+  imports: [FormField, RouterModule, Icon, DatePipe, PcDetailHeader, PcInput, PcTextarea, PcSelect, PcCard],
+  templateUrl: './team-form.html',
+})
+export class TeamFormComponent implements OnInit {
+  readonly id = input<string>();
+
+  private readonly alerts = inject(AlertService);
+  private readonly persons = inject(PersonsService);
+  private readonly router = inject(Router);
+  private readonly teams = inject(TeamsService);
+  private readonly lists = inject(ListsService);
+  private readonly userService = inject(UserService);
+  private readonly tasksSvc = inject(TasksService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly isNew = computed(() => !this.id());
+
+  protected readonly detail = signal<TeamDetail | null>(null);
+  protected readonly error = signal<string | null>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const teams: PcBreadcrumb = { label: 'Teams', route: '/teams' };
+    const id = this.id();
+    if (id) {
+      return [teams, { label: this.detail()?.name || 'Team', route: ['/teams', id] }, { label: 'Edit' }];
+    }
+    return [teams, { label: 'New team' }];
+  });
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    team_captain_id: '',
+    team_lead_user_id: '',
+    volunteer_ids: [] as string[],
+    list_ids: [] as string[],
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddTeamObj);
+  });
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected signalPeople = signal<PersonOption[]>([]);
+  protected readonly people = computed(() => this.signalPeople());
+  protected readonly users = signal<IAuthUser[]>([]);
+  protected readonly availableLists = signal<any[]>([]);
+  protected readonly assignedLists = signal<any[]>([]);
+  protected readonly teamTasks = signal<any[]>([]);
+  protected readonly saving = signal(false);
+  protected readonly volunteers = computed(() => this.detail()?.volunteers ?? []);
+
+  constructor() {
+    effect(() => {
+      const options = this.people();
+      if (options.length === 0) return;
+
+      const current = untracked(this.payload);
+      let nextCaptain = current.team_captain_id;
+      let changed = false;
+
+      if (nextCaptain && !options.some((p) => p.id === nextCaptain)) {
+        nextCaptain = '';
+        changed = true;
+      }
+
+      const currentVolunteers = current.volunteer_ids ?? [];
+      const validIds = currentVolunteers.filter((id) => options.some((p) => p.id === id));
+      if (validIds.length !== currentVolunteers.length) {
+        changed = true;
+      }
+
+      if (changed) {
+        this.payload.update((p) => ({
+          ...p,
+          team_captain_id: nextCaptain,
+          volunteer_ids: validIds,
+        }));
+      }
+    });
+  }
+
+  public ngOnInit(): void {
+    void this.initialize();
+  }
+  private async initialize(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      await Promise.all([this.loadPeople(), this.loadUsers(), this.loadLists(), this.loadTeam()]);
+
+      if (this.isNew()) {
+        const state = window.history.state;
+        if (state && state.cloneData) {
+          const sourceTeamId = state.cloneData.id;
+          if (sourceTeamId) {
+            try {
+              const teamDetail = await this.teams.getById(sourceTeamId);
+              this.payload.set({
+                name: teamDetail.name ? `${teamDetail.name} (Copy)` : '',
+                description: teamDetail.description ?? '',
+                team_captain_id: teamDetail.team_captain_id ?? '',
+                team_lead_user_id: teamDetail.team_lead_user_id ?? '',
+                volunteer_ids: teamDetail.volunteers?.map((v) => v.id) ?? [],
+                list_ids: teamDetail.list_ids ?? [],
+              });
+              this.assignedLists.set(teamDetail.lists ?? []);
+            } catch (err) {
+              console.error('Failed to load source team details for cloning', err);
+              const data = state.cloneData;
+              this.payload.set({
+                name: data.name ? `${data.name} (Copy)` : '',
+                description: data.description ?? '',
+                team_captain_id: data.team_captain_id ?? '',
+                team_lead_user_id: data.team_lead_user_id ?? '',
+                volunteer_ids: [],
+                list_ids: [],
+              });
+            }
+          }
+        }
+      }
+    } finally {
+      end();
+    }
+  }
+
+  protected captainLabel(captainId: string | null) {
+    if (!captainId) return '—';
+    const person = this.people().find((p) => p.id === captainId);
+    return person?.label ?? '—';
+  }
+
+  protected isVolunteerSelected(id: string): boolean {
+    return this.payload().volunteer_ids?.includes(id) ?? false;
+  }
+
+  protected onVolunteersChange(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
+
+    this.payload.update((p) => ({
+      ...p,
+      volunteer_ids: selectedOptions,
+    }));
+    this.form.volunteer_ids().markAsDirty();
+  }
+
+  protected isListSelected(id: string): boolean {
+    return this.payload().list_ids?.includes(id) ?? false;
+  }
+
+  protected onListsChange(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
+
+    this.payload.update((p) => ({
+      ...p,
+      list_ids: selectedOptions,
+    }));
+    this.form.list_ids().markAsDirty();
+
+    const matching = this.availableLists().filter((l) => selectedOptions.includes(l.id));
+    this.assignedLists.set(matching);
+  }
+
+  protected async deleteTeam() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Team',
+      message: 'Are you sure you want to delete this team? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.saving.set(true);
+    try {
+      await this.teams.delete(this.id()!);
+      this.teams.triggerRefresh();
+      this.alerts.showSuccess('Team deleted');
+      await this.router.navigate(['/teams']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete team';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      return;
+    }
+
+    const raw = this.payload();
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    try {
+      let result: TeamDetail;
+      if (this.isNew()) {
+        const payload: AddTeamType = {
+          name: raw.name?.trim() ?? '',
+          description: raw.description?.trim()?.length ? raw.description.trim() : null,
+          team_captain_id: raw.team_captain_id || undefined,
+          team_lead_user_id: raw.team_lead_user_id || undefined,
+          volunteer_ids: raw.volunteer_ids ?? [],
+          list_ids: raw.list_ids ?? [],
+        };
+        result = await this.teams.add(payload);
+        this.teams.triggerRefresh();
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/teams']);
+        }
+      } else if (this.id()) {
+        const payload: UpdateTeamType = {
+          name: raw.name?.trim() ?? null,
+          description: raw.description?.trim()?.length ? raw.description.trim() : null,
+          team_captain_id: raw.team_captain_id || null,
+          team_lead_user_id: raw.team_lead_user_id || null,
+          volunteer_ids: raw.volunteer_ids ?? [],
+          list_ids: raw.list_ids ?? [],
+        };
+        result = await this.teams.update(this.id()!, payload);
+        this.teams.triggerRefresh();
+        this.detail.set(result);
+        this.setForm(result);
+        this.form().reset();
+        this.alerts.showSuccess('Team updated');
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/teams', this.id()]);
+        }
+        return;
+      } else {
+        throw new Error('Missing team identifier');
+      }
+      this.detail.set(result);
+      this.setForm(result);
+      this.form().reset();
+      this.alerts.showSuccess(this.isNew() ? 'Team created' : 'Team updated');
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to save team';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private async loadPeople() {
+    try {
+      const res = await this.persons.getAll({ limit: 500, tags: ['volunteer'] });
+      const items = (res?.rows ?? []).map((person: any) => ({
+        id: String(person.id ?? ''),
+        label: `${person.first_name ?? ''} ${person.last_name ?? ''}`.trim() || person.email || 'Unknown',
+        email: person.email ?? null,
+      }));
+      this.signalPeople.set(items);
+    } catch (err) {
+      console.error('Failed to load volunteers list', err);
+      this.signalPeople.set([]);
+    }
+  }
+
+  private async loadUsers() {
+    try {
+      const us = await this.userService.getUsers();
+      this.users.set(us || []);
+    } catch (err) {
+      console.error('Failed to load teammates list', err);
+      this.users.set([]);
+    }
+  }
+
+  private async loadLists() {
+    try {
+      const res = await this.lists.getAll({ limit: 1000 });
+      this.availableLists.set(res?.rows ?? []);
+    } catch (err) {
+      console.error('Failed to load lists', err);
+      this.availableLists.set([]);
+    }
+  }
+
+  private async loadTeam() {
+    if (this.isNew()) {
+      this.detail.set(null);
+      this.setForm(null);
+      return;
+    }
+    if (!this.id()) {
+      this.error.set('Missing team identifier');
+      return;
+    }
+
+    try {
+      const team = await this.teams.getById(this.id()!);
+      this.detail.set(team);
+      this.setForm(team);
+      const res = await this.tasksSvc.getAll({
+        filterModel: { team_id: { value: this.id() } },
+      } as any);
+      this.teamTasks.set(res?.rows ?? []);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load team';
+      this.error.set(message);
+      this.alerts.showError(message);
+    }
+  }
+
+  private setForm(team: TeamDetail | null) {
+    this.payload.set({
+      name: team?.name ?? '',
+      description: team?.description ?? '',
+      team_captain_id: team?.team_captain_id ?? '',
+      team_lead_user_id: team?.team_lead_user_id ?? '',
+      volunteer_ids: team?.volunteers?.map((v) => v.id) ?? [],
+      list_ids: team?.list_ids ?? [],
+    });
+    this.assignedLists.set(team?.lists ?? []);
+  }
+
+  protected getPriorityClass(priority: string | null | undefined): string {
+    const p = String(priority || '').toLowerCase();
+    switch (p) {
+      case 'urgent':
+        return 'badge-error text-error-content';
+      case 'high':
+        return 'badge-warning text-warning-content';
+      case 'medium':
+        return 'badge-info text-info-content';
+      default:
+        return 'badge-ghost';
+    }
+  }
+
+  protected getStatusClass(status: string | null | undefined): string {
+    const s = String(status || '').toLowerCase();
+    switch (s) {
+      case 'done':
+        return 'badge-success text-success-content';
+      case 'in_progress':
+        return 'badge-info text-info-content';
+      case 'blocked':
+        return 'badge-error text-error-content';
+      case 'canceled':
+        return 'badge-neutral text-neutral-content';
+      default:
+        return 'badge-ghost';
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
 
 ```typescript
@@ -46929,21 +46846,1254 @@ export class DataGridToolbarComponent {
 }
 ```
 
+## File: apps/frontend/src/app/auth/signin-page/signin-page.html
+
+```html
+<pc-auth-layout>
+  @if (rateLimitSecondsLeft() > 0) {
+  <div class="alert alert-error text-sm mb-4">
+    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
+    <div>
+      <p class="font-semibold" i18n>Too many attempts</p>
+      <p class="text-xs mt-1 flex items-center gap-1">
+        <span i18n>Try again in</span>
+        <span class="countdown font-mono text-lg">
+          @if (rateLimitMins() > 0) {
+          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
+            >{{rateLimitMins()}}</span
+          >
+          m }
+          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
+            >{{rateLimitRemSecs()}}</span
+          >
+          s
+        </span>
+      </p>
+    </div>
+  </div>
+  } @switch (step()) { @case ('email') {
+  <label class="label text-neutral-100">Enter your email to sign in</label>
+  <form (submit)="continueWithEmail($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="at-symbol" />
+        <input
+          type="email"
+          placeholder="Enter your email"
+          [formField]="emailForm.email"
+          aria-label="Email"
+          autocomplete="email"
+        />
+      </label>
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { Continue }
+        </button>
+      </div>
+    </div>
+  </form>
+  <div class="pt-4 text-center">
+    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
+  </div>
+  } @case ('passkey') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-1">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
+      <p class="text-sm text-white">{{ emailData().email }}</p>
+      @if (isLoading()) {
+      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
+      }
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button
+        type="button"
+        class="btn btn-primary w-full"
+        (click)="signInWithPasskey()"
+        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
+      >
+        @if (isLoading()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Sign in with Passkey
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="usePasswordInstead()"
+        [disabled]="isLoading()"
+      >
+        Use password instead
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="goBackToEmail()"
+        [disabled]="isLoading()"
+      >
+        Back
+      </button>
+    </div>
+  </div>
+  } @case ('password') { @if (verificationPending()) {
+  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
+    <div class="flex flex-col gap-2 w-full">
+      <div class="flex items-center gap-2 font-semibold">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <span>Verification Pending</span>
+      </div>
+      <p class="text-xs text-amber-200/80">
+        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
+        inbox.
+      </p>
+      <button
+        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
+        type="button"
+        (click)="resendVerification()"
+        [disabled]="resending() || resendCooldownSeconds() > 0"
+      >
+        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
+        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
+      </button>
+    </div>
+  </div>
+  }
+
+  <div class="flex items-center gap-2 text-sm mb-3">
+    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
+    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
+    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
+      Change
+    </button>
+  </div>
+
+  <label class="label text-neutral-100">Enter your password</label>
+  <form (submit)="signIn($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="lock-closed" />
+        <input
+          type="password"
+          placeholder="Enter your password"
+          [formField]="passwordForm.password"
+          aria-label="Password"
+          autocomplete="current-password"
+        />
+      </label>
+
+      <div class="flex items-center justify-between pt-2">
+        <div class="flex items-center">
+          <input
+            id="remember_me"
+            name="remember_me"
+            type="checkbox"
+            class="checkbox checkbox-primary checkbox-sm"
+            [checked]="persistence()"
+            (change)="togglePersistence($event.target)"
+          />
+          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
+        </div>
+        <div class="text-sm">
+          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
+        </div>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { SIGN IN }
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('2fa') {
+  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
+  <form (submit)="verify2FA($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="shield-exclamation" />
+        <input
+          type="text"
+          placeholder="6-digit code"
+          [formField]="otpForm.code"
+          aria-label="Verification Code"
+          autocomplete="one-time-code"
+        />
+      </label>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { VERIFY }
+        </button>
+      </div>
+
+      <div class="text-center pt-2">
+        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
+          Back to Sign In
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('passkey-setup') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
+      <p class="text-sm text-white">
+        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
+        sign-ins.
+      </p>
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
+        @if (settingUpPasskey()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Set Up Passkey
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
+        Skip for now
+      </button>
+    </div>
+  </div>
+  } }
+
+  <div class="text-neutral-200 text-center text-xs pt-2">
+    <span>
+      Copyright © 2024
+      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
+    </span>
+  </div>
+</pc-auth-layout>
+```
+
+## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
+
+```typescript
+import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
+import { Router, RouterModule } from '@angular/router';
+import { form, validateStandardSchema } from '@angular/forms/signals';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { CompanyInputObj } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { CompaniesService } from '../services/companies-service';
+import { PeopleInCompany } from './people-in-company';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+
+@Component({
+  selector: 'pc-company-form',
+  imports: [PcInput, PcTextarea, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview, PcCard],
+  templateUrl: './company-form.html',
+})
+export class CompanyForm implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly companiesSvc = inject(CompaniesService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly company = signal<any | null>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const companies: PcBreadcrumb = { label: 'Companies', route: '/companies' };
+    const id = this.company()?.id;
+    if (id) {
+      return [
+        companies,
+        { label: this.company()?.name || 'Company', route: ['/companies', String(id)] },
+        { label: 'Edit' },
+      ];
+    }
+    return [companies, { label: 'New company' }];
+  });
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    website: '',
+    industry: '',
+    email: '',
+    phone: '',
+    notes: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, CompanyInputObj);
+  });
+  protected id = input<string>();
+  protected isLoading = this._loading.visible;
+
+  public mode = input<'new' | 'edit'>('edit');
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadCompany();
+    if (this.isNewMode()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const data = state.cloneData;
+        this.payload.set({
+          name: data.name ? `${data.name} (Copy)` : '',
+          description: data.description ?? '',
+          website: data.website ?? '',
+          industry: data.industry ?? '',
+          email: data.email ?? '',
+          phone: data.phone ?? '',
+          notes: data.notes ?? '',
+        });
+      }
+    }
+  }
+
+  private async loadCompany() {
+    if (!this.id()) return;
+    const end = this._loading.begin();
+    try {
+      const data = await this.companiesSvc.getById(this.id()!);
+      this.company.set(data);
+      if (data) {
+        this.payload.set({
+          name: data.name ?? '',
+          description: data.description ?? '',
+          website: data.website ?? '',
+          industry: data.industry ?? '',
+          email: data.email ?? '',
+          phone: data.phone ?? '',
+          notes: data.notes ?? '',
+        });
+        this.form().reset();
+      }
+    } catch (err) {
+      console.error('Failed to load company details:', err);
+    } finally {
+      end();
+    }
+  }
+
+  protected async deleteCompany() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Company',
+      message: 'Are you sure you want to delete this company? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.companiesSvc.delete(this.id()!);
+      this.companiesSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Company deleted');
+      await this.router.navigate(['/companies']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete company';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+    const raw = this.payload();
+    if (this.id()) {
+      const end = this._loading.begin();
+      this.companiesSvc
+        .update(this.id()!, raw)
+        .then(() => {
+          this.companiesSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Company updated successfully');
+          if (typeof done === 'function') {
+            done();
+          } else {
+            void this.router.navigate(['/companies', this.id()]);
+          }
+        })
+        .catch((err: any) => {
+          const message =
+            err instanceof Error && err.message
+              ? err.message
+              : isRecord(err) &&
+                  isRecord(err['data']) &&
+                  typeof err['data']['message'] === 'string' &&
+                  err['data']['message']
+                ? err['data']['message']
+                : 'Unable to save company';
+          this.alertSvc.showError(message);
+        })
+        .finally(() => end());
+    } else {
+      const end = this._loading.begin();
+      this.companiesSvc
+        .add(raw)
+        .then(() => {
+          this.companiesSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Company added successfully');
+          if (typeof done === 'function') {
+            done();
+          } else {
+            void this.router.navigate(['/companies']);
+          }
+        })
+        .catch((err: any) => {
+          const message =
+            err instanceof Error && err.message
+              ? err.message
+              : isRecord(err) &&
+                  isRecord(err['data']) &&
+                  typeof err['data']['message'] === 'string' &&
+                  err['data']['message']
+                ? err['data']['message']
+                : 'Unable to save company';
+          this.alertSvc.showError(message);
+        })
+        .finally(() => end());
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.ts
+
+```typescript
+import { Component, effect, inject, output, signal, computed, viewChild, ElementRef } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { EmailsStore } from '../../services/store/emailstore';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { PcIconNameType } from '@icons/icons.index';
+
+interface ContextMenuItem {
+  label: string;
+  icon: PcIconNameType;
+  action: () => void;
+  iconClass?: string; // The '?' makes it optional
+  extraClass?: string; // The '?' makes it optional
+}
+
+interface ContextMenuSection {
+  show: boolean;
+  items: ContextMenuItem[];
+}
+
+@Component({
+  selector: 'pc-email-list',
+  imports: [Icon, TimeAgoPipe],
+  templateUrl: 'email-list.html',
+  host: {
+    '(document:click)': 'closeContextMenu()',
+    '(document:keydown.escape)': 'closeContextMenu()',
+  },
+})
+export class EmailList {
+  private readonly store = inject(EmailsStore);
+  private readonly alertSvc = inject(AlertService);
+
+  public readonly scrollContainer = viewChild<ElementRef<HTMLUListElement>>('scrollContainer');
+
+  public readonly emailSelected = output<EmailType>();
+
+  public readonly reply = output<EmailType>();
+  public readonly replyAll = output<EmailType>();
+  public readonly forward = output<EmailType>();
+
+  public readonly showContextMenu = signal<boolean>(false);
+  public readonly contextMenuPosition = signal<{ x: number; y: number }>({ x: 0, y: 0 });
+  public readonly contextMenuEmail = signal<EmailType | null>(null);
+
+  public readonly emails = this.store.emailsInSelectedFolder;
+
+  public readonly currentFolderId = computed(() => this.store.currentSelectedFolderId());
+
+  protected readonly isLoadingMore = this.store.isLoadingMore;
+  protected readonly ALL_FOLDERS = ALL_FOLDERS;
+
+  protected onScroll(event: Event): void {
+    this.closeContextMenu();
+    const el = event.target as HTMLElement;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+      void this.store.loadNextPage();
+    }
+  }
+
+  public readonly sortOrder = signal<'newest' | 'oldest'>('newest');
+
+  public readonly sortedEmails = computed(() => {
+    const list = [...this.emails()];
+    const order = this.sortOrder();
+    return list.sort((a, b) => {
+      const timeA = new Date(a.date_sent || a.updated_at).getTime();
+      const timeB = new Date(b.date_sent || b.updated_at).getTime();
+      return order === 'newest' ? timeB - timeA : timeA - timeB;
+    });
+  });
+
+  constructor() {
+    let lastFolderId: string | null = null;
+
+    // Auto-select the first email when the folder changes or the current selection is removed.
+    effect(() => {
+      const folderId = this.store.currentSelectedFolderId();
+      const emails = this.sortedEmails();
+      const selectedId = this.store.currentSelectedEmailId();
+
+      const folderChanged = folderId !== lastFolderId;
+      lastFolderId = folderId;
+
+      const container = this.scrollContainer();
+      if (folderChanged && container) {
+        container.nativeElement.scrollTop = 0;
+      }
+
+      // If the list is empty, clear any existing selection and bail out.
+      if (emails.length === 0) {
+        if (selectedId) {
+          // The selected email was removed; clear selection so parent can react.
+          this.store.selectEmail(null);
+        }
+        return;
+      }
+
+      if (folderId) {
+        // Auto-select the first email only if:
+        // 1. The folder has changed, OR
+        // 2. The previously selected email is no longer in the list (e.g., deleted or moved).
+        const currentSelectionStillExists = selectedId ? emails.some((e) => e.id === selectedId) : false;
+
+        if (folderChanged || (selectedId && !currentSelectionStillExists)) {
+          // Update the store directly — do NOT emit through emailSelected output, which would
+          // trigger the parent's onEmail() and reset mobileView to 'detail' on every init.
+          this.store.selectEmail(emails[0]!);
+        }
+      }
+    });
+  }
+
+  public isSelected(id: string): boolean {
+    return this.store.currentSelectedEmailId() === id;
+  }
+
+  public selectEmail(email: EmailType): void {
+    this.emailSelected.emit(email);
+  }
+
+  public onContextMenu(event: MouseEvent, email: EmailType): void {
+    event.preventDefault();
+    this.selectEmail(email);
+    this.contextMenuEmail.set(email);
+
+    // Dynamic viewport boundary collision checking
+    const menuWidth = 192; // equivalent to w-48
+    const menuHeight = 280; // approximate maximum height
+
+    let x = event.clientX;
+    let y = event.clientY;
+
+    if (x + menuWidth > window.innerWidth) {
+      x = window.innerWidth - menuWidth - 8;
+    }
+    if (y + menuHeight > window.innerHeight) {
+      y = window.innerHeight - menuHeight - 8;
+    }
+
+    this.contextMenuPosition.set({ x, y });
+    this.showContextMenu.set(true);
+  }
+
+  get menuSections(): ContextMenuSection[] {
+    const email = this.contextMenuEmail();
+    if (!email) return [];
+
+    return [
+      // Section 1: Actions
+      {
+        show: this.currentFolderId() !== this.ALL_FOLDERS.DRAFTS,
+        items: [
+          { label: 'Reply', icon: 'reply', action: () => this.handleReply() },
+          { label: 'Reply All', icon: 'reply-all', action: () => this.handleReplyAll() },
+          { label: 'Forward', icon: 'forward', iconClass: 'scale-x-[-1]', action: () => this.handleForward() },
+        ] as ContextMenuItem[],
+      },
+      // Section 2: Spam & Read
+      {
+        show: true,
+        items: [
+          ...(!this.isFolderTrash()
+            ? [
+                {
+                  label: this.isFolderSpam() ? 'Not spam' : 'Mark as spam',
+                  icon: (this.isFolderSpam() ? 'inbox' : 'exclamation-triangle') as PcIconNameType,
+                  action: () => (this.isFolderSpam() ? this.moveToInbox() : this.markAsSpam()),
+                },
+              ]
+            : []),
+          {
+            label: `Mark as ${email.is_read ? 'unread' : 'read'}`,
+            icon: 'envelope',
+            action: () => void this.toggleReadStatus(),
+          },
+        ] as ContextMenuItem[],
+      },
+      // Section 3: Status & Delete
+      {
+        show: true,
+        items: [
+          {
+            label: email.is_favourite ? 'Unstar' : 'Star',
+            icon: (email.is_favourite ? 'star-filled' : 'star') as PcIconNameType,
+            iconClass: email.is_favourite ? 'text-amber-500' : 'text-base-content/60',
+            action: () => void this.toggleFavourite(),
+          },
+          {
+            label: email.status === 'closed' ? 'Mark as Open' : 'Mark as Done',
+            icon: 'check-circle',
+            iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
+            action: () => void this.toggleClosed(),
+          },
+          ...(this.isFolderTrash()
+            ? [
+                {
+                  label: 'Restore to Inbox',
+                  icon: 'restore-from-trash',
+                  action: () => void this.restoreFromTrash(),
+                },
+              ]
+            : []),
+          {
+            label: this.isFolderTrash() ? 'Delete Permanently' : 'Delete',
+            icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
+            iconClass: 'text-error',
+            action: () => void this.deleteEmail(),
+          },
+        ] as ContextMenuItem[],
+      },
+      // Section 4: Print
+      {
+        show: true,
+        items: [
+          {
+            label: 'Print',
+            icon: 'print',
+            extraClass: '!py-1',
+            action: () => {
+              window.print();
+            },
+          },
+        ] as ContextMenuItem[],
+      },
+    ].filter((section) => section.show && section.items.length > 0);
+  }
+  public closeContextMenu(): void {
+    this.showContextMenu.set(false);
+  }
+
+  protected handleReply(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.reply.emit(email);
+  }
+
+  protected handleReplyAll(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.replyAll.emit(email);
+  }
+
+  protected handleForward(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.forward.emit(email);
+  }
+
+  protected isFolderTrash(): boolean {
+    return this.currentFolderId() === ALL_FOLDERS.TRASH;
+  }
+
+  protected isFolderSpam(): boolean {
+    return this.currentFolderId() === ALL_FOLDERS.SPAM;
+  }
+
+  protected async toggleReadStatus() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.toggleEmailReadStatus(email.id, !email.is_read);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to update read status');
+    }
+  }
+
+  protected async toggleFavourite() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to update favorite status');
+    }
+  }
+
+  protected async toggleClosed() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    const currentStatus = email.status || 'open';
+    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
+    try {
+      await this.store.updateEmailStatus(email.id, newStatus);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to update email status');
+    }
+  }
+
+  protected async deleteEmail() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.deleteEmail(email.id);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to delete email');
+    }
+  }
+
+  protected restoreFromTrash() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    void this.store.restoreFromTrash(email.id);
+  }
+
+  protected async moveToInbox() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.moveToFolder(email.id, ALL_FOLDERS.INBOX);
+      this.alertSvc.showSuccess('Email moved to Inbox');
+    } catch (_e) {
+      this.alertSvc.showError('Failed to move email to Inbox');
+    }
+  }
+
+  protected async markAsSpam() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.moveToFolder(email.id, ALL_FOLDERS.SPAM);
+      this.alertSvc.showSuccess('Email marked as spam');
+    } catch (_e) {
+      this.alertSvc.showError('Failed to mark email as spam');
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-grid.ts
+
+```typescript
+import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { TasksService } from '@experiences/tasks/services/tasks-service';
+import { UserService } from '@frontend/services/user.service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { GridRow } from '@frontend/shared/components/datagrid/types';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Component({
+  selector: 'pc-tasks-grid',
+  imports: [DataGrid, CsvImportComponent, FormsModule],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Tasks"
+        i18n-title
+        description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableImport]="false"
+        [showArchiveIcon]="true"
+        (importCSV)="openImportDialog()"
+        plusIcon="add-task"
+        i18n-plusIcon
+        addRoute="add"
+        i18n-addRoute
+      ></pc-datagrid>
+    </div>
+
+    <pc-csv-importer
+      [open]="importerOpen()"
+      [title]="'Import Tasks from CSV'"
+      [mappableFields]="mappableFields"
+      [autoMapHeader]="autoMapHeader"
+      [summary]="importSummary()"
+      (submit)="onImportSubmit($event)"
+      (close)="importerOpen.set(false); importSummary.set(null)"
+      (closeSummary)="importSummary.set(null)"
+    />
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: TasksService },
+    provideDataGridConfig({ messages: { exportEntity: 'tasks', exportFileName: 'tasks-export.csv' } }),
+  ],
+})
+export class TasksGrid implements OnInit {
+  private readonly userService = inject(UserService);
+  private readonly tasksService = inject(TasksService);
+  public readonly _loading = createLoadingGate();
+  private readonly grid = viewChild<DataGrid<'tasks', UpdateTaskType>>('grid');
+
+  private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
+  private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
+  private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
+  private readonly statusOptions = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+
+  private readonly unassignedLabel = 'Not Assigned';
+
+  // Users for Assigned To (populated via AuthService on init)
+  private userIds: string[] = [];
+  private userLabels: string[] = [];
+  private usersById = new Map<string, string>();
+  private usersAvatarById = new Map<string, string | null>();
+
+  // Fields we will accept from CSV for future import support
+  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
+
+  protected col: ColDef[] = [
+    { field: 'id', headerName: 'ID' },
+    {
+      field: 'assigned_to',
+      headerName: 'Assigned To',
+      editable: true,
+      valueGetter: (p: CellParams) => this.assignedToValueGetter(p),
+      valueFormatter: (p: CellParams) => this.assignedToValueFormatter(p),
+      cellRenderer: (p: CellParams) => this.renderAssignedCell(p.data?.['assigned_to']),
+      cellEditorParams: () => ({
+        values: [null, ...this.userIds],
+        labels: [this.unassignedLabel, ...this.userLabels],
+      }),
+      valueSetter: (p: CellParams) => this.assignToValueSetter(p),
+    },
+    { field: 'name', headerName: 'Task', editable: true },
+    {
+      field: 'status',
+      headerName: 'Status',
+      editable: true,
+      cellRenderer: (p: CellParams) => this.renderStatusBadge(p.value),
+      cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
+      valueSetter: (p: CellParams) => this.statusValueSetter(p),
+    },
+    {
+      field: 'priority',
+      headerName: 'Priority',
+      editable: true,
+      cellRenderer: (p: CellParams) => this.renderPriorityBadge(p.value),
+      cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
+      valueSetter: (p: CellParams) => this.priorityValueSetter(p),
+    },
+    {
+      field: 'due_at',
+      headerName: 'Due',
+      editable: true,
+      valueGetter: (p: CellParams) => this.toDateOnly(p.data?.['due_at'] ?? p.value),
+      valueSetter: (p: CellParams) => this.dueAtValueSetter(p),
+      valueFormatter: (p: CellParams) => this.formatDate(p.value),
+      cellClass: (p: CellParams) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
+    },
+    {
+      field: 'createdby_id',
+      headerName: 'Created By',
+      editable: false,
+      valueFormatter: (p: CellParams) => this.userNameForId(p.value),
+      cellRenderer: (p: CellParams) => this.renderCreatedByCell(p.data?.['createdby_id']),
+      // Provide filter options using known user labels
+      cellEditorParams: () => ({ values: this.userLabels }),
+    },
+  ];
+  protected importSummary = signal<CsvImportSummary | null>(null);
+  protected importerOpen = signal(false);
+  protected isArchiveMode = signal(false);
+
+  public ngOnInit() {
+    void this.initialize();
+  }
+
+  private async initialize() {
+    // Load users to drive Assigned To options and name mapping
+    try {
+      const users = await this.userService.getUsers();
+      this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
+      this.usersAvatarById = new Map(users.map((u) => [String(u.id), u.avatar_url ?? null]));
+      this.userIds = users.map((u) => String(u.id));
+      this.userLabels = users.map((u) => `${u.first_name}`);
+    } catch {
+      /* no op */
+    }
+  }
+
+  protected readonly autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      task: 'name',
+      title: 'name',
+      subject: 'name',
+      status: 'status',
+      priority: 'priority',
+      due: 'due_at',
+      duedate: 'due_at',
+      dueat: 'due_at',
+      assignedto: 'assigned_to',
+      assignee: 'assigned_to',
+      owner: 'assigned_to',
+    };
+    return map[key] || '';
+  };
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+
+    try {
+      const res = await this.tasksService.import(rows, skippedReported, fileName || undefined);
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.grid()?.refresh();
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
+  }
+
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.importerOpen.set(true);
+  }
+
+  private assignToValueSetter(p: CellParams) {
+    const val =
+      p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
+        ? null
+        : String(p.newValue);
+    const data = p.data;
+    if (!data) return false;
+    if (data['assigned_to'] !== val) {
+      data['assigned_to'] = val;
+      return true;
+    }
+    return false;
+  }
+
+  private assignedToValueFormatter(p: CellParams) {
+    const v = p.value;
+    if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
+    return this.usersById.get(String(v)) ?? String(v ?? '');
+  }
+
+  private assignedToValueGetter(p: CellParams) {
+    const id = p.data?.['assigned_to'] ?? p.value;
+    if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
+    return String(id);
+  }
+
+  private dueAtValueSetter(p: CellParams) {
+    const val = String(p.newValue || p.value || '');
+    // ensure only YYYY-MM-DD is stored
+    const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
+    const data = p.data;
+    if (!data) return false;
+    if (data['due_at'] !== dateOnly) {
+      data['due_at'] = dateOnly;
+      return true;
+    }
+    return false;
+  }
+
+  private formatDate(value: unknown) {
+    if (!value) return '';
+    const d = new Date(this.toDateOnly(value));
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString();
+  }
+
+  private isOverdue(row: GridRow | undefined): boolean {
+    if (!row) return false;
+
+    const status = String(row['status'] ?? '').toLowerCase();
+    if (status === 'done' || status === 'canceled') return false;
+
+    const due = this.toDateOnly(row['due_at']);
+    if (!due) return false;
+
+    const today = this.toDateOnly(new Date());
+    // Simple lexical compare works for YYYY-MM-DD
+    return due < today;
+  }
+
+  private normalizeChoice(value: string) {
+    return value.replace(/[_\s-]+/g, '').toLowerCase();
+  }
+
+  private parsePriorityLabel(label: string) {
+    const norm = this.normalizeChoice(label);
+    const idx = this.priorityLabels.findIndex((l) => this.normalizeChoice(l) === norm);
+    if (idx >= 0) return this.priorityOptions[idx];
+    const optionIdx = this.priorityOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
+    return optionIdx >= 0 ? this.priorityOptions[optionIdx] : label;
+  }
+
+  private parseStatusLabel(label: string) {
+    const norm = this.normalizeChoice(label);
+    const idx = this.statusLabels.findIndex((l) => this.normalizeChoice(l) === norm);
+    if (idx >= 0) return this.statusOptions[idx];
+    const optionIdx = this.statusOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
+    return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
+  }
+
+  private priorityValueSetter(p: CellParams) {
+    const v = this.parsePriorityLabel(String(p.newValue ?? ''));
+    const data = p.data;
+    if (!data) return false;
+    if (data['priority'] !== v) {
+      data['priority'] = v;
+      return true;
+    }
+    return false;
+  }
+
+  private renderAssignedCell(value: unknown) {
+    const v = value == null ? '' : String(value);
+    const isUnassigned = !v || v === this.unassignedLabel;
+    const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
+    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
+    const safeLabel = escapeHtml(label);
+    if (isUnassigned) {
+      return `<span class="badge badge-error badge-sm">${safeLabel}</span>`;
+    }
+    let avatarUrl = this.usersAvatarById.get(v);
+    if (avatarUrl) {
+      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+      return `
+        <div class="flex items-center gap-1.5 py-0.5">
+          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeLabel}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${safeLabel}</span>
+        </div>
+      `;
+    }
+    const initial = escapeHtml(label.slice(0, 1).toUpperCase() || '?');
+    const colors = [
+      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
+      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
+      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
+      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
+      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
+      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+    ];
+    let sum = 0;
+    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
+    const colorClass = colors[sum % colors.length];
+
+    return `
+      <div class="flex items-center gap-1.5 py-0.5">
+        <div class="avatar placeholder">
+          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
+            <span>${initial}</span>
+          </div>
+        </div>
+        <span class="text-xs font-medium">${safeLabel}</span>
+      </div>
+    `;
+  }
+
+  private renderCreatedByCell(value: unknown) {
+    const label = value == null ? '' : String(value);
+    if (!label) {
+      return `<span class="text-base-content/30">—</span>`;
+    }
+    const resolvedName = this.usersById.get(label) ?? label;
+    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
+    const safeName = escapeHtml(resolvedName);
+    let avatarUrl = this.usersAvatarById.get(label);
+    if (avatarUrl) {
+      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+      return `
+        <div class="flex items-center gap-1.5 py-0.5">
+          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeName}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${safeName}</span>
+        </div>
+      `;
+    }
+    const initial = escapeHtml(resolvedName.slice(0, 1).toUpperCase() || '?');
+    const colors = [
+      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
+      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+      'bg-violet-500/20 text-violet-700 dark:text-violet-300',
+      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
+      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
+    ];
+    let sum = 0;
+    for (let i = 0; i < resolvedName.length; i++) sum += resolvedName.charCodeAt(i);
+    const colorClass = colors[sum % colors.length];
+
+    return `
+      <div class="flex items-center gap-1.5 py-0.5">
+        <div class="avatar placeholder">
+          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
+            <span>${initial}</span>
+          </div>
+        </div>
+        <span class="text-xs font-medium">${safeName}</span>
+      </div>
+    `;
+  }
+
+  private renderPriorityBadge(value: unknown) {
+    if (!value) return '';
+    const v = String(value);
+    const cls =
+      v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
+    const label = this.toTitle(v);
+    return `<span class="badge ${cls} badge-sm">${label}</span>`;
+  }
+
+  private renderStatusBadge(value: unknown) {
+    if (!value) return '';
+    const v = String(value);
+    const cls =
+      v === 'done'
+        ? 'badge-success'
+        : v === 'in_progress'
+          ? 'badge-info'
+          : v === 'blocked'
+            ? 'badge-error'
+            : v === 'canceled'
+              ? 'badge-neutral'
+              : 'badge-ghost';
+    const label = this.toTitle(v);
+    return `<span class="badge ${cls} badge-sm">${label}</span>`;
+  }
+
+  private statusValueSetter(p: CellParams) {
+    const v = this.parseStatusLabel(String(p.newValue ?? ''));
+    const data = p.data;
+    if (!data) return false;
+    if (data['status'] !== v) {
+      data['status'] = v;
+      return true;
+    }
+    return false;
+  }
+
+  private toDateOnly(v: unknown): string {
+    if (!v) return '';
+    const str = typeof v === 'string' ? v : new Date(v as number | Date).toISOString();
+    return str.length > 10 ? str.slice(0, 10) : str;
+  }
+
+  private toTitle(v: string) {
+    return v
+      .replace(/[_-]+/g, ' ')
+      .split(' ')
+      .map((s) => (s ? s[0]!.toUpperCase() + s.slice(1) : s))
+      .join(' ');
+  }
+
+  private userNameForId(id: unknown) {
+    if (id === null || id === undefined || id === '') return '';
+    const key = String(id);
+    return this.usersById.get(key) ?? '';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
 
 ```html
-@if (displayTitle()) {
-<pc-grid-header
-  [title]="displayTitle()!"
-  [open]="showDescription()"
-  [description]="description() || ''"
-  [totalCount]="hasInitiatedLoad() ? totalCountAll() : null"
-  [filtered]="anyFilterActive()"
-></pc-grid-header>
-}
-
-<div class="flex h-full w-full flex-col">
-  @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
+<div class="flex h-full w-full flex-col" [class.p-6]="displayTitle()">
+  @if (displayTitle()) {
+  <pc-grid-header
+    [title]="displayTitle()!"
+    [open]="showDescription()"
+    [description]="description() || ''"
+    [totalCount]="hasInitiatedLoad() ? totalCountAll() : null"
+    [filtered]="anyFilterActive()"
+  ></pc-grid-header>
+  } @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
   <progress class="progress h-1"></progress>
   } @if (filterChips().length) {
   <div class="mb-2 flex flex-wrap items-center gap-2 rounded border border-base-300 bg-base-100 px-3 py-2 text-xs">
@@ -47592,580 +48742,6 @@ export class DataGridToolbarComponent {
 }
 ```
 
-## File: apps/frontend/src/app/auth/signin-page/signin-page.html
-
-```html
-<pc-auth-layout>
-  @if (rateLimitSecondsLeft() > 0) {
-  <div class="alert alert-error text-sm mb-4">
-    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
-    <div>
-      <p class="font-semibold" i18n>Too many attempts</p>
-      <p class="text-xs mt-1 flex items-center gap-1">
-        <span i18n>Try again in</span>
-        <span class="countdown font-mono text-lg">
-          @if (rateLimitMins() > 0) {
-          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
-            >{{rateLimitMins()}}</span
-          >
-          m }
-          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
-            >{{rateLimitRemSecs()}}</span
-          >
-          s
-        </span>
-      </p>
-    </div>
-  </div>
-  } @switch (step()) { @case ('email') {
-  <label class="label text-neutral-100">Enter your email to sign in</label>
-  <form (submit)="continueWithEmail($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="at-symbol" />
-        <input
-          type="email"
-          placeholder="Enter your email"
-          [formField]="emailForm.email"
-          aria-label="Email"
-          autocomplete="email"
-        />
-      </label>
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { Continue }
-        </button>
-      </div>
-    </div>
-  </form>
-  <div class="pt-4 text-center">
-    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
-  </div>
-  } @case ('passkey') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-1">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
-      <p class="text-sm text-white">{{ emailData().email }}</p>
-      @if (isLoading()) {
-      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
-      }
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button
-        type="button"
-        class="btn btn-primary w-full"
-        (click)="signInWithPasskey()"
-        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
-      >
-        @if (isLoading()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Sign in with Passkey
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="usePasswordInstead()"
-        [disabled]="isLoading()"
-      >
-        Use password instead
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="goBackToEmail()"
-        [disabled]="isLoading()"
-      >
-        Back
-      </button>
-    </div>
-  </div>
-  } @case ('password') { @if (verificationPending()) {
-  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
-    <div class="flex flex-col gap-2 w-full">
-      <div class="flex items-center gap-2 font-semibold">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <span>Verification Pending</span>
-      </div>
-      <p class="text-xs text-amber-200/80">
-        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
-        inbox.
-      </p>
-      <button
-        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
-        type="button"
-        (click)="resendVerification()"
-        [disabled]="resending() || resendCooldownSeconds() > 0"
-      >
-        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
-        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
-      </button>
-    </div>
-  </div>
-  }
-
-  <div class="flex items-center gap-2 text-sm mb-3">
-    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
-    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
-    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
-      Change
-    </button>
-  </div>
-
-  <label class="label text-neutral-100">Enter your password</label>
-  <form (submit)="signIn($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="lock-closed" />
-        <input
-          type="password"
-          placeholder="Enter your password"
-          [formField]="passwordForm.password"
-          aria-label="Password"
-          autocomplete="current-password"
-        />
-      </label>
-
-      <div class="flex items-center justify-between pt-2">
-        <div class="flex items-center">
-          <input
-            id="remember_me"
-            name="remember_me"
-            type="checkbox"
-            class="checkbox checkbox-primary checkbox-sm"
-            [checked]="persistence()"
-            (change)="togglePersistence($event.target)"
-          />
-          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
-        </div>
-        <div class="text-sm">
-          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
-        </div>
-      </div>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { SIGN IN }
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('2fa') {
-  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
-  <form (submit)="verify2FA($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="shield-exclamation" />
-        <input
-          type="text"
-          placeholder="6-digit code"
-          [formField]="otpForm.code"
-          aria-label="Verification Code"
-          autocomplete="one-time-code"
-        />
-      </label>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { VERIFY }
-        </button>
-      </div>
-
-      <div class="text-center pt-2">
-        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
-          Back to Sign In
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('passkey-setup') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
-      <p class="text-sm text-white">
-        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
-        sign-ins.
-      </p>
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
-        @if (settingUpPasskey()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Set Up Passkey
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
-        Skip for now
-      </button>
-    </div>
-  </div>
-  } }
-
-  <div class="text-neutral-200 text-center text-xs pt-2">
-    <span>
-      Copyright © 2024
-      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
-    </span>
-  </div>
-</pc-auth-layout>
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.ts
-
-```typescript
-import { Component, effect, inject, output, signal, computed, viewChild, ElementRef } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-import { EmailsStore } from '../../services/store/emailstore';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { PcIconNameType } from '@icons/icons.index';
-
-interface ContextMenuItem {
-  label: string;
-  icon: PcIconNameType;
-  action: () => void;
-  iconClass?: string; // The '?' makes it optional
-  extraClass?: string; // The '?' makes it optional
-}
-
-interface ContextMenuSection {
-  show: boolean;
-  items: ContextMenuItem[];
-}
-
-@Component({
-  selector: 'pc-email-list',
-  imports: [Icon, TimeAgoPipe],
-  templateUrl: 'email-list.html',
-  host: {
-    '(document:click)': 'closeContextMenu()',
-    '(document:keydown.escape)': 'closeContextMenu()',
-  },
-})
-export class EmailList {
-  private readonly store = inject(EmailsStore);
-  private readonly alertSvc = inject(AlertService);
-
-  public readonly scrollContainer = viewChild<ElementRef<HTMLUListElement>>('scrollContainer');
-
-  public readonly emailSelected = output<EmailType>();
-
-  public readonly reply = output<EmailType>();
-  public readonly replyAll = output<EmailType>();
-  public readonly forward = output<EmailType>();
-
-  public readonly showContextMenu = signal<boolean>(false);
-  public readonly contextMenuPosition = signal<{ x: number; y: number }>({ x: 0, y: 0 });
-  public readonly contextMenuEmail = signal<EmailType | null>(null);
-
-  public readonly emails = this.store.emailsInSelectedFolder;
-
-  public readonly currentFolderId = computed(() => this.store.currentSelectedFolderId());
-
-  protected readonly isLoadingMore = this.store.isLoadingMore;
-  protected readonly ALL_FOLDERS = ALL_FOLDERS;
-
-  protected onScroll(event: Event): void {
-    this.closeContextMenu();
-    const el = event.target as HTMLElement;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
-      void this.store.loadNextPage();
-    }
-  }
-
-  public readonly sortOrder = signal<'newest' | 'oldest'>('newest');
-
-  public readonly sortedEmails = computed(() => {
-    const list = [...this.emails()];
-    const order = this.sortOrder();
-    return list.sort((a, b) => {
-      const timeA = new Date(a.date_sent || a.updated_at).getTime();
-      const timeB = new Date(b.date_sent || b.updated_at).getTime();
-      return order === 'newest' ? timeB - timeA : timeA - timeB;
-    });
-  });
-
-  constructor() {
-    let lastFolderId: string | null = null;
-
-    // Auto-select the first email when the folder changes or the current selection is removed.
-    effect(() => {
-      const folderId = this.store.currentSelectedFolderId();
-      const emails = this.sortedEmails();
-      const selectedId = this.store.currentSelectedEmailId();
-
-      const folderChanged = folderId !== lastFolderId;
-      lastFolderId = folderId;
-
-      const container = this.scrollContainer();
-      if (folderChanged && container) {
-        container.nativeElement.scrollTop = 0;
-      }
-
-      // If the list is empty, clear any existing selection and bail out.
-      if (emails.length === 0) {
-        if (selectedId) {
-          // The selected email was removed; clear selection so parent can react.
-          this.store.selectEmail(null);
-        }
-        return;
-      }
-
-      if (folderId) {
-        // Auto-select the first email only if:
-        // 1. The folder has changed, OR
-        // 2. The previously selected email is no longer in the list (e.g., deleted or moved).
-        const currentSelectionStillExists = selectedId ? emails.some((e) => e.id === selectedId) : false;
-
-        if (folderChanged || (selectedId && !currentSelectionStillExists)) {
-          // Update the store directly — do NOT emit through emailSelected output, which would
-          // trigger the parent's onEmail() and reset mobileView to 'detail' on every init.
-          this.store.selectEmail(emails[0]!);
-        }
-      }
-    });
-  }
-
-  public isSelected(id: string): boolean {
-    return this.store.currentSelectedEmailId() === id;
-  }
-
-  public selectEmail(email: EmailType): void {
-    this.emailSelected.emit(email);
-  }
-
-  public onContextMenu(event: MouseEvent, email: EmailType): void {
-    event.preventDefault();
-    this.selectEmail(email);
-    this.contextMenuEmail.set(email);
-
-    // Dynamic viewport boundary collision checking
-    const menuWidth = 192; // equivalent to w-48
-    const menuHeight = 280; // approximate maximum height
-
-    let x = event.clientX;
-    let y = event.clientY;
-
-    if (x + menuWidth > window.innerWidth) {
-      x = window.innerWidth - menuWidth - 8;
-    }
-    if (y + menuHeight > window.innerHeight) {
-      y = window.innerHeight - menuHeight - 8;
-    }
-
-    this.contextMenuPosition.set({ x, y });
-    this.showContextMenu.set(true);
-  }
-
-  get menuSections(): ContextMenuSection[] {
-    const email = this.contextMenuEmail();
-    if (!email) return [];
-
-    return [
-      // Section 1: Actions
-      {
-        show: this.currentFolderId() !== this.ALL_FOLDERS.DRAFTS,
-        items: [
-          { label: 'Reply', icon: 'reply', action: () => this.handleReply() },
-          { label: 'Reply All', icon: 'reply-all', action: () => this.handleReplyAll() },
-          { label: 'Forward', icon: 'forward', iconClass: 'scale-x-[-1]', action: () => this.handleForward() },
-        ] as ContextMenuItem[],
-      },
-      // Section 2: Spam & Read
-      {
-        show: true,
-        items: [
-          ...(!this.isFolderTrash()
-            ? [
-                {
-                  label: this.isFolderSpam() ? 'Not spam' : 'Mark as spam',
-                  icon: (this.isFolderSpam() ? 'inbox' : 'exclamation-triangle') as PcIconNameType,
-                  action: () => (this.isFolderSpam() ? this.moveToInbox() : this.markAsSpam()),
-                },
-              ]
-            : []),
-          {
-            label: `Mark as ${email.is_read ? 'unread' : 'read'}`,
-            icon: 'envelope',
-            action: () => void this.toggleReadStatus(),
-          },
-        ] as ContextMenuItem[],
-      },
-      // Section 3: Status & Delete
-      {
-        show: true,
-        items: [
-          {
-            label: email.is_favourite ? 'Unstar' : 'Star',
-            icon: (email.is_favourite ? 'star-filled' : 'star') as PcIconNameType,
-            iconClass: email.is_favourite ? 'text-amber-500' : 'text-base-content/60',
-            action: () => void this.toggleFavourite(),
-          },
-          {
-            label: email.status === 'closed' ? 'Mark as Open' : 'Mark as Done',
-            icon: 'check-circle',
-            iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
-            action: () => void this.toggleClosed(),
-          },
-          ...(this.isFolderTrash()
-            ? [
-                {
-                  label: 'Restore to Inbox',
-                  icon: 'restore-from-trash',
-                  action: () => void this.restoreFromTrash(),
-                },
-              ]
-            : []),
-          {
-            label: this.isFolderTrash() ? 'Delete Permanently' : 'Delete',
-            icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
-            iconClass: 'text-error',
-            action: () => void this.deleteEmail(),
-          },
-        ] as ContextMenuItem[],
-      },
-      // Section 4: Print
-      {
-        show: true,
-        items: [
-          {
-            label: 'Print',
-            icon: 'print',
-            extraClass: '!py-1',
-            action: () => {
-              window.print();
-            },
-          },
-        ] as ContextMenuItem[],
-      },
-    ].filter((section) => section.show && section.items.length > 0);
-  }
-  public closeContextMenu(): void {
-    this.showContextMenu.set(false);
-  }
-
-  protected handleReply(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.reply.emit(email);
-  }
-
-  protected handleReplyAll(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.replyAll.emit(email);
-  }
-
-  protected handleForward(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.forward.emit(email);
-  }
-
-  protected isFolderTrash(): boolean {
-    return this.currentFolderId() === ALL_FOLDERS.TRASH;
-  }
-
-  protected isFolderSpam(): boolean {
-    return this.currentFolderId() === ALL_FOLDERS.SPAM;
-  }
-
-  protected async toggleReadStatus() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.toggleEmailReadStatus(email.id, !email.is_read);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to update read status');
-    }
-  }
-
-  protected async toggleFavourite() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to update favorite status');
-    }
-  }
-
-  protected async toggleClosed() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    const currentStatus = email.status || 'open';
-    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
-    try {
-      await this.store.updateEmailStatus(email.id, newStatus);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to update email status');
-    }
-  }
-
-  protected async deleteEmail() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.deleteEmail(email.id);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to delete email');
-    }
-  }
-
-  protected restoreFromTrash() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    void this.store.restoreFromTrash(email.id);
-  }
-
-  protected async moveToInbox() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.moveToFolder(email.id, ALL_FOLDERS.INBOX);
-      this.alertSvc.showSuccess('Email moved to Inbox');
-    } catch (_e) {
-      this.alertSvc.showError('Failed to move email to Inbox');
-    }
-  }
-
-  protected async markAsSpam() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.moveToFolder(email.id, ALL_FOLDERS.SPAM);
-      this.alertSvc.showSuccess('Email marked as spam');
-    } catch (_e) {
-      this.alertSvc.showError('Failed to mark email as spam');
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/households/ui/household-form.ts
 
 ```typescript
@@ -48180,6 +48756,7 @@ import { Tags } from '@experiences/tags/ui/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 import { AddressFormGroup as PcAddressFormGroup } from '@uxcommon/components/address-form-group/address-form-group';
 
@@ -48214,6 +48791,15 @@ export class HouseholdForm implements OnInit {
   private _loading = createLoadingGate();
 
   protected readonly household = signal<Households | null>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const households: PcBreadcrumb = { label: 'Households', route: '/households' };
+    const id = this.household()?.id;
+    if (id) {
+      return [households, { label: 'Household', route: ['/households', String(id)] }, { label: 'Edit' }];
+    }
+    return [households, { label: 'New household' }];
+  });
 
   protected addressVerified = false;
 
@@ -48538,457 +49124,6 @@ export class HouseholdForm implements OnInit {
         }
       })
       .finally(() => end());
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-grid.ts
-
-```typescript
-import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { TasksService } from '@experiences/tasks/services/tasks-service';
-import { UserService } from '@frontend/services/user.service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { GridRow } from '@frontend/shared/components/datagrid/types';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Component({
-  selector: 'pc-tasks-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Tasks"
-        i18n-title
-        description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableImport]="false"
-        [showArchiveIcon]="true"
-        (importCSV)="openImportDialog()"
-        plusIcon="add-task"
-        i18n-plusIcon
-        addRoute="add"
-        i18n-addRoute
-      ></pc-datagrid>
-    </div>
-
-    <pc-csv-importer
-      [open]="importerOpen()"
-      [title]="'Import Tasks from CSV'"
-      [mappableFields]="mappableFields"
-      [autoMapHeader]="autoMapHeader"
-      [summary]="importSummary()"
-      (submit)="onImportSubmit($event)"
-      (close)="importerOpen.set(false); importSummary.set(null)"
-      (closeSummary)="importSummary.set(null)"
-    />
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: TasksService },
-    provideDataGridConfig({ messages: { exportEntity: 'tasks', exportFileName: 'tasks-export.csv' } }),
-  ],
-})
-export class TasksGrid implements OnInit {
-  private readonly userService = inject(UserService);
-  private readonly tasksService = inject(TasksService);
-  public readonly _loading = createLoadingGate();
-  private readonly grid = viewChild<DataGrid<'tasks', UpdateTaskType>>('grid');
-
-  private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
-  private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
-  private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
-  private readonly statusOptions = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
-
-  private readonly unassignedLabel = 'Not Assigned';
-
-  // Users for Assigned To (populated via AuthService on init)
-  private userIds: string[] = [];
-  private userLabels: string[] = [];
-  private usersById = new Map<string, string>();
-  private usersAvatarById = new Map<string, string | null>();
-
-  // Fields we will accept from CSV for future import support
-  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
-
-  protected col: ColDef[] = [
-    { field: 'id', headerName: 'ID' },
-    {
-      field: 'assigned_to',
-      headerName: 'Assigned To',
-      editable: true,
-      valueGetter: (p: CellParams) => this.assignedToValueGetter(p),
-      valueFormatter: (p: CellParams) => this.assignedToValueFormatter(p),
-      cellRenderer: (p: CellParams) => this.renderAssignedCell(p.data?.['assigned_to']),
-      cellEditorParams: () => ({
-        values: [null, ...this.userIds],
-        labels: [this.unassignedLabel, ...this.userLabels],
-      }),
-      valueSetter: (p: CellParams) => this.assignToValueSetter(p),
-    },
-    { field: 'name', headerName: 'Task', editable: true },
-    {
-      field: 'status',
-      headerName: 'Status',
-      editable: true,
-      cellRenderer: (p: CellParams) => this.renderStatusBadge(p.value),
-      cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
-      valueSetter: (p: CellParams) => this.statusValueSetter(p),
-    },
-    {
-      field: 'priority',
-      headerName: 'Priority',
-      editable: true,
-      cellRenderer: (p: CellParams) => this.renderPriorityBadge(p.value),
-      cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
-      valueSetter: (p: CellParams) => this.priorityValueSetter(p),
-    },
-    {
-      field: 'due_at',
-      headerName: 'Due',
-      editable: true,
-      valueGetter: (p: CellParams) => this.toDateOnly(p.data?.['due_at'] ?? p.value),
-      valueSetter: (p: CellParams) => this.dueAtValueSetter(p),
-      valueFormatter: (p: CellParams) => this.formatDate(p.value),
-      cellClass: (p: CellParams) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
-    },
-    {
-      field: 'createdby_id',
-      headerName: 'Created By',
-      editable: false,
-      valueFormatter: (p: CellParams) => this.userNameForId(p.value),
-      cellRenderer: (p: CellParams) => this.renderCreatedByCell(p.data?.['createdby_id']),
-      // Provide filter options using known user labels
-      cellEditorParams: () => ({ values: this.userLabels }),
-    },
-  ];
-  protected importSummary = signal<CsvImportSummary | null>(null);
-  protected importerOpen = signal(false);
-  protected isArchiveMode = signal(false);
-
-  public ngOnInit() {
-    void this.initialize();
-  }
-
-  private async initialize() {
-    // Load users to drive Assigned To options and name mapping
-    try {
-      const users = await this.userService.getUsers();
-      this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
-      this.usersAvatarById = new Map(users.map((u) => [String(u.id), u.avatar_url ?? null]));
-      this.userIds = users.map((u) => String(u.id));
-      this.userLabels = users.map((u) => `${u.first_name}`);
-    } catch {
-      /* no op */
-    }
-  }
-
-  protected readonly autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      task: 'name',
-      title: 'name',
-      subject: 'name',
-      status: 'status',
-      priority: 'priority',
-      due: 'due_at',
-      duedate: 'due_at',
-      dueat: 'due_at',
-      assignedto: 'assigned_to',
-      assignee: 'assigned_to',
-      owner: 'assigned_to',
-    };
-    return map[key] || '';
-  };
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-
-    try {
-      const res = await this.tasksService.import(rows, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message
-          ? e.message
-          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
-            ? e['data']['message']
-            : 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  protected openImportDialog() {
-    this.importSummary.set(null);
-    this.importerOpen.set(true);
-  }
-
-  private assignToValueSetter(p: CellParams) {
-    const val =
-      p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
-        ? null
-        : String(p.newValue);
-    const data = p.data;
-    if (!data) return false;
-    if (data['assigned_to'] !== val) {
-      data['assigned_to'] = val;
-      return true;
-    }
-    return false;
-  }
-
-  private assignedToValueFormatter(p: CellParams) {
-    const v = p.value;
-    if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
-    return this.usersById.get(String(v)) ?? String(v ?? '');
-  }
-
-  private assignedToValueGetter(p: CellParams) {
-    const id = p.data?.['assigned_to'] ?? p.value;
-    if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
-    return String(id);
-  }
-
-  private dueAtValueSetter(p: CellParams) {
-    const val = String(p.newValue || p.value || '');
-    // ensure only YYYY-MM-DD is stored
-    const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
-    const data = p.data;
-    if (!data) return false;
-    if (data['due_at'] !== dateOnly) {
-      data['due_at'] = dateOnly;
-      return true;
-    }
-    return false;
-  }
-
-  private formatDate(value: unknown) {
-    if (!value) return '';
-    const d = new Date(this.toDateOnly(value));
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString();
-  }
-
-  private isOverdue(row: GridRow | undefined): boolean {
-    if (!row) return false;
-
-    const status = String(row['status'] ?? '').toLowerCase();
-    if (status === 'done' || status === 'canceled') return false;
-
-    const due = this.toDateOnly(row['due_at']);
-    if (!due) return false;
-
-    const today = this.toDateOnly(new Date());
-    // Simple lexical compare works for YYYY-MM-DD
-    return due < today;
-  }
-
-  private normalizeChoice(value: string) {
-    return value.replace(/[_\s-]+/g, '').toLowerCase();
-  }
-
-  private parsePriorityLabel(label: string) {
-    const norm = this.normalizeChoice(label);
-    const idx = this.priorityLabels.findIndex((l) => this.normalizeChoice(l) === norm);
-    if (idx >= 0) return this.priorityOptions[idx];
-    const optionIdx = this.priorityOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
-    return optionIdx >= 0 ? this.priorityOptions[optionIdx] : label;
-  }
-
-  private parseStatusLabel(label: string) {
-    const norm = this.normalizeChoice(label);
-    const idx = this.statusLabels.findIndex((l) => this.normalizeChoice(l) === norm);
-    if (idx >= 0) return this.statusOptions[idx];
-    const optionIdx = this.statusOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
-    return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
-  }
-
-  private priorityValueSetter(p: CellParams) {
-    const v = this.parsePriorityLabel(String(p.newValue ?? ''));
-    const data = p.data;
-    if (!data) return false;
-    if (data['priority'] !== v) {
-      data['priority'] = v;
-      return true;
-    }
-    return false;
-  }
-
-  private renderAssignedCell(value: unknown) {
-    const v = value == null ? '' : String(value);
-    const isUnassigned = !v || v === this.unassignedLabel;
-    const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
-    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
-    const safeLabel = escapeHtml(label);
-    if (isUnassigned) {
-      return `<span class="badge badge-error badge-sm">${safeLabel}</span>`;
-    }
-    let avatarUrl = this.usersAvatarById.get(v);
-    if (avatarUrl) {
-      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-      return `
-        <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeLabel}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${safeLabel}</span>
-        </div>
-      `;
-    }
-    const initial = escapeHtml(label.slice(0, 1).toUpperCase() || '?');
-    const colors = [
-      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
-      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
-      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
-      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
-      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-    ];
-    let sum = 0;
-    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
-    const colorClass = colors[sum % colors.length];
-
-    return `
-      <div class="flex items-center gap-1.5 py-0.5">
-        <div class="avatar placeholder">
-          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
-            <span>${initial}</span>
-          </div>
-        </div>
-        <span class="text-xs font-medium">${safeLabel}</span>
-      </div>
-    `;
-  }
-
-  private renderCreatedByCell(value: unknown) {
-    const label = value == null ? '' : String(value);
-    if (!label) {
-      return `<span class="text-base-content/30">—</span>`;
-    }
-    const resolvedName = this.usersById.get(label) ?? label;
-    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
-    const safeName = escapeHtml(resolvedName);
-    let avatarUrl = this.usersAvatarById.get(label);
-    if (avatarUrl) {
-      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-      return `
-        <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeName}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${safeName}</span>
-        </div>
-      `;
-    }
-    const initial = escapeHtml(resolvedName.slice(0, 1).toUpperCase() || '?');
-    const colors = [
-      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      'bg-violet-500/20 text-violet-700 dark:text-violet-300',
-      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
-      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
-    ];
-    let sum = 0;
-    for (let i = 0; i < resolvedName.length; i++) sum += resolvedName.charCodeAt(i);
-    const colorClass = colors[sum % colors.length];
-
-    return `
-      <div class="flex items-center gap-1.5 py-0.5">
-        <div class="avatar placeholder">
-          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
-            <span>${initial}</span>
-          </div>
-        </div>
-        <span class="text-xs font-medium">${safeName}</span>
-      </div>
-    `;
-  }
-
-  private renderPriorityBadge(value: unknown) {
-    if (!value) return '';
-    const v = String(value);
-    const cls =
-      v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
-    const label = this.toTitle(v);
-    return `<span class="badge ${cls} badge-sm">${label}</span>`;
-  }
-
-  private renderStatusBadge(value: unknown) {
-    if (!value) return '';
-    const v = String(value);
-    const cls =
-      v === 'done'
-        ? 'badge-success'
-        : v === 'in_progress'
-          ? 'badge-info'
-          : v === 'blocked'
-            ? 'badge-error'
-            : v === 'canceled'
-              ? 'badge-neutral'
-              : 'badge-ghost';
-    const label = this.toTitle(v);
-    return `<span class="badge ${cls} badge-sm">${label}</span>`;
-  }
-
-  private statusValueSetter(p: CellParams) {
-    const v = this.parseStatusLabel(String(p.newValue ?? ''));
-    const data = p.data;
-    if (!data) return false;
-    if (data['status'] !== v) {
-      data['status'] = v;
-      return true;
-    }
-    return false;
-  }
-
-  private toDateOnly(v: unknown): string {
-    if (!v) return '';
-    const str = typeof v === 'string' ? v : new Date(v as number | Date).toISOString();
-    return str.length > 10 ? str.slice(0, 10) : str;
-  }
-
-  private toTitle(v: string) {
-    return v
-      .replace(/[_-]+/g, ' ')
-      .split(' ')
-      .map((s) => (s ? s[0]!.toUpperCase() + s.slice(1) : s))
-      .join(' ');
-  }
-
-  private userNameForId(id: unknown) {
-    if (id === null || id === undefined || id === '') return '';
-    const key = String(id);
-    return this.usersById.get(key) ?? '';
   }
 }
 
@@ -49617,6 +49752,634 @@ export class ListForm implements OnInit {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
+
+```typescript
+import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { AbstractControl, ValidatorFn } from '@angular/forms';
+import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { TokenService } from '../../services/api/token-service';
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+
+type SignInStep = 'email' | 'passkey' | 'password' | '2fa' | 'passkey-setup';
+
+@Component({
+  selector: 'pc-login',
+  imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
+  templateUrl: './signin-page.html',
+})
+export class SignInPage implements OnInit, OnDestroy {
+  private readonly alertSvc = inject(AlertService);
+  private readonly authService = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly suppressNavigation = signal<boolean>(false);
+  private readonly tokenService = inject(TokenService);
+
+  private _countdownInterval: ReturnType<typeof setInterval> | null = null;
+  private _resendCooldownInterval: ReturnType<typeof setInterval> | null = null;
+  private _loading = createLoadingGate();
+
+  protected readonly step = signal<SignInStep>('email');
+  protected readonly emailData = signal({ email: '' });
+  protected readonly passwordData = signal({ password: '' });
+  protected readonly otpData = signal({ code: '' });
+  protected readonly emailFor2FA = signal<string>('');
+  protected readonly pendingEmail = signal<string>('');
+  protected readonly rateLimitSecondsLeft = signal<number>(0);
+  protected readonly rateLimitMins = computed(() => Math.floor(this.rateLimitSecondsLeft() / 60));
+  protected readonly rateLimitRemSecs = computed(() => this.rateLimitSecondsLeft() % 60);
+  protected readonly resending = signal<boolean>(false);
+  protected readonly resendCooldownSeconds = signal<number>(0);
+  protected readonly resendCooldownMins = computed(() => Math.floor(this.resendCooldownSeconds() / 60));
+  protected readonly resendCooldownRemSecs = computed(() => this.resendCooldownSeconds() % 60);
+  protected readonly settingUpPasskey = signal<boolean>(false);
+  protected readonly verificationPending = signal<boolean>(false);
+
+  protected isLoading = this._loading.visible;
+  protected persistence = signal(this.tokenService.getPersistence());
+
+  public readonly emailForm = form(this.emailData, (p) => {
+    required(p.email);
+    email(p.email);
+  });
+
+  public readonly passwordForm = form(this.passwordData, (p) => {
+    required(p.password);
+    minLength(p.password, 8);
+  });
+
+  public readonly otpForm = form(this.otpData, (p) => {
+    required(p.code);
+    pattern(p.code, /^\d{6}$/);
+  });
+
+  constructor() {
+    effect(() => {
+      const user = this.authService.getUserSignal();
+      if (user() && !this.suppressNavigation()) void this.router.navigate(['summary']);
+    });
+  }
+
+  public get emailField() {
+    return this.emailForm.email();
+  }
+
+  public get password() {
+    return this.passwordForm.password();
+  }
+
+  public get code() {
+    return this.otpForm.code();
+  }
+
+  public ngOnInit() {
+    const params = this.route.snapshot.queryParamMap;
+    const emailVal = params.get('email') || '';
+    if (params.get('emailChanged') === 'true' || params.get('verificationPending') === 'true') {
+      this.verificationPending.set(true);
+      this.pendingEmail.set(emailVal);
+      if (emailVal) {
+        this.emailForm.email().value.set(emailVal);
+        this.step.set('password');
+      }
+    }
+  }
+
+  public ngOnDestroy() {
+    this.clearCountdown();
+    this.clearResendCooldown();
+  }
+
+  public goBackToEmail() {
+    this.step.set('email');
+    this.verificationPending.set(false);
+    this.passwordData.update((p) => ({ ...p, password: '' }));
+    this.otpData.update((o) => ({ ...o, code: '' }));
+  }
+
+  public usePasswordInstead() {
+    this.step.set('password');
+  }
+
+  public async continueWithEmail(event?: Event) {
+    event?.preventDefault();
+
+    const rawEmail = this.emailData().email;
+    const emailVal = rawEmail.trim().toLowerCase();
+
+    if (rawEmail !== emailVal) {
+      this.emailForm.email().value.set(emailVal);
+    }
+
+    this.emailForm().markAsTouched();
+
+    await submit(this.emailForm, {
+      action: async () => {
+        let hasPasskeys = false;
+        const end = this._loading.begin();
+        try {
+          ({ hasPasskeys } = await this.authService.checkEmail(emailVal));
+        } catch {
+          // network error — fall through to password
+        } finally {
+          end();
+        }
+
+        if (hasPasskeys) {
+          this.step.set('passkey');
+          await this.signInWithPasskey();
+        } else {
+          this.step.set('password');
+        }
+
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.emailForm.email();
+        const hasRequired = f.errors().some((e) => e.kind === 'required');
+        this.alertSvc.showError(hasRequired ? 'Email is required.' : 'Please enter a valid email address.');
+      },
+    });
+  }
+
+  public async signInWithPasskey() {
+    const end = this._loading.begin();
+    try {
+      const result = await this.authService.signInWithPasskey(this.persistence());
+      if (result.cancelled) {
+        this.step.set('password');
+        return;
+      }
+      if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') {
+        this.step.set('password');
+        return;
+      }
+      this.handleError(err);
+    } finally {
+      end();
+    }
+  }
+
+  public async signIn(event?: Event) {
+    event?.preventDefault();
+
+    this.tokenService.clearAll();
+
+    const emailVal = this.emailData().email.trim().toLowerCase();
+    const passwordVal = this.passwordData().password;
+
+    this.verificationPending.set(false);
+    this.passwordForm().markAsTouched();
+
+    await submit(this.passwordForm, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          this.suppressNavigation.set(true);
+          const res = await this.authService.signIn({
+            email: emailVal,
+            password: passwordVal,
+            rememberMe: this.persistence(),
+          });
+          if (res.requires2FA) {
+            this.suppressNavigation.set(false);
+            this.step.set('2fa');
+            this.emailFor2FA.set(res.email || emailVal);
+            this.otpData.update((o) => ({ ...o, code: '' }));
+          } else {
+            const user = this.authService.getUser();
+            const dismissed = !!user?.passkey_setup_dismissed_at;
+            if (!dismissed) {
+              const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
+              if (passkeys.length === 0) {
+                this.step.set('passkey-setup');
+                return null;
+              }
+            }
+            this.suppressNavigation.set(false);
+          }
+        } catch (err) {
+          this.suppressNavigation.set(false);
+          this.handleError(err, emailVal);
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.passwordForm.password();
+        const hasMinLength = f.errors().some((e) => e.kind === 'minLength');
+        this.alertSvc.showError(
+          hasMinLength ? 'Password must be at least 8 characters.' : 'Please enter your password.',
+        );
+      },
+    });
+  }
+
+  public async verify2FA(event?: Event) {
+    event?.preventDefault();
+
+    this.otpForm().markAsTouched();
+
+    await submit(this.otpForm, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const emailVal = this.emailFor2FA();
+          const codeVal = this.otpData().code.trim();
+          await this.authService.verify2FA({
+            email: emailVal,
+            code: codeVal,
+            rememberMe: this.persistence(),
+          });
+        } catch (err) {
+          this.handleError(err);
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.otpForm.code();
+        const hasRequired = f.errors().some((e) => e.kind === 'required');
+        const hasPattern = f.errors().some((e) => e.kind === 'pattern');
+        const msg = hasRequired
+          ? 'Verification code is required.'
+          : hasPattern
+            ? 'Verification code must be exactly 6 digits.'
+            : 'Please enter a valid verification code.';
+        this.alertSvc.showError(msg);
+      },
+    });
+  }
+
+  public async setupPasskey() {
+    this.settingUpPasskey.set(true);
+    try {
+      const result = await this.authService.registerPasskey();
+      if (result.verified) {
+        this.alertSvc.showSuccess('Passkey set up successfully!');
+      }
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
+        this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to set up passkey.');
+      }
+    } finally {
+      this.settingUpPasskey.set(false);
+      this.suppressNavigation.set(false);
+    }
+  }
+
+  public async skipPasskeySetup() {
+    try {
+      await this.authService.dismissPasskeyPrompt();
+    } catch {
+      // non-fatal — still allow navigation
+    }
+    this.suppressNavigation.set(false);
+  }
+
+  public togglePersistence(target: EventTarget | null) {
+    if (!target) return;
+    const checked = (target as HTMLInputElement).checked;
+    this.tokenService.setPersistence(checked);
+    this.persistence.set(checked);
+  }
+
+  public async resendVerification() {
+    const emailVal = this.pendingEmail().trim();
+    if (!emailVal || this.resendCooldownSeconds() > 0) return;
+    this.resending.set(true);
+    try {
+      await this.authService.resendVerificationEmail(emailVal);
+      this.alertSvc.showSuccess('Verification email sent successfully!');
+      this.startResendCooldown(60);
+    } catch (err) {
+      const tRPCData = getTRPCData(err);
+      const retryAfterSec =
+        (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+        this.parseRetryAfterSec(err instanceof Error && err.message ? err.message : '');
+      if (retryAfterSec) {
+        this.startResendCooldown(retryAfterSec);
+      } else {
+        this.alertSvc.showError(
+          err instanceof Error && err.message ? err.message : 'Failed to resend verification email.',
+        );
+      }
+    } finally {
+      this.resending.set(false);
+    }
+  }
+
+  private clearCountdown() {
+    if (this._countdownInterval !== null) {
+      clearInterval(this._countdownInterval);
+      this._countdownInterval = null;
+    }
+  }
+
+  private clearResendCooldown() {
+    if (this._resendCooldownInterval !== null) {
+      clearInterval(this._resendCooldownInterval);
+      this._resendCooldownInterval = null;
+    }
+  }
+
+  private startResendCooldown(seconds: number) {
+    this.clearResendCooldown();
+    this.resendCooldownSeconds.set(seconds);
+    this._resendCooldownInterval = setInterval(() => {
+      const current = this.resendCooldownSeconds();
+      if (current <= 1) {
+        this.resendCooldownSeconds.set(0);
+        this.clearResendCooldown();
+      } else {
+        this.resendCooldownSeconds.update((s) => s - 1);
+      }
+    }, 1000);
+  }
+
+  private handleError(err: unknown, emailVal?: string) {
+    const tRPCData = getTRPCData(err);
+    const message = err instanceof Error && err.message ? err.message : String(err);
+    const retryAfterSec =
+      (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+      this.parseRetryAfterSec(message);
+    if (retryAfterSec) {
+      this.startRateLimitCountdown(retryAfterSec);
+      return;
+    }
+    const code = typeof tRPCData?.['code'] === 'string' ? tRPCData['code'] : undefined;
+    if (emailVal && message.toLowerCase().includes('not verified')) {
+      this.verificationPending.set(true);
+      this.pendingEmail.set(emailVal);
+      this.alertSvc.showError(message);
+    } else if (emailVal && (code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
+      this.alertSvc.showError('Please check your email address and password and try again.');
+    } else {
+      this.alertSvc.showError(message);
+    }
+  }
+
+  private parseRetryAfterSec(message: string): number | undefined {
+    const match = message?.match(/retry in (\d+) second/i);
+    return match ? parseInt(match[1]!, 10) : undefined;
+  }
+
+  private startRateLimitCountdown(seconds: number) {
+    this.clearCountdown();
+    this.rateLimitSecondsLeft.set(seconds);
+
+    this._countdownInterval = setInterval(() => {
+      const current = this.rateLimitSecondsLeft();
+      if (current < 1) {
+        this.clearCountdown();
+      } else {
+        this.rateLimitSecondsLeft.update((s) => s - 1);
+      }
+    }, 1000);
+  }
+}
+
+export function emailSafeValidator(): ValidatorFn {
+  return (control: AbstractControl) => {
+    const v = (control.value ?? '').toString().trim();
+    return v && EMAIL_SAFE.test(v) ? null : { email: true };
+  };
+}
+
+const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** Extract the tRPC error `data` payload (e.g. rate-limit metadata) from a caught error. */
+function getTRPCData(err: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(err)) return undefined;
+  const originalError = err['originalError'];
+  if (isRecord(originalError) && isRecord(originalError['data'])) return originalError['data'];
+  return isRecord(err['data']) ? err['data'] : undefined;
+}
+```
+
+## File: apps/frontend/src/app/auth/auth-service.ts
+
+```typescript
+import { signal, Service } from '@angular/core';
+import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
+import { TRPCService } from '../services/api/trpc-service';
+import { TRPCError } from '@trpc/server';
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
+
+@Service()
+export class AuthService extends TRPCService<'authusers'> {
+  private user = signal<IAuthUser | null>(null);
+
+  public async getCurrentUser() {
+    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
+    if (user) this.user.set(user);
+    return user;
+  }
+
+  public getUser(): IAuthUser | null {
+    return this.user();
+  }
+
+  public getUserSignal() {
+    return this.user;
+  }
+
+  public init() {
+    return this.getCurrentUser();
+  }
+
+  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
+    const dataBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
+        resolve(result.split(',')[1]!);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const res = (await this.api.auth.uploadAvatar.mutate({
+      dataBase64,
+      mimeType: file.type as any,
+      filename: file.name,
+    })) as { avatar_url: string };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: res.avatar_url,
+      });
+    }
+
+    return res;
+  }
+
+  public async deleteAvatar(): Promise<{ success: boolean }> {
+    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: null,
+      });
+    }
+
+    return res;
+  }
+
+  public async cancelEmailChange() {
+    const response = await this.api.auth.cancelEmailChange.mutate();
+    await this.getCurrentUser();
+    return response;
+  }
+
+  public resetPassword(input: { code: string; password: string }) {
+    return this.api.auth.resetPassword.mutate(input);
+  }
+
+  public sendPasswordResetEmail(input: { email: string }) {
+    return this.api.auth.sendPasswordResetEmail.mutate(input);
+  }
+
+  public async signIn(
+    input: signInInputType & { rememberMe?: boolean },
+  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
+    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+
+    if (response && 'requires2FA' in response && response.requires2FA) {
+      return { requires2FA: true, email: response.email };
+    }
+
+    const user = await this.updateTokensAndGetCurrentUser(response);
+    if (user?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return { requires2FA: false, user };
+  }
+
+  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
+    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return user;
+  }
+
+  public async signOut() {
+    let apiReturn = null;
+    try {
+      apiReturn = await this.api.auth.signOut.mutate();
+    } catch (error) {
+      console.error('Error during sign out:', error);
+    }
+
+    this.user.set(null);
+    this.tokenService.clearAll();
+    void this.router.navigate(['/signin']);
+
+    return apiReturn;
+  }
+
+  public async signUp(input: signUpInputType) {
+    const token = await this.api.auth.signUp.mutate(input);
+    return this.updateTokensAndGetCurrentUser(token);
+  }
+
+  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
+    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
+  }
+
+  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
+    return this.api.auth.resendVerificationEmail.mutate({ email }) as Promise<{ success: boolean }>;
+  }
+
+  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
+    return this.api.auth.checkEmail.query({ email }) as Promise<{ hasPasskeys: boolean }>;
+  }
+
+  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
+    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
+    let response: any;
+    try {
+      response = await startAuthentication({ optionsJSON: options });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
+      throw err;
+    }
+    const token = await (
+      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
+    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if (user?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return { user, cancelled: false };
+  }
+
+  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
+    const options = await this.api.auth.passkeyRegistrationOptions.query();
+    const response = await startRegistration({ optionsJSON: options as any });
+    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
+      verified: boolean;
+    };
+  }
+
+  public listPasskeys() {
+    return this.api.auth.listPasskeys.query();
+  }
+
+  public deletePasskey(id: string) {
+    return this.api.auth.deletePasskey.mutate({ id });
+  }
+
+  public dismissPasskeyPrompt() {
+    return this.api.auth.dismissPasskeyPrompt.mutate();
+  }
+
+  public updatePasskeyName(id: string, friendlyName: string) {
+    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
+  }
+
+  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
+    if (!token || token instanceof TRPCError) {
+      throw token;
+    }
+    this.tokenService.set(token);
+    return this.getCurrentUser();
+  }
 }
 ```
 
@@ -50261,634 +51024,6 @@ export class PersonForm implements OnInit {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
-
-```typescript
-import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
-import { AbstractControl, ValidatorFn } from '@angular/forms';
-import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { TokenService } from '../../services/api/token-service';
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-
-type SignInStep = 'email' | 'passkey' | 'password' | '2fa' | 'passkey-setup';
-
-@Component({
-  selector: 'pc-login',
-  imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
-  templateUrl: './signin-page.html',
-})
-export class SignInPage implements OnInit, OnDestroy {
-  private readonly alertSvc = inject(AlertService);
-  private readonly authService = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly suppressNavigation = signal<boolean>(false);
-  private readonly tokenService = inject(TokenService);
-
-  private _countdownInterval: ReturnType<typeof setInterval> | null = null;
-  private _resendCooldownInterval: ReturnType<typeof setInterval> | null = null;
-  private _loading = createLoadingGate();
-
-  protected readonly step = signal<SignInStep>('email');
-  protected readonly emailData = signal({ email: '' });
-  protected readonly passwordData = signal({ password: '' });
-  protected readonly otpData = signal({ code: '' });
-  protected readonly emailFor2FA = signal<string>('');
-  protected readonly pendingEmail = signal<string>('');
-  protected readonly rateLimitSecondsLeft = signal<number>(0);
-  protected readonly rateLimitMins = computed(() => Math.floor(this.rateLimitSecondsLeft() / 60));
-  protected readonly rateLimitRemSecs = computed(() => this.rateLimitSecondsLeft() % 60);
-  protected readonly resending = signal<boolean>(false);
-  protected readonly resendCooldownSeconds = signal<number>(0);
-  protected readonly resendCooldownMins = computed(() => Math.floor(this.resendCooldownSeconds() / 60));
-  protected readonly resendCooldownRemSecs = computed(() => this.resendCooldownSeconds() % 60);
-  protected readonly settingUpPasskey = signal<boolean>(false);
-  protected readonly verificationPending = signal<boolean>(false);
-
-  protected isLoading = this._loading.visible;
-  protected persistence = signal(this.tokenService.getPersistence());
-
-  public readonly emailForm = form(this.emailData, (p) => {
-    required(p.email);
-    email(p.email);
-  });
-
-  public readonly passwordForm = form(this.passwordData, (p) => {
-    required(p.password);
-    minLength(p.password, 8);
-  });
-
-  public readonly otpForm = form(this.otpData, (p) => {
-    required(p.code);
-    pattern(p.code, /^\d{6}$/);
-  });
-
-  constructor() {
-    effect(() => {
-      const user = this.authService.getUserSignal();
-      if (user() && !this.suppressNavigation()) void this.router.navigate(['summary']);
-    });
-  }
-
-  public get emailField() {
-    return this.emailForm.email();
-  }
-
-  public get password() {
-    return this.passwordForm.password();
-  }
-
-  public get code() {
-    return this.otpForm.code();
-  }
-
-  public ngOnInit() {
-    const params = this.route.snapshot.queryParamMap;
-    const emailVal = params.get('email') || '';
-    if (params.get('emailChanged') === 'true' || params.get('verificationPending') === 'true') {
-      this.verificationPending.set(true);
-      this.pendingEmail.set(emailVal);
-      if (emailVal) {
-        this.emailForm.email().value.set(emailVal);
-        this.step.set('password');
-      }
-    }
-  }
-
-  public ngOnDestroy() {
-    this.clearCountdown();
-    this.clearResendCooldown();
-  }
-
-  public goBackToEmail() {
-    this.step.set('email');
-    this.verificationPending.set(false);
-    this.passwordData.update((p) => ({ ...p, password: '' }));
-    this.otpData.update((o) => ({ ...o, code: '' }));
-  }
-
-  public usePasswordInstead() {
-    this.step.set('password');
-  }
-
-  public async continueWithEmail(event?: Event) {
-    event?.preventDefault();
-
-    const rawEmail = this.emailData().email;
-    const emailVal = rawEmail.trim().toLowerCase();
-
-    if (rawEmail !== emailVal) {
-      this.emailForm.email().value.set(emailVal);
-    }
-
-    this.emailForm().markAsTouched();
-
-    await submit(this.emailForm, {
-      action: async () => {
-        let hasPasskeys = false;
-        const end = this._loading.begin();
-        try {
-          ({ hasPasskeys } = await this.authService.checkEmail(emailVal));
-        } catch {
-          // network error — fall through to password
-        } finally {
-          end();
-        }
-
-        if (hasPasskeys) {
-          this.step.set('passkey');
-          await this.signInWithPasskey();
-        } else {
-          this.step.set('password');
-        }
-
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.emailForm.email();
-        const hasRequired = f.errors().some((e) => e.kind === 'required');
-        this.alertSvc.showError(hasRequired ? 'Email is required.' : 'Please enter a valid email address.');
-      },
-    });
-  }
-
-  public async signInWithPasskey() {
-    const end = this._loading.begin();
-    try {
-      const result = await this.authService.signInWithPasskey(this.persistence());
-      if (result.cancelled) {
-        this.step.set('password');
-        return;
-      }
-      if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
-    } catch (err) {
-      if (err instanceof Error && err.name === 'NotAllowedError') {
-        this.step.set('password');
-        return;
-      }
-      this.handleError(err);
-    } finally {
-      end();
-    }
-  }
-
-  public async signIn(event?: Event) {
-    event?.preventDefault();
-
-    this.tokenService.clearAll();
-
-    const emailVal = this.emailData().email.trim().toLowerCase();
-    const passwordVal = this.passwordData().password;
-
-    this.verificationPending.set(false);
-    this.passwordForm().markAsTouched();
-
-    await submit(this.passwordForm, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          this.suppressNavigation.set(true);
-          const res = await this.authService.signIn({
-            email: emailVal,
-            password: passwordVal,
-            rememberMe: this.persistence(),
-          });
-          if (res.requires2FA) {
-            this.suppressNavigation.set(false);
-            this.step.set('2fa');
-            this.emailFor2FA.set(res.email || emailVal);
-            this.otpData.update((o) => ({ ...o, code: '' }));
-          } else {
-            const user = this.authService.getUser();
-            const dismissed = !!user?.passkey_setup_dismissed_at;
-            if (!dismissed) {
-              const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
-              if (passkeys.length === 0) {
-                this.step.set('passkey-setup');
-                return null;
-              }
-            }
-            this.suppressNavigation.set(false);
-          }
-        } catch (err) {
-          this.suppressNavigation.set(false);
-          this.handleError(err, emailVal);
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.passwordForm.password();
-        const hasMinLength = f.errors().some((e) => e.kind === 'minLength');
-        this.alertSvc.showError(
-          hasMinLength ? 'Password must be at least 8 characters.' : 'Please enter your password.',
-        );
-      },
-    });
-  }
-
-  public async verify2FA(event?: Event) {
-    event?.preventDefault();
-
-    this.otpForm().markAsTouched();
-
-    await submit(this.otpForm, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const emailVal = this.emailFor2FA();
-          const codeVal = this.otpData().code.trim();
-          await this.authService.verify2FA({
-            email: emailVal,
-            code: codeVal,
-            rememberMe: this.persistence(),
-          });
-        } catch (err) {
-          this.handleError(err);
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.otpForm.code();
-        const hasRequired = f.errors().some((e) => e.kind === 'required');
-        const hasPattern = f.errors().some((e) => e.kind === 'pattern');
-        const msg = hasRequired
-          ? 'Verification code is required.'
-          : hasPattern
-            ? 'Verification code must be exactly 6 digits.'
-            : 'Please enter a valid verification code.';
-        this.alertSvc.showError(msg);
-      },
-    });
-  }
-
-  public async setupPasskey() {
-    this.settingUpPasskey.set(true);
-    try {
-      const result = await this.authService.registerPasskey();
-      if (result.verified) {
-        this.alertSvc.showSuccess('Passkey set up successfully!');
-      }
-    } catch (err) {
-      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
-        this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to set up passkey.');
-      }
-    } finally {
-      this.settingUpPasskey.set(false);
-      this.suppressNavigation.set(false);
-    }
-  }
-
-  public async skipPasskeySetup() {
-    try {
-      await this.authService.dismissPasskeyPrompt();
-    } catch {
-      // non-fatal — still allow navigation
-    }
-    this.suppressNavigation.set(false);
-  }
-
-  public togglePersistence(target: EventTarget | null) {
-    if (!target) return;
-    const checked = (target as HTMLInputElement).checked;
-    this.tokenService.setPersistence(checked);
-    this.persistence.set(checked);
-  }
-
-  public async resendVerification() {
-    const emailVal = this.pendingEmail().trim();
-    if (!emailVal || this.resendCooldownSeconds() > 0) return;
-    this.resending.set(true);
-    try {
-      await this.authService.resendVerificationEmail(emailVal);
-      this.alertSvc.showSuccess('Verification email sent successfully!');
-      this.startResendCooldown(60);
-    } catch (err) {
-      const tRPCData = getTRPCData(err);
-      const retryAfterSec =
-        (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
-        this.parseRetryAfterSec(err instanceof Error && err.message ? err.message : '');
-      if (retryAfterSec) {
-        this.startResendCooldown(retryAfterSec);
-      } else {
-        this.alertSvc.showError(
-          err instanceof Error && err.message ? err.message : 'Failed to resend verification email.',
-        );
-      }
-    } finally {
-      this.resending.set(false);
-    }
-  }
-
-  private clearCountdown() {
-    if (this._countdownInterval !== null) {
-      clearInterval(this._countdownInterval);
-      this._countdownInterval = null;
-    }
-  }
-
-  private clearResendCooldown() {
-    if (this._resendCooldownInterval !== null) {
-      clearInterval(this._resendCooldownInterval);
-      this._resendCooldownInterval = null;
-    }
-  }
-
-  private startResendCooldown(seconds: number) {
-    this.clearResendCooldown();
-    this.resendCooldownSeconds.set(seconds);
-    this._resendCooldownInterval = setInterval(() => {
-      const current = this.resendCooldownSeconds();
-      if (current <= 1) {
-        this.resendCooldownSeconds.set(0);
-        this.clearResendCooldown();
-      } else {
-        this.resendCooldownSeconds.update((s) => s - 1);
-      }
-    }, 1000);
-  }
-
-  private handleError(err: unknown, emailVal?: string) {
-    const tRPCData = getTRPCData(err);
-    const message = err instanceof Error && err.message ? err.message : String(err);
-    const retryAfterSec =
-      (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
-      this.parseRetryAfterSec(message);
-    if (retryAfterSec) {
-      this.startRateLimitCountdown(retryAfterSec);
-      return;
-    }
-    const code = typeof tRPCData?.['code'] === 'string' ? tRPCData['code'] : undefined;
-    if (emailVal && message.toLowerCase().includes('not verified')) {
-      this.verificationPending.set(true);
-      this.pendingEmail.set(emailVal);
-      this.alertSvc.showError(message);
-    } else if (emailVal && (code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
-      this.alertSvc.showError('Please check your email address and password and try again.');
-    } else {
-      this.alertSvc.showError(message);
-    }
-  }
-
-  private parseRetryAfterSec(message: string): number | undefined {
-    const match = message?.match(/retry in (\d+) second/i);
-    return match ? parseInt(match[1]!, 10) : undefined;
-  }
-
-  private startRateLimitCountdown(seconds: number) {
-    this.clearCountdown();
-    this.rateLimitSecondsLeft.set(seconds);
-
-    this._countdownInterval = setInterval(() => {
-      const current = this.rateLimitSecondsLeft();
-      if (current < 1) {
-        this.clearCountdown();
-      } else {
-        this.rateLimitSecondsLeft.update((s) => s - 1);
-      }
-    }, 1000);
-  }
-}
-
-export function emailSafeValidator(): ValidatorFn {
-  return (control: AbstractControl) => {
-    const v = (control.value ?? '').toString().trim();
-    return v && EMAIL_SAFE.test(v) ? null : { email: true };
-  };
-}
-
-const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-/** Extract the tRPC error `data` payload (e.g. rate-limit metadata) from a caught error. */
-function getTRPCData(err: unknown): Record<string, unknown> | undefined {
-  if (!isRecord(err)) return undefined;
-  const originalError = err['originalError'];
-  if (isRecord(originalError) && isRecord(originalError['data'])) return originalError['data'];
-  return isRecord(err['data']) ? err['data'] : undefined;
-}
-```
-
-## File: apps/frontend/src/app/auth/auth-service.ts
-
-```typescript
-import { signal, Service } from '@angular/core';
-import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
-import { TRPCService } from '../services/api/trpc-service';
-import { TRPCError } from '@trpc/server';
-import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-
-@Service()
-export class AuthService extends TRPCService<'authusers'> {
-  private user = signal<IAuthUser | null>(null);
-
-  public async getCurrentUser() {
-    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
-    if (user) this.user.set(user);
-    return user;
-  }
-
-  public getUser(): IAuthUser | null {
-    return this.user();
-  }
-
-  public getUserSignal() {
-    return this.user;
-  }
-
-  public init() {
-    return this.getCurrentUser();
-  }
-
-  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
-    const dataBase64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
-        resolve(result.split(',')[1]!);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-
-    const res = (await this.api.auth.uploadAvatar.mutate({
-      dataBase64,
-      mimeType: file.type as any,
-      filename: file.name,
-    })) as { avatar_url: string };
-
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: res.avatar_url,
-      });
-    }
-
-    return res;
-  }
-
-  public async deleteAvatar(): Promise<{ success: boolean }> {
-    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
-
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: null,
-      });
-    }
-
-    return res;
-  }
-
-  public async cancelEmailChange() {
-    const response = await this.api.auth.cancelEmailChange.mutate();
-    await this.getCurrentUser();
-    return response;
-  }
-
-  public resetPassword(input: { code: string; password: string }) {
-    return this.api.auth.resetPassword.mutate(input);
-  }
-
-  public sendPasswordResetEmail(input: { email: string }) {
-    return this.api.auth.sendPasswordResetEmail.mutate(input);
-  }
-
-  public async signIn(
-    input: signInInputType & { rememberMe?: boolean },
-  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
-    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-
-    if (response && 'requires2FA' in response && response.requires2FA) {
-      return { requires2FA: true, email: response.email };
-    }
-
-    const user = await this.updateTokensAndGetCurrentUser(response);
-    if (user?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return { requires2FA: false, user };
-  }
-
-  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
-    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return user;
-  }
-
-  public async signOut() {
-    let apiReturn = null;
-    try {
-      apiReturn = await this.api.auth.signOut.mutate();
-    } catch (error) {
-      console.error('Error during sign out:', error);
-    }
-
-    this.user.set(null);
-    this.tokenService.clearAll();
-    void this.router.navigate(['/signin']);
-
-    return apiReturn;
-  }
-
-  public async signUp(input: signUpInputType) {
-    const token = await this.api.auth.signUp.mutate(input);
-    return this.updateTokensAndGetCurrentUser(token);
-  }
-
-  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
-    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
-  }
-
-  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
-    return this.api.auth.resendVerificationEmail.mutate({ email }) as Promise<{ success: boolean }>;
-  }
-
-  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
-    return this.api.auth.checkEmail.query({ email }) as Promise<{ hasPasskeys: boolean }>;
-  }
-
-  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
-    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
-    let response: any;
-    try {
-      response = await startAuthentication({ optionsJSON: options });
-    } catch (err) {
-      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
-      throw err;
-    }
-    const token = await (
-      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
-    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if (user?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return { user, cancelled: false };
-  }
-
-  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
-    const options = await this.api.auth.passkeyRegistrationOptions.query();
-    const response = await startRegistration({ optionsJSON: options as any });
-    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
-      verified: boolean;
-    };
-  }
-
-  public listPasskeys() {
-    return this.api.auth.listPasskeys.query();
-  }
-
-  public deletePasskey(id: string) {
-    return this.api.auth.deletePasskey.mutate({ id });
-  }
-
-  public dismissPasskeyPrompt() {
-    return this.api.auth.dismissPasskeyPrompt.mutate();
-  }
-
-  public updatePasskeyName(id: string, friendlyName: string) {
-    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
-  }
-
-  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
-    if (!token || token instanceof TRPCError) {
-      throw token;
-    }
-    this.tokenService.set(token);
-    return this.getCurrentUser();
-  }
 }
 ```
 

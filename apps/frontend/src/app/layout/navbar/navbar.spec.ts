@@ -48,6 +48,9 @@ describe('Navbar Component', () => {
     mockSidebarSvc = {
       isMobileOpen: vi.fn().mockReturnValue(false),
       toggleMobile: vi.fn(),
+      // Used by the pc-favourite-toggle rendered inside the navbar
+      findItemForUrl: vi.fn().mockReturnValue(undefined),
+      toggleFavourite: vi.fn().mockReturnValue(false),
     };
 
     mockThemeSvc = {

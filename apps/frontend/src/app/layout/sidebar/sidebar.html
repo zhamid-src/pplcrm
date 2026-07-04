@@ -25,19 +25,27 @@
   [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
   [class.w-18]="isEffectivelyNarrow() && !this.isMobileOpen()"
 >
-  <div
+  <a
     [class.hidden]="isEffectivelyNarrow()"
-    class="mx-4 mb-5 mt-2.5 flex-none rounded-lg px-2 py-1 group-hover:md:block"
+    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1 group-hover:md:block"
+    routerLink="/summary"
+    aria-label="Go to dashboard"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabel"
+    (click)="this.closeMobile()"
   >
     <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
-  </div>
+  </a>
 
-  <div
+  <a
     [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
-    class="avatar mx-2 mb-5 mt-3 w-10 rounded-full p-0 group-hover:md:hidden"
+    class="avatar mx-2 mb-5 mt-3 w-10 cursor-pointer rounded-full p-0 group-hover:md:hidden"
+    routerLink="/summary"
+    aria-label="Go to dashboard"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
+    (click)="this.closeMobile()"
   >
     <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
-  </div>
+  </a>
 
   @for (item of items(); track item.name) {
   <div class="flex-none pl-2" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">

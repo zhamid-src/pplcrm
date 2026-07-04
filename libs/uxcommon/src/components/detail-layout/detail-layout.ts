@@ -9,7 +9,7 @@ import { DetailHeader } from '../detail-header/detail-header';
   imports: [Icon, DetailHeader],
   template: `
     <div class="flex min-h-full flex-col bg-base-200/50 p-6">
-      <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
+      <div class="flex w-full max-w-7xl flex-col gap-6">
         <!-- Header -->
         <pc-detail-header
           [title]="title()"
