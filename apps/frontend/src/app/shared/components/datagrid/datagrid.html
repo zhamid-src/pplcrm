@@ -7,7 +7,26 @@
     [totalCount]="hasInitiatedLoad() ? totalCountAll() : null"
     [filtered]="anyFilterActive()"
   ></pc-grid-header>
-  } @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
+  } @if (showToolbar()) { <pc-dg-toolbar /> } @if (showNarrowTypeFilter()) {
+  <!-- System views: segmented control with per-view counts (composes AND with filters) -->
+  <div class="mb-2 flex flex-wrap items-center gap-2">
+    <div class="join border border-base-300 rounded-lg">
+      @for (opt of narrowTypeOptions(); track opt.label) {
+      <button
+        type="button"
+        class="btn btn-sm join-item border-0 font-normal gap-1.5"
+        [class.btn-primary]="selectedNarrowType() === opt.value"
+        [class.btn-ghost]="selectedNarrowType() !== opt.value"
+        (click)="selectNarrowType(opt.value)"
+      >
+        {{ opt.label }} @if (opt.count != null) {
+        <span class="tabular-nums opacity-70">{{ opt.count }}</span>
+        }
+      </button>
+      }
+    </div>
+  </div>
+  } @if (isLoading()) {
   <progress class="progress h-1"></progress>
   } @if (filterChips().length) {
   <div class="mb-2 flex flex-wrap items-center gap-2 rounded border border-base-300 bg-base-100 px-3 py-2 text-xs">
@@ -196,11 +215,13 @@
                       ><span>▸</span></label
                     >
                     <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (!col?.noHide) {
                       <li>
                         <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
                           >Hide</a
                         >
                       </li>
+                      }
                       <li class="dropdown dropdown-right">
                         <label tabindex="0" class="flex w-full items-center justify-between"
                           ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
@@ -317,7 +338,7 @@
                 [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
                 (change)="onRowCheckboxChange(r, $any($event.target).checked)"
               />
-              } @let rowId = toId(r.original); @if (!disableView() && rowId) {
+              } @let rowId = toId(r.original); @if (!disableView() && !hasDoorColumn() && rowId) {
               <span
                 title="Open detail"
                 i18n-title="@@datagrid.rows.openDetailTitle"
@@ -473,7 +494,20 @@
             } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
             === null || formattedVal === undefined || formattedVal === '') {
             <span class="text-base-content/30">—</span>
-            } @else { {{ formattedVal }} } } @else { @if (col.field === 'address') {
+            } @else { {{ formattedVal }} } } @else { @if (col.doorColumn) {
+            <!-- Name is the door: underlined at rest, primary on hover; opens the record on click -->
+            @if (rawValue) {
+            <span
+              class="cursor-pointer underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
+              >{{ rawValue }}</span
+            >
+            } @else {
+            <span
+              class="cursor-pointer font-light text-base-content/55 underline decoration-base-content/20 underline-offset-[3px]"
+              i18n="Datagrid|Fallback label for a record with no name@@datagrid.rows.unnamed"
+              >Unnamed person</span
+            >
+            } } @else if (col.field === 'address') {
             <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
               <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
             </div>
@@ -511,18 +545,19 @@
       </select>
     </div>
     <div
-      class="whitespace-nowrap"
+      class="whitespace-nowrap tabular-nums"
       i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
     >
-      <span class="font-normal">{{ displayStartIndex() }}</span> to
-      <span class="font-normal">{{ displayEndIndex() }}</span> of
-      <span class="font-normal">{{ totalCountAll() }}</span>
+      <span class="font-normal">{{ displayStartIndex() }}</span>–<span class="font-normal"
+        >{{ displayEndIndex() }}</span
+      >
+      of <span class="font-normal">{{ totalCountAll() }}</span> · Page
+      <span class="font-normal">{{ pageIndex() + 1 }}</span> of <span class="font-normal">{{ totalPages() }}</span>
     </div>
     <div class="join whitespace-nowrap">
       <button
         class="btn btn-sm font-light join-item btn-ghost"
-        title="First"
-        i18n-title="@@datagrid.pagination.firstTitle"
+        [title]="canPrev() ? firstPageTitle : onFirstPageTitle"
         [disabled]="!canPrev()"
         (click)="firstPage()"
       >
@@ -530,24 +565,15 @@
       </button>
       <button
         class="btn btn-sm font-light join-item btn-ghost"
-        title="Prev"
-        i18n-title="@@datagrid.pagination.prevTitle"
+        [title]="canPrev() ? prevPageTitle : onFirstPageTitle"
         [disabled]="!canPrev()"
         (click)="prevPage()"
       >
         <pc-icon name="chevron-left" [size]="4"></pc-icon>
       </button>
       <button
-        class="btn font-light btn-sm join-item btn-ghost pointer-events-none whitespace-nowrap"
-        i18n="Datagrid|Current page number out of total pages@@datagrid.pagination.currentPage"
-      >
-        Page <span class="font-normal">{{ pageIndex() + 1 }}</span> of
-        <span class="font-normal">{{ totalPages() }}</span>
-      </button>
-      <button
         class="btn btn-sm font-light join-item btn-ghost"
-        title="Next"
-        i18n-title="@@datagrid.pagination.nextTitle"
+        [title]="canNext() ? nextPageTitle : onLastPageTitle"
         [disabled]="!canNext()"
         (click)="nextPage()"
       >
@@ -555,8 +581,7 @@
       </button>
       <button
         class="btn btn-sm font-light join-item btn-ghost"
-        title="Last"
-        i18n-title="@@datagrid.pagination.lastTitle"
+        [title]="canNext() ? lastPageTitle : onLastPageTitle"
         [disabled]="!canNext()"
         (click)="lastPage()"
       >

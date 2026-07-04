@@ -60,8 +60,9 @@
       (click)="toggleCollapse(item.name)"
     >
       <span [class.text-[10px]]="isEffectivelyNarrow() && !hoveringSidebar()">
-        @if (isEffectivelyNarrow() && !hoveringSidebar()) { {{ item.short_name || item.name }} } @else { {{ item.name }}
-        }
+        @if (isEffectivelyNarrow() && !hoveringSidebar()) {
+        <hr class="border-base-300 w-full" />
+        } @else { {{ item.name }} }
       </span>
       @if (item.children?.length) {
       <pc-swap
@@ -91,14 +92,14 @@
   </div>
   }
 
-  <div class="hidden flex-auto grow flex-col sm:flex">
+  <div class="hidden flex-auto grow items-start flex-col sm:flex">
     <span class="min-h-full grow"></span>
     <pc-swap
       class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
-      swapOffIcon="chevron-double-right"
-      swapOnIcon="chevron-double-left"
+      swapOffIcon="arrow-right-end-on-rectangle"
+      swapOnIcon="arrow-left-start-on-rectangle"
       [checked]="isDrawerFull()"
-      animation="rotate"
+      animation="flip"
       (click)="toggleDrawer()"
       aria-label="Toggle drawer"
       i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"

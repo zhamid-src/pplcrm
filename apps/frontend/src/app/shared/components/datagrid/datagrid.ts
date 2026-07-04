@@ -188,6 +188,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   private readonly recordNav = inject(RecordNavigationService);
   public readonly searchTerm = this.searchSvc.searchSignal;
   private readonly hasEditableColumns = signal(false);
+  // A "door" column (e.g. the People Name cell) opens the record on click and
+  // replaces the hover open-icon; when present the selection column narrows to 36px.
+  protected readonly hasDoorColumn = signal(false);
   private readonly headerMinWidths = signal<Record<string, number>>({});
   private readonly dgListsSvc = inject(ListsService, { optional: true });
   public readonly flashedCells = signal<Set<string>>(new Set());
@@ -366,6 +369,15 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return Math.min(end, total);
   });
 
+  // Pager tooltips: enabled states name the action, disabled states name the
+  // unmet condition (§2 pagination honesty / §7.2 acceptance checklist).
+  protected readonly firstPageTitle = 'First page';
+  protected readonly prevPageTitle = 'Previous page';
+  protected readonly nextPageTitle = 'Next page';
+  protected readonly lastPageTitle = 'Last page';
+  protected readonly onFirstPageTitle = "You're on the first page";
+  protected readonly onLastPageTitle = "You're on the last page";
+
   // Hidden columns list for header menu as a computed
   protected readonly hiddenColumns = computed(() => {
     const v = this.colVisibility();
@@ -505,7 +517,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public rowCanSelect = input<(row: GridRow) => boolean>(() => true);
   public limitToTags = input<string[]>([]);
   public limitToIssues = input<string[]>([]);
-  public narrowTypeOptions = input<Array<{ label: string; value: string | null; tags: string[] }>>([]);
+  public narrowTypeOptions = input<Array<{ label: string; value: string | null; tags: string[]; count?: number }>>([]);
   public plusIcon = input<PcIconNameType>('plus');
 
   public showToolbar = input<boolean>(true);
@@ -555,11 +567,16 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   });
 
   public selectNarrowType(value: string | null): void {
+    // Already on this view — nothing to fetch.
+    if (this.selectedNarrowType() === value) return;
     this.selectedNarrowType.set(value);
     const option = this.narrowTypeOptions().find((o) => o.value === value);
     const tags = option?.tags ?? [];
     this.tagFilter.selectedTags.set([...tags]);
-    void this.doRefresh();
+    // A view is a server-side tag filter, so fetch page 1 of the new set — but via
+    // the normal loading gate, not doRefresh()'s forced 1s spinner (that's for the
+    // manual Refresh button). Feels like filtering, not a hard reload.
+    void this.loadPage(0);
   }
 
   public toggleTagFilter(tag: string, checked: boolean) {
@@ -888,6 +905,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       const selectionCols = this.enableSelection() ? [SELECTION_COLUMN] : [];
       this.colDefsWithEdit = [...selectionCols, ...this.colDefs()];
       this.hasEditableColumns.set(this.colDefsWithEdit.some((col) => !!col?.editable));
+      this.hasDoorColumn.set(this.colDefsWithEdit.some((col) => !!col?.doorColumn));
 
       // Initialize column visibility defaults
       const vis: Record<string, boolean> = {};
@@ -954,7 +972,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       // Load persisted state and apply to table before first load
       if (this.config.pageSize && this.config.pageSize > 0) this.store.pageSize.set(this.config.pageSize);
       this.store.loadState();
-      this.selectionStickyWidth.set(this.selectionColumnWidthPx);
+      // A door column replaces the open-icon, so the selection column only needs
+      // to fit the checkbox (36px); without one it also holds the open-icon (72px).
+      this.selectionStickyWidth.set(this.hasDoorColumn() ? 36 : this.selectionColumnWidthPx);
 
       await this.loadPage(0);
       this._initialized = true;
@@ -1601,6 +1621,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected handleCellClick(row: GridRow, col: ColDef) {
     if (col.isCellInteractive && !col.isCellInteractive(row)) return;
+    // The door cell (e.g. Name) opens the record, routing through view() so the
+    // filtered record-navigation context (prev/next, "N of M") is captured.
+    if (col.doorColumn) {
+      const id = this.toId(row);
+      if (id) this.openEdit(id);
+      return;
+    }
     if (typeof col.onCellClicked === 'function') {
       col.onCellClicked({ data: row, colDef: col });
     }
@@ -1635,7 +1662,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected hideAllCols() {
     const v = { ...this.colVisibility() };
-    for (const c of this.colDefsWithEdit) if (c.field) v[c.field] = false;
+    for (const c of this.colDefsWithEdit) if (c.field && !c.noHide) v[c.field] = false;
     this.colVisibility.set(v);
     if (this.tsTable) this.tsTable.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
   }
@@ -1701,7 +1728,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     return this.hasSelection();
   }
   public getColDefsForToolbar() {
-    return this.colDefsWithEdit;
+    // Identity columns (noHide) are omitted from the visibility toggle list.
+    return this.colDefsWithEdit.filter((c) => !c.noHide);
   }
   public getColVisibilityMap() {
     return this.colVisibility();
@@ -2284,6 +2312,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   }
 
   protected toggleCol(field: string, checked: boolean) {
+    // Identity columns (noHide) can never be hidden.
+    if (!checked && this.colDefsWithEdit.some((c) => c.field === field && c.noHide)) return;
     const v = { ...this.colVisibility() };
     v[field] = checked;
     this.colVisibility.set(v);

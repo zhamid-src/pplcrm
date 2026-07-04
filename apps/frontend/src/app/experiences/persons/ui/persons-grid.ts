@@ -72,8 +72,26 @@ export class PersonsGrid implements OnInit {
   ];
 
   protected col: ColDef[] = [
-    { field: 'first_name', headerName: 'First Name', editable: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true },
+    {
+      // Combined identity column: the door that opens the record. Non-editable and
+      // non-hidable; first/last name remain separately editable to its right.
+      field: 'name',
+      headerName: 'Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      minWidth: 160,
+      valueGetter: (params: CellParams) => {
+        const data = params?.data as Record<string, unknown> | undefined;
+        if (!data) return '';
+        return [data['first_name'], data['last_name']]
+          .filter((p) => typeof p === 'string' && p.trim().length)
+          .join(' ')
+          .trim();
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
     { field: 'email', headerName: 'Email', editable: true },
     { field: 'mobile', headerName: 'Mobile', editable: true },
     { field: 'company_name', headerName: 'Company', editable: false },
@@ -143,7 +161,9 @@ export class PersonsGrid implements OnInit {
         const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
         if (streetParts.length) parts.push(streetParts.join(' ').trim());
         if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        return parts.join(', ').trim() || 'No household assigned';
+        // §2: empty address renders as "—" (the grid cell falls back on ''); an
+        // unassigned household is surfaced as a guided empty state on the person view, not here.
+        return parts.join(', ').trim();
       },
     },
     {
@@ -216,11 +236,13 @@ export class PersonsGrid implements OnInit {
 
   public listId = input<string | null>(null);
 
-  protected readonly narrowTypeOptions = [
+  protected readonly narrowTypeOptions = signal<
+    Array<{ label: string; value: string | null; tags: string[]; count?: number }>
+  >([
     { label: 'All', value: null, tags: [] },
-    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
     { label: 'Donors', value: 'donor', tags: ['donor'] },
-  ];
+    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
+  ]);
 
   protected tagsInput = '';
 
@@ -232,9 +254,30 @@ export class PersonsGrid implements OnInit {
     try {
       await this.loadTagOptions();
       await this.loadIssueOptions();
-      // Any logic that depends on this data should go here
+      void this.loadViewCounts();
     } catch (error) {
       console.error('Initialization failed', error);
+    }
+  }
+
+  /**
+   * Absolute per-view counts for the system-views segmented control (All / Donors /
+   * Volunteers). Fetched once with only the view's tag filter, so counts stay fixed
+   * regardless of the grid's other active filters (§2).
+   */
+  private async loadViewCounts(): Promise<void> {
+    try {
+      const opts = this.narrowTypeOptions();
+      const counts = await Promise.all(
+        opts.map(async (o) => {
+          if (o.value === null) return this.personsService.count();
+          const res = await this.personsService.getAll({ tags: o.tags, limit: 1 });
+          return res?.count ?? 0;
+        }),
+      );
+      this.narrowTypeOptions.set(opts.map((o, i) => ({ ...o, count: counts[i] })));
+    } catch (err) {
+      console.error('Failed to load view counts', err);
     }
   }
 
