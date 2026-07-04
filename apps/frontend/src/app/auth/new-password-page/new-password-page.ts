@@ -9,6 +9,7 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
+import { getUserErrorMessage } from 'apps/frontend/src/app/services/api/user-message';
 
 @Component({
   selector: 'pc-new-password',
@@ -82,9 +83,7 @@ export class NewPasswordPage implements OnInit {
           void this.router.navigateByUrl('signin');
         } catch (err) {
           // Catch backend/network rejections properly
-          this.alertSvc.showError(
-            err instanceof Error && err.message ? err.message : 'Failed to reset password. Please try again.',
-          );
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not reset the password. Please try again.'));
           this.error.set(true);
         } finally {
           end();

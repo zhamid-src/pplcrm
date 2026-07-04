@@ -6,8 +6,7 @@ import type { Context } from './context';
 import { toTRPCError } from './app/errors/to-trpc-errors';
 import superjson from 'superjson';
 import { logger } from './app/logger';
-
-const GENERIC_LOGIN_MSG = 'Please check your email and password and try again';
+import { GENERIC_SIGNIN_ERROR } from '../../../libs/common/src';
 
 const trpc = initTRPC.context<Context>().create({
   transformer: superjson,
@@ -51,7 +50,7 @@ const trpc = initTRPC.context<Context>().create({
     }
 
     if (isSignIn && (isZodOrBadRequest || isCredsProblem)) {
-      return { ...finalShape, message: GENERIC_LOGIN_MSG };
+      return { ...finalShape, message: GENERIC_SIGNIN_ERROR };
     }
 
     // Forward safe metadata from AppError (e.g. retryAfterSec for rate limits)

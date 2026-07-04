@@ -20,6 +20,7 @@ import { RecordActivities } from '@experiences/activity/ui/record-activities/rec
 import { UserService } from '../../../services/user.service';
 
 import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-task-view',
@@ -127,7 +128,7 @@ export class TaskView {
       // Load subtasks, comments, attachments
       await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
     } catch (err) {
-      this.alertSvc.showError('Failed to load task details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the task. Please try again.'));
     } finally {
       end();
     }
@@ -176,7 +177,7 @@ export class TaskView {
       this.alertSvc.showSuccess('Task updated successfully');
       this.refreshActivities();
     } catch (err) {
-      this.alertSvc.showError('Failed to update task: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not update the task. Please try again.'));
     }
   }
 
@@ -340,7 +341,7 @@ export class TaskView {
           this.alertSvc.showError('Failed to delete task.');
         }
       } catch (err) {
-        this.alertSvc.showError('Failed to delete task: ' + String(err));
+        this.alertSvc.showError(getUserErrorMessage(err, 'Could not delete the task. Please try again.'));
       } finally {
         end();
       }

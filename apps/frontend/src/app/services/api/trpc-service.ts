@@ -1,6 +1,6 @@
 import { inject, Service } from '@angular/core';
 import { Router } from '@angular/router';
-import { getAllOptionsType } from '../../../../../../libs/common/src';
+import { GENERIC_SIGNIN_ERROR, getAllOptionsType } from '../../../../../../libs/common/src';
 import { ErrorService } from '../error.service';
 import {
   TRPCClient,
@@ -85,7 +85,6 @@ export class TRPCService<T> {
 }
 
 function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
-  const GENERIC_LOGIN_MSG = 'Please check your email and password and try again';
   const GENERIC_INPUT_MSG = 'Please check your input and try again';
 
   return () =>
@@ -105,7 +104,7 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
               let msg = err.message;
               if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
                 // Server formatter should already do this; this is just a client fallback
-                msg = GENERIC_LOGIN_MSG;
+                msg = GENERIC_SIGNIN_ERROR;
               } else if (code === 'BAD_REQUEST') {
                 const isValidationError = (err.data as { isZodError?: boolean })?.isZodError;
                 if (isValidationError) {

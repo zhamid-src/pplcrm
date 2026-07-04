@@ -7,6 +7,7 @@ import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/component
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -163,7 +164,7 @@ export class ListsGridComponent implements OnDestroy {
     } catch (e) {
       this.refreshingIds.delete(id);
       this.refreshCellIfPossible(cellParams);
-      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
+      this.alerts.showError(getUserErrorMessage(e, 'Could not refresh the list. Please try again.'));
     }
   }
 

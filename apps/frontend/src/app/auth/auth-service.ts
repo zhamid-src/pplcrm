@@ -76,11 +76,17 @@ export class AuthService extends TRPCService<'authusers'> {
   }
 
   public resetPassword(input: { code: string; password: string }) {
-    return this.api.auth.resetPassword.mutate(input);
+    // The new-password page owns the error UX for this call.
+    return (this.api.auth.resetPassword.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
   }
 
   public sendPasswordResetEmail(input: { email: string }) {
-    return this.api.auth.sendPasswordResetEmail.mutate(input);
+    // The reset-password page owns the error UX for this call.
+    return (this.api.auth.sendPasswordResetEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
   }
 
   public async signIn(
@@ -141,11 +147,20 @@ export class AuthService extends TRPCService<'authusers'> {
   }
 
   public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
-    return this.api.auth.resendVerificationEmail.mutate({ email }) as Promise<{ success: boolean }>;
+    // Callers toast their own success/failure (and handle rate-limit countdowns).
+    return (this.api.auth.resendVerificationEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ success: boolean }>;
   }
 
   public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
-    return this.api.auth.checkEmail.query({ email }) as Promise<{ hasPasskeys: boolean }>;
+    // The sign-in page silently falls back to the password step if this fails —
+    // a global error toast here would be noise.
+    return (this.api.auth.checkEmail.query as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ hasPasskeys: boolean }>;
   }
 
   public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {

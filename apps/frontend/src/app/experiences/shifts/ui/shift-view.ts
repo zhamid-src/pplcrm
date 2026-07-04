@@ -18,6 +18,7 @@ import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 @Component({
   selector: 'pc-shift-view',
@@ -107,7 +108,7 @@ export class ShiftViewComponent {
       const rosterData = await this.volunteerSvc.getShiftsForEvent(id);
       this.roster.set(rosterData || []);
     } catch (err) {
-      this.alertSvc.showError('Failed to load event details: ' + String(err));
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the shift. Please try again.'));
     } finally {
       end();
       this.initialized.set(true);

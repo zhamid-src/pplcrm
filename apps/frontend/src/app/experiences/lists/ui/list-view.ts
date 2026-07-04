@@ -6,6 +6,7 @@ import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PersonsGrid } from '@experiences/persons/ui/persons-grid';
@@ -82,7 +83,7 @@ export class ListView implements OnDestroy {
       this.alerts.showSuccess('Refresh job scheduled in background');
       this.pollRefreshStatus();
     } catch (e) {
-      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
+      this.alerts.showError(getUserErrorMessage(e, 'Could not refresh the list. Please try again.'));
       this.refreshing.set(false);
     }
   }
