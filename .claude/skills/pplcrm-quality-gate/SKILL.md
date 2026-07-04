@@ -36,7 +36,7 @@ npx eslint <changed-file-1> <changed-file-2> --report-unused-disable-directives-
 
 If that exits 0, the pre-commit hook's `*.{ts,html}` step will pass. This is the single check that matters for the hook. The full CLAUDE.md pipeline (`prettier --write .`, `nx lint frontend`, `nx lint backend`, builds, tests) is still required before a PR — `nx lint backend` is the only path that enforces the tenant-safety rule (see `pplcrm-tenant-safety`), so neither check alone is sufficient.
 
-Heads-up: as of this writing `nx lint backend` fails on **pre-existing** `local/no-unscoped-db-query` violations (in `companies.repo.ts` and the donations pledges repo, `donation_pledges` table) that predate your change. Don't burn time assuming your diff caused them — check whether the flagged lines are yours.
+Heads-up: as of this writing `nx lint backend` fails on **2 pre-existing** `local/no-unscoped-db-query` errors, both on the `donation_pledges` table (`donations/controller.ts:560` and `donations/repositories/pledges.repo.ts:51`), that predate your change. Don't burn time assuming your diff caused them — check whether the flagged lines are yours.
 
 The other hook step is formatting only:
 

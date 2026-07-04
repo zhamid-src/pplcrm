@@ -211,7 +211,7 @@ npx nx test frontend && npx nx test backend
 - `local/no-unscoped-db-query` (the multi-tenant safety rule, see `pplcrm-tenant-safety`) is declared **only** in `apps/backend/eslint.config.cjs`, so only `nx lint backend` catches it — plain `eslint` from the repo root does not.
 - `apps/backend/eslint.config.cjs` and `libs/common/eslint.config.cjs` now additionally spread in the root config (so `nx lint backend`/`nx lint common` enforce the union of both rule sets — verified zero new violations when this was done). `apps/frontend/eslint.config.cjs` and `libs/uxcommon/eslint.config.cjs` do **not** yet do this; each has pre-existing violations that would surface if merged the same way (frontend: `@angular-eslint/no-output-native` on 2 files; uxcommon: `@angular-eslint/prefer-inject` on several) — fixing those and merging is a good follow-up, not yet done.
 - `require-await` is named below as a common blocker but is **not currently enforced by any config in this repo** (root or project-level) — treat that bullet as an aspirational/manual-review item until it's actually wired in, not something a green lint run guarantees.
-- Separately, `nx lint backend` currently fails on real, pre-existing `local/no-unscoped-db-query` violations in `companies.repo.ts` and a donations-pledges repo — unscoped queries already in the codebase, not a config issue. Worth a dedicated fix.
+- Separately, `nx lint backend` currently fails on 2 real, pre-existing `local/no-unscoped-db-query` errors on the `donation_pledges` table (`donations/controller.ts` and `donations/repositories/pledges.repo.ts`) — unscoped queries already in the codebase, not a config issue. Worth a dedicated fix.
 
 Rules most likely to bite you (apply to **all** `.ts`, including specs/mocks):
 
