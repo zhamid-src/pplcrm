@@ -10,6 +10,7 @@ import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -55,6 +56,11 @@ export class EventViewComponent {
   protected readonly event = signal<any | null>(null);
   protected readonly ticketTypes = signal<any[]>([]);
   protected readonly registrations = signal<any[]>([]);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Events', route: '/events/pages' },
+    { label: this.event()?.name || 'Event' },
+  ]);
 
   // Person search for adding registrations
   protected readonly personSearch = signal('');

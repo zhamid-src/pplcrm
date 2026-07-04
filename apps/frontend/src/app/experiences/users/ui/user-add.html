@@ -1,11 +1,13 @@
 <section class="max-w-3xl mx-auto w-full p-6">
   <pc-detail-header
-    title="Invite User"
+    title="Invite user"
+    [eyebrow]="'New'"
+    [crumbs]="[{ label: 'Users', route: '/users' }, { label: 'Invite user' }]"
     subtitle="Send an invitation to add a new teammate to this tenant."
     [form]="form"
     [isLoading]="submitting()"
     buttonsToShow="two"
-    btn1Text="Send Invite"
+    btn1Text="Send invite"
     (save)="submit($event)"
   ></pc-detail-header>
 

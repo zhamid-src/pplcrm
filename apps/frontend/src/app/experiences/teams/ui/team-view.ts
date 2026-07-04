@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
@@ -51,6 +52,11 @@ export class TeamViewComponent {
   protected readonly volunteers = computed(() => this.team()?.volunteers ?? []);
   protected readonly users = signal<IAuthUser[]>([]);
   private usersById = new Map<string, IAuthUser>();
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Teams', route: '/teams' },
+    { label: this.team()?.name || 'Team' },
+  ]);
 
   // Active tab state
   protected activeTab = signal<string>('activity');

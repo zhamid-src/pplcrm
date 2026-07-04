@@ -73,6 +73,13 @@ interface MergeableService {
   mergeCompanies?(target: string, source: string): Promise<unknown>;
   mergeHouseholds?(target: string, source: string): Promise<unknown>;
 }
+
+/** One removable chip in the active-filters row above the grid. */
+export interface GridFilterChip {
+  kind: 'narrow' | 'tag' | 'issue' | 'list' | 'column' | 'advanced';
+  key: string;
+  label: string;
+}
 // Header and inline filters rendered inline in template now
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import DOMPurify from 'dompurify';
@@ -237,6 +244,95 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       Object.keys(this.filterValues())?.length > 0 ||
       this.hasActiveAdvancedFilters(),
   );
+
+  /** True when anything — including the list filter — is narrowing the results. */
+  public readonly anyFilterActive = computed(
+    () => this.hasActiveFilters() || this.selectedListId() !== null || this.selectedNarrowType() !== null,
+  );
+
+  /** Every active filter as a named, individually removable chip. */
+  protected readonly filterChips = computed<GridFilterChip[]>(() => {
+    const chips: GridFilterChip[] = [];
+
+    const narrow = this.selectedNarrowType();
+    if (narrow !== null) {
+      const option = this.narrowTypeOptions().find((o) => o.value === narrow);
+      chips.push({ kind: 'narrow', key: narrow, label: `Type: ${option?.label ?? narrow}` });
+    } else {
+      // Tags chosen via a narrow-type preset are represented by the narrow chip alone.
+      for (const tag of this.selectedTags()) {
+        chips.push({ kind: 'tag', key: tag, label: `Tag: ${tag}` });
+      }
+    }
+
+    for (const issue of this.selectedIssues()) {
+      chips.push({ kind: 'issue', key: issue, label: `Issue: ${issue}` });
+    }
+
+    const listId = this.selectedListId();
+    if (listId !== null) {
+      const list = this.availableLists().find((l) => String(l['id'] ?? '') === String(listId));
+      chips.push({ kind: 'list', key: String(listId), label: `List: ${String(list?.['name'] ?? 'selected')}` });
+    }
+
+    for (const [field, value] of Object.entries(this.filterValues())) {
+      if (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)) {
+        continue;
+      }
+      const text = Array.isArray(value) ? value.join(', ') : String(value);
+      chips.push({ kind: 'column', key: field, label: `${this.columnLabelFor(field)}: ${text}` });
+    }
+
+    if (this.hasActiveAdvancedFilters()) {
+      chips.push({ kind: 'advanced', key: 'advanced', label: 'Advanced filter' });
+    }
+
+    return chips;
+  });
+
+  protected removeFilterChip(chip: GridFilterChip): void {
+    switch (chip.kind) {
+      case 'narrow':
+        this.selectNarrowType(null);
+        break;
+      case 'tag':
+        this.toggleTagFilter(chip.key, false);
+        break;
+      case 'issue':
+        this.toggleIssueFilter(chip.key, false);
+        break;
+      case 'list':
+        this.clearListFilter();
+        break;
+      case 'column':
+        this.clearHeaderFilter(chip.key);
+        break;
+      case 'advanced':
+        this.clearAdvancedFilter();
+        break;
+      default: {
+        const _exhaustive: never = chip.kind;
+        void _exhaustive;
+      }
+    }
+  }
+
+  /** Reset every filter domain at once, then reload from the first page. */
+  protected clearAllFilters(): void {
+    this.selectedNarrowType.set(null);
+    this.selectedTags.set([]);
+    this.selectedIssues.set([]);
+    this.selectedListId.set(null);
+    this.filterValues.set({});
+    this.panelFilters.set({});
+    this.store?.requestPersist();
+    if (this.hasActiveAdvancedFilters()) {
+      // clearAdvancedFilter triggers its own refresh.
+      this.clearAdvancedFilter();
+    } else {
+      void this.loadPage(0);
+    }
+  }
 
   public isColFiltered(field: string): boolean {
     const fv = this.filterValues();

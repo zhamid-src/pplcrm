@@ -28,7 +28,7 @@ export class FormActions implements OnInit {
 
   public showDelete = input<boolean>(false);
 
-  public deleteText = input<string>('DELETE');
+  public deleteText = input<string>('Delete');
 
   public readonly deleteClicked = output<void>();
 
@@ -36,9 +36,9 @@ export class FormActions implements OnInit {
 
   public btn1Icon = input<PcIconNameType>('save');
 
-  public btn1Text = input<string>('SAVE');
+  public btn1Text = input<string>('Save');
 
-  public btn2Text = input<string>('SAVE & ADD MORE');
+  public btn2Text = input<string>('Save & add more');
 
   public buttonsToShow = input<'two' | 'three'>('three');
 

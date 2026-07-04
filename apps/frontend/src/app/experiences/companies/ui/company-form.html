@@ -8,16 +8,16 @@
   } @else {
   <div class="space-y-6">
     <pc-detail-header
-      [title]="isNewMode() ? 'Add Company' : 'Company: ' + (company()?.name || '')"
+      [title]="isNewMode() ? 'New company' : company()?.name || 'Company'"
+      [eyebrow]="isNewMode() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
       [subtitle]="isNewMode() ? 'Create a new company record' : 'View and update company information'"
-      icon="briefcase"
-      [iconSize]="7"
       [form]="form"
       [isLoading]="isLoading()"
       buttonsToShow="two"
-      [btn1Text]="isNewMode() ? 'Create Company' : 'Save Company'"
+      [btn1Text]="isNewMode() ? 'Create company' : 'Save company'"
       [showDelete]="!isNewMode()"
-      deleteText="Delete Company"
+      deleteText="Delete company"
       (save)="save($event)"
       (delete)="deleteCompany()"
     ></pc-detail-header>

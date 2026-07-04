@@ -1,7 +1,6 @@
 import { Component, computed, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { Alerts } from '@uxcommon/components/alerts/alerts';
-import { Breadcrumb } from '../breadcrumb/breadcrumb';
 import { Icon } from '@icons/icon';
 import { AuthService } from '../../auth/auth-service';
 
@@ -11,7 +10,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
 
 @Component({
   selector: 'pc-dashboard',
-  imports: [Navbar, Sidebar, RouterModule, Breadcrumb, Alerts, Icon],
+  imports: [Navbar, Sidebar, RouterModule, Alerts, Icon],
   templateUrl: './dashboard.html',
 })
 export class Dashboard {

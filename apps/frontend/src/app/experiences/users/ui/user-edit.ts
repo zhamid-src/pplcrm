@@ -10,6 +10,7 @@ import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
 import { Toggle as PcToggle } from '@uxcommon/components/toggle/toggle';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 
 import { UserAdminService } from '../services/useradmin-service';
@@ -61,6 +62,12 @@ export class UserEditComponent {
     const name = tokens.join(' ').trim();
     return name || user.email;
   });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Users', route: '/users' },
+    { label: this.displayName() || 'User', route: ['/users', this.id()] },
+    { label: 'Edit' },
+  ]);
 
   constructor() {
     effect(() => {

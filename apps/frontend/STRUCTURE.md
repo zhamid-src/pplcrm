@@ -7459,13 +7459,14 @@ export function compileBlocksToPlainText(blockList: EmailBlock[]): string {
 
 ```html
 <pc-detail-layout
-  [title]="'Person Profile'"
-  [icon]="'user-circle'"
+  [title]="fullName() || 'Person'"
+  [eyebrow]="'Person'"
+  [crumbs]="crumbs()"
   [isLoading]="isLoading()"
   [hasRecord]="!initialized() || !!person()"
   [showDelete]="true"
-  [deleteText]="'Delete Person'"
-  [btn1Text]="'Edit Person'"
+  [deleteText]="'Delete person'"
+  [btn1Text]="'Edit person'"
   [btn1Icon]="'pencil-square'"
   (save)="editPerson()"
   (delete)="deletePerson()"
@@ -19856,126 +19857,6 @@ export class NewslettersDashboardComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-grid.ts
-
-```typescript
-import { Component, viewChild } from '@angular/core';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { UpdateMarketingEmailType } from '../../../../../../../libs/common/src';
-
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { NewslettersService } from '../services/newsletters-service';
-import { NewslettersDashboardComponent } from './newsletters-dashboard';
-
-@Component({
-  selector: 'pc-newsletters-grid',
-  imports: [DataGrid, NewslettersDashboardComponent],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-newsletters-dashboard [rows]="grid?.rows() ?? []"></pc-newsletters-dashboard>
-
-      <pc-datagrid
-        #grid
-        [colDefs]="col"
-        [disableDelete]="true"
-        [disableView]="false"
-        [disableImport]="true"
-        [disableExport]="false"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="add-newsletter"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: NewslettersService },
-    provideDataGridConfig({ messages: { exportEntity: 'newsletters', exportFileName: 'newsletters-export.csv' } }),
-  ],
-})
-export class NewslettersGridComponent {
-  protected readonly grid = viewChild<DataGrid<'newsletters', UpdateMarketingEmailType>>('grid');
-
-  private readonly countFormatter = new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: 0,
-  });
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-  private readonly percentFormatter = new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: 1,
-    minimumFractionDigits: 0,
-  });
-
-  protected col = [
-    { field: 'name', headerName: 'Newsletter name' },
-    {
-      field: 'status',
-      headerName: 'Status',
-      valueFormatter: (p: any) => this.formatStatus(p.value ?? p.data?.status),
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Last updated at',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.updated_at),
-    },
-    {
-      field: 'delivered_count',
-      headerName: 'Delivered',
-      valueFormatter: (p: any) => this.formatCount(p.value ?? p.data?.delivered_count),
-    },
-    {
-      field: 'total_recipients',
-      headerName: 'Recipients',
-      valueFormatter: (p: any) => this.formatCount(p.value ?? p.data?.total_recipients),
-    },
-    {
-      field: 'open_rate',
-      headerName: 'Open rate',
-      valueFormatter: (p: any) => this.formatPercent(p.value ?? p.data?.open_rate),
-    },
-    {
-      field: 'click_rate',
-      headerName: 'Click rate',
-      valueFormatter: (p: any) => this.formatPercent(p.value ?? p.data?.click_rate),
-    },
-    {
-      field: 'send_date',
-      headerName: 'Send date',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.send_date),
-    },
-  ];
-
-  private formatCount(value: unknown): string {
-    const num = Number(value);
-    return Number.isFinite(num) ? this.countFormatter.format(num) : '--';
-  }
-
-  private formatDate(value: unknown): string {
-    if (!value) return '--';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '--';
-    return this.dateFormatter.format(date);
-  }
-
-  private formatPercent(value: unknown): string {
-    const num = Number(value);
-    if (!Number.isFinite(num)) return '--';
-    return `${this.percentFormatter.format(num)}%`;
-  }
-
-  private formatStatus(value: unknown): string {
-    if (!value) return '--';
-    const text = String(value).trim();
-    if (!text) return '--';
-    return text.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/newsletters/ui/visual-newsletter-editor.ts
 
 ```typescript
@@ -20542,14 +20423,15 @@ export class PeopleInHousehold {
   <div class="max-w-4xl mx-auto w-full">
     <!-- Back to profile or list -->
     <pc-detail-header
-      [title]="person()?.id ? 'Edit Person Details' : 'Add New Person'"
-      [icon]="person()?.id ? 'pencil-square' : 'user-plus'"
+      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
+      [eyebrow]="person()?.id ? 'Editing' : 'New'"
+      [crumbs]="crumbs()"
       [form]="form"
       [isLoading]="isLoading()"
       [buttonsToShow]="buttonsToShow()"
-      [btn1Text]="person()?.id ? 'Save Person' : 'Create Person'"
+      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
       [showDelete]="!!person()?.id"
-      deleteText="Delete Person"
+      deleteText="Delete person"
       (save)="save($event)"
       (delete)="deletePerson()"
     ></pc-detail-header>
@@ -30423,6 +30305,127 @@ export class NewsletterDetailComponent {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-grid.ts
+
+```typescript
+import { Component, viewChild } from '@angular/core';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { UpdateMarketingEmailType } from '../../../../../../../libs/common/src';
+
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { NewslettersService } from '../services/newsletters-service';
+import { NewslettersDashboardComponent } from './newsletters-dashboard';
+
+@Component({
+  selector: 'pc-newsletters-grid',
+  imports: [DataGrid, NewslettersDashboardComponent],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-newsletters-dashboard [rows]="grid?.rows() ?? []"></pc-newsletters-dashboard>
+
+      <pc-datagrid
+        #grid
+        [colDefs]="col"
+        [disableDelete]="true"
+        [disableView]="false"
+        [disableImport]="true"
+        [disableExport]="false"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        plusIcon="add-newsletter"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: NewslettersService },
+    provideDataGridConfig({ messages: { exportEntity: 'newsletters', exportFileName: 'newsletters-export.csv' } }),
+  ],
+})
+export class NewslettersGridComponent {
+  protected readonly grid = viewChild<DataGrid<'newsletters', UpdateMarketingEmailType>>('grid');
+
+  private readonly countFormatter = new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 0,
+  });
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  private readonly percentFormatter = new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 0,
+  });
+
+  protected col: ColDef[] = [
+    { field: 'name', headerName: 'Newsletter name' },
+    {
+      field: 'status',
+      headerName: 'Status',
+      valueFormatter: (p: CellParams) => this.formatStatus(p.value ?? p.data?.['status']),
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Last updated at',
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['updated_at']),
+    },
+    {
+      field: 'delivered_count',
+      headerName: 'Delivered',
+      valueFormatter: (p: CellParams) => this.formatCount(p.value ?? p.data?.['delivered_count']),
+    },
+    {
+      field: 'total_recipients',
+      headerName: 'Recipients',
+      valueFormatter: (p: CellParams) => this.formatCount(p.value ?? p.data?.['total_recipients']),
+    },
+    {
+      field: 'open_rate',
+      headerName: 'Open rate',
+      valueFormatter: (p: CellParams) => this.formatPercent(p.value ?? p.data?.['open_rate']),
+    },
+    {
+      field: 'click_rate',
+      headerName: 'Click rate',
+      valueFormatter: (p: CellParams) => this.formatPercent(p.value ?? p.data?.['click_rate']),
+    },
+    {
+      field: 'send_date',
+      headerName: 'Send date',
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['send_date']),
+    },
+  ];
+
+  private formatCount(value: unknown): string {
+    const num = Number(value);
+    return Number.isFinite(num) ? this.countFormatter.format(num) : '--';
+  }
+
+  private formatDate(value: unknown): string {
+    if (!value) return '--';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '--';
+    return this.dateFormatter.format(date);
+  }
+
+  private formatPercent(value: unknown): string {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '--';
+    return `${this.percentFormatter.format(num)}%`;
+  }
+
+  private formatStatus(value: unknown): string {
+    if (!value) return '--';
+    const text = String(value).trim();
+    if (!text) return '--';
+    return text.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
 
 ```typescript
@@ -31571,6 +31574,231 @@ export class ShiftsService extends AbstractAPIService<'volunteer_events', Update
 
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return Promise.reject(new Error('Volunteer export is not available'));
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/tags/ui/add-issue.ts
+
+```typescript
+import { Component, inject, viewChild, signal } from '@angular/core';
+import { form, submit, FormField, validateStandardSchema } from '@angular/forms/signals';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { AddTagObj } from '../../../../../../../libs/common/src';
+
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+
+function randomHexColor(): string {
+  return (
+    '#' +
+    Math.floor(Math.random() * 0xffffff)
+      .toString(16)
+      .padStart(6, '0')
+  );
+}
+
+@Component({
+  selector: 'pc-add-issue',
+  imports: [PcInput, FormField, FormActions],
+  template: `<div class="flex min-h-full flex-col bg-base-100">
+    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
+      <div class="flex flex-col gap-2">
+        <label i18n class="label text-base font-light">
+          Enter a unique issue name (and optionally, give it a description)
+        </label>
+        <pc-input placeholder="Issue Name" i18n-placeholder [formField]="form.name"></pc-input>
+        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
+        <div class="flex items-center gap-2">
+          <label i18n class="label-text font-light text-sm">Colour</label>
+          <input
+            class="input input-bordered input-sm w-24"
+            type="color"
+            [formField]="form.color"
+            [class.input-error]="form.color().invalid() && (form.color().dirty() || form.color().touched())"
+          />
+          @if (form.color().invalid() && (form.color().dirty() || form.color().touched())) {
+            @for (err of form.color().errors(); track err) {
+              <span class="text-error text-xs">{{ err.message }}</span>
+            }
+          }
+        </div>
+        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
+      </div>
+    </form>
+  </div>`,
+})
+export class AddIssue {
+  private readonly alertSvc = inject(AlertService);
+  private readonly tagSvc = inject(TagsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+
+  private _loading = createLoadingGate();
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    color: randomHexColor(),
+  });
+
+  public readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddTagObj);
+  });
+
+  protected isLoading = this._loading.visible;
+
+  public readonly formActions = viewChild(FormActions);
+
+  protected async add(event?: any) {
+    if (event instanceof Event) {
+      event.preventDefault();
+    }
+
+    if (this.isLoading()) return;
+
+    this.form().markAsTouched();
+    if (!this.form().valid) return;
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const formObj = this.payload();
+          await this.tagSvc.add({ ...formObj, type: 'issue' });
+          await this.tagOptionsSvc.invalidate('issue');
+          this.tagSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Issue added successfully.');
+
+          this.payload.set({ name: '', description: '', color: randomHexColor() });
+          this.formActions()?.stayOrCancel();
+        } catch (err) {
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
+          );
+        } finally {
+          end();
+        }
+        return null;
+      },
+    });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/tags/ui/add-tag.ts
+
+```typescript
+import { Component, inject, viewChild, signal } from '@angular/core';
+import { form, submit, required, pattern, FormField } from '@angular/forms/signals';
+import { TagsService } from '@experiences/tags/services/tags-service';
+
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+
+function randomHexColor(): string {
+  return (
+    '#' +
+    Math.floor(Math.random() * 0xffffff)
+      .toString(16)
+      .padStart(6, '0')
+  );
+}
+
+@Component({
+  selector: 'pc-add-tag',
+  imports: [PcInput, FormField, FormActions],
+  template: `<div class="flex min-h-full flex-col bg-base-100">
+    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
+      <div class="flex flex-col gap-2">
+        <label i18n class="label text-base font-light">
+          Enter a unique tag name (and optionally, give it a description)
+        </label>
+        <pc-input placeholder="Tag Name" i18n-placeholder [formField]="form.name"></pc-input>
+        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
+        <div class="flex items-center gap-2">
+          <label i18n class="label-text font-light text-sm">Colour</label>
+          <input class="input input-bordered input-sm w-24" type="color" [formField]="form.color" />
+          @if (form.color().invalid() && form.color().touched()) {
+            <span i18n class="text-error text-xs">Use a value like #3366ff</span>
+          }
+        </div>
+        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
+      </div>
+    </form>
+  </div>`,
+})
+export class AddTag {
+  private readonly alertSvc = inject(AlertService);
+  private readonly tagSvc = inject(TagsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+
+  private _loading = createLoadingGate();
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    color: randomHexColor(),
+  });
+
+  public readonly form = form(this.payload, (p) => {
+    required(p.name);
+    pattern(p.color, /^#([0-9a-fA-F]{6})$/);
+  });
+
+  protected isLoading = this._loading.visible;
+
+  public readonly formActions = viewChild(FormActions);
+
+  protected async add(event?: any) {
+    if (event instanceof Event) {
+      event.preventDefault();
+    }
+
+    if (this.isLoading()) {
+      return;
+    }
+
+    // force validation messages to appear
+    this.form().markAsTouched();
+
+    if (!this.form().valid) {
+      return;
+    }
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const formObj = this.payload();
+          await this.tagSvc.add(formObj);
+          await this.tagOptionsSvc.invalidate('tag');
+          this.tagSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Tag added successfully.');
+
+          // Reset the backing signal
+          this.payload.set({
+            name: '',
+            description: '',
+            color: randomHexColor(),
+          });
+
+          this.formActions()?.stayOrCancel();
+        } catch (err) {
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
+          );
+        } finally {
+          end();
+        }
+        return null;
+      },
+    });
   }
 }
 ```
@@ -32768,186 +32996,6 @@ export class UserAddComponent implements OnInit {
       last_name: raw.last_name?.trim() ? raw.last_name.trim() : null,
       role: raw.role?.trim() ? raw.role.trim() : null,
     };
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/users-grid.ts
-
-```typescript
-import { Component, inject } from '@angular/core';
-import { escapeHtml } from '../../../../../../../libs/common/src';
-import { UserService } from '@frontend/services/user.service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { UserAdminService } from '../services/useradmin-service';
-
-@Component({
-  selector: 'pc-users-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Users"
-        i18n-title
-        description="Manage administrator and staff user accounts, assign security roles, and monitor system access."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="true"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="true"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="add-users"
-        i18n-plusIcon
-        [isCellEditableOverride]="isCellEditableBind"
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: UserAdminService },
-    provideDataGridConfig({ messages: { exportEntity: 'users', exportFileName: 'users-export.csv' } }),
-  ],
-})
-export class UsersGridComponent {
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
-  protected col = [
-    {
-      field: 'email',
-      headerName: 'Email',
-      editable: true,
-      cellRenderer: (p: any) => {
-        let avatarUrl: string | null = p.data?.avatar_url ?? null;
-        const firstName: string = p.data?.first_name ?? '';
-        const lastName: string = p.data?.last_name ?? '';
-        const name = [firstName, lastName].filter(Boolean).join(' ') || p.value || '?';
-        const emailVal = p.value || '';
-
-        let avatarHtml = '';
-        if (avatarUrl) {
-          avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-          // Names and avatar URLs are user-controlled — escape before interpolating into HTML
-          avatarHtml = `<img src="${escapeHtml(avatarUrl ?? '')}" alt="${escapeHtml(name)}" class="w-5 h-5 rounded-full object-cover ring-1 ring-base-200" />`;
-        } else {
-          const PALETTES = [
-            'bg-indigo-500/20 text-indigo-700',
-            'bg-teal-500/20 text-teal-700',
-            'bg-purple-500/20 text-purple-700',
-            'bg-rose-500/20 text-rose-700',
-            'bg-amber-500/20 text-amber-700',
-            'bg-emerald-500/20 text-emerald-700',
-            'bg-blue-500/20 text-blue-700',
-            'bg-orange-500/20 text-orange-700',
-            'bg-pink-500/20 text-pink-700',
-            'bg-cyan-500/20 text-cyan-700',
-          ];
-          let sum = 0;
-          for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
-          const colorClass = PALETTES[sum % PALETTES.length];
-          const parts = name.split(/\s+/);
-          const initials =
-            parts.length >= 2 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : name[0].toUpperCase();
-          avatarHtml = `<div class="w-5 h-5 rounded-full ${colorClass} flex items-center justify-center font-bold text-[10px] ring-1 ring-base-200">
-            <span>${escapeHtml(initials)}</span>
-          </div>`;
-        }
-
-        return `<div class="flex items-center gap-2 py-0.5 h-full">
-          ${avatarHtml}
-          <span>${escapeHtml(emailVal)}</span>
-        </div>`;
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true },
-    {
-      field: 'role',
-      headerName: 'Role',
-      editable: true,
-      cellEditorParams: () => {
-        const currentUserRole = this.auth.getUser()?.role;
-        const values = [];
-        if (currentUserRole !== 'admin') {
-          values.push({ value: 'owner', label: 'Owner' });
-        }
-        values.push({ value: 'admin', label: 'Admin' });
-        values.push({ value: 'user', label: 'User' });
-        values.push({ value: 'viewer', label: 'Viewer' });
-        return { values };
-      },
-      valueFormatter: (p: any) => {
-        const val = p.value ?? p.data?.role;
-        if (val === 'owner') return 'Owner';
-        if (val === 'admin') return 'Admin';
-        if (val === 'user') return 'User';
-        if (val === 'viewer') return 'Viewer';
-        return val || '';
-      },
-    },
-    {
-      field: 'verified',
-      headerName: 'Verified',
-      editable: false,
-      valueFormatter: (p: any) => (this.coerceBoolean(p.value ?? p.data?.verified) ? 'Yes' : 'No'),
-      cellRenderer: (p: any) => (this.coerceBoolean(p.value ?? p.data?.verified) ? 'Yes' : 'No'),
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Updated',
-      hide: true,
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.updated_at),
-    },
-    {
-      field: 'created_at',
-      headerName: 'Created',
-      hide: true,
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.created_at),
-    },
-  ];
-
-  public readonly isCellEditableBind = (row: any, col: any): boolean => {
-    if (!col.editable) return false;
-
-    const currentUserRole = this.auth.getUser()?.role;
-
-    if (currentUserRole === 'admin') {
-      if (row.role === 'owner') {
-        if (col.field === 'role' || col.field === 'verified') {
-          return false;
-        }
-      }
-    }
-
-    return true;
-  };
-
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
-  }
-
-  private coerceBoolean(value: unknown): boolean {
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    if (typeof value === 'string') {
-      const normalized = value.trim().toLowerCase();
-      if (['yes', 'true', '1'].includes(normalized)) return true;
-      if (['no', 'false', '0'].includes(normalized)) return false;
-    }
-    return false;
   }
 }
 ```
@@ -39090,6 +39138,7 @@ import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { Tags } from '@experiences/tags/ui/tags';
@@ -39213,6 +39262,11 @@ export class PersonView {
     if (!p) return '';
     return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
   });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'People', route: '/people' },
+    { label: this.fullName() || 'Person' },
+  ]);
 
   // Social icons
   public socialLinks = computed<SocialLinkDef[]>(() => {
@@ -41287,231 +41341,6 @@ export class ShiftsGridComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tags/ui/add-issue.ts
-
-```typescript
-import { Component, inject, viewChild, signal } from '@angular/core';
-import { form, submit, FormField, validateStandardSchema } from '@angular/forms/signals';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { AddTagObj } from '../../../../../../../libs/common/src';
-
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-
-function randomHexColor(): string {
-  return (
-    '#' +
-    Math.floor(Math.random() * 0xffffff)
-      .toString(16)
-      .padStart(6, '0')
-  );
-}
-
-@Component({
-  selector: 'pc-add-issue',
-  imports: [PcInput, FormField, FormActions],
-  template: `<div class="flex min-h-full flex-col bg-base-100">
-    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
-      <div class="flex flex-col gap-2">
-        <label i18n class="label text-base font-light">
-          Enter a unique issue name (and optionally, give it a description)
-        </label>
-        <pc-input placeholder="Issue Name" i18n-placeholder [formField]="form.name"></pc-input>
-        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
-        <div class="flex items-center gap-2">
-          <label i18n class="label-text font-light text-sm">Colour</label>
-          <input
-            class="input input-bordered input-sm w-24"
-            type="color"
-            [formField]="form.color"
-            [class.input-error]="form.color().invalid() && (form.color().dirty() || form.color().touched())"
-          />
-          @if (form.color().invalid() && (form.color().dirty() || form.color().touched())) {
-            @for (err of form.color().errors(); track err) {
-              <span class="text-error text-xs">{{ err.message }}</span>
-            }
-          }
-        </div>
-        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
-      </div>
-    </form>
-  </div>`,
-})
-export class AddIssue {
-  private readonly alertSvc = inject(AlertService);
-  private readonly tagSvc = inject(TagsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-
-  private _loading = createLoadingGate();
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    color: randomHexColor(),
-  });
-
-  public readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddTagObj);
-  });
-
-  protected isLoading = this._loading.visible;
-
-  public readonly formActions = viewChild(FormActions);
-
-  protected async add(event?: any) {
-    if (event instanceof Event) {
-      event.preventDefault();
-    }
-
-    if (this.isLoading()) return;
-
-    this.form().markAsTouched();
-    if (!this.form().valid) return;
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const formObj = this.payload();
-          await this.tagSvc.add({ ...formObj, type: 'issue' });
-          await this.tagOptionsSvc.invalidate('issue');
-          this.tagSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Issue added successfully.');
-
-          this.payload.set({ name: '', description: '', color: randomHexColor() });
-          this.formActions()?.stayOrCancel();
-        } catch (err) {
-          this.alertSvc.showError(
-            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
-          );
-        } finally {
-          end();
-        }
-        return null;
-      },
-    });
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/add-tag.ts
-
-```typescript
-import { Component, inject, viewChild, signal } from '@angular/core';
-import { form, submit, required, pattern, FormField } from '@angular/forms/signals';
-import { TagsService } from '@experiences/tags/services/tags-service';
-
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-
-function randomHexColor(): string {
-  return (
-    '#' +
-    Math.floor(Math.random() * 0xffffff)
-      .toString(16)
-      .padStart(6, '0')
-  );
-}
-
-@Component({
-  selector: 'pc-add-tag',
-  imports: [PcInput, FormField, FormActions],
-  template: `<div class="flex min-h-full flex-col bg-base-100">
-    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
-      <div class="flex flex-col gap-2">
-        <label i18n class="label text-base font-light">
-          Enter a unique tag name (and optionally, give it a description)
-        </label>
-        <pc-input placeholder="Tag Name" i18n-placeholder [formField]="form.name"></pc-input>
-        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
-        <div class="flex items-center gap-2">
-          <label i18n class="label-text font-light text-sm">Colour</label>
-          <input class="input input-bordered input-sm w-24" type="color" [formField]="form.color" />
-          @if (form.color().invalid() && form.color().touched()) {
-            <span i18n class="text-error text-xs">Use a value like #3366ff</span>
-          }
-        </div>
-        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
-      </div>
-    </form>
-  </div>`,
-})
-export class AddTag {
-  private readonly alertSvc = inject(AlertService);
-  private readonly tagSvc = inject(TagsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-
-  private _loading = createLoadingGate();
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    color: randomHexColor(),
-  });
-
-  public readonly form = form(this.payload, (p) => {
-    required(p.name);
-    pattern(p.color, /^#([0-9a-fA-F]{6})$/);
-  });
-
-  protected isLoading = this._loading.visible;
-
-  public readonly formActions = viewChild(FormActions);
-
-  protected async add(event?: any) {
-    if (event instanceof Event) {
-      event.preventDefault();
-    }
-
-    if (this.isLoading()) {
-      return;
-    }
-
-    // force validation messages to appear
-    this.form().markAsTouched();
-
-    if (!this.form().valid) {
-      return;
-    }
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const formObj = this.payload();
-          await this.tagSvc.add(formObj);
-          await this.tagOptionsSvc.invalidate('tag');
-          this.tagSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Tag added successfully.');
-
-          // Reset the backing signal
-          this.payload.set({
-            name: '',
-            description: '',
-            color: randomHexColor(),
-          });
-
-          this.formActions()?.stayOrCancel();
-        } catch (err) {
-          this.alertSvc.showError(
-            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
-          );
-        } finally {
-          end();
-        }
-        return null;
-      },
-    });
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/users/ui/user-edit.ts
 
 ```typescript
@@ -41740,6 +41569,192 @@ export class UserEditComponent {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/users-grid.ts
+
+```typescript
+import { Component, inject } from '@angular/core';
+import { escapeHtml } from '../../../../../../../libs/common/src';
+import { UserService } from '@frontend/services/user.service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { GridRow } from '@frontend/shared/components/datagrid/types';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { UserAdminService } from '../services/useradmin-service';
+
+@Component({
+  selector: 'pc-users-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Users"
+        i18n-title
+        description="Manage administrator and staff user accounts, assign security roles, and monitor system access."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="true"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="true"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        plusIcon="add-users"
+        i18n-plusIcon
+        [isCellEditableOverride]="isCellEditableBind"
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: UserAdminService },
+    provideDataGridConfig({ messages: { exportEntity: 'users', exportFileName: 'users-export.csv' } }),
+  ],
+})
+export class UsersGridComponent {
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
+  protected col: ColDef[] = [
+    {
+      field: 'email',
+      headerName: 'Email',
+      editable: true,
+      cellRenderer: (p: CellParams) => {
+        let avatarUrl = (p.data?.['avatar_url'] as string | null | undefined) ?? null;
+        const firstName = (p.data?.['first_name'] as string | undefined) ?? '';
+        const lastName = (p.data?.['last_name'] as string | undefined) ?? '';
+        const name = [firstName, lastName].filter(Boolean).join(' ') || String(p.value ?? '') || '?';
+        const emailVal = String(p.value ?? '');
+
+        let avatarHtml = '';
+        if (avatarUrl) {
+          avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+          // Names and avatar URLs are user-controlled — escape before interpolating into HTML
+          avatarHtml = `<img src="${escapeHtml(avatarUrl ?? '')}" alt="${escapeHtml(name)}" class="w-5 h-5 rounded-full object-cover ring-1 ring-base-200" />`;
+        } else {
+          const PALETTES = [
+            'bg-indigo-500/20 text-indigo-700',
+            'bg-teal-500/20 text-teal-700',
+            'bg-purple-500/20 text-purple-700',
+            'bg-rose-500/20 text-rose-700',
+            'bg-amber-500/20 text-amber-700',
+            'bg-emerald-500/20 text-emerald-700',
+            'bg-blue-500/20 text-blue-700',
+            'bg-orange-500/20 text-orange-700',
+            'bg-pink-500/20 text-pink-700',
+            'bg-cyan-500/20 text-cyan-700',
+          ];
+          let sum = 0;
+          for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+          const colorClass = PALETTES[sum % PALETTES.length];
+          const parts = name.split(/\s+/);
+          const first = parts[0];
+          const last = parts[parts.length - 1];
+          const initials =
+            parts.length >= 2 && first && last
+              ? (first.charAt(0) + last.charAt(0)).toUpperCase()
+              : name.charAt(0).toUpperCase();
+          avatarHtml = `<div class="w-5 h-5 rounded-full ${colorClass} flex items-center justify-center font-bold text-[10px] ring-1 ring-base-200">
+            <span>${escapeHtml(initials)}</span>
+          </div>`;
+        }
+
+        return `<div class="flex items-center gap-2 py-0.5 h-full">
+          ${avatarHtml}
+          <span>${escapeHtml(emailVal)}</span>
+        </div>`;
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true },
+    {
+      field: 'role',
+      headerName: 'Role',
+      editable: true,
+      cellEditorParams: () => {
+        const currentUserRole = this.auth.getUser()?.role;
+        const values = [];
+        if (currentUserRole !== 'admin') {
+          values.push({ value: 'owner', label: 'Owner' });
+        }
+        values.push({ value: 'admin', label: 'Admin' });
+        values.push({ value: 'user', label: 'User' });
+        values.push({ value: 'viewer', label: 'Viewer' });
+        return { values };
+      },
+      valueFormatter: (p: CellParams) => {
+        const val = p.value ?? p.data?.['role'];
+        if (val === 'owner') return 'Owner';
+        if (val === 'admin') return 'Admin';
+        if (val === 'user') return 'User';
+        if (val === 'viewer') return 'Viewer';
+        return (val as string | undefined) || '';
+      },
+    },
+    {
+      field: 'verified',
+      headerName: 'Verified',
+      editable: false,
+      valueFormatter: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
+      cellRenderer: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Updated',
+      hide: true,
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['updated_at']),
+    },
+    {
+      field: 'created_at',
+      headerName: 'Created',
+      hide: true,
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['created_at']),
+    },
+  ];
+
+  public readonly isCellEditableBind = (row: GridRow, col: ColDef): boolean => {
+    if (!col.editable) return false;
+
+    const currentUserRole = this.auth.getUser()?.role;
+
+    if (currentUserRole === 'admin') {
+      if (row['role'] === 'owner') {
+        if (col.field === 'role' || col.field === 'verified') {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
+  private formatDate(value: unknown): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '';
+    return this.dateFormatter.format(date);
+  }
+
+  private coerceBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['yes', 'true', '1'].includes(normalized)) return true;
+      if (['no', 'false', '0'].includes(normalized)) return false;
+    }
+    return false;
+  }
 }
 ```
 
@@ -44138,228 +44153,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/lists/ui/lists-grid.ts
-
-```typescript
-import { Component, OnDestroy, effect, inject, untracked, viewChild } from '@angular/core';
-import { UpdateListType } from '../../../../../../../libs/common/src';
-import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-@Component({
-  selector: 'pc-lists-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Lists"
-        i18n-title
-        description="Organize contacts into custom static or dynamic lists for targeted outreach and campaigns."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [allowFilter]="false"
-        plusIcon="add-list"
-        i18n-plusIcon
-        addRoute="add"
-        i18n-addRoute
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: ListsService },
-    provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
-  ],
-})
-export class ListsGridComponent implements OnDestroy {
-  private readonly refreshSvc = inject(ListsRefreshService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly alerts = inject(AlertService);
-  private readonly grid = viewChild<DataGrid<'lists', UpdateListType>>('grid');
-
-  constructor() {
-    effect(() => {
-      const count = this.refreshSvc.refreshCount();
-      if (count > 0) {
-        void untracked(() => this.grid()?.refresh());
-      }
-    });
-  }
-
-  protected col: ColDef[] = [
-    { field: 'name', headerName: 'List Name', editable: true },
-    { field: 'description', headerName: 'Description', editable: true },
-    {
-      field: 'object',
-      headerName: 'Target Object',
-      valueFormatter: (p: CellParams) => {
-        const val = p?.value;
-        if (val === 'people') return 'People';
-        if (val === 'households') return 'Households';
-        return (val as string | undefined) ?? '—';
-      },
-    },
-    {
-      field: 'is_dynamic',
-      headerName: 'List Type',
-      cellRenderer: (p: CellParams) => {
-        const isDynamic = p?.data?.['is_dynamic'];
-        return isDynamic
-          ? `<span class="badge badge-primary font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Dynamic</span>`
-          : `<span class="badge badge-neutral font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Static</span>`;
-      },
-    },
-    {
-      field: 'list_size',
-      headerName: 'Size',
-      valueFormatter: (p: CellParams) => {
-        const isDynamic = p?.data?.['is_dynamic'];
-        if (isDynamic === true || isDynamic === 'true' || isDynamic === 1) {
-          return 'N/A';
-        }
-        return (p?.value as number | undefined) ?? 0;
-      },
-    },
-    {
-      field: 'last_refreshed_at',
-      headerName: 'Last Refreshed',
-      valueFormatter: (p: CellParams) => {
-        const isDynamic = p?.data?.['is_dynamic'];
-        if (!isDynamic) return '—';
-        if (!p?.value) return 'Never';
-        const date = new Date(p.value as string | number | Date);
-        if (isNaN(date.getTime())) return 'Never';
-        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-      },
-    },
-    {
-      field: 'refresh_action',
-      headerName: 'Refresh',
-      cellRenderer: (p: CellParams) => {
-        const isDynamic = p?.data?.['is_dynamic'];
-        if (!isDynamic) return '—';
-        const status = p?.data?.['status'];
-        const isLocallyRefreshing = this.refreshingIds.has(String(p?.data?.['id'] ?? ''));
-        if (status === 'refreshing' || isLocallyRefreshing) {
-          return `
-            <div class="flex items-center justify-center h-full w-full">
-              <span class="loading loading-ring loading-lg text-primary"></span>
-            </div>
-          `;
-        }
-        return `
-          <div class="flex items-center justify-center h-full w-full">
-            <button class="btn btn-xs btn-circle btn-ghost group" title="Refresh dynamic list">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 group-hover:text-primary group-hover:animate-bounce">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-              </svg>
-            </button>
-          </div>
-        `;
-      },
-      onCellClicked: (p: CellParams) => {
-        const isDynamic = p?.data?.['is_dynamic'];
-        const id = String(p?.data?.['id'] ?? '');
-        const isRefreshing = p?.data?.['status'] === 'refreshing' || this.refreshingIds.has(id);
-        if (isDynamic && !isRefreshing) {
-          void this.refreshList(id, p);
-        }
-      },
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Last Updated',
-      valueFormatter: (p: CellParams) => {
-        if (!p?.value) return '—';
-        const date = new Date(p.value as string | number | Date);
-        if (isNaN(date.getTime())) return '—';
-        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-      },
-    },
-    { field: 'created_by', headerName: 'Created By' },
-  ];
-
-  private readonly refreshingIds = new Set<string>();
-
-  private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
-
-  private async refreshList(id: string, cellParams: CellParams) {
-    try {
-      this.refreshingIds.add(id);
-      // Re-render the cell immediately to show the loading spinner.
-      this.refreshCellIfPossible(cellParams);
-
-      this.alerts.showSuccess('Refresh job scheduled in background');
-      await this.listsSvc.refreshList(id);
-      this.pollRefreshStatus(id);
-    } catch (e) {
-      this.refreshingIds.delete(id);
-      this.refreshCellIfPossible(cellParams);
-      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
-    }
-  }
-
-  /** Best-effort refresh of a single grid cell, if the underlying table API supports it. */
-  private refreshCellIfPossible(cellParams: unknown): void {
-    if (!isRecord(cellParams)) return;
-    const api = cellParams['api'];
-    if (!isRecord(api) || typeof api['refreshCells'] !== 'function') return;
-    (api['refreshCells'] as (opts: unknown) => void)({
-      rowNodes: [cellParams['node']],
-      columns: ['refresh_action'],
-      force: true,
-    });
-  }
-
-  private pollRefreshStatus(id: string) {
-    const existing = this.pollIntervals.get(id);
-    if (existing) clearInterval(existing);
-
-    const interval = setInterval(() => void this.pollRefreshStep(id, interval), 1500);
-
-    this.pollIntervals.set(id, interval);
-  }
-
-  private async pollRefreshStep(id: string, interval: ReturnType<typeof setInterval>): Promise<void> {
-    try {
-      const list = await this.listsSvc.getById(id);
-      if (isRecord(list) && list['status'] !== 'refreshing') {
-        clearInterval(interval);
-        this.pollIntervals.delete(id);
-        this.refreshingIds.delete(id);
-        if (isRecord(list) && list['status'] === 'failed') {
-          this.alerts.showError('List refresh failed in background');
-        } else {
-          this.alerts.showSuccess('List refreshed successfully');
-        }
-        void this.grid()?.refresh();
-      }
-    } catch {
-      clearInterval(interval);
-      this.pollIntervals.delete(id);
-      this.refreshingIds.delete(id);
-    }
-  }
-
-  public ngOnDestroy() {
-    for (const interval of this.pollIntervals.values()) {
-      clearInterval(interval);
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/settings/ms-sync/ms-sync-settings.ts
 
 ```typescript
@@ -46137,6 +45930,228 @@ export class FundraisingGridComponent {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/lists/ui/lists-grid.ts
+
+```typescript
+import { Component, OnDestroy, effect, inject, untracked, viewChild } from '@angular/core';
+import { UpdateListType } from '../../../../../../../libs/common/src';
+import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+@Component({
+  selector: 'pc-lists-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Lists"
+        i18n-title
+        description="Organize contacts into custom static or dynamic lists for targeted outreach and campaigns."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [allowFilter]="false"
+        plusIcon="add-list"
+        i18n-plusIcon
+        addRoute="add"
+        i18n-addRoute
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: ListsService },
+    provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
+  ],
+})
+export class ListsGridComponent implements OnDestroy {
+  private readonly refreshSvc = inject(ListsRefreshService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly alerts = inject(AlertService);
+  private readonly grid = viewChild<DataGrid<'lists', UpdateListType>>('grid');
+
+  constructor() {
+    effect(() => {
+      const count = this.refreshSvc.refreshCount();
+      if (count > 0) {
+        void untracked(() => this.grid()?.refresh());
+      }
+    });
+  }
+
+  protected col: ColDef[] = [
+    { field: 'name', headerName: 'List Name', editable: true },
+    { field: 'description', headerName: 'Description', editable: true },
+    {
+      field: 'object',
+      headerName: 'Target Object',
+      valueFormatter: (p: CellParams) => {
+        const val = p?.value;
+        if (val === 'people') return 'People';
+        if (val === 'households') return 'Households';
+        return (val as string | undefined) ?? '—';
+      },
+    },
+    {
+      field: 'is_dynamic',
+      headerName: 'List Type',
+      cellRenderer: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        return isDynamic
+          ? `<span class="badge badge-primary font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Dynamic</span>`
+          : `<span class="badge badge-neutral font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Static</span>`;
+      },
+    },
+    {
+      field: 'list_size',
+      headerName: 'Size',
+      valueFormatter: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        if (isDynamic === true || isDynamic === 'true' || isDynamic === 1) {
+          return 'N/A';
+        }
+        return (p?.value as number | undefined) ?? 0;
+      },
+    },
+    {
+      field: 'last_refreshed_at',
+      headerName: 'Last Refreshed',
+      valueFormatter: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        if (!isDynamic) return '—';
+        if (!p?.value) return 'Never';
+        const date = new Date(p.value as string | number | Date);
+        if (isNaN(date.getTime())) return 'Never';
+        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+      },
+    },
+    {
+      field: 'refresh_action',
+      headerName: 'Refresh',
+      cellRenderer: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        if (!isDynamic) return '—';
+        const status = p?.data?.['status'];
+        const isLocallyRefreshing = this.refreshingIds.has(String(p?.data?.['id'] ?? ''));
+        if (status === 'refreshing' || isLocallyRefreshing) {
+          return `
+            <div class="flex items-center justify-center h-full w-full">
+              <span class="loading loading-ring loading-lg text-primary"></span>
+            </div>
+          `;
+        }
+        return `
+          <div class="flex items-center justify-center h-full w-full">
+            <button class="btn btn-xs btn-circle btn-ghost group" title="Refresh dynamic list">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 group-hover:text-primary group-hover:animate-bounce">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+            </button>
+          </div>
+        `;
+      },
+      onCellClicked: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        const id = String(p?.data?.['id'] ?? '');
+        const isRefreshing = p?.data?.['status'] === 'refreshing' || this.refreshingIds.has(id);
+        if (isDynamic && !isRefreshing) {
+          void this.refreshList(id, p);
+        }
+      },
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Last Updated',
+      valueFormatter: (p: CellParams) => {
+        if (!p?.value) return '—';
+        const date = new Date(p.value as string | number | Date);
+        if (isNaN(date.getTime())) return '—';
+        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+      },
+    },
+    { field: 'created_by', headerName: 'Created By' },
+  ];
+
+  private readonly refreshingIds = new Set<string>();
+
+  private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
+
+  private async refreshList(id: string, cellParams: CellParams) {
+    try {
+      this.refreshingIds.add(id);
+      // Re-render the cell immediately to show the loading spinner.
+      this.refreshCellIfPossible(cellParams);
+
+      this.alerts.showSuccess('Refresh job scheduled in background');
+      await this.listsSvc.refreshList(id);
+      this.pollRefreshStatus(id);
+    } catch (e) {
+      this.refreshingIds.delete(id);
+      this.refreshCellIfPossible(cellParams);
+      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
+    }
+  }
+
+  /** Best-effort refresh of a single grid cell, if the underlying table API supports it. */
+  private refreshCellIfPossible(cellParams: unknown): void {
+    if (!isRecord(cellParams)) return;
+    const api = cellParams['api'];
+    if (!isRecord(api) || typeof api['refreshCells'] !== 'function') return;
+    (api['refreshCells'] as (opts: unknown) => void)({
+      rowNodes: [cellParams['node']],
+      columns: ['refresh_action'],
+      force: true,
+    });
+  }
+
+  private pollRefreshStatus(id: string) {
+    const existing = this.pollIntervals.get(id);
+    if (existing) clearInterval(existing);
+
+    const interval = setInterval(() => void this.pollRefreshStep(id, interval), 1500);
+
+    this.pollIntervals.set(id, interval);
+  }
+
+  private async pollRefreshStep(id: string, interval: ReturnType<typeof setInterval>): Promise<void> {
+    try {
+      const list = await this.listsSvc.getById(id);
+      if (isRecord(list) && list['status'] !== 'refreshing') {
+        clearInterval(interval);
+        this.pollIntervals.delete(id);
+        this.refreshingIds.delete(id);
+        if (isRecord(list) && list['status'] === 'failed') {
+          this.alerts.showError('List refresh failed in background');
+        } else {
+          this.alerts.showSuccess('List refreshed successfully');
+        }
+        void this.grid()?.refresh();
+      }
+    } catch {
+      clearInterval(interval);
+      this.pollIntervals.delete(id);
+      this.refreshingIds.delete(id);
+    }
+  }
+
+  public ngOnDestroy() {
+    for (const interval of this.pollIntervals.values()) {
+      clearInterval(interval);
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/settings/settings-page.ts
 
 ```typescript
@@ -46746,457 +46761,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-grid.ts
-
-```typescript
-import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { TasksService } from '@experiences/tasks/services/tasks-service';
-import { UserService } from '@frontend/services/user.service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { GridRow } from '@frontend/shared/components/datagrid/types';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Component({
-  selector: 'pc-tasks-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Tasks"
-        i18n-title
-        description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableImport]="false"
-        [showArchiveIcon]="true"
-        (importCSV)="openImportDialog()"
-        plusIcon="add-task"
-        i18n-plusIcon
-        addRoute="add"
-        i18n-addRoute
-      ></pc-datagrid>
-    </div>
-
-    <pc-csv-importer
-      [open]="importerOpen()"
-      [title]="'Import Tasks from CSV'"
-      [mappableFields]="mappableFields"
-      [autoMapHeader]="autoMapHeader"
-      [summary]="importSummary()"
-      (submit)="onImportSubmit($event)"
-      (close)="importerOpen.set(false); importSummary.set(null)"
-      (closeSummary)="importSummary.set(null)"
-    />
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: TasksService },
-    provideDataGridConfig({ messages: { exportEntity: 'tasks', exportFileName: 'tasks-export.csv' } }),
-  ],
-})
-export class TasksGrid implements OnInit {
-  private readonly userService = inject(UserService);
-  private readonly tasksService = inject(TasksService);
-  public readonly _loading = createLoadingGate();
-  private readonly grid = viewChild<DataGrid<'tasks', UpdateTaskType>>('grid');
-
-  private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
-  private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
-  private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
-  private readonly statusOptions = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
-
-  private readonly unassignedLabel = 'Not Assigned';
-
-  // Users for Assigned To (populated via AuthService on init)
-  private userIds: string[] = [];
-  private userLabels: string[] = [];
-  private usersById = new Map<string, string>();
-  private usersAvatarById = new Map<string, string | null>();
-
-  // Fields we will accept from CSV for future import support
-  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
-
-  protected col: ColDef[] = [
-    { field: 'id', headerName: 'ID' },
-    {
-      field: 'assigned_to',
-      headerName: 'Assigned To',
-      editable: true,
-      valueGetter: (p: CellParams) => this.assignedToValueGetter(p),
-      valueFormatter: (p: CellParams) => this.assignedToValueFormatter(p),
-      cellRenderer: (p: CellParams) => this.renderAssignedCell(p.data?.['assigned_to']),
-      cellEditorParams: () => ({
-        values: [null, ...this.userIds],
-        labels: [this.unassignedLabel, ...this.userLabels],
-      }),
-      valueSetter: (p: CellParams) => this.assignToValueSetter(p),
-    },
-    { field: 'name', headerName: 'Task', editable: true },
-    {
-      field: 'status',
-      headerName: 'Status',
-      editable: true,
-      cellRenderer: (p: CellParams) => this.renderStatusBadge(p.value),
-      cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
-      valueSetter: (p: CellParams) => this.statusValueSetter(p),
-    },
-    {
-      field: 'priority',
-      headerName: 'Priority',
-      editable: true,
-      cellRenderer: (p: CellParams) => this.renderPriorityBadge(p.value),
-      cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
-      valueSetter: (p: CellParams) => this.priorityValueSetter(p),
-    },
-    {
-      field: 'due_at',
-      headerName: 'Due',
-      editable: true,
-      valueGetter: (p: CellParams) => this.toDateOnly(p.data?.['due_at'] ?? p.value),
-      valueSetter: (p: CellParams) => this.dueAtValueSetter(p),
-      valueFormatter: (p: CellParams) => this.formatDate(p.value),
-      cellClass: (p: CellParams) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
-    },
-    {
-      field: 'createdby_id',
-      headerName: 'Created By',
-      editable: false,
-      valueFormatter: (p: CellParams) => this.userNameForId(p.value),
-      cellRenderer: (p: CellParams) => this.renderCreatedByCell(p.data?.['createdby_id']),
-      // Provide filter options using known user labels
-      cellEditorParams: () => ({ values: this.userLabels }),
-    },
-  ];
-  protected importSummary = signal<CsvImportSummary | null>(null);
-  protected importerOpen = signal(false);
-  protected isArchiveMode = signal(false);
-
-  public ngOnInit() {
-    void this.initialize();
-  }
-
-  private async initialize() {
-    // Load users to drive Assigned To options and name mapping
-    try {
-      const users = await this.userService.getUsers();
-      this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
-      this.usersAvatarById = new Map(users.map((u) => [String(u.id), u.avatar_url ?? null]));
-      this.userIds = users.map((u) => String(u.id));
-      this.userLabels = users.map((u) => `${u.first_name}`);
-    } catch {
-      /* no op */
-    }
-  }
-
-  protected readonly autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      task: 'name',
-      title: 'name',
-      subject: 'name',
-      status: 'status',
-      priority: 'priority',
-      due: 'due_at',
-      duedate: 'due_at',
-      dueat: 'due_at',
-      assignedto: 'assigned_to',
-      assignee: 'assigned_to',
-      owner: 'assigned_to',
-    };
-    return map[key] || '';
-  };
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-
-    try {
-      const res = await this.tasksService.import(rows, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message
-          ? e.message
-          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
-            ? e['data']['message']
-            : 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  protected openImportDialog() {
-    this.importSummary.set(null);
-    this.importerOpen.set(true);
-  }
-
-  private assignToValueSetter(p: CellParams) {
-    const val =
-      p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
-        ? null
-        : String(p.newValue);
-    const data = p.data;
-    if (!data) return false;
-    if (data['assigned_to'] !== val) {
-      data['assigned_to'] = val;
-      return true;
-    }
-    return false;
-  }
-
-  private assignedToValueFormatter(p: CellParams) {
-    const v = p.value;
-    if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
-    return this.usersById.get(String(v)) ?? String(v ?? '');
-  }
-
-  private assignedToValueGetter(p: CellParams) {
-    const id = p.data?.['assigned_to'] ?? p.value;
-    if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
-    return String(id);
-  }
-
-  private dueAtValueSetter(p: CellParams) {
-    const val = String(p.newValue || p.value || '');
-    // ensure only YYYY-MM-DD is stored
-    const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
-    const data = p.data;
-    if (!data) return false;
-    if (data['due_at'] !== dateOnly) {
-      data['due_at'] = dateOnly;
-      return true;
-    }
-    return false;
-  }
-
-  private formatDate(value: unknown) {
-    if (!value) return '';
-    const d = new Date(this.toDateOnly(value));
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString();
-  }
-
-  private isOverdue(row: GridRow | undefined): boolean {
-    if (!row) return false;
-
-    const status = String(row['status'] ?? '').toLowerCase();
-    if (status === 'done' || status === 'canceled') return false;
-
-    const due = this.toDateOnly(row['due_at']);
-    if (!due) return false;
-
-    const today = this.toDateOnly(new Date());
-    // Simple lexical compare works for YYYY-MM-DD
-    return due < today;
-  }
-
-  private normalizeChoice(value: string) {
-    return value.replace(/[_\s-]+/g, '').toLowerCase();
-  }
-
-  private parsePriorityLabel(label: string) {
-    const norm = this.normalizeChoice(label);
-    const idx = this.priorityLabels.findIndex((l) => this.normalizeChoice(l) === norm);
-    if (idx >= 0) return this.priorityOptions[idx];
-    const optionIdx = this.priorityOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
-    return optionIdx >= 0 ? this.priorityOptions[optionIdx] : label;
-  }
-
-  private parseStatusLabel(label: string) {
-    const norm = this.normalizeChoice(label);
-    const idx = this.statusLabels.findIndex((l) => this.normalizeChoice(l) === norm);
-    if (idx >= 0) return this.statusOptions[idx];
-    const optionIdx = this.statusOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
-    return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
-  }
-
-  private priorityValueSetter(p: CellParams) {
-    const v = this.parsePriorityLabel(String(p.newValue ?? ''));
-    const data = p.data;
-    if (!data) return false;
-    if (data['priority'] !== v) {
-      data['priority'] = v;
-      return true;
-    }
-    return false;
-  }
-
-  private renderAssignedCell(value: unknown) {
-    const v = value == null ? '' : String(value);
-    const isUnassigned = !v || v === this.unassignedLabel;
-    const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
-    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
-    const safeLabel = escapeHtml(label);
-    if (isUnassigned) {
-      return `<span class="badge badge-error badge-sm">${safeLabel}</span>`;
-    }
-    let avatarUrl = this.usersAvatarById.get(v);
-    if (avatarUrl) {
-      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-      return `
-        <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeLabel}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${safeLabel}</span>
-        </div>
-      `;
-    }
-    const initial = escapeHtml(label.slice(0, 1).toUpperCase() || '?');
-    const colors = [
-      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
-      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
-      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
-      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
-      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-    ];
-    let sum = 0;
-    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
-    const colorClass = colors[sum % colors.length];
-
-    return `
-      <div class="flex items-center gap-1.5 py-0.5">
-        <div class="avatar placeholder">
-          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
-            <span>${initial}</span>
-          </div>
-        </div>
-        <span class="text-xs font-medium">${safeLabel}</span>
-      </div>
-    `;
-  }
-
-  private renderCreatedByCell(value: unknown) {
-    const label = value == null ? '' : String(value);
-    if (!label) {
-      return `<span class="text-base-content/30">—</span>`;
-    }
-    const resolvedName = this.usersById.get(label) ?? label;
-    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
-    const safeName = escapeHtml(resolvedName);
-    let avatarUrl = this.usersAvatarById.get(label);
-    if (avatarUrl) {
-      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-      return `
-        <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeName}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${safeName}</span>
-        </div>
-      `;
-    }
-    const initial = escapeHtml(resolvedName.slice(0, 1).toUpperCase() || '?');
-    const colors = [
-      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      'bg-violet-500/20 text-violet-700 dark:text-violet-300',
-      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
-      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
-    ];
-    let sum = 0;
-    for (let i = 0; i < resolvedName.length; i++) sum += resolvedName.charCodeAt(i);
-    const colorClass = colors[sum % colors.length];
-
-    return `
-      <div class="flex items-center gap-1.5 py-0.5">
-        <div class="avatar placeholder">
-          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
-            <span>${initial}</span>
-          </div>
-        </div>
-        <span class="text-xs font-medium">${safeName}</span>
-      </div>
-    `;
-  }
-
-  private renderPriorityBadge(value: unknown) {
-    if (!value) return '';
-    const v = String(value);
-    const cls =
-      v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
-    const label = this.toTitle(v);
-    return `<span class="badge ${cls} badge-sm">${label}</span>`;
-  }
-
-  private renderStatusBadge(value: unknown) {
-    if (!value) return '';
-    const v = String(value);
-    const cls =
-      v === 'done'
-        ? 'badge-success'
-        : v === 'in_progress'
-          ? 'badge-info'
-          : v === 'blocked'
-            ? 'badge-error'
-            : v === 'canceled'
-              ? 'badge-neutral'
-              : 'badge-ghost';
-    const label = this.toTitle(v);
-    return `<span class="badge ${cls} badge-sm">${label}</span>`;
-  }
-
-  private statusValueSetter(p: CellParams) {
-    const v = this.parseStatusLabel(String(p.newValue ?? ''));
-    const data = p.data;
-    if (!data) return false;
-    if (data['status'] !== v) {
-      data['status'] = v;
-      return true;
-    }
-    return false;
-  }
-
-  private toDateOnly(v: unknown): string {
-    if (!v) return '';
-    const str = typeof v === 'string' ? v : new Date(v as number | Date).toISOString();
-    return str.length > 10 ? str.slice(0, 10) : str;
-  }
-
-  private toTitle(v: string) {
-    return v
-      .replace(/[_-]+/g, ' ')
-      .split(' ')
-      .map((s) => (s ? s[0]!.toUpperCase() + s.slice(1) : s))
-      .join(' ');
-  }
-
-  private userNameForId(id: unknown) {
-    if (id === null || id === undefined || id === '') return '';
-    const key = String(id);
-    return this.usersById.get(key) ?? '';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
 
 ```typescript
@@ -47373,12 +46937,46 @@ export class DataGridToolbarComponent {
   [title]="displayTitle()!"
   [open]="showDescription()"
   [description]="description() || ''"
+  [totalCount]="hasInitiatedLoad() ? totalCountAll() : null"
+  [filtered]="anyFilterActive()"
 ></pc-grid-header>
 }
 
 <div class="flex h-full w-full flex-col">
   @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
   <progress class="progress h-1"></progress>
+  } @if (filterChips().length) {
+  <div class="mb-2 flex flex-wrap items-center gap-2 rounded border border-base-300 bg-base-100 px-3 py-2 text-xs">
+    <span
+      class="font-semibold uppercase tracking-wider text-base-content/50"
+      i18n="Datagrid|Label preceding the active filter chips@@datagrid.chips.label"
+      >Filters</span
+    >
+    @for (chip of filterChips(); track chip.kind + ':' + chip.key) {
+    <span class="badge badge-outline gap-1 border-primary/30 bg-primary/10 text-primary">
+      @if (chip.kind === 'advanced') {
+      <button type="button" class="hover:underline" (click)="openAdvancedFilterBuilder()">{{ chip.label }}</button>
+      } @else { {{ chip.label }} }
+      <button
+        type="button"
+        class="opacity-70 hover:opacity-100"
+        [attr.aria-label]="'Remove filter: ' + chip.label"
+        (click)="removeFilterChip(chip)"
+      >
+        <pc-icon name="x-mark" [size]="3"></pc-icon>
+      </button>
+    </span>
+    }
+    <span class="flex-1"></span>
+    <button
+      type="button"
+      class="link text-primary hover:no-underline"
+      (click)="clearAllFilters()"
+      i18n="Datagrid|Button clearing every active filter@@datagrid.chips.clearAll"
+    >
+      Clear all
+    </button>
+  </div>
   } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
   <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
     <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
@@ -47600,6 +47198,14 @@ export class DataGridToolbarComponent {
                 i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
                 >Try clearing or adjusting your filters</span
               >
+              <button
+                type="button"
+                class="btn btn-outline btn-sm mt-1"
+                (click)="clearAllFilters()"
+                i18n="Datagrid|Button clearing filters from the empty state@@datagrid.filterEmptyState.clear"
+              >
+                Clear all filters
+              </button>
             </div>
           </td>
         </tr>
@@ -47657,7 +47263,7 @@ export class DataGridToolbarComponent {
               >
                 <pc-icon
                   name="arrow-top-right-on-square"
-                  class="hover:text-primary cursor-pointer text-neutral invisible group-hover:visible pb-1"
+                  class="cursor-pointer pb-1 text-base-content/30 transition-colors hover:text-primary"
                 ></pc-icon>
               </span>
               }
@@ -47894,9 +47500,6 @@ export class DataGridToolbarComponent {
       </button>
     </div>
   </div>
-  @if (isLoading()) {
-  <pc-icon name="loading" class="absolute inset-0 grid place-items-center animate-pulse" [size]="24"></pc-icon>
-  }
 </div>
 
 <!-- Right-side Filter Panel -->
@@ -48943,6 +48546,457 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-grid.ts
+
+```typescript
+import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { TasksService } from '@experiences/tasks/services/tasks-service';
+import { UserService } from '@frontend/services/user.service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { GridRow } from '@frontend/shared/components/datagrid/types';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Component({
+  selector: 'pc-tasks-grid',
+  imports: [DataGrid, CsvImportComponent, FormsModule],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Tasks"
+        i18n-title
+        description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableImport]="false"
+        [showArchiveIcon]="true"
+        (importCSV)="openImportDialog()"
+        plusIcon="add-task"
+        i18n-plusIcon
+        addRoute="add"
+        i18n-addRoute
+      ></pc-datagrid>
+    </div>
+
+    <pc-csv-importer
+      [open]="importerOpen()"
+      [title]="'Import Tasks from CSV'"
+      [mappableFields]="mappableFields"
+      [autoMapHeader]="autoMapHeader"
+      [summary]="importSummary()"
+      (submit)="onImportSubmit($event)"
+      (close)="importerOpen.set(false); importSummary.set(null)"
+      (closeSummary)="importSummary.set(null)"
+    />
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: TasksService },
+    provideDataGridConfig({ messages: { exportEntity: 'tasks', exportFileName: 'tasks-export.csv' } }),
+  ],
+})
+export class TasksGrid implements OnInit {
+  private readonly userService = inject(UserService);
+  private readonly tasksService = inject(TasksService);
+  public readonly _loading = createLoadingGate();
+  private readonly grid = viewChild<DataGrid<'tasks', UpdateTaskType>>('grid');
+
+  private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
+  private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
+  private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
+  private readonly statusOptions = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+
+  private readonly unassignedLabel = 'Not Assigned';
+
+  // Users for Assigned To (populated via AuthService on init)
+  private userIds: string[] = [];
+  private userLabels: string[] = [];
+  private usersById = new Map<string, string>();
+  private usersAvatarById = new Map<string, string | null>();
+
+  // Fields we will accept from CSV for future import support
+  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
+
+  protected col: ColDef[] = [
+    { field: 'id', headerName: 'ID' },
+    {
+      field: 'assigned_to',
+      headerName: 'Assigned To',
+      editable: true,
+      valueGetter: (p: CellParams) => this.assignedToValueGetter(p),
+      valueFormatter: (p: CellParams) => this.assignedToValueFormatter(p),
+      cellRenderer: (p: CellParams) => this.renderAssignedCell(p.data?.['assigned_to']),
+      cellEditorParams: () => ({
+        values: [null, ...this.userIds],
+        labels: [this.unassignedLabel, ...this.userLabels],
+      }),
+      valueSetter: (p: CellParams) => this.assignToValueSetter(p),
+    },
+    { field: 'name', headerName: 'Task', editable: true },
+    {
+      field: 'status',
+      headerName: 'Status',
+      editable: true,
+      cellRenderer: (p: CellParams) => this.renderStatusBadge(p.value),
+      cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
+      valueSetter: (p: CellParams) => this.statusValueSetter(p),
+    },
+    {
+      field: 'priority',
+      headerName: 'Priority',
+      editable: true,
+      cellRenderer: (p: CellParams) => this.renderPriorityBadge(p.value),
+      cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
+      valueSetter: (p: CellParams) => this.priorityValueSetter(p),
+    },
+    {
+      field: 'due_at',
+      headerName: 'Due',
+      editable: true,
+      valueGetter: (p: CellParams) => this.toDateOnly(p.data?.['due_at'] ?? p.value),
+      valueSetter: (p: CellParams) => this.dueAtValueSetter(p),
+      valueFormatter: (p: CellParams) => this.formatDate(p.value),
+      cellClass: (p: CellParams) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
+    },
+    {
+      field: 'createdby_id',
+      headerName: 'Created By',
+      editable: false,
+      valueFormatter: (p: CellParams) => this.userNameForId(p.value),
+      cellRenderer: (p: CellParams) => this.renderCreatedByCell(p.data?.['createdby_id']),
+      // Provide filter options using known user labels
+      cellEditorParams: () => ({ values: this.userLabels }),
+    },
+  ];
+  protected importSummary = signal<CsvImportSummary | null>(null);
+  protected importerOpen = signal(false);
+  protected isArchiveMode = signal(false);
+
+  public ngOnInit() {
+    void this.initialize();
+  }
+
+  private async initialize() {
+    // Load users to drive Assigned To options and name mapping
+    try {
+      const users = await this.userService.getUsers();
+      this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
+      this.usersAvatarById = new Map(users.map((u) => [String(u.id), u.avatar_url ?? null]));
+      this.userIds = users.map((u) => String(u.id));
+      this.userLabels = users.map((u) => `${u.first_name}`);
+    } catch {
+      /* no op */
+    }
+  }
+
+  protected readonly autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      task: 'name',
+      title: 'name',
+      subject: 'name',
+      status: 'status',
+      priority: 'priority',
+      due: 'due_at',
+      duedate: 'due_at',
+      dueat: 'due_at',
+      assignedto: 'assigned_to',
+      assignee: 'assigned_to',
+      owner: 'assigned_to',
+    };
+    return map[key] || '';
+  };
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+
+    try {
+      const res = await this.tasksService.import(rows, skippedReported, fileName || undefined);
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.grid()?.refresh();
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
+  }
+
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.importerOpen.set(true);
+  }
+
+  private assignToValueSetter(p: CellParams) {
+    const val =
+      p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
+        ? null
+        : String(p.newValue);
+    const data = p.data;
+    if (!data) return false;
+    if (data['assigned_to'] !== val) {
+      data['assigned_to'] = val;
+      return true;
+    }
+    return false;
+  }
+
+  private assignedToValueFormatter(p: CellParams) {
+    const v = p.value;
+    if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
+    return this.usersById.get(String(v)) ?? String(v ?? '');
+  }
+
+  private assignedToValueGetter(p: CellParams) {
+    const id = p.data?.['assigned_to'] ?? p.value;
+    if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
+    return String(id);
+  }
+
+  private dueAtValueSetter(p: CellParams) {
+    const val = String(p.newValue || p.value || '');
+    // ensure only YYYY-MM-DD is stored
+    const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
+    const data = p.data;
+    if (!data) return false;
+    if (data['due_at'] !== dateOnly) {
+      data['due_at'] = dateOnly;
+      return true;
+    }
+    return false;
+  }
+
+  private formatDate(value: unknown) {
+    if (!value) return '';
+    const d = new Date(this.toDateOnly(value));
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString();
+  }
+
+  private isOverdue(row: GridRow | undefined): boolean {
+    if (!row) return false;
+
+    const status = String(row['status'] ?? '').toLowerCase();
+    if (status === 'done' || status === 'canceled') return false;
+
+    const due = this.toDateOnly(row['due_at']);
+    if (!due) return false;
+
+    const today = this.toDateOnly(new Date());
+    // Simple lexical compare works for YYYY-MM-DD
+    return due < today;
+  }
+
+  private normalizeChoice(value: string) {
+    return value.replace(/[_\s-]+/g, '').toLowerCase();
+  }
+
+  private parsePriorityLabel(label: string) {
+    const norm = this.normalizeChoice(label);
+    const idx = this.priorityLabels.findIndex((l) => this.normalizeChoice(l) === norm);
+    if (idx >= 0) return this.priorityOptions[idx];
+    const optionIdx = this.priorityOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
+    return optionIdx >= 0 ? this.priorityOptions[optionIdx] : label;
+  }
+
+  private parseStatusLabel(label: string) {
+    const norm = this.normalizeChoice(label);
+    const idx = this.statusLabels.findIndex((l) => this.normalizeChoice(l) === norm);
+    if (idx >= 0) return this.statusOptions[idx];
+    const optionIdx = this.statusOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
+    return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
+  }
+
+  private priorityValueSetter(p: CellParams) {
+    const v = this.parsePriorityLabel(String(p.newValue ?? ''));
+    const data = p.data;
+    if (!data) return false;
+    if (data['priority'] !== v) {
+      data['priority'] = v;
+      return true;
+    }
+    return false;
+  }
+
+  private renderAssignedCell(value: unknown) {
+    const v = value == null ? '' : String(value);
+    const isUnassigned = !v || v === this.unassignedLabel;
+    const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
+    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
+    const safeLabel = escapeHtml(label);
+    if (isUnassigned) {
+      return `<span class="badge badge-error badge-sm">${safeLabel}</span>`;
+    }
+    let avatarUrl = this.usersAvatarById.get(v);
+    if (avatarUrl) {
+      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+      return `
+        <div class="flex items-center gap-1.5 py-0.5">
+          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeLabel}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${safeLabel}</span>
+        </div>
+      `;
+    }
+    const initial = escapeHtml(label.slice(0, 1).toUpperCase() || '?');
+    const colors = [
+      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
+      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
+      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
+      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
+      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
+      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+    ];
+    let sum = 0;
+    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
+    const colorClass = colors[sum % colors.length];
+
+    return `
+      <div class="flex items-center gap-1.5 py-0.5">
+        <div class="avatar placeholder">
+          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
+            <span>${initial}</span>
+          </div>
+        </div>
+        <span class="text-xs font-medium">${safeLabel}</span>
+      </div>
+    `;
+  }
+
+  private renderCreatedByCell(value: unknown) {
+    const label = value == null ? '' : String(value);
+    if (!label) {
+      return `<span class="text-base-content/30">—</span>`;
+    }
+    const resolvedName = this.usersById.get(label) ?? label;
+    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
+    const safeName = escapeHtml(resolvedName);
+    let avatarUrl = this.usersAvatarById.get(label);
+    if (avatarUrl) {
+      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+      return `
+        <div class="flex items-center gap-1.5 py-0.5">
+          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeName}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${safeName}</span>
+        </div>
+      `;
+    }
+    const initial = escapeHtml(resolvedName.slice(0, 1).toUpperCase() || '?');
+    const colors = [
+      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
+      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+      'bg-violet-500/20 text-violet-700 dark:text-violet-300',
+      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
+      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
+    ];
+    let sum = 0;
+    for (let i = 0; i < resolvedName.length; i++) sum += resolvedName.charCodeAt(i);
+    const colorClass = colors[sum % colors.length];
+
+    return `
+      <div class="flex items-center gap-1.5 py-0.5">
+        <div class="avatar placeholder">
+          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
+            <span>${initial}</span>
+          </div>
+        </div>
+        <span class="text-xs font-medium">${safeName}</span>
+      </div>
+    `;
+  }
+
+  private renderPriorityBadge(value: unknown) {
+    if (!value) return '';
+    const v = String(value);
+    const cls =
+      v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
+    const label = this.toTitle(v);
+    return `<span class="badge ${cls} badge-sm">${label}</span>`;
+  }
+
+  private renderStatusBadge(value: unknown) {
+    if (!value) return '';
+    const v = String(value);
+    const cls =
+      v === 'done'
+        ? 'badge-success'
+        : v === 'in_progress'
+          ? 'badge-info'
+          : v === 'blocked'
+            ? 'badge-error'
+            : v === 'canceled'
+              ? 'badge-neutral'
+              : 'badge-ghost';
+    const label = this.toTitle(v);
+    return `<span class="badge ${cls} badge-sm">${label}</span>`;
+  }
+
+  private statusValueSetter(p: CellParams) {
+    const v = this.parseStatusLabel(String(p.newValue ?? ''));
+    const data = p.data;
+    if (!data) return false;
+    if (data['status'] !== v) {
+      data['status'] = v;
+      return true;
+    }
+    return false;
+  }
+
+  private toDateOnly(v: unknown): string {
+    if (!v) return '';
+    const str = typeof v === 'string' ? v : new Date(v as number | Date).toISOString();
+    return str.length > 10 ? str.slice(0, 10) : str;
+  }
+
+  private toTitle(v: string) {
+    return v
+      .replace(/[_-]+/g, ' ')
+      .split(' ')
+      .map((s) => (s ? s[0]!.toUpperCase() + s.slice(1) : s))
+      .join(' ');
+  }
+
+  private userNameForId(id: unknown) {
+    if (id === null || id === undefined || id === '') return '';
+    const key = String(id);
+    return this.usersById.get(key) ?? '';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/lists/ui/list-form.ts
 
 ```typescript
@@ -49582,6 +49636,7 @@ import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 
 import { UserService } from '../../../services/user.service';
@@ -49688,6 +49743,15 @@ export class PersonForm implements OnInit {
   protected readonly formName = computed(() => {
     const v = this.payload();
     return `${v.first_name || ''} ${v.middle_names || ''} ${v.last_name || ''}`.trim();
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const people: PcBreadcrumb = { label: 'People', route: '/people' };
+    const id = this.person()?.id;
+    if (id) {
+      return [people, { label: this.formName() || 'Person', route: ['/people', String(id)] }, { label: 'Edit' }];
+    }
+    return [people, { label: 'New person' }];
   });
 
   protected readonly formInitials = computed(() => {
@@ -50906,6 +50970,13 @@ interface MergeableService {
   mergeCompanies?(target: string, source: string): Promise<unknown>;
   mergeHouseholds?(target: string, source: string): Promise<unknown>;
 }
+
+/** One removable chip in the active-filters row above the grid. */
+export interface GridFilterChip {
+  kind: 'narrow' | 'tag' | 'issue' | 'list' | 'column' | 'advanced';
+  key: string;
+  label: string;
+}
 // Header and inline filters rendered inline in template now
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import DOMPurify from 'dompurify';
@@ -51070,6 +51141,95 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       Object.keys(this.filterValues())?.length > 0 ||
       this.hasActiveAdvancedFilters(),
   );
+
+  /** True when anything — including the list filter — is narrowing the results. */
+  public readonly anyFilterActive = computed(
+    () => this.hasActiveFilters() || this.selectedListId() !== null || this.selectedNarrowType() !== null,
+  );
+
+  /** Every active filter as a named, individually removable chip. */
+  protected readonly filterChips = computed<GridFilterChip[]>(() => {
+    const chips: GridFilterChip[] = [];
+
+    const narrow = this.selectedNarrowType();
+    if (narrow !== null) {
+      const option = this.narrowTypeOptions().find((o) => o.value === narrow);
+      chips.push({ kind: 'narrow', key: narrow, label: `Type: ${option?.label ?? narrow}` });
+    } else {
+      // Tags chosen via a narrow-type preset are represented by the narrow chip alone.
+      for (const tag of this.selectedTags()) {
+        chips.push({ kind: 'tag', key: tag, label: `Tag: ${tag}` });
+      }
+    }
+
+    for (const issue of this.selectedIssues()) {
+      chips.push({ kind: 'issue', key: issue, label: `Issue: ${issue}` });
+    }
+
+    const listId = this.selectedListId();
+    if (listId !== null) {
+      const list = this.availableLists().find((l) => String(l['id'] ?? '') === String(listId));
+      chips.push({ kind: 'list', key: String(listId), label: `List: ${String(list?.['name'] ?? 'selected')}` });
+    }
+
+    for (const [field, value] of Object.entries(this.filterValues())) {
+      if (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)) {
+        continue;
+      }
+      const text = Array.isArray(value) ? value.join(', ') : String(value);
+      chips.push({ kind: 'column', key: field, label: `${this.columnLabelFor(field)}: ${text}` });
+    }
+
+    if (this.hasActiveAdvancedFilters()) {
+      chips.push({ kind: 'advanced', key: 'advanced', label: 'Advanced filter' });
+    }
+
+    return chips;
+  });
+
+  protected removeFilterChip(chip: GridFilterChip): void {
+    switch (chip.kind) {
+      case 'narrow':
+        this.selectNarrowType(null);
+        break;
+      case 'tag':
+        this.toggleTagFilter(chip.key, false);
+        break;
+      case 'issue':
+        this.toggleIssueFilter(chip.key, false);
+        break;
+      case 'list':
+        this.clearListFilter();
+        break;
+      case 'column':
+        this.clearHeaderFilter(chip.key);
+        break;
+      case 'advanced':
+        this.clearAdvancedFilter();
+        break;
+      default: {
+        const _exhaustive: never = chip.kind;
+        void _exhaustive;
+      }
+    }
+  }
+
+  /** Reset every filter domain at once, then reload from the first page. */
+  protected clearAllFilters(): void {
+    this.selectedNarrowType.set(null);
+    this.selectedTags.set([]);
+    this.selectedIssues.set([]);
+    this.selectedListId.set(null);
+    this.filterValues.set({});
+    this.panelFilters.set({});
+    this.store?.requestPersist();
+    if (this.hasActiveAdvancedFilters()) {
+      // clearAdvancedFilter triggers its own refresh.
+      this.clearAdvancedFilter();
+    } else {
+      void this.loadPage(0);
+    }
+  }
 
   public isColFiltered(field: string): boolean {
     const fv = this.filterValues();
