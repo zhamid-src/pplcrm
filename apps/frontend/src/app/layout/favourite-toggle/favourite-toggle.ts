@@ -17,9 +17,9 @@ import { SidebarService } from '../sidebar/sidebar-service';
     @if (canToggleFavourite()) {
       <button
         type="button"
-        class="btn btn-circle btn-ghost btn-sm"
-        [attr.aria-label]="favourite() ? 'Remove this page from favourites' : 'Add this page to favourites'"
-        [title]="favourite() ? 'Remove from favourites' : 'Add to favourites'"
+        class="btn btn-circle btn-ghost btn-sm tooltip tooltip-bottom"
+        [attr.aria-label]="tooltip()"
+        [attr.data-tip]="tooltip()"
         (mouseenter)="hovered.set(true)"
         (mouseleave)="hovered.set(false)"
         (click)="toggleFavourite()"
@@ -51,11 +51,18 @@ export class FavouriteToggle {
   protected readonly favourite = signal(false);
   protected readonly hovered = signal(false);
   protected readonly canToggleFavourite = signal(false);
+  protected readonly itemName = signal('');
 
   protected readonly iconName = computed(() => {
     if (this.favourite()) return this.hovered() ? 'bookmark-slash' : 'bookmark-filled';
     return this.hovered() ? 'bookmark-plus' : 'bookmark';
   });
+
+  protected readonly tooltip = computed(() =>
+    this.favourite()
+      ? `Remove '${this.itemName()}' from sidebar bookmarks`
+      : `Bookmark '${this.itemName()}' in the sidebar`,
+  );
 
   constructor() {
     effect(() => this.handleNavigationChange(this.navigationUrl()));
@@ -71,8 +78,21 @@ export class FavouriteToggle {
   }
 
   private handleNavigationChange(url: string): void {
-    this.currentItem = this.sidebarSvc.findItemForUrl(url);
-    this.favourite.set(!!this.currentItem?.favourite);
-    this.canToggleFavourite.set(!!this.currentItem?.route);
+    const item = this.sidebarSvc.findItemForUrl(url);
+    // Sidebar bookmarks hold sections, not records. The service matches by
+    // prefix, so on a record page (/people/123) the star would read as
+    // "bookmark this person" while actually bookmarking People — only offer
+    // the toggle when the URL is the sidebar item's own page.
+    const exact = !!item?.route && this.normalizePath(url) === this.normalizePath(item.route);
+    this.currentItem = exact ? item : undefined;
+    this.favourite.set(exact && !!item?.favourite);
+    this.canToggleFavourite.set(exact);
+    this.itemName.set(exact ? (item?.name ?? '') : '');
+  }
+
+  private normalizePath(route: string): string {
+    const path = (route.split('?')[0] ?? '').split('#')[0] ?? '';
+    const trimmed = path.endsWith('/') && path !== '/' ? path.slice(0, -1) : path;
+    return trimmed || '/';
   }
 }

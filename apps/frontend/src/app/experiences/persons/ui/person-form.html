@@ -2,7 +2,7 @@
 <div class="flex min-h-full flex-col bg-base-100 p-6">
   <progress class="progress w-full" [class.hidden]="!isLoading()"></progress>
 
-  <div class="max-w-4xl mx-auto w-full">
+  <div class="w-full max-w-4xl">
     <!-- Back to profile or list -->
     <pc-detail-header
       [title]="person()?.id ? formName() || 'Edit person' : 'New person'"

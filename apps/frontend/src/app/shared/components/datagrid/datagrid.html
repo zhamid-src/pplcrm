@@ -1,15 +1,13 @@
-@if (displayTitle()) {
-<pc-grid-header
-  [title]="displayTitle()!"
-  [open]="showDescription()"
-  [description]="description() || ''"
-  [totalCount]="hasInitiatedLoad() ? totalCountAll() : null"
-  [filtered]="anyFilterActive()"
-></pc-grid-header>
-}
-
-<div class="flex h-full w-full flex-col">
-  @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
+<div class="flex h-full w-full flex-col" [class.p-6]="displayTitle()">
+  @if (displayTitle()) {
+  <pc-grid-header
+    [title]="displayTitle()!"
+    [open]="showDescription()"
+    [description]="description() || ''"
+    [totalCount]="hasInitiatedLoad() ? totalCountAll() : null"
+    [filtered]="anyFilterActive()"
+  ></pc-grid-header>
+  } @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
   <progress class="progress h-1"></progress>
   } @if (filterChips().length) {
   <div class="mb-2 flex flex-wrap items-center gap-2 rounded border border-base-300 bg-base-100 px-3 py-2 text-xs">
